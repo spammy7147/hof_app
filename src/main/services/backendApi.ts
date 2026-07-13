@@ -24,7 +24,12 @@ import type {
   LoadPatternResponse,
   PartyPresetResponse,
   RunBattleRequest,
+  RegisterAndroidPushTargetRequest,
   SubmitCaptchaAnswerRequest,
+  DevicePushTargetResponse,
+  UnifiedAutomationAction,
+  UnifiedAutomationSettingsRequest,
+  UnifiedAutomationStatusResponse,
   UpdateAutomationProfileRequest,
   UpdatePartyPresetRequest,
 } from '../types/api';
@@ -201,6 +206,38 @@ export class BackendApiClient {
    */
   fetchCurrentAutomationJob(): Promise<AutomationJobResponse | null> {
     return this.request('/api/automation/jobs/current');
+  }
+
+  /** 계정별 통합 자동화의 현재 상태와 저장 설정을 조회한다. */
+  fetchUnifiedAutomation(): Promise<UnifiedAutomationStatusResponse> {
+    return this.request('/api/automation/unified');
+  }
+
+  /** 통합 자동화 모듈 설정 전체를 원자적으로 저장한다. */
+  updateUnifiedAutomation(
+    request: UnifiedAutomationSettingsRequest,
+  ): Promise<UnifiedAutomationStatusResponse> {
+    return this.request('/api/automation/unified', {
+      method: 'PUT',
+      body: JSON.stringify(request),
+    });
+  }
+
+  /** 통합 자동화를 시작, 일시정지, 재개 또는 종료한다. */
+  changeUnifiedAutomationState(
+    action: UnifiedAutomationAction,
+  ): Promise<UnifiedAutomationStatusResponse> {
+    return this.request(`/api/automation/unified/${action}`, { method: 'POST' });
+  }
+
+  /** Android 설치의 FCM 네이티브 토큰을 현재 계정에 연결한다. */
+  registerAndroidPushTarget(
+    request: RegisterAndroidPushTargetRequest,
+  ): Promise<DevicePushTargetResponse> {
+    return this.request('/api/push/android/targets', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
   }
 
   /**

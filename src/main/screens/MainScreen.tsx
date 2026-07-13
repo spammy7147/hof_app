@@ -14,13 +14,11 @@ import { toUserFacingErrorMessage } from '../domain/userFacingErrors';
 import { theme } from '../styles/theme';
 import type {
   AutomationJobResponse,
-  AutomationProfileResponse,
   BattleCategoryResponse,
   BattleLogResponse,
   BattleMapResponse,
   BattleResultResponse,
   BattleStatsResponse,
-  CreateAutomationProfileRequest,
   CreatePartyPresetRequest,
   HofCharacter,
   HofCharacterDetail,
@@ -28,7 +26,9 @@ import type {
   LoadPatternResponse,
   PartyPresetResponse,
   RunBattleRequest,
-  UpdateAutomationProfileRequest,
+  UnifiedAutomationAction,
+  UnifiedAutomationSettingsRequest,
+  UnifiedAutomationStatusResponse,
   UpdatePartyPresetRequest,
 } from '../types/api';
 import { BattleTabScreen } from './BattleTabScreen';
@@ -59,15 +59,9 @@ type MainScreenProps = {
   onLoadBattleStats: () => Promise<BattleStatsResponse>;
   onOpenCaptcha: () => void;
   onLoadCurrentAutomationJob: () => Promise<AutomationJobResponse | null>;
-  onListAutomationProfiles: () => Promise<AutomationProfileResponse[]>;
-  onCreateAutomationProfile: (
-    request: CreateAutomationProfileRequest,
-  ) => Promise<AutomationProfileResponse>;
-  onUpdateAutomationProfile: (
-    profileId: number,
-    request: UpdateAutomationProfileRequest,
-  ) => Promise<AutomationProfileResponse>;
-  onDeleteAutomationProfile: (profileId: number) => Promise<null>;
+  onGetUnifiedAutomation: () => Promise<UnifiedAutomationStatusResponse>;
+  onUpdateUnifiedAutomation: (request: UnifiedAutomationSettingsRequest) => Promise<UnifiedAutomationStatusResponse>;
+  onChangeUnifiedAutomationState: (action: UnifiedAutomationAction) => Promise<UnifiedAutomationStatusResponse>;
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
   onCreatePartyPreset: (
     request: CreatePartyPresetRequest,
@@ -105,10 +99,9 @@ export function MainScreen({
   onLoadBattleStats,
   onOpenCaptcha,
   onLoadCurrentAutomationJob,
-  onListAutomationProfiles,
-  onCreateAutomationProfile,
-  onUpdateAutomationProfile,
-  onDeleteAutomationProfile,
+  onGetUnifiedAutomation,
+  onUpdateUnifiedAutomation,
+  onChangeUnifiedAutomationState,
   onListPartyPresets,
   onCreatePartyPreset,
   onUpdatePartyPreset,
@@ -221,10 +214,9 @@ export function MainScreen({
           onLoadBattleStats,
           onOpenCaptcha,
           onLoadCurrentAutomationJob,
-          onListAutomationProfiles,
-          onCreateAutomationProfile,
-          onUpdateAutomationProfile,
-          onDeleteAutomationProfile,
+          onGetUnifiedAutomation,
+          onUpdateUnifiedAutomation,
+          onChangeUnifiedAutomationState,
           onListPartyPresets,
           onCreatePartyPreset,
           onUpdatePartyPreset,
@@ -239,7 +231,6 @@ export function MainScreen({
           characterSubTabId,
           setCharacterSubTabId,
           setSelectedCharacter,
-          status,
         })}
       </View>
 
@@ -275,15 +266,9 @@ type RenderActiveTabArgs = {
   onLoadBattleStats: () => Promise<BattleStatsResponse>;
   onOpenCaptcha: () => void;
   onLoadCurrentAutomationJob: () => Promise<AutomationJobResponse | null>;
-  onListAutomationProfiles: () => Promise<AutomationProfileResponse[]>;
-  onCreateAutomationProfile: (
-    request: CreateAutomationProfileRequest,
-  ) => Promise<AutomationProfileResponse>;
-  onUpdateAutomationProfile: (
-    profileId: number,
-    request: UpdateAutomationProfileRequest,
-  ) => Promise<AutomationProfileResponse>;
-  onDeleteAutomationProfile: (profileId: number) => Promise<null>;
+  onGetUnifiedAutomation: () => Promise<UnifiedAutomationStatusResponse>;
+  onUpdateUnifiedAutomation: (request: UnifiedAutomationSettingsRequest) => Promise<UnifiedAutomationStatusResponse>;
+  onChangeUnifiedAutomationState: (action: UnifiedAutomationAction) => Promise<UnifiedAutomationStatusResponse>;
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
   onCreatePartyPreset: (
     request: CreatePartyPresetRequest,
@@ -303,7 +288,6 @@ type RenderActiveTabArgs = {
   characterSubTabId: CharacterSubTabId;
   setCharacterSubTabId: (tabId: CharacterSubTabId) => void;
   setSelectedCharacter: (character: HofCharacter | null) => void;
-  status: HofStatusResponse | null;
 };
 
 /**
@@ -328,10 +312,9 @@ function renderActiveTab({
   onLoadBattleStats,
   onOpenCaptcha,
   onLoadCurrentAutomationJob,
-  onListAutomationProfiles,
-  onCreateAutomationProfile,
-  onUpdateAutomationProfile,
-  onDeleteAutomationProfile,
+  onGetUnifiedAutomation,
+  onUpdateUnifiedAutomation,
+  onChangeUnifiedAutomationState,
   onListPartyPresets,
   onCreatePartyPreset,
   onUpdatePartyPreset,
@@ -346,7 +329,6 @@ function renderActiveTab({
   characterSubTabId,
   setCharacterSubTabId,
   setSelectedCharacter,
-  status,
 }: RenderActiveTabArgs) {
   switch (activeTabId) {
     case 'home':
@@ -354,16 +336,14 @@ function renderActiveTab({
         <TabScrollContainer>
           <HomeTabScreen
             authenticated={authenticated}
-            status={status}
-            characterCount={characters.length}
             battleCategories={battleCategories}
             onLoadBattleCategories={onLoadBattleCategories}
             onLoadBattleMaps={onLoadBattleMaps}
-            onListAutomationProfiles={onListAutomationProfiles}
             onListPartyPresets={onListPartyPresets}
-            onCreateAutomationProfile={onCreateAutomationProfile}
-            onUpdateAutomationProfile={onUpdateAutomationProfile}
-            onDeleteAutomationProfile={onDeleteAutomationProfile}
+            onGetUnifiedAutomation={onGetUnifiedAutomation}
+            onUpdateUnifiedAutomation={onUpdateUnifiedAutomation}
+            onChangeUnifiedAutomationState={onChangeUnifiedAutomationState}
+            onOpenCaptcha={onOpenCaptcha}
           />
         </TabScrollContainer>
       );

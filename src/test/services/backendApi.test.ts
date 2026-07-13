@@ -383,6 +383,72 @@ describe('BackendApiClient', () => {
     assert.equal(requests[0]?.init.body, '{"profileId":4}');
   });
 
+  it('uses the unified automation lifecycle endpoints', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const requests: CapturedRequest[] = [];
+    const status = {
+      profileId: 4,
+      job: null,
+      settings: {
+        keyQuest: { enabled: true, quests: [] },
+        time: { enabled: true, thresholdPercent: 90, maps: [] },
+        cooldownAdventure: { enabled: true, maps: [] },
+        dailyAdventure: { enabled: true, maps: [] },
+        union: { enabled: true, maps: [] },
+        normalQuest: { enabled: false, questIds: [] },
+      },
+      currentTitle: null,
+      nextRunAt: null,
+    };
+    const client = new BackendApiClient('http://backend.test');
+
+    mockFetchWithCapture(status, requests);
+    await client.fetchUnifiedAutomation();
+    mockFetchWithCapture(status, requests);
+    await client.updateUnifiedAutomation(status.settings);
+    for (const action of ['start', 'pause', 'resume', 'stop'] as const) {
+      mockFetchWithCapture(status, requests);
+      await client.changeUnifiedAutomationState(action);
+    }
+
+    assert.deepEqual(
+      requests.map((request) => [request.url, request.init.method ?? 'GET']),
+      [
+        ['http://backend.test/api/automation/unified', 'GET'],
+        ['http://backend.test/api/automation/unified', 'PUT'],
+        ['http://backend.test/api/automation/unified/start', 'POST'],
+        ['http://backend.test/api/automation/unified/pause', 'POST'],
+        ['http://backend.test/api/automation/unified/resume', 'POST'],
+        ['http://backend.test/api/automation/unified/stop', 'POST'],
+      ],
+    );
+  });
+
+  it('registers an Android native FCM token without an Expo push token', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const requests: CapturedRequest[] = [];
+    mockFetchWithCapture({
+      id: 3,
+      platform: 'ANDROID',
+      installationId: 'install-1',
+      active: true,
+      lastSeenAt: '2026-07-13T00:00:00Z',
+    }, requests);
+    const client = new BackendApiClient('http://backend.test');
+
+    await client.registerAndroidPushTarget({
+      installationId: 'install-1',
+      nativeToken: 'native-fcm-token',
+    });
+
+    assert.equal(requests[0]?.url, 'http://backend.test/api/push/android/targets');
+    assert.equal(requests[0]?.init.method, 'POST');
+    assert.equal(
+      requests[0]?.init.body,
+      '{"installationId":"install-1","nativeToken":"native-fcm-token"}',
+    );
+  });
+
   it('uses party preset endpoints for reusable character parties', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const requests: CapturedRequest[] = [];
