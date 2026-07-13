@@ -13,7 +13,7 @@ HOF 계정마다 하나의 통합 자동화를 상시 실행한다. 앱이 닫�
 - 사용자가 일시정지하거나 종료한다.
 - CAPTCHA가 필요해 사용자의 입력을 기다린다.
 - 실행에 필요한 맵 또는 파티 설정이 없어 사용자 조치가 필요하다.
-- HOF 로그인 세션이 만료되어 다시 로그인해야 한다.
+- 저장된 HOF 로그인 정보가 없거나 잘못되어 자동 재로그인에 명시적으로 실패한다.
 
 실행할 작업이 없거나 다음 쿨다운까지 시간이 남은 경우에는 종료하지 않고 DB에 다음 확인 시각을 저장한 채 대기한다.
 
@@ -232,6 +232,19 @@ Kafka key 순서만으로 계정 단위 상호 배제를 보장하지 않는다.
 
 Android 알림에는 계정 표시명, `인증이 필요합니다`, challenge 식별자만 포함한다. HOF 쿠키, CAPTCHA 답안, 파티 정보는 넣지 않는다. 알림을 누르면 앱의 CAPTCHA 화면으로 이동한다.
 
+### 7.1 HOF 세션 만료 자동 복구
+
+HOF 쿠키가 없거나 HOF 응답이 로그인 화면으로 돌아오면 사용자에게 바로 재로그인을 요구하지 않는다. `HofAccountEntity`에 암호화되어 저장된 ID와 비밀번호로 자동 재로그인한 뒤 새 쿠키를 DB에 저장하고, 중단된 action을 한 번 다시 실행한다.
+
+자동 재로그인은 계정 lease 안에서 수행해 같은 계정이 동시에 여러 로그인 요청을 보내지 않게 한다. `HofAccountService`는 사용자 입력을 받는 `authenticate`와 별도로 저장된 계정 ID로 재인증하는 진입점을 제공하고, 두 흐름은 실제 HOF 로그인 및 쿠키 교체 로직을 공유한다.
+
+- 자동 로그인 성공: job을 `RUNNING`으로 유지하고 같은 action을 재시도
+- HOF 서버 또는 네트워크의 일시적 실패: job을 종료하지 않고 backoff 후 자동 로그인 재시도
+- 저장된 비밀번호가 HOF에서 명시적으로 거절됨: `WAITING_LOGIN`으로 전환하고 로그인 정보 확인 알림 발송
+- 새 쿠키로 로그인에 성공했지만 action이 다시 즉시 세션 만료됨: 일시적 세션 오류로 기록하고 backoff 후 다시 평가
+
+로그인 ID, 복호화된 비밀번호와 쿠키 값은 action 기록, Kafka 메시지, FCM 알림과 일반 로그에 남기지 않는다. 사용자가 앱에서 HOF 로그인 정보를 갱신하면 `WAITING_LOGIN` job을 자동으로 깨운다.
+
 ## 8. Kafka와 장애 복구
 
 ### 8.1 역할
@@ -270,7 +283,7 @@ Kafka가 비어 있어도 DB 스캔으로 실행을 복구할 수 있다. Kafka�
 - `RUNNING`: 실행 또는 다음 작업 평가 가능
 - `WAITING_CAPTCHA`: 사용자 인증 대기
 - `WAITING_CONFIG`: 맵 또는 파티 설정 대기
-- `WAITING_LOGIN`: HOF 재로그인 대기
+- `WAITING_LOGIN`: 저장된 자격 증명이 HOF에서 거절되어 사용자 확인 대기
 - `PAUSED`: 사용자 일시정지
 - `CANCELLED`: 사용자 종료
 
@@ -341,7 +354,8 @@ PostgreSQL과 Kafka 데이터는 named volume에 저장한다. backend는 statel
 
 - CAPTCHA: `WAITING_CAPTCHA`, FCM 알림, 인증 성공 후 자동 재개
 - 프리셋 누락: `WAITING_CONFIG`, 실제 오류가 발생한 위치에만 안내
-- HOF 세션 만료: `WAITING_LOGIN`, 재로그인 알림
+- HOF 세션 만료 또는 쿠키 없음: 저장된 자격 증명으로 자동 로그인하고 같은 action 재시도
+- HOF 자격 증명 거절: `WAITING_LOGIN`, 로그인 정보 확인 알림
 - 일시적인 HOF 또는 네트워크 오류: 제한된 지수 backoff 후 재시도
 - 쿨다운, 키 없음, 남은 횟수 0, 유니온 종료: 실패가 아니라 skip과 다음 확인 시각으로 기록
 - 파싱 불가: 원본 식별 정보와 parser version을 activity에 남기고 해당 모듈만 backoff
@@ -360,6 +374,8 @@ PostgreSQL과 Kafka 데이터는 named volume에 저장한다. backend는 statel
 - 쿨다운, 일일 제한, 유니온 skip과 nextRunAt
 - missing preset과 session expired 상태 전이
 - CAPTCHA action 연결과 인증 성공 resume outbox
+- 세션 만료 감지 후 저장된 자격 증명으로 로그인, 쿠키 교체, 동일 action 재시도
+- 자동 로그인 중 일시적 실패와 자격 증명 거절의 상태 분리
 - 계정 lease 획득, 갱신, 만료 인계
 - outbox 중복 발행과 consumer 중복 방지
 
@@ -370,6 +386,8 @@ PostgreSQL과 Kafka 데이터는 named volume에 저장한다. backend는 statel
 - Kafka 재시작 후 outbox 재발행
 - `WAITING_CAPTCHA`는 재시작 후 전투하지 않음
 - 설정 저장 후 `WAITING_CONFIG` job 자동 재개
+- 세션 만료 후 앱 조작 없이 자동 로그인하고 action 재개
+- 로그인 정보 갱신 후 `WAITING_LOGIN` job 자동 재개
 - PostgreSQL migration과 유일 제약 검증
 
 ### 14.3 앱 테스트
@@ -399,7 +417,7 @@ PostgreSQL과 Kafka 데이터는 named volume에 저장한다. backend는 statel
 3. Time, 쿨다운, 일일, 유니온 선택기
 4. 계정 lease 기반 동기 실행기와 action checkpoint
 5. Kafka KRaft, outbox, recovery scheduler
-6. CAPTCHA 자동 재개와 Android 직접 FCM
+6. HOF 자동 재로그인, CAPTCHA 자동 재개와 Android 직접 FCM
 7. 상태 중심 홈과 단계형 설정 화면
 8. Docker Compose와 장애 복구 검증
 
@@ -412,6 +430,7 @@ PostgreSQL과 Kafka 데이터는 named volume에 저장한다. backend는 statel
 - 다른 계정은 병렬로 처리된다.
 - backend 또는 Kafka 재시작 후 활성 job이 DB에서 복구된다.
 - CAPTCHA가 발생하면 Android 알림이 오고, 답안 성공 후 같은 자동화가 자동 재개된다.
+- HOF 세션이 만료되면 저장된 로그인 정보로 자동 로그인하고 중단된 action을 이어간다.
 - 퀘스트 완료는 고정 전투 횟수가 아니라 quest 페이지 상태로 판단한다.
 - 통합 자동화 화면은 상태 중심이며 세부 설정은 사용자가 들어갔을 때만 보인다.
 - 사용자가 멈추거나 조치가 필요한 대기 상태가 아닌 한 서버 장애 때문에 job이 종료되지 않는다.
