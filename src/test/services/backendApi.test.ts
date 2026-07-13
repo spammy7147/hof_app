@@ -40,6 +40,17 @@ describe('BackendApiClient', () => {
     globalThis.BroadcastChannel = originalBroadcastChannel;
   });
 
+  it('rejects a plaintext backend URL in a production build', async () => {
+    const { normalizeBackendBaseUrl } = await loadBackendApi();
+
+    assert.throws(
+      () => normalizeBackendBaseUrl('http://api.example.com/', true),
+      /HTTPS/,
+    );
+    assert.equal(normalizeBackendBaseUrl('https://api.example.com/', true), 'https://api.example.com');
+    assert.equal(normalizeBackendBaseUrl('http://10.0.2.2:8080/', false), 'http://10.0.2.2:8080');
+  });
+
   it('stores only the native refresh token and sends the access token as Bearer authorization', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const storage = memoryTokenStorage();

@@ -73,7 +73,7 @@ export class BackendApiClient {
     baseUrl = resolveBackendBaseUrl(),
     private readonly tokenStorage: RefreshTokenStorage = refreshTokenStorage,
   ) {
-    this.baseUrl = baseUrl.replace(/\/+$/, '');
+    this.baseUrl = normalizeBackendBaseUrl(baseUrl, process.env.NODE_ENV === 'production');
     this.sessionChannel = createSessionChannel((token) => this.receiveBroadcastToken(token));
   }
 
@@ -558,6 +558,26 @@ function resolveBackendBaseUrl(): string {
   if (configuredUrl) return configuredUrl;
 
   return Platform.OS === 'android' ? 'http://10.0.2.2:8080' : 'http://localhost:8080';
+}
+
+/**
+ * 백엔드 주소의 끝 슬래시를 제거하고 운영 빌드가 평문 HTTP API를 사용하지 못하게 차단한다.
+ * Android 에뮬레이터와 로컬 웹 개발은 production이 아니므로 기존 HTTP 주소를 계속 사용할 수 있다.
+ */
+export function normalizeBackendBaseUrl(baseUrl: string, production: boolean): string {
+  const normalized = baseUrl.trim().replace(/\/+$/, '');
+  if (!production) return normalized;
+
+  let protocol: string;
+  try {
+    protocol = new URL(normalized).protocol;
+  } catch {
+    throw new Error('운영 백엔드 주소가 올바르지 않습니다. HTTPS URL을 확인해 주세요.');
+  }
+  if (protocol !== 'https:') {
+    throw new Error('운영 앱은 HTTPS 백엔드에만 연결할 수 있습니다.');
+  }
+  return normalized;
 }
 
 /**
