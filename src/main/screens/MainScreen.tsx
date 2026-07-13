@@ -34,8 +34,8 @@ import type {
 import { BattleTabScreen } from './BattleTabScreen';
 import { DataTabScreen } from './DataTabScreen';
 import { HomeTabScreen } from './HomeTabScreen';
-import { PlaceholderTabScreen } from './PlaceholderTabScreen';
 import { SettingsTabScreen } from './SettingsTabScreen';
+import { TownTabScreen } from './TownTabScreen';
 
 type MainSession = {
   loggedIn: boolean;
@@ -425,10 +425,7 @@ function renderActiveTab({
     case 'town':
       return (
         <TabScrollContainer>
-          <PlaceholderTabScreen
-            title="마을"
-            summary="상점, 교환소, 작업장 준비 중"
-          />
+          <TownTabScreen />
         </TabScrollContainer>
       );
     case 'data':
