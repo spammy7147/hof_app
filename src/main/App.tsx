@@ -1,0 +1,383 @@
+import { StatusBar } from 'expo-status-bar';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+
+import { LoginScreen } from './screens/LoginScreen';
+import { MainScreen } from './screens/MainScreen';
+import { CaptchaChallengeModal } from './components/CaptchaChallengeModal';
+import { BackendApiClient } from './services/backendApi';
+import { useCharacterSync } from './features/characters/useCharacterSync';
+import { useCaptchaGate } from './features/captcha/useCaptchaGate';
+import { isCaptchaRequiredError } from './domain/captchaGate';
+import { toUserFacingErrorMessage } from './domain/userFacingErrors';
+import type {
+  AutomationJobResponse,
+  AutomationProfileResponse,
+  BattleCategoryResponse,
+  BattleLogResponse,
+  BattleMapResponse,
+  BattleResultResponse,
+  BattleStatsResponse,
+  CreateAutomationProfileRequest,
+  CreatePartyPresetRequest,
+  HofCharacterDetail,
+  HofStatusResponse,
+  LoadPatternResponse,
+  PartyPresetResponse,
+  RunBattleRequest,
+  UpdateAutomationProfileRequest,
+  UpdatePartyPresetRequest,
+} from './types/api';
+import { theme } from './styles/theme';
+
+type ScreenMode = 'boot' | 'login' | 'main';
+
+type AppSession = {
+  loggedIn: boolean;
+};
+
+/**
+ * 앱 전체의 최상위 컴포넌트다.
+ *
+ * 로그인, Refresh Token 세션 복원, 상태바 데이터, 캐릭터 SSE 동기화,
+ * 전투 중 캡차 모달 같은 전역 흐름을 여기에서 조립한다.
+ */
+export default function App() {
+  const api = useMemo(() => new BackendApiClient(), []);
+  const [mode, setMode] = useState<ScreenMode>('boot');
+  const [session, setSession] = useState<AppSession | null>(null);
+  const [battleCategories, setBattleCategories] = useState<BattleCategoryResponse[]>([]);
+  const [isBattleCategoriesLoading, setIsBattleCategoriesLoading] = useState(false);
+  const [battleCategoriesError, setBattleCategoriesError] = useState<string | null>(null);
+  const [status, setStatus] = useState<HofStatusResponse | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const describeError = useCallback((error: unknown): string => toUserFacingErrorMessage(error), []);
+  const {
+    characters,
+    characterSyncLabel,
+    syncCharacters,
+    manualSyncCharacters,
+    resetCharacterSync,
+  } = useCharacterSync({ api, describeError, onNotice: setNotice });
+  const {
+    visible: captchaModalVisible,
+    blocking: captchaModalBlocking,
+    captcha: currentCaptcha,
+    message: captchaMessage,
+    errorMessage: captchaErrorMessage,
+    isLoading: isCaptchaLoading,
+    isSubmitting: isCaptchaSubmitting,
+    open: openCaptchaModal,
+    close: closeCaptchaModal,
+    submitAnswer: submitGlobalCaptchaAnswer,
+    waitForResolution: waitForCaptchaResolution,
+    reset: resetCaptchaGate,
+  } = useCaptchaGate({ authenticated: session?.loggedIn === true, api, describeError });
+
+  /** 설정 화면에서 pending 캡차를 직접 확인할 때 blocking 없이 모달을 연다. */
+  const handleOpenCaptchaModal = useCallback(() => {
+    void openCaptchaModal();
+  }, [openCaptchaModal]);
+  /**
+   * HOF 홈 상태를 다시 읽어 상단 상태바의 Time/Funds/Work/Auction을 갱신한다.
+   */
+  const refreshStatus = useCallback(async () => {
+    const nextStatus = await api.fetchStatus();
+    setStatus(nextStatus);
+  }, [api]);
+
+  /**
+   * 전투 탭에서 사용할 큰 카테고리 목록을 백엔드에서 불러온다.
+   */
+  const loadBattleCategories = useCallback(async () => {
+    setIsBattleCategoriesLoading(true);
+    setBattleCategoriesError(null);
+
+    try {
+      setBattleCategories(await api.fetchBattleCategories());
+    } catch (error) {
+      setBattleCategoriesError(describeError(error));
+    } finally {
+      setIsBattleCategoriesLoading(false);
+    }
+  }, [api, describeError]);
+
+  /**
+   * 선택한 전투 카테고리의 맵 목록을 불러온다.
+   */
+  const loadBattleMaps = useCallback((categoryId: string): Promise<BattleMapResponse[]> => {
+    return api.fetchBattleMaps(categoryId);
+  }, [api]);
+
+  /**
+   * 전투 실행 API를 호출하고, 캡차가 필요하면 모달 인증 후 같은 요청을 한 번 재시도한다.
+   */
+  const runBattle = useCallback(async (
+    request: RunBattleRequest,
+  ): Promise<BattleResultResponse> => {
+    try {
+      return await api.runBattle(request);
+    } catch (error) {
+      if (!isCaptchaRequiredError(error)) {
+        throw error;
+      }
+
+      const resumePromise = waitForCaptchaResolution().catch((resumeError: unknown) => {
+        throw resumeError;
+      });
+      await openCaptchaModal({ blocking: true });
+      await resumePromise;
+
+      try {
+        return await api.runBattle(request);
+      } catch (retryError) {
+        if (isCaptchaRequiredError(retryError)) {
+          void openCaptchaModal();
+        }
+        throw retryError;
+      }
+    }
+  }, [api, openCaptchaModal, waitForCaptchaResolution]);
+
+  const loadBattleLogs = useCallback((limit?: number): Promise<BattleLogResponse[]> => (
+    api.fetchBattleLogs(limit)
+  ), [api]);
+
+  const loadBattleStats = useCallback((): Promise<BattleStatsResponse> => api.fetchBattleStats(), [api]);
+
+  const loadCurrentAutomationJob = useCallback((): Promise<AutomationJobResponse | null> => (
+    api.fetchCurrentAutomationJob()
+  ), [api]);
+
+  const listAutomationProfiles = useCallback((): Promise<AutomationProfileResponse[]> => (
+    api.listAutomationProfiles()
+  ), [api]);
+
+  const createAutomationProfile = useCallback((
+    request: CreateAutomationProfileRequest,
+  ): Promise<AutomationProfileResponse> => api.createAutomationProfile(request), [api]);
+
+  const updateAutomationProfile = useCallback((
+    profileId: number,
+    request: UpdateAutomationProfileRequest,
+  ): Promise<AutomationProfileResponse> => api.updateAutomationProfile(profileId, request), [api]);
+
+  const deleteAutomationProfile = useCallback((
+    profileId: number,
+  ): Promise<null> => api.deleteAutomationProfile(profileId), [api]);
+
+  const listPartyPresets = useCallback((): Promise<PartyPresetResponse[]> => api.listPartyPresets(), [api]);
+
+  const createPartyPreset = useCallback((
+    request: CreatePartyPresetRequest,
+  ): Promise<PartyPresetResponse> => api.createPartyPreset(request), [api]);
+
+  const updatePartyPreset = useCallback((
+    presetId: number,
+    request: UpdatePartyPresetRequest,
+  ): Promise<PartyPresetResponse> => api.updatePartyPreset(presetId, request), [api]);
+
+  const deletePartyPreset = useCallback((
+    presetId: number,
+  ): Promise<null> => api.deletePartyPreset(presetId), [api]);
+
+  const loadCharacterDetail = useCallback((
+    hofCharacterId: string,
+  ): Promise<HofCharacterDetail> => api.fetchCharacterDetail(hofCharacterId), [api]);
+
+  const loadCharacterPattern = useCallback((
+    hofCharacterId: string,
+    slot: number,
+  ): Promise<LoadPatternResponse> => api.loadCharacterPattern(hofCharacterId, slot), [api]);
+
+  /**
+   * 로그인 직후 필요한 초기 데이터들을 병렬로 불러온다.
+   */
+  const hydrateAfterLogin = useCallback(async () => {
+    const results = await Promise.allSettled([
+      refreshStatus(),
+      syncCharacters(),
+    ]);
+
+    const failed = results.find((result) => result.status === 'rejected');
+    if (failed?.status === 'rejected') {
+      setNotice(describeError(failed.reason));
+    }
+  }, [describeError, refreshStatus, syncCharacters]);
+
+  /**
+   * HOF 로그인 요청부터 저장 여부 처리, 초기 데이터 로딩까지 한 번에 수행한다.
+   */
+  const loginAndHydrate = useCallback(async (
+    loginId: string,
+    password: string,
+  ) => {
+    setIsLoggingIn(true);
+    setLoginError(null);
+
+    try {
+      const loginResponse = await api.login({ loginId, password });
+      const nextSession: AppSession = {
+        loggedIn: Boolean(loginResponse.accessToken),
+      };
+
+      setSession(nextSession);
+      setMode('main');
+      setNotice(null);
+
+      await hydrateAfterLogin();
+    } catch (error) {
+      const message = describeError(error);
+      setLoginError(message);
+      setNotice(message);
+      throw error;
+    } finally {
+      setIsLoggingIn(false);
+    }
+  }, [api, describeError, hydrateAfterLogin]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    /**
+     * 앱 시작 시 refresh token으로 세션을 복원하고, 유효한 세션이 없으면 로그인 화면으로 이동한다.
+     */
+    async function boot() {
+      try {
+        await api.restoreSession();
+      } catch {
+        if (!cancelled) setMode('login');
+        return;
+      }
+      if (cancelled) return;
+
+      setSession({
+        loggedIn: true,
+      });
+      setMode('main');
+      setNotice(null);
+      await hydrateAfterLogin();
+    }
+
+    boot();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api, hydrateAfterLogin]);
+
+  /**
+   * 로그인 화면에서 직접 입력한 ID/PW로 로그인할 때 호출된다.
+   */
+  const handleManualLogin = useCallback(async (loginId: string, password: string) => {
+    await loginAndHydrate(loginId, password);
+  }, [loginAndHydrate]);
+
+  /**
+   * 서버 token family와 앱의 세션 상태를 모두 지우고 로그인 화면으로 돌아간다.
+   */
+  const handleLogout = useCallback(async () => {
+    await api.logout().catch(() => undefined);
+    resetCaptchaGate(new Error('로그아웃되었습니다.'));
+    setSession(null);
+    resetCharacterSync();
+    setBattleCategories([]);
+    setBattleCategoriesError(null);
+    setStatus(null);
+    setNotice(null);
+    setLoginError(null);
+    setMode('login');
+  }, [api, resetCaptchaGate, resetCharacterSync]);
+
+  let content;
+  if (mode === 'boot') {
+    content = (
+      <View style={styles.bootContainer}>
+        <ActivityIndicator color={theme.colors.accentGreen} />
+        <Text style={styles.bootText}>앱 준비 중</Text>
+      </View>
+    );
+  } else if (mode === 'login') {
+    content = (
+      <LoginScreen
+        backendBaseUrl={api.baseUrl}
+        errorMessage={loginError}
+        isSubmitting={isLoggingIn}
+        onSubmit={handleManualLogin}
+      />
+    );
+  } else {
+    content = (
+      <MainScreen
+        session={session}
+        status={status}
+        battleCategories={battleCategories}
+        isBattleCategoriesLoading={isBattleCategoriesLoading}
+        battleCategoriesError={battleCategoriesError}
+        characters={characters}
+        characterSyncLabel={characterSyncLabel}
+        notice={notice}
+        onLoadBattleCategories={loadBattleCategories}
+        onLoadBattleMaps={loadBattleMaps}
+        onRunBattle={runBattle}
+        onLoadBattleLogs={loadBattleLogs}
+        onLoadBattleStats={loadBattleStats}
+        onOpenCaptcha={handleOpenCaptchaModal}
+        onLoadCurrentAutomationJob={loadCurrentAutomationJob}
+        onListAutomationProfiles={listAutomationProfiles}
+        onCreateAutomationProfile={createAutomationProfile}
+        onUpdateAutomationProfile={updateAutomationProfile}
+        onDeleteAutomationProfile={deleteAutomationProfile}
+        onListPartyPresets={listPartyPresets}
+        onCreatePartyPreset={createPartyPreset}
+        onUpdatePartyPreset={updatePartyPreset}
+        onDeletePartyPreset={deletePartyPreset}
+        onLoadCharacterDetail={loadCharacterDetail}
+        onLoadPattern={loadCharacterPattern}
+        onSyncCharacters={manualSyncCharacters}
+        onLogout={handleLogout}
+        onOpenLogin={() => setMode('login')}
+      />
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      {content}
+      <CaptchaChallengeModal
+        visible={captchaModalVisible}
+        captcha={currentCaptcha}
+        isLoading={isCaptchaLoading}
+        isSubmitting={isCaptchaSubmitting}
+        message={captchaMessage}
+        errorMessage={captchaErrorMessage}
+        blocking={captchaModalBlocking}
+        onRefresh={() => {
+          void openCaptchaModal({ blocking: captchaModalBlocking });
+        }}
+        onSubmit={submitGlobalCaptchaAnswer}
+        onRequestClose={closeCaptchaModal}
+      />
+      <StatusBar style="light" />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+  },
+  bootContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.sm,
+  },
+  bootText: {
+    color: theme.colors.textMuted,
+    fontSize: 15,
+  },
+});

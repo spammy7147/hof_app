@@ -1,0 +1,540 @@
+import assert from 'node:assert/strict';
+import Module from 'node:module';
+import { after, afterEach, describe, it } from 'node:test';
+
+import { makeCaptchaChallenge, makeHofCharacter, makeHofCharacterDetail } from '../fixtures/api';
+
+type BackendApiModule = typeof import('../../main/services/backendApi');
+
+const moduleLoader = Module as typeof Module & {
+  _load: (request: string, parent: unknown, isMain: boolean) => unknown;
+};
+const originalModuleLoad = moduleLoader._load;
+let platformOS = 'ios';
+moduleLoader._load = function loadWithReactNativeStub(
+  this: unknown,
+  request: string,
+  parent: unknown,
+  isMain: boolean,
+) {
+  if (request === 'react-native') {
+    return { Platform: { get OS() { return platformOS; } } };
+  }
+
+  return originalModuleLoad.call(this, request, parent, isMain);
+};
+
+let backendApiModule: Promise<BackendApiModule> | null = null;
+
+after(() => {
+  moduleLoader._load = originalModuleLoad;
+});
+
+describe('BackendApiClient', () => {
+  const originalFetch = globalThis.fetch;
+  const originalBroadcastChannel = globalThis.BroadcastChannel;
+
+  afterEach(() => {
+    platformOS = 'ios';
+    globalThis.fetch = originalFetch;
+    globalThis.BroadcastChannel = originalBroadcastChannel;
+  });
+
+  it('stores only the native refresh token and sends the access token as Bearer authorization', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const storage = memoryTokenStorage();
+    const requests: CapturedRequest[] = [];
+    const responses = [
+      tokenResponse('access-1', 'refresh-1'),
+      {
+        accountId: 1,
+        playerName: '공민이',
+        funds: 100,
+        timeCurrent: 100,
+        timeMax: 100,
+        work: 'Nothing',
+        auction: 'Nothing',
+        observedAt: '2026-07-13T00:00:00Z',
+      },
+    ];
+    globalThis.fetch = (async (url: RequestInfo | URL, init: RequestInit = {}) => {
+      requests.push({ url: String(url), init });
+      return mockResponse(responses.shift());
+    }) as unknown as typeof fetch;
+    const client = new BackendApiClient('http://backend.test', storage);
+
+    await client.login({ loginId: 'hof-id', password: 'hof-password' });
+    await client.fetchStatus();
+
+    assert.equal(storage.value, 'refresh-1');
+    assert.equal(requests[0]?.url, 'http://backend.test/api/auth/login');
+    assert.equal(requests[0]?.init.body, '{"loginId":"hof-id","password":"hof-password","clientType":"NATIVE"}');
+    assert.equal(readHeader(requests[1]?.init.headers, 'Authorization'), 'Bearer access-1');
+  });
+
+  it('uses one refresh request for concurrent 401 responses and retries each request once', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const storage = memoryTokenStorage('refresh-old');
+    let refreshCalls = 0;
+    const authorizationHeaders: Array<string | null> = [];
+    globalThis.fetch = (async (url: RequestInfo | URL, init: RequestInit = {}) => {
+      const requestUrl = String(url);
+      if (requestUrl.endsWith('/api/auth/refresh')) {
+        refreshCalls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return mockResponse(tokenResponse('access-new', 'refresh-new'));
+      }
+      const authorization = readHeader(init.headers, 'Authorization');
+      authorizationHeaders.push(authorization);
+      return authorization === 'Bearer access-new'
+        ? mockResponse({ accountId: 1, playerName: '공민이' })
+        : mockResponse({ code: 'AUTH_TOKEN_INVALID', message: '로그인이 필요합니다.' }, 401);
+    }) as unknown as typeof fetch;
+    const client = new BackendApiClient('http://backend.test', storage);
+
+    await Promise.all([client.fetchStatus(), client.fetchStatus()]);
+
+    assert.equal(refreshCalls, 1);
+    assert.equal(storage.value, 'refresh-new');
+    assert.deepEqual(authorizationHeaders, [null, null, 'Bearer access-new', 'Bearer access-new']);
+  });
+
+  it('recovers a web refresh grace conflict from the token broadcast by another tab', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    platformOS = 'web';
+    globalThis.BroadcastChannel = FakeBroadcastChannel as unknown as typeof BroadcastChannel;
+    let refreshCalls = 0;
+
+    globalThis.fetch = (async (url: RequestInfo | URL, init: RequestInit = {}) => {
+      const requestUrl = String(url);
+      if (requestUrl.endsWith('/api/auth/login')) {
+        return mockResponse(tokenResponse('access-old'));
+      }
+      if (requestUrl.endsWith('/api/auth/refresh')) {
+        refreshCalls += 1;
+        if (refreshCalls === 1) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          return mockResponse(tokenResponse('access-new'));
+        }
+        return mockResponse({
+          code: 'REFRESH_RETRY_REQUIRED',
+          message: '다른 요청에서 로그인 정보가 갱신되었습니다.',
+        }, 409);
+      }
+
+      return readHeader(init.headers, 'Authorization') === 'Bearer access-new'
+        ? mockResponse({ accountId: 1, playerName: '공민이' })
+        : mockResponse({ code: 'AUTH_TOKEN_INVALID', message: '로그인이 필요합니다.' }, 401);
+    }) as unknown as typeof fetch;
+
+    const firstTab = new BackendApiClient('http://backend.test');
+    const secondTab = new BackendApiClient('http://backend.test');
+    await firstTab.login({ loginId: 'hof-id', password: 'hof-password' });
+    await secondTab.login({ loginId: 'hof-id', password: 'hof-password' });
+
+    const [firstStatus, secondStatus] = await Promise.all([
+      firstTab.fetchStatus(),
+      secondTab.fetchStatus(),
+    ]);
+
+    assert.equal(refreshCalls, 2);
+    assert.equal(firstStatus.playerName, '공민이');
+    assert.equal(secondStatus.playerName, '공민이');
+  });
+
+  it('normalizes relative current captcha image URLs against the backend base URL', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    mockFetch(makeCaptchaChallenge({ imageUrl: '/api/captcha/3/image' }));
+    const client = new BackendApiClient('http://backend.test/');
+
+    const result = await client.fetchCurrentCaptcha();
+
+    assert.equal(result?.imageUrl, 'http://backend.test/api/captcha/3/image');
+  });
+
+  it('keeps absolute current captcha image URLs unchanged', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const httpUrl = 'http://assets.test/api/captcha/3/image';
+    mockFetch(makeCaptchaChallenge({ imageUrl: httpUrl }));
+    const httpClient = new BackendApiClient('http://backend.test');
+
+    const httpResult = await httpClient.fetchCurrentCaptcha();
+
+    assert.equal(httpResult?.imageUrl, httpUrl);
+
+    const httpsUrl = 'https://assets.test/api/captcha/3/image';
+    mockFetch(makeCaptchaChallenge({ imageUrl: httpsUrl }));
+    const httpsClient = new BackendApiClient('http://backend.test');
+
+    const httpsResult = await httpsClient.fetchCurrentCaptcha();
+
+    assert.equal(httpsResult?.imageUrl, httpsUrl);
+  });
+
+  it('normalizes network-path current captcha image URLs with the backend protocol', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    mockFetch(makeCaptchaChallenge({ imageUrl: '//cdn.example/captcha.png' }));
+    const client = new BackendApiClient('https://backend.test');
+
+    const result = await client.fetchCurrentCaptcha();
+
+    assert.equal(result?.imageUrl, 'https://cdn.example/captcha.png');
+  });
+
+  it('keeps null current captcha values and null image URLs unchanged', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    mockFetch(null);
+    const nullCaptchaClient = new BackendApiClient('http://backend.test');
+
+    assert.equal(await nullCaptchaClient.fetchCurrentCaptcha(), null);
+
+    mockFetch(makeCaptchaChallenge({ imageUrl: null }));
+    const nullImageClient = new BackendApiClient('http://backend.test');
+
+    assert.equal((await nullImageClient.fetchCurrentCaptcha())?.imageUrl, null);
+  });
+
+  it('normalizes captcha image URLs returned after submitting an answer', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    mockFetch(makeCaptchaChallenge({ imageUrl: '/api/captcha/3/image' }));
+    const client = new BackendApiClient('http://backend.test/');
+
+    const result = await client.submitCaptchaAnswer(3, { answer: 'abc123' });
+
+    assert.equal(result.imageUrl, 'http://backend.test/api/captcha/3/image');
+  });
+
+  it('preserves backend error status code, code, and message', async () => {
+    const { BackendApiClient, BackendApiError } = await loadBackendApi();
+    mockFetch(
+      { code: 'CAPTCHA_REQUIRED', message: 'Captcha answer is required.' },
+      { status: 400 },
+    );
+    const client = new BackendApiClient('http://backend.test');
+
+    await assert.rejects(
+      client.fetchStatus(),
+      (error) => {
+        assert.equal(error instanceof BackendApiError, true);
+        const backendError = error as BackendErrorShape;
+        assert.equal(backendError.statusCode, 400);
+        assert.equal(backendError.code, 'CAPTCHA_REQUIRED');
+        assert.equal(backendError.message, 'Captcha answer is required.');
+        return true;
+      },
+    );
+  });
+
+  it('uses null error code for non-JSON bodies or error bodies without a code', async () => {
+    const { BackendApiClient, BackendApiError } = await loadBackendApi();
+    mockFetch('Gateway failure', { status: 502 });
+    const nonJsonClient = new BackendApiClient('http://backend.test');
+
+    await assert.rejects(
+      nonJsonClient.fetchStatus(),
+      (error) => {
+        assert.equal(error instanceof BackendApiError, true);
+        const backendError = error as BackendErrorShape;
+        assert.equal(backendError.statusCode, 502);
+        assert.equal(backendError.code, null);
+        assert.equal(backendError.message, '요청을 처리하지 못했습니다. 잠시 후 다시 시도해주세요. (HTTP 502)');
+        return true;
+      },
+    );
+
+    mockFetch({ message: 'Missing account.' }, { status: 404 });
+    const noCodeClient = new BackendApiClient('http://backend.test');
+
+    await assert.rejects(
+      noCodeClient.fetchStatus(),
+      (error) => {
+        assert.equal(error instanceof BackendApiError, true);
+        const backendError = error as BackendErrorShape;
+        assert.equal(backendError.statusCode, 404);
+        assert.equal(backendError.code, null);
+        assert.equal(backendError.message, 'Missing account.');
+        return true;
+      },
+    );
+  });
+
+  it('normalizes character list image URLs returned as HOF relative paths', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    mockFetch([
+      makeHofCharacter(1, { imageUrl: '/ZeroHOF/image/social-knight.png' }),
+      makeHofCharacter(2, { imageUrl: 'image/char/sknight02.gif' }),
+    ]);
+    const client = new BackendApiClient('http://backend.test');
+
+    const characters = await client.listCharacters();
+
+    assert.equal(characters[0]?.imageUrl, 'http://sic.zerosic.com/ZeroHOF/image/social-knight.png');
+    assert.equal(characters[1]?.imageUrl, 'http://sic.zerosic.com/ZeroHOF/image/char/sknight02.gif');
+  });
+
+  it('normalizes character detail and sync snapshot image URLs', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test');
+
+    mockFetch(makeHofCharacterDetail(1, { imageUrl: '/ZeroHOF/image/social-knight.png' }));
+    const detail = await client.fetchCharacterDetail('char-1');
+
+    assert.equal(detail.imageUrl, 'http://sic.zerosic.com/ZeroHOF/image/social-knight.png');
+
+    mockFetch({
+      jobId: 12,
+      accountId: 1,
+      status: 'running',
+      rosterCount: 1,
+      syncedCount: 1,
+      failedCharacterIds: [],
+      characters: [makeHofCharacter(1, { imageUrl: 'image/char/sknight02.gif' })],
+      message: null,
+      startedAt: '2026-07-10T00:00:00Z',
+      finishedAt: null,
+    });
+
+    const job = await client.fetchCharacterSyncJob(12);
+
+    assert.equal(job.characters[0]?.imageUrl, 'http://sic.zerosic.com/ZeroHOF/image/char/sknight02.gif');
+  });
+
+  it('uses automation profile endpoints for reusable home cards', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const requests: CapturedRequest[] = [];
+    mockFetchWithCapture(
+      [
+        {
+          id: 4,
+          accountId: 1,
+          name: '새 자동전투',
+          mode: 'TIME_BURN',
+          maps: [],
+          enabled: true,
+          createdAt: '2026-07-10T00:00:00Z',
+          updatedAt: '2026-07-10T00:00:00Z',
+        },
+      ],
+      requests,
+    );
+    const client = new BackendApiClient('http://backend.test');
+
+    const profiles = await client.listAutomationProfiles();
+
+    assert.equal(profiles[0]?.name, '새 자동전투');
+    assert.equal(requests[0]?.url, 'http://backend.test/api/automation/profiles');
+
+    mockFetchWithCapture(profiles[0], requests);
+    await client.createAutomationProfile({
+      name: '새 자동전투',
+      mode: 'TIME_BURN',
+      maps: [],
+    });
+
+    assert.equal(requests[1]?.url, 'http://backend.test/api/automation/profiles');
+    assert.equal(requests[1]?.init.method, 'POST');
+    assert.equal(requests[1]?.init.body, '{"name":"새 자동전투","mode":"TIME_BURN","maps":[]}');
+
+    mockFetchWithCapture({ ...profiles[0], name: '고급 던전' }, requests);
+    await client.updateAutomationProfile(4, {
+      name: '고급 던전',
+      mode: 'LIMITED_DUNGEON',
+      maps: [
+        {
+          categoryId: 'battle_map',
+          mapCode: 'snow22',
+          partyPresetId: 7,
+          executionOrder: 0,
+        },
+      ],
+      enabled: true,
+    });
+
+    assert.equal(requests[2]?.url, 'http://backend.test/api/automation/profiles/4');
+    assert.equal(requests[2]?.init.method, 'PATCH');
+    assert.equal(
+      requests[2]?.init.body,
+      '{"name":"고급 던전","mode":"LIMITED_DUNGEON","maps":[{"categoryId":"battle_map","mapCode":"snow22","partyPresetId":7,"executionOrder":0}],"enabled":true}',
+    );
+  });
+
+  it('creates automation jobs from a profile id only', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const requests: CapturedRequest[] = [];
+    mockFetchWithCapture({
+      id: 9,
+      accountId: 1,
+      profileId: 4,
+      status: 'pending',
+      currentStepIndex: 0,
+      message: null,
+      createdAt: '2026-07-10T00:00:00Z',
+      startedAt: null,
+      updatedAt: '2026-07-10T00:00:00Z',
+      finishedAt: null,
+    }, requests);
+    const client = new BackendApiClient('http://backend.test');
+
+    const job = await client.createAutomationJob({ profileId: 4 });
+
+    assert.equal(job.profileId, 4);
+    assert.equal(requests[0]?.url, 'http://backend.test/api/automation/jobs');
+    assert.equal(requests[0]?.init.method, 'POST');
+    assert.equal(requests[0]?.init.body, '{"profileId":4}');
+  });
+
+  it('uses party preset endpoints for reusable character parties', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const requests: CapturedRequest[] = [];
+    const preset = {
+      id: 7,
+      accountId: 1,
+      name: '고블린 범용 파티',
+      members: [
+        { slotIndex: 0, characterId: 'char-1', patternSlot: 0 },
+        { slotIndex: 1, characterId: 'char-2', patternSlot: 1 },
+        { slotIndex: 2, characterId: null, patternSlot: null },
+        { slotIndex: 3, characterId: null, patternSlot: null },
+        { slotIndex: 4, characterId: null, patternSlot: null },
+      ],
+      createdAt: '2026-07-11T00:00:00Z',
+      updatedAt: '2026-07-11T00:00:00Z',
+    };
+    mockFetchWithCapture([preset], requests);
+    const client = new BackendApiClient('http://backend.test');
+
+    const presets = await client.listPartyPresets();
+
+    assert.equal(presets[0]?.name, '고블린 범용 파티');
+    assert.equal(requests[0]?.url, 'http://backend.test/api/party-presets');
+
+    mockFetchWithCapture(preset, requests);
+    await client.createPartyPreset({
+      name: '고블린 범용 파티',
+      members: preset.members,
+    });
+
+    assert.equal(requests[1]?.url, 'http://backend.test/api/party-presets');
+    assert.equal(requests[1]?.init.method, 'POST');
+    assert.equal(
+      requests[1]?.init.body,
+      '{"name":"고블린 범용 파티","members":[{"slotIndex":0,"characterId":"char-1","patternSlot":0},{"slotIndex":1,"characterId":"char-2","patternSlot":1},{"slotIndex":2,"characterId":null,"patternSlot":null},{"slotIndex":3,"characterId":null,"patternSlot":null},{"slotIndex":4,"characterId":null,"patternSlot":null}]}',
+    );
+
+    mockFetchWithCapture({ ...preset, name: '모험 기본 파티' }, requests);
+    await client.updatePartyPreset(7, {
+      name: '모험 기본 파티',
+      members: preset.members,
+    });
+
+    assert.equal(requests[2]?.url, 'http://backend.test/api/party-presets/7');
+    assert.equal(requests[2]?.init.method, 'PATCH');
+
+    mockFetchWithCapture(null, requests);
+    await client.deletePartyPreset(7);
+
+    assert.equal(requests[3]?.url, 'http://backend.test/api/party-presets/7');
+    assert.equal(requests[3]?.init.method, 'DELETE');
+  });
+});
+
+function loadBackendApi(): Promise<BackendApiModule> {
+  backendApiModule ??= import('../../main/services/backendApi');
+  return backendApiModule;
+}
+
+function mockFetch(body: unknown, { status = 200 }: { status?: number } = {}): void {
+  globalThis.fetch = (async () => ({
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
+  })) as unknown as typeof fetch;
+}
+
+function mockFetchWithCapture(
+  body: unknown,
+  requests: CapturedRequest[],
+  { status = 200 }: { status?: number } = {},
+): void {
+  globalThis.fetch = (async (url: RequestInfo | URL, init: RequestInit = {}) => {
+    requests.push({ url: String(url), init });
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      text: async () => (typeof body === 'string' ? body : JSON.stringify(body)),
+    };
+  }) as unknown as typeof fetch;
+}
+
+type BackendErrorShape = {
+  statusCode: number;
+  code: string | null;
+  message: string;
+};
+
+type CapturedRequest = {
+  url: string;
+  init: RequestInit;
+};
+
+function tokenResponse(accessToken: string, refreshToken?: string) {
+  return {
+    accessToken,
+    tokenType: 'Bearer',
+    accessTokenExpiresAt: '2026-07-13T00:30:00Z',
+    ...(refreshToken ? { refreshToken } : {}),
+    refreshTokenExpiresAt: '2026-08-12T00:00:00Z',
+  };
+}
+
+function mockResponse(body: unknown, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => (body == null ? '' : JSON.stringify(body)),
+  } as Response;
+}
+
+function memoryTokenStorage(initialValue: string | null = null) {
+  return {
+    value: initialValue,
+    async load() {
+      return this.value;
+    },
+    async save(token: string) {
+      this.value = token;
+    },
+    async remove() {
+      this.value = null;
+    },
+  };
+}
+
+function readHeader(headers: HeadersInit | undefined, name: string): string | null {
+  if (!headers) return null;
+  return new Headers(headers).get(name);
+}
+
+/** 테스트 프로세스 안에서 브라우저 탭 사이의 BroadcastChannel 전달을 재현한다. */
+class FakeBroadcastChannel {
+  private static readonly channels = new Map<string, Set<FakeBroadcastChannel>>();
+  readonly name: string;
+  onmessage: ((event: MessageEvent<unknown>) => void) | null = null;
+
+  constructor(name: string) {
+    this.name = name;
+    const peers = FakeBroadcastChannel.channels.get(name) ?? new Set<FakeBroadcastChannel>();
+    peers.add(this);
+    FakeBroadcastChannel.channels.set(name, peers);
+  }
+
+  postMessage(message: unknown): void {
+    for (const peer of FakeBroadcastChannel.channels.get(this.name) ?? []) {
+      if (peer !== this) peer.onmessage?.({ data: message } as MessageEvent<unknown>);
+    }
+  }
+
+  close(): void {
+    FakeBroadcastChannel.channels.get(this.name)?.delete(this);
+  }
+}
