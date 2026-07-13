@@ -24,7 +24,12 @@ import type {
   LoadPatternResponse,
   PartyPresetResponse,
   RunBattleRequest,
+  RegisterAndroidPushTargetRequest,
   SubmitCaptchaAnswerRequest,
+  DevicePushTargetResponse,
+  UnifiedAutomationAction,
+  UnifiedAutomationSettingsRequest,
+  UnifiedAutomationStatusResponse,
   UpdateAutomationProfileRequest,
   UpdatePartyPresetRequest,
 } from '../types/api';
@@ -68,7 +73,7 @@ export class BackendApiClient {
     baseUrl = resolveBackendBaseUrl(),
     private readonly tokenStorage: RefreshTokenStorage = refreshTokenStorage,
   ) {
-    this.baseUrl = baseUrl.replace(/\/+$/, '');
+    this.baseUrl = normalizeBackendBaseUrl(baseUrl, process.env.NODE_ENV === 'production');
     this.sessionChannel = createSessionChannel((token) => this.receiveBroadcastToken(token));
   }
 
@@ -201,6 +206,38 @@ export class BackendApiClient {
    */
   fetchCurrentAutomationJob(): Promise<AutomationJobResponse | null> {
     return this.request('/api/automation/jobs/current');
+  }
+
+  /** 계정별 통합 자동화의 현재 상태와 저장 설정을 조회한다. */
+  fetchUnifiedAutomation(): Promise<UnifiedAutomationStatusResponse> {
+    return this.request('/api/automation/unified');
+  }
+
+  /** 통합 자동화 모듈 설정 전체를 원자적으로 저장한다. */
+  updateUnifiedAutomation(
+    request: UnifiedAutomationSettingsRequest,
+  ): Promise<UnifiedAutomationStatusResponse> {
+    return this.request('/api/automation/unified', {
+      method: 'PUT',
+      body: JSON.stringify(request),
+    });
+  }
+
+  /** 통합 자동화를 시작, 일시정지, 재개 또는 종료한다. */
+  changeUnifiedAutomationState(
+    action: UnifiedAutomationAction,
+  ): Promise<UnifiedAutomationStatusResponse> {
+    return this.request(`/api/automation/unified/${action}`, { method: 'POST' });
+  }
+
+  /** Android 설치의 FCM 네이티브 토큰을 현재 계정에 연결한다. */
+  registerAndroidPushTarget(
+    request: RegisterAndroidPushTargetRequest,
+  ): Promise<DevicePushTargetResponse> {
+    return this.request('/api/push/android/targets', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
   }
 
   /**
@@ -521,6 +558,26 @@ function resolveBackendBaseUrl(): string {
   if (configuredUrl) return configuredUrl;
 
   return Platform.OS === 'android' ? 'http://10.0.2.2:8080' : 'http://localhost:8080';
+}
+
+/**
+ * 백엔드 주소의 끝 슬래시를 제거하고 운영 빌드가 평문 HTTP API를 사용하지 못하게 차단한다.
+ * Android 에뮬레이터와 로컬 웹 개발은 production이 아니므로 기존 HTTP 주소를 계속 사용할 수 있다.
+ */
+export function normalizeBackendBaseUrl(baseUrl: string, production: boolean): string {
+  const normalized = baseUrl.trim().replace(/\/+$/, '');
+  if (!production) return normalized;
+
+  let protocol: string;
+  try {
+    protocol = new URL(normalized).protocol;
+  } catch {
+    throw new Error('운영 백엔드 주소가 올바르지 않습니다. HTTPS URL을 확인해 주세요.');
+  }
+  if (protocol !== 'https:') {
+    throw new Error('운영 앱은 HTTPS 백엔드에만 연결할 수 있습니다.');
+  }
+  return normalized;
 }
 
 /**

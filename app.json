@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "hof_app",
-    "slug": "hof_app",
+    "name": "HOF 자동화",
+    "slug": "hof-automation",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -10,6 +10,8 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "app.spammy.hof",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -23,7 +25,8 @@
     },
     "plugins": [
       "expo-secure-store",
-      "expo-image"
+      "expo-image",
+      "expo-notifications"
     ]
   }
 }

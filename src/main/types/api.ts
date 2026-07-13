@@ -212,6 +212,63 @@ export type AutomationProfileResponse = {
   updatedAt: string;
 };
 
+export type UnifiedAutomationMap = {
+  categoryId: string;
+  mapCode: string;
+  partyPresetId: number | null;
+  executionOrder: number;
+};
+
+export type UnifiedQuestExecution = {
+  questId: string;
+  maps: UnifiedAutomationMap[];
+};
+
+export type UnifiedToggleModuleSettings = {
+  enabled: boolean;
+  maps: UnifiedAutomationMap[];
+};
+
+export type UnifiedAutomationSettingsRequest = {
+  keyQuest: {
+    enabled: boolean;
+    quests: UnifiedQuestExecution[];
+  };
+  time: UnifiedToggleModuleSettings & {
+    thresholdPercent: number;
+  };
+  cooldownAdventure: UnifiedToggleModuleSettings;
+  dailyAdventure: UnifiedToggleModuleSettings;
+  union: UnifiedToggleModuleSettings;
+  normalQuest: {
+    enabled: boolean;
+    questIds: string[];
+  };
+};
+
+export type UnifiedAutomationStatusResponse = {
+  profileId: number;
+  job: AutomationJobResponse | null;
+  settings: UnifiedAutomationSettingsRequest;
+  currentTitle: string | null;
+  nextRunAt: string | null;
+};
+
+export type UnifiedAutomationAction = 'start' | 'pause' | 'resume' | 'stop';
+
+export type RegisterAndroidPushTargetRequest = {
+  installationId: string;
+  nativeToken: string;
+};
+
+export type DevicePushTargetResponse = {
+  id: number;
+  platform: string;
+  installationId: string;
+  active: boolean;
+  lastSeenAt: string;
+};
+
 export type PartyPresetMember = {
   slotIndex: number;
   characterId: string | null;

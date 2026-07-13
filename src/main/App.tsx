@@ -8,24 +8,25 @@ import { CaptchaChallengeModal } from './components/CaptchaChallengeModal';
 import { BackendApiClient } from './services/backendApi';
 import { useCharacterSync } from './features/characters/useCharacterSync';
 import { useCaptchaGate } from './features/captcha/useCaptchaGate';
+import { useAndroidPushRegistration } from './features/push/useAndroidPushRegistration';
 import { isCaptchaRequiredError } from './domain/captchaGate';
 import { toUserFacingErrorMessage } from './domain/userFacingErrors';
 import type {
   AutomationJobResponse,
-  AutomationProfileResponse,
   BattleCategoryResponse,
   BattleLogResponse,
   BattleMapResponse,
   BattleResultResponse,
   BattleStatsResponse,
-  CreateAutomationProfileRequest,
   CreatePartyPresetRequest,
   HofCharacterDetail,
   HofStatusResponse,
   LoadPatternResponse,
   PartyPresetResponse,
   RunBattleRequest,
-  UpdateAutomationProfileRequest,
+  UnifiedAutomationAction,
+  UnifiedAutomationSettingsRequest,
+  UnifiedAutomationStatusResponse,
   UpdatePartyPresetRequest,
 } from './types/api';
 import { theme } from './styles/theme';
@@ -80,6 +81,11 @@ export default function App() {
   const handleOpenCaptchaModal = useCallback(() => {
     void openCaptchaModal();
   }, [openCaptchaModal]);
+  useAndroidPushRegistration({
+    api,
+    authenticated: session?.loggedIn === true,
+    onOpenCaptcha: handleOpenCaptchaModal,
+  });
   /**
    * HOF 홈 상태를 다시 읽어 상단 상태바의 Time/Funds/Work/Auction을 갱신한다.
    */
@@ -151,22 +157,17 @@ export default function App() {
     api.fetchCurrentAutomationJob()
   ), [api]);
 
-  const listAutomationProfiles = useCallback((): Promise<AutomationProfileResponse[]> => (
-    api.listAutomationProfiles()
+  const getUnifiedAutomation = useCallback((): Promise<UnifiedAutomationStatusResponse> => (
+    api.fetchUnifiedAutomation()
   ), [api]);
 
-  const createAutomationProfile = useCallback((
-    request: CreateAutomationProfileRequest,
-  ): Promise<AutomationProfileResponse> => api.createAutomationProfile(request), [api]);
+  const updateUnifiedAutomation = useCallback((
+    request: UnifiedAutomationSettingsRequest,
+  ): Promise<UnifiedAutomationStatusResponse> => api.updateUnifiedAutomation(request), [api]);
 
-  const updateAutomationProfile = useCallback((
-    profileId: number,
-    request: UpdateAutomationProfileRequest,
-  ): Promise<AutomationProfileResponse> => api.updateAutomationProfile(profileId, request), [api]);
-
-  const deleteAutomationProfile = useCallback((
-    profileId: number,
-  ): Promise<null> => api.deleteAutomationProfile(profileId), [api]);
+  const changeUnifiedAutomationState = useCallback((
+    action: UnifiedAutomationAction,
+  ): Promise<UnifiedAutomationStatusResponse> => api.changeUnifiedAutomationState(action), [api]);
 
   const listPartyPresets = useCallback((): Promise<PartyPresetResponse[]> => api.listPartyPresets(), [api]);
 
@@ -326,10 +327,9 @@ export default function App() {
         onLoadBattleStats={loadBattleStats}
         onOpenCaptcha={handleOpenCaptchaModal}
         onLoadCurrentAutomationJob={loadCurrentAutomationJob}
-        onListAutomationProfiles={listAutomationProfiles}
-        onCreateAutomationProfile={createAutomationProfile}
-        onUpdateAutomationProfile={updateAutomationProfile}
-        onDeleteAutomationProfile={deleteAutomationProfile}
+        onGetUnifiedAutomation={getUnifiedAutomation}
+        onUpdateUnifiedAutomation={updateUnifiedAutomation}
+        onChangeUnifiedAutomationState={changeUnifiedAutomationState}
         onListPartyPresets={listPartyPresets}
         onCreatePartyPreset={createPartyPreset}
         onUpdatePartyPreset={updatePartyPreset}
