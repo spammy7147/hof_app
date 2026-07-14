@@ -14,6 +14,41 @@ import type {
 } from '../../main/types/api';
 
 describe('앱 수명주기 통합 자동화 컨트롤러', () => {
+  it('reset은 이전 큐의 pending 재정렬 전송을 취소하고 구 큐를 idle로 종료한다', async () => {
+    const firstReorder = deferred<UnifiedAutomationStatusResponse>();
+    const reorderCalls: number[][] = [];
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => status([module(1, '첫 번째', 0), module(2, '두 번째', 1)]),
+      reorder: async (moduleIds) => {
+        reorderCalls.push(moduleIds);
+        return reorderCalls.length === 1
+          ? firstReorder.promise
+          : status(moduleIds.map((id, priority) => module(id, `모듈 ${id}`, priority)));
+      },
+    }));
+    await controller.load();
+
+    controller.reorderModules([module(2, '두 번째', 0), module(1, '첫 번째', 1)]);
+    controller.reorderModules([module(1, '첫 번째', 0), module(2, '두 번째', 1)]);
+    const oldQueueIdle = controller.whenReorderIdle();
+    assert.deepEqual(reorderCalls, [[2, 1]]);
+
+    controller.reset();
+    firstReorder.resolve(status([module(2, '두 번째', 0), module(1, '첫 번째', 1)]));
+    await oldQueueIdle;
+
+    assert.deepEqual(reorderCalls, [[2, 1]]);
+    assert.deepEqual(controller.getSnapshot(), {
+      automation: null,
+      loading: false,
+      actionSaving: false,
+      editorSaving: false,
+      savingModuleIds: [],
+      reordering: false,
+      message: null,
+    });
+  });
+
   it('먼저 시작한 load가 늦게 끝나도 나중에 시작한 load의 상태를 덮지 않는다', async () => {
     const olderLoad = deferred<UnifiedAutomationStatusResponse>();
     const newerLoad = deferred<UnifiedAutomationStatusResponse>();
@@ -225,6 +260,36 @@ describe('앱 수명주기 통합 자동화 컨트롤러', () => {
 
     assert.equal(controller.getSnapshot().automation?.currentTitle, '실행 중');
     assert.deepEqual(controller.getSnapshot().automation?.modules.map(({ id }) => id), [2, 1]);
+  });
+
+  it('재정렬 실패 복구 GET 중 완료된 실행 제어 상태를 rollback reload가 되돌리지 않는다', async () => {
+    const failedReorder = deferred<UnifiedAutomationStatusResponse>();
+    const reload = deferred<UnifiedAutomationStatusResponse>();
+    const reloadStarted = deferred<void>();
+    let fetchCount = 0;
+    const initial = status([module(1, '첫 번째', 0), module(2, '두 번째', 1)]);
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => {
+        fetchCount += 1;
+        if (fetchCount === 1) return initial;
+        reloadStarted.resolve();
+        return reload.promise;
+      },
+      reorder: async () => failedReorder.promise,
+      changeState: async () => ({ ...initial, currentTitle: '실행 중' }),
+    }));
+    await controller.load();
+
+    controller.reorderModules([module(2, '두 번째', 0), module(1, '첫 번째', 1)]);
+    const reorderIdle = controller.whenReorderIdle();
+    failedReorder.reject(new Error('reorder failed'));
+    await reloadStarted.promise;
+    await controller.changeState('start');
+    reload.resolve(initial);
+    await reorderIdle;
+
+    assert.equal(controller.getSnapshot().automation?.currentTitle, '실행 중');
+    assert.deepEqual(controller.getSnapshot().automation?.modules.map(({ id }) => id), [1, 2]);
   });
 });
 

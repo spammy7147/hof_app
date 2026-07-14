@@ -57,6 +57,38 @@ describe('통합 자동화 우선순위 저장 큐', () => {
     assert.equal(attempts, 1);
     assert.equal(failures.length, 1);
   });
+
+  it('dispose 후에는 in-flight 결과와 pending·새 enqueue를 폐기하고 idle로 끝난다', async () => {
+    const requests: number[][] = [];
+    const saved: number[][] = [];
+    const persisted: number[][] = [];
+    let resolveFirst!: (value: number[]) => void;
+    const firstRequest = new Promise<number[]>((resolve) => {
+      resolveFirst = resolve;
+    });
+    const queue = new UnifiedAutomationReorderQueue(
+      async (ids) => {
+        requests.push(ids);
+        return firstRequest;
+      },
+      (ids) => saved.push(ids),
+      async () => assert.fail('폐기된 큐는 실패 callback도 실행하지 않는다.'),
+      (_result, ids) => persisted.push(ids),
+    );
+
+    queue.enqueue([2, 1]);
+    queue.enqueue([1, 2]);
+    const idle = queue.whenIdle();
+    queue.dispose();
+    queue.enqueue([3, 2, 1]);
+    resolveFirst([2, 1]);
+    await idle;
+
+    assert.deepEqual(requests, [[2, 1]]);
+    assert.deepEqual(saved, []);
+    assert.deepEqual(persisted, []);
+    await queue.whenIdle();
+  });
 });
 
 async function tick(): Promise<void> {

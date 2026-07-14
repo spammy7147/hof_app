@@ -95,6 +95,7 @@ export class UnifiedAutomationController {
 
   /** 로그아웃 시 이전 계정의 상태와 늦게 끝나는 요청을 새 세션에서 무시한다. */
   reset(): void {
+    this.reorderQueue.dispose();
     this.generation += 1;
     this.moduleRevision = 0;
     this.executionRevision = 0;
