@@ -394,29 +394,55 @@ describe('BackendApiClient', () => {
     assert.equal(requests[0]?.init.body, '{"profileId":4}');
   });
 
-  it('uses the unified automation lifecycle endpoints', async () => {
+  it('uses the customizable unified automation module and lifecycle endpoints', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const requests: CapturedRequest[] = [];
     const status = {
       profileId: 4,
       job: null,
-      settings: {
-        keyQuest: { enabled: true, quests: [] },
-        time: { enabled: true, thresholdPercent: 90, maps: [] },
-        cooldownAdventure: { enabled: true, maps: [] },
-        dailyAdventure: { enabled: true, maps: [] },
-        union: { enabled: true, maps: [] },
-        normalQuest: { enabled: false, questIds: [] },
-      },
+      modules: [],
       currentTitle: null,
       nextRunAt: null,
+    };
+    const createRequest = {
+      displayName: '저녁 Time',
+      moduleType: 'TIME_BURN' as const,
+      enabled: true,
+      thresholdPercent: 90,
+      maps: [{
+        categoryId: 'battle_map',
+        mapCode: 'gb0',
+        partyPresetId: 7,
+        executionOrder: 0,
+      }],
+      quests: [],
+    };
+    const module = {
+      id: 31,
+      ...createRequest,
+      priority: 0,
+      ready: true,
+      summary: '1개 맵 선택됨',
+    };
+    const updateRequest = {
+      displayName: '밤 Time',
+      enabled: false,
+      thresholdPercent: 95,
+      maps: createRequest.maps,
+      quests: [],
     };
     const client = new BackendApiClient('http://backend.test');
 
     mockFetchWithCapture(status, requests);
     await client.fetchUnifiedAutomation();
+    mockFetchWithCapture(module, requests);
+    await client.createUnifiedAutomationModule(createRequest);
+    mockFetchWithCapture({ ...module, ...updateRequest }, requests);
+    await client.updateUnifiedAutomationModule(31, updateRequest);
+    mockFetchWithCapture(null, requests, { status: 204 });
+    await client.deleteUnifiedAutomationModule(31);
     mockFetchWithCapture(status, requests);
-    await client.updateUnifiedAutomation(status.settings);
+    await client.reorderUnifiedAutomationModules([31, 18]);
     for (const action of ['start', 'pause', 'resume', 'stop'] as const) {
       mockFetchWithCapture(status, requests);
       await client.changeUnifiedAutomationState(action);
@@ -426,13 +452,20 @@ describe('BackendApiClient', () => {
       requests.map((request) => [request.url, request.init.method ?? 'GET']),
       [
         ['http://backend.test/api/automation/unified', 'GET'],
-        ['http://backend.test/api/automation/unified', 'PUT'],
+        ['http://backend.test/api/automation/unified/modules', 'POST'],
+        ['http://backend.test/api/automation/unified/modules/31', 'PUT'],
+        ['http://backend.test/api/automation/unified/modules/31', 'DELETE'],
+        ['http://backend.test/api/automation/unified/modules/order', 'PATCH'],
         ['http://backend.test/api/automation/unified/start', 'POST'],
         ['http://backend.test/api/automation/unified/pause', 'POST'],
         ['http://backend.test/api/automation/unified/resume', 'POST'],
         ['http://backend.test/api/automation/unified/stop', 'POST'],
       ],
     );
+    assert.equal(requests[1]?.init.body, JSON.stringify(createRequest));
+    assert.equal(requests[2]?.init.body, JSON.stringify(updateRequest));
+    assert.equal(requests[3]?.init.body, undefined);
+    assert.equal(requests[4]?.init.body, '{"moduleIds":[31,18]}');
   });
 
   it('registers an Android native FCM token without an Expo push token', async () => {

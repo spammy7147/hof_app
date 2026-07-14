@@ -26,7 +26,7 @@ export function UnifiedAutomationDashboard({
   const running = status === 'RUNNING' || status === 'PENDING';
   const paused = status === 'PAUSED';
   const waitingCaptcha = status === 'WAITING_CAPTCHA';
-  const summaries = buildUnifiedModuleSummaries(automation.settings);
+  const summaries = buildUnifiedModuleSummaries(automation.modules);
 
   return (
     <View style={styles.stack}>
@@ -63,8 +63,11 @@ export function UnifiedAutomationDashboard({
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>자동화 구성</Text>
+        {summaries.length === 0 ? (
+          <Text style={styles.emptyText}>자동화 구성을 추가해 주세요.</Text>
+        ) : null}
         {summaries.map((summary) => (
-          <View key={summary.title} style={styles.summaryRow}>
+          <View key={summary.id} style={styles.summaryRow}>
             <View style={[styles.moduleDot, !summary.enabled && styles.moduleDotOff]} />
             <View style={styles.summaryCopy}>
               <Text style={styles.summaryTitle}>{summary.title}</Text>
@@ -133,6 +136,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.78 },
   card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, padding: theme.spacing.md },
   sectionTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '800', marginBottom: 3 },
+  emptyText: { color: theme.colors.textMuted, fontSize: 13, paddingVertical: theme.spacing.md },
   summaryRow: { alignItems: 'center', borderBottomColor: theme.colors.border, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: 10, minHeight: 57 },
   moduleDot: { backgroundColor: theme.colors.accentGreen, borderRadius: 4, height: 8, width: 8 },
   moduleDotOff: { backgroundColor: theme.colors.textMuted },

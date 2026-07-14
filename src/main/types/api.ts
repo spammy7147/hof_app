@@ -212,6 +212,7 @@ export type AutomationProfileResponse = {
   updatedAt: string;
 };
 
+/** 자동화 모듈이 실행할 맵과 그 맵에서 사용할 파티 프리셋을 나타낸다. */
 export type UnifiedAutomationMap = {
   categoryId: string;
   mapCode: string;
@@ -219,37 +220,55 @@ export type UnifiedAutomationMap = {
   executionOrder: number;
 };
 
-export type UnifiedQuestExecution = {
-  questId: string;
+/** 퀘스트 모듈 안에서 실행할 퀘스트와 퀘스트별 맵 순서를 나타낸다. */
+export type UnifiedAutomationQuest = {
+  questCode: string;
+  executionOrder: number;
   maps: UnifiedAutomationMap[];
 };
 
-export type UnifiedToggleModuleSettings = {
+/** 백엔드가 사용자에게 허용하는 통합 자동화 모듈 유형이다. */
+export type UnifiedAutomationModuleType =
+  | 'KEY_QUEST'
+  | 'TIME_BURN'
+  | 'COOLDOWN_ADVENTURE'
+  | 'DAILY_ADVENTURE'
+  | 'OTHER_QUEST';
+
+/** 새 모듈 생성 요청이다. 유형은 생성한 뒤에는 변경할 수 없다. */
+export type CreateUnifiedAutomationModuleRequest = {
+  displayName: string;
+  moduleType: UnifiedAutomationModuleType;
   enabled: boolean;
+  thresholdPercent: number | null;
   maps: UnifiedAutomationMap[];
+  quests: UnifiedAutomationQuest[];
 };
 
-export type UnifiedAutomationSettingsRequest = {
-  keyQuest: {
-    enabled: boolean;
-    quests: UnifiedQuestExecution[];
-  };
-  time: UnifiedToggleModuleSettings & {
-    thresholdPercent: number;
-  };
-  cooldownAdventure: UnifiedToggleModuleSettings;
-  dailyAdventure: UnifiedToggleModuleSettings;
-  union: UnifiedToggleModuleSettings;
-  normalQuest: {
-    enabled: boolean;
-    questIds: string[];
-  };
+/** 기존 모듈 수정 요청이다. ID, 유형, 우선순위는 URL과 기존 서버 상태를 따른다. */
+export type UpdateUnifiedAutomationModuleRequest = Omit<
+  CreateUnifiedAutomationModuleRequest,
+  'moduleType'
+>;
+
+/** 서버가 저장한 모듈 인스턴스 한 개와 현재 실행 준비 상태다. */
+export type UnifiedAutomationModuleResponse = {
+  id: number;
+  displayName: string;
+  moduleType: UnifiedAutomationModuleType;
+  enabled: boolean;
+  priority: number;
+  thresholdPercent: number | null;
+  maps: UnifiedAutomationMap[];
+  quests: UnifiedAutomationQuest[];
+  ready: boolean;
+  summary: string;
 };
 
 export type UnifiedAutomationStatusResponse = {
   profileId: number;
   job: AutomationJobResponse | null;
-  settings: UnifiedAutomationSettingsRequest;
+  modules: UnifiedAutomationModuleResponse[];
   currentTitle: string | null;
   nextRunAt: string | null;
 };

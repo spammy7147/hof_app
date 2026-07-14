@@ -1,6 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { LoginScreen } from './screens/LoginScreen';
 import { MainScreen } from './screens/MainScreen';
@@ -18,6 +19,7 @@ import type {
   BattleMapResponse,
   BattleResultResponse,
   BattleStatsResponse,
+  CreateUnifiedAutomationModuleRequest,
   CreatePartyPresetRequest,
   HofCharacterDetail,
   HofStatusResponse,
@@ -25,8 +27,9 @@ import type {
   PartyPresetResponse,
   RunBattleRequest,
   UnifiedAutomationAction,
-  UnifiedAutomationSettingsRequest,
+  UnifiedAutomationModuleResponse,
   UnifiedAutomationStatusResponse,
+  UpdateUnifiedAutomationModuleRequest,
   UpdatePartyPresetRequest,
 } from './types/api';
 import { theme } from './styles/theme';
@@ -161,9 +164,26 @@ export default function App() {
     api.fetchUnifiedAutomation()
   ), [api]);
 
-  const updateUnifiedAutomation = useCallback((
-    request: UnifiedAutomationSettingsRequest,
-  ): Promise<UnifiedAutomationStatusResponse> => api.updateUnifiedAutomation(request), [api]);
+  const createUnifiedAutomationModule = useCallback((
+    request: CreateUnifiedAutomationModuleRequest,
+  ): Promise<UnifiedAutomationModuleResponse> => api.createUnifiedAutomationModule(request), [api]);
+
+  const updateUnifiedAutomationModule = useCallback((
+    moduleId: number,
+    request: UpdateUnifiedAutomationModuleRequest,
+  ): Promise<UnifiedAutomationModuleResponse> => (
+    api.updateUnifiedAutomationModule(moduleId, request)
+  ), [api]);
+
+  const deleteUnifiedAutomationModule = useCallback((moduleId: number): Promise<void> => (
+    api.deleteUnifiedAutomationModule(moduleId)
+  ), [api]);
+
+  const reorderUnifiedAutomationModules = useCallback((
+    moduleIds: number[],
+  ): Promise<UnifiedAutomationStatusResponse> => (
+    api.reorderUnifiedAutomationModules(moduleIds)
+  ), [api]);
 
   const changeUnifiedAutomationState = useCallback((
     action: UnifiedAutomationAction,
@@ -327,7 +347,10 @@ export default function App() {
         onOpenCaptcha={handleOpenCaptchaModal}
         onLoadCurrentAutomationJob={loadCurrentAutomationJob}
         onGetUnifiedAutomation={getUnifiedAutomation}
-        onUpdateUnifiedAutomation={updateUnifiedAutomation}
+        onCreateUnifiedAutomationModule={createUnifiedAutomationModule}
+        onUpdateUnifiedAutomationModule={updateUnifiedAutomationModule}
+        onDeleteUnifiedAutomationModule={deleteUnifiedAutomationModule}
+        onReorderUnifiedAutomationModules={reorderUnifiedAutomationModules}
         onChangeUnifiedAutomationState={changeUnifiedAutomationState}
         onListPartyPresets={listPartyPresets}
         onCreatePartyPreset={createPartyPreset}
@@ -343,24 +366,26 @@ export default function App() {
   }
 
   return (
-    <View style={styles.container}>
-      {content}
-      <CaptchaChallengeModal
-        visible={captchaModalVisible}
-        captcha={currentCaptcha}
-        isLoading={isCaptchaLoading}
-        isSubmitting={isCaptchaSubmitting}
-        message={captchaMessage}
-        errorMessage={captchaErrorMessage}
-        blocking={captchaModalBlocking}
-        onRefresh={() => {
-          void openCaptchaModal({ blocking: captchaModalBlocking });
-        }}
-        onSubmit={submitGlobalCaptchaAnswer}
-        onRequestClose={closeCaptchaModal}
-      />
-      <StatusBar style="light" />
-    </View>
+    <GestureHandlerRootView style={styles.container}>
+      <View style={styles.container}>
+        {content}
+        <CaptchaChallengeModal
+          visible={captchaModalVisible}
+          captcha={currentCaptcha}
+          isLoading={isCaptchaLoading}
+          isSubmitting={isCaptchaSubmitting}
+          message={captchaMessage}
+          errorMessage={captchaErrorMessage}
+          blocking={captchaModalBlocking}
+          onRefresh={() => {
+            void openCaptchaModal({ blocking: captchaModalBlocking });
+          }}
+          onSubmit={submitGlobalCaptchaAnswer}
+          onRequestClose={closeCaptchaModal}
+        />
+        <StatusBar style="light" />
+      </View>
+    </GestureHandlerRootView>
   );
 }
 

@@ -19,6 +19,7 @@ import type {
   BattleMapResponse,
   BattleResultResponse,
   BattleStatsResponse,
+  CreateUnifiedAutomationModuleRequest,
   CreatePartyPresetRequest,
   HofCharacter,
   HofCharacterDetail,
@@ -27,8 +28,9 @@ import type {
   PartyPresetResponse,
   RunBattleRequest,
   UnifiedAutomationAction,
-  UnifiedAutomationSettingsRequest,
+  UnifiedAutomationModuleResponse,
   UnifiedAutomationStatusResponse,
+  UpdateUnifiedAutomationModuleRequest,
   UpdatePartyPresetRequest,
 } from '../types/api';
 import { BattleTabScreen } from './BattleTabScreen';
@@ -60,7 +62,10 @@ type MainScreenProps = {
   onOpenCaptcha: () => void;
   onLoadCurrentAutomationJob: () => Promise<AutomationJobResponse | null>;
   onGetUnifiedAutomation: () => Promise<UnifiedAutomationStatusResponse>;
-  onUpdateUnifiedAutomation: (request: UnifiedAutomationSettingsRequest) => Promise<UnifiedAutomationStatusResponse>;
+  onCreateUnifiedAutomationModule: (request: CreateUnifiedAutomationModuleRequest) => Promise<UnifiedAutomationModuleResponse>;
+  onUpdateUnifiedAutomationModule: (moduleId: number, request: UpdateUnifiedAutomationModuleRequest) => Promise<UnifiedAutomationModuleResponse>;
+  onDeleteUnifiedAutomationModule: (moduleId: number) => Promise<void>;
+  onReorderUnifiedAutomationModules: (moduleIds: number[]) => Promise<UnifiedAutomationStatusResponse>;
   onChangeUnifiedAutomationState: (action: UnifiedAutomationAction) => Promise<UnifiedAutomationStatusResponse>;
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
   onCreatePartyPreset: (
@@ -100,7 +105,10 @@ export function MainScreen({
   onOpenCaptcha,
   onLoadCurrentAutomationJob,
   onGetUnifiedAutomation,
-  onUpdateUnifiedAutomation,
+  onCreateUnifiedAutomationModule,
+  onUpdateUnifiedAutomationModule,
+  onDeleteUnifiedAutomationModule,
+  onReorderUnifiedAutomationModules,
   onChangeUnifiedAutomationState,
   onListPartyPresets,
   onCreatePartyPreset,
@@ -215,7 +223,10 @@ export function MainScreen({
           onOpenCaptcha,
           onLoadCurrentAutomationJob,
           onGetUnifiedAutomation,
-          onUpdateUnifiedAutomation,
+          onCreateUnifiedAutomationModule,
+          onUpdateUnifiedAutomationModule,
+          onDeleteUnifiedAutomationModule,
+          onReorderUnifiedAutomationModules,
           onChangeUnifiedAutomationState,
           onListPartyPresets,
           onCreatePartyPreset,
@@ -267,7 +278,10 @@ type RenderActiveTabArgs = {
   onOpenCaptcha: () => void;
   onLoadCurrentAutomationJob: () => Promise<AutomationJobResponse | null>;
   onGetUnifiedAutomation: () => Promise<UnifiedAutomationStatusResponse>;
-  onUpdateUnifiedAutomation: (request: UnifiedAutomationSettingsRequest) => Promise<UnifiedAutomationStatusResponse>;
+  onCreateUnifiedAutomationModule: (request: CreateUnifiedAutomationModuleRequest) => Promise<UnifiedAutomationModuleResponse>;
+  onUpdateUnifiedAutomationModule: (moduleId: number, request: UpdateUnifiedAutomationModuleRequest) => Promise<UnifiedAutomationModuleResponse>;
+  onDeleteUnifiedAutomationModule: (moduleId: number) => Promise<void>;
+  onReorderUnifiedAutomationModules: (moduleIds: number[]) => Promise<UnifiedAutomationStatusResponse>;
   onChangeUnifiedAutomationState: (action: UnifiedAutomationAction) => Promise<UnifiedAutomationStatusResponse>;
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
   onCreatePartyPreset: (
@@ -313,7 +327,10 @@ function renderActiveTab({
   onOpenCaptcha,
   onLoadCurrentAutomationJob,
   onGetUnifiedAutomation,
-  onUpdateUnifiedAutomation,
+  onCreateUnifiedAutomationModule,
+  onUpdateUnifiedAutomationModule,
+  onDeleteUnifiedAutomationModule,
+  onReorderUnifiedAutomationModules,
   onChangeUnifiedAutomationState,
   onListPartyPresets,
   onCreatePartyPreset,
@@ -341,7 +358,10 @@ function renderActiveTab({
             onLoadBattleMaps={onLoadBattleMaps}
             onListPartyPresets={onListPartyPresets}
             onGetUnifiedAutomation={onGetUnifiedAutomation}
-            onUpdateUnifiedAutomation={onUpdateUnifiedAutomation}
+            onCreateUnifiedAutomationModule={onCreateUnifiedAutomationModule}
+            onUpdateUnifiedAutomationModule={onUpdateUnifiedAutomationModule}
+            onDeleteUnifiedAutomationModule={onDeleteUnifiedAutomationModule}
+            onReorderUnifiedAutomationModules={onReorderUnifiedAutomationModules}
             onChangeUnifiedAutomationState={onChangeUnifiedAutomationState}
             onOpenCaptcha={onOpenCaptcha}
           />

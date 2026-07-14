@@ -1,27 +1,70 @@
 import type {
-  UnifiedAutomationSettingsRequest,
+  UnifiedAutomationModuleResponse,
+  UnifiedAutomationModuleType,
 } from '../types/api';
 
 export type UnifiedModuleSummary = {
+  id: number;
   title: string;
+  typeLabel: string;
   enabled: boolean;
+  ready: boolean;
   detail: string;
 };
 
-export function buildDefaultUnifiedAutomationSettings(): UnifiedAutomationSettingsRequest {
-  return {
-    keyQuest: {
-      enabled: true,
-      quests: ['0563', '0571', '0171', '0351'].map((questId) => ({ questId, maps: [] })),
-    },
-    time: { enabled: true, thresholdPercent: 90, maps: [] },
-    cooldownAdventure: { enabled: true, maps: [] },
-    dailyAdventure: { enabled: true, maps: [] },
-    union: { enabled: true, maps: [] },
-    normalQuest: { enabled: false, questIds: [] },
-  };
+const MODULE_TYPE_LABELS: Record<UnifiedAutomationModuleType, string> = {
+  KEY_QUEST: '열쇠 퀘스트',
+  TIME_BURN: 'Time 자동 소모',
+  COOLDOWN_ADVENTURE: '쿨다운 모험맵',
+  DAILY_ADVENTURE: '일일 제한 모험맵',
+  OTHER_QUEST: '일반 퀘스트',
+};
+
+/** 내부 enum 대신 사용자가 이해할 수 있는 모듈 유형 이름을 반환한다. */
+export function getUnifiedModuleTypeLabel(type: UnifiedAutomationModuleType): string {
+  return MODULE_TYPE_LABELS[type];
 }
 
+/** 같은 유형을 여러 번 추가할 때 겹치지 않는 기본 이름을 제안한다. */
+export function suggestUnifiedModuleName(
+  type: UnifiedAutomationModuleType,
+  modules: UnifiedAutomationModuleResponse[],
+): string {
+  const label = getUnifiedModuleTypeLabel(type);
+  const sameTypeCount = modules.filter((module) => module.moduleType === type).length;
+  return sameTypeCount === 0 ? label : `${label} ${sameTypeCount + 1}`;
+}
+
+/** 서버가 반환한 실제 모듈만 목록용 요약으로 변환한다. 빈 목록에는 기본값을 합성하지 않는다. */
+export function buildUnifiedModuleSummaries(
+  modules: UnifiedAutomationModuleResponse[],
+): UnifiedModuleSummary[] {
+  return modules.map((module) => ({
+    id: module.id,
+    title: module.displayName,
+    typeLabel: getUnifiedModuleTypeLabel(module.moduleType),
+    enabled: module.enabled,
+    ready: module.ready,
+    detail: module.summary,
+  }));
+}
+
+/** 모듈 편집 화면에서 보여줄 수 있는 맵 카테고리를 유형별로 제한한다. */
+export function getUnifiedModuleCategoryIds(type: UnifiedAutomationModuleType): string[] {
+  switch (type) {
+    case 'TIME_BURN':
+      return ['battle_map', 'scenario_ocean'];
+    case 'COOLDOWN_ADVENTURE':
+    case 'DAILY_ADVENTURE':
+      return ['adventure_map'];
+    case 'KEY_QUEST':
+      return ['battle_map'];
+    case 'OTHER_QUEST':
+      return [];
+  }
+}
+
+/** 백엔드 job 상태를 화면에서 사용할 짧은 한국어 상태로 바꾼다. */
 export function formatUnifiedAutomationStatus(status: string | null | undefined): string {
   switch (status?.toUpperCase()) {
     case 'RUNNING':
@@ -42,76 +85,5 @@ export function formatUnifiedAutomationStatus(status: string | null | undefined)
       return '자동화 확인이 필요해요';
     default:
       return '시작 전';
-  }
-}
-
-export function buildUnifiedModuleSummaries(
-  settings: UnifiedAutomationSettingsRequest,
-): UnifiedModuleSummary[] {
-  const mapDetail = (enabled: boolean, count: number) => {
-    if (!enabled) return '사용 안 함';
-    return count > 0 ? `${count}개 맵 선택됨` : '맵 설정 필요';
-  };
-  return [
-    {
-      title: '열쇠 퀘스트',
-      enabled: settings.keyQuest.enabled,
-      detail: settings.keyQuest.enabled
-        ? '4개 우선 퀘스트'
-        : '사용 안 함',
-    },
-    {
-      title: 'Time 자동 소모',
-      enabled: settings.time.enabled,
-      detail: settings.time.enabled
-        ? `${settings.time.thresholdPercent}% 이상일 때 실행`
-        : '사용 안 함',
-    },
-    {
-      title: '쿨다운 모험맵',
-      enabled: settings.cooldownAdventure.enabled,
-      detail: mapDetail(settings.cooldownAdventure.enabled, settings.cooldownAdventure.maps.length),
-    },
-    {
-      title: '일일 제한 모험맵',
-      enabled: settings.dailyAdventure.enabled,
-      detail: mapDetail(settings.dailyAdventure.enabled, settings.dailyAdventure.maps.length),
-    },
-    {
-      title: '유니온',
-      enabled: settings.union.enabled,
-      detail: mapDetail(settings.union.enabled, settings.union.maps.length),
-    },
-    {
-      title: '일반 퀘스트',
-      enabled: settings.normalQuest.enabled,
-      detail: settings.normalQuest.enabled
-        ? `${settings.normalQuest.questIds.length}개 선택됨`
-        : '사용 안 함',
-    },
-  ];
-}
-
-export function getPriorityQuestName(questId: string): string {
-  const names: Record<string, string> = {
-    '0563': '저택 동관 열쇠 수집',
-    '0571': '저택 서관 열쇠 수집',
-    '0171': '우선 열쇠 퀘스트',
-    '0351': '마을 지하 수로 열쇠 수집',
-  };
-  return names[questId] ?? '선택한 퀘스트';
-}
-
-export function getUnifiedModuleCategoryIds(
-  module: 'time' | 'cooldownAdventure' | 'dailyAdventure' | 'union',
-): string[] {
-  switch (module) {
-    case 'time':
-      return ['battle_map', 'scenario_ocean'];
-    case 'cooldownAdventure':
-    case 'dailyAdventure':
-      return ['adventure_map'];
-    case 'union':
-      return ['union'];
   }
 }
