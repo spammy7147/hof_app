@@ -35,12 +35,12 @@ describe('battle tab screen', () => {
     assert.doesNotMatch(source, /function battleMapKey/);
   });
 
-  it('loads and caches party presets only when a runnable map opens', () => {
+  it('coordinates party preset loading only when a runnable map opens', () => {
     assert.match(source, /onListPartyPresets: \(\) => Promise<PartyPresetResponse\[\]>/);
-    assert.match(source, /const \[partyPresets, setPartyPresets\] = useState<PartyPresetResponse\[\]>\(\[\]\)/);
+    assert.match(source, /PartyPresetLoadCoordinator/);
+    assert.match(source, /partyPresetLoadCoordinatorRef\.current\.start\(onListPartyPresets, force\)/);
+    assert.match(source, /partyPresetLoadCoordinatorRef\.current\.invalidate\(\)/);
     assert.match(source, /const loadPartyPresets = useCallback/);
-    assert.match(source, /if \(!force && partyPresetsLoaded\) return/);
-    assert.match(source, /setPartyPresetsLoaded\(true\)/);
     assert.match(source, /void loadPartyPresets\(\)/);
   });
 

@@ -27,6 +27,7 @@ import {
   type BattleMapGroup,
 } from '../domain/battleMaps';
 import { getBattleResultRounds } from '../domain/battleResults';
+import { PartyPresetLoadCoordinator } from '../domain/partyPresetLoader';
 import { BattleRunPanel } from '../features/battle/components/BattleRunPanel';
 import { theme } from '../styles/theme';
 import type {
@@ -112,11 +113,9 @@ export function BattleTabScreen({
   const [runErrorsByMapKey, setRunErrorsByMapKey] = useState<Record<string, string>>({});
   const [resultsByMapKey, setResultsByMapKey] = useState<Record<string, BattleResultResponse>>({});
   const [partyPresets, setPartyPresets] = useState<PartyPresetResponse[]>([]);
-  const [partyPresetsLoaded, setPartyPresetsLoaded] = useState(false);
   const [arePartyPresetsLoading, setArePartyPresetsLoading] = useState(false);
   const [partyPresetsError, setPartyPresetsError] = useState<string | null>(null);
-  const partyPresetsLoadingRef = useRef(false);
-  const partyPresetsRequestGenerationRef = useRef(0);
+  const partyPresetLoadCoordinatorRef = useRef(new PartyPresetLoadCoordinator());
 
   useEffect(() => {
     if (categories.length > 0 || isLoading || errorMessage) return;
@@ -125,17 +124,14 @@ export function BattleTabScreen({
 
   useLayoutEffect(() => {
     if (!authenticated) {
-      partyPresetsRequestGenerationRef.current += 1;
-      partyPresetsLoadingRef.current = false;
+      partyPresetLoadCoordinatorRef.current.invalidate();
       setPartyPresets([]);
-      setPartyPresetsLoaded(false);
       setArePartyPresetsLoading(false);
       setPartyPresetsError(null);
     }
 
     return () => {
-      partyPresetsRequestGenerationRef.current += 1;
-      partyPresetsLoadingRef.current = false;
+      partyPresetLoadCoordinatorRef.current.invalidate();
     };
   }, [authenticated]);
 
@@ -183,34 +179,28 @@ export function BattleTabScreen({
   /**
    * 전투 실행 패널이 처음 열릴 때 파티 프리셋을 불러오고, 성공한 결과는 빈 목록까지 포함해 재사용한다.
    *
-   * 로그아웃이나 계정 전환으로 요청 세대가 바뀌면 이전 계정의 늦은 응답은 화면 상태에 반영하지 않는다.
+   * coordinator가 중복 요청, 성공 캐시, 계정 세대를 조정해서 이전 계정의 늦은 응답을 무시한다.
    */
   const loadPartyPresets = useCallback(async (force = false) => {
-    if (partyPresetsLoadingRef.current) return;
-    if (!force && partyPresetsLoaded) return;
     if (!authenticated) return;
 
-    const requestGeneration = partyPresetsRequestGenerationRef.current;
-    partyPresetsLoadingRef.current = true;
+    const operation = partyPresetLoadCoordinatorRef.current.start(onListPartyPresets, force);
+    if (operation == null) return;
+
     setArePartyPresetsLoading(true);
     setPartyPresetsError(null);
 
-    try {
-      const loadedPartyPresets = await onListPartyPresets();
-      if (requestGeneration !== partyPresetsRequestGenerationRef.current) return;
+    const result = await operation;
+    if (result.status === 'stale') return;
 
-      setPartyPresets(loadedPartyPresets);
-      setPartyPresetsLoaded(true);
-    } catch {
-      if (requestGeneration !== partyPresetsRequestGenerationRef.current) return;
+    setArePartyPresetsLoading(false);
+    if (result.status === 'failure') {
       setPartyPresetsError('파티 프리셋을 불러오지 못했습니다.');
-    } finally {
-      if (requestGeneration === partyPresetsRequestGenerationRef.current) {
-        partyPresetsLoadingRef.current = false;
-        setArePartyPresetsLoading(false);
-      }
+      return;
     }
-  }, [authenticated, onListPartyPresets, partyPresetsLoaded]);
+
+    setPartyPresets(result.presets);
+  }, [authenticated, onListPartyPresets]);
 
   /**
    * 카테고리 카드를 열고 닫는다.
