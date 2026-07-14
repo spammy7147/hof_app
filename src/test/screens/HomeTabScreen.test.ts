@@ -4,6 +4,10 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 const homeSource = readFileSync(resolve(process.cwd(), 'src/main/screens/HomeTabScreen.tsx'), 'utf8');
+const controllerSource = readFileSync(
+  resolve(process.cwd(), 'src/main/domain/unifiedAutomationController.ts'),
+  'utf8',
+);
 const settingsSource = readFileSync(
   resolve(process.cwd(), 'src/main/features/automation/components/UnifiedAutomationSettings.tsx'),
   'utf8',
@@ -36,11 +40,13 @@ describe('통합 자동화 홈 화면', () => {
     assert.doesNotMatch(settingsSource, /union|유니온/i);
   });
 
-  it('새 모듈 CRUD와 전체 순서 변경 callback을 화면 계층에 연결한다', () => {
-    assert.match(homeSource, /onCreateUnifiedAutomationModule/);
-    assert.match(homeSource, /onUpdateUnifiedAutomationModule/);
-    assert.match(homeSource, /onDeleteUnifiedAutomationModule/);
-    assert.match(homeSource, /onReorderUnifiedAutomationModules/);
+  it('앱 수명주기 컨트롤러의 CRUD와 전체 순서 변경을 화면에 연결한다', () => {
+    assert.match(appSource, /new UnifiedAutomationController/);
+    assert.match(homeSource, /automationController\.createModule/);
+    assert.match(homeSource, /automationController\.updateModule/);
+    assert.match(homeSource, /automationController\.deleteModule/);
+    assert.match(homeSource, /automationController\.reorderModules/);
+    assert.match(homeSource, /useSyncExternalStore/);
     assert.doesNotMatch(homeSource, /onUpdateUnifiedAutomation:/);
   });
 
@@ -79,13 +85,14 @@ describe('통합 자동화 홈 화면', () => {
     assert.match(settingsSource, /NestableDraggableFlatList/);
     assert.match(settingsSource, /GripVertical/);
     assert.match(settingsSource, /onDragEnd/);
-    assert.match(homeSource, /UnifiedAutomationReorderQueue/);
-    assert.match(homeSource, /순서를 저장하지 못해 이전 순서로 되돌렸어요/);
+    assert.match(controllerSource, /UnifiedAutomationReorderQueue/);
+    assert.match(controllerSource, /순서를 저장하지 못해 이전 순서로 되돌렸어요/);
   });
 
   it('같은 모듈 저장을 조정하고 저장 중인 행 편집을 막는다', () => {
-    assert.match(homeSource, /UnifiedAutomationModuleMutationCoordinator/);
-    assert.match(homeSource, /runExclusive/);
+    assert.match(controllerSource, /UnifiedAutomationModuleMutationCoordinator/);
+    assert.match(controllerSource, /runExclusive/);
+    assert.match(homeSource, /automationController\.isModuleBusy/);
     assert.match(settingsSource, /accessibilityState=\{\{ disabled: saving \}\}/);
     assert.match(settingsSource, /disabled=\{saving\}/);
   });

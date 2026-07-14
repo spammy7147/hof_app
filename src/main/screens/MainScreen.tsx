@@ -10,6 +10,7 @@ import { GameStatusBar } from '../components/GameStatusBar';
 import { PartyPresetList } from '../components/PartyPresetList';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { DEFAULT_MAIN_TAB_ID, MainTabId } from '../domain/mainTabs';
+import type { UnifiedAutomationController } from '../domain/unifiedAutomationController';
 import { toUserFacingErrorMessage } from '../domain/userFacingErrors';
 import { theme } from '../styles/theme';
 import type {
@@ -19,7 +20,6 @@ import type {
   BattleMapResponse,
   BattleResultResponse,
   BattleStatsResponse,
-  CreateUnifiedAutomationModuleRequest,
   CreatePartyPresetRequest,
   HofCharacter,
   HofCharacterDetail,
@@ -27,10 +27,6 @@ import type {
   LoadPatternResponse,
   PartyPresetResponse,
   RunBattleRequest,
-  UnifiedAutomationAction,
-  UnifiedAutomationModuleResponse,
-  UnifiedAutomationStatusResponse,
-  UpdateUnifiedAutomationModuleRequest,
   UpdatePartyPresetRequest,
 } from '../types/api';
 import { BattleTabScreen } from './BattleTabScreen';
@@ -61,12 +57,7 @@ type MainScreenProps = {
   onLoadBattleStats: () => Promise<BattleStatsResponse>;
   onOpenCaptcha: () => void;
   onLoadCurrentAutomationJob: () => Promise<AutomationJobResponse | null>;
-  onGetUnifiedAutomation: () => Promise<UnifiedAutomationStatusResponse>;
-  onCreateUnifiedAutomationModule: (request: CreateUnifiedAutomationModuleRequest) => Promise<UnifiedAutomationModuleResponse>;
-  onUpdateUnifiedAutomationModule: (moduleId: number, request: UpdateUnifiedAutomationModuleRequest) => Promise<UnifiedAutomationModuleResponse>;
-  onDeleteUnifiedAutomationModule: (moduleId: number) => Promise<void>;
-  onReorderUnifiedAutomationModules: (moduleIds: number[]) => Promise<UnifiedAutomationStatusResponse>;
-  onChangeUnifiedAutomationState: (action: UnifiedAutomationAction) => Promise<UnifiedAutomationStatusResponse>;
+  automationController: UnifiedAutomationController;
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
   onCreatePartyPreset: (
     request: CreatePartyPresetRequest,
@@ -104,12 +95,7 @@ export function MainScreen({
   onLoadBattleStats,
   onOpenCaptcha,
   onLoadCurrentAutomationJob,
-  onGetUnifiedAutomation,
-  onCreateUnifiedAutomationModule,
-  onUpdateUnifiedAutomationModule,
-  onDeleteUnifiedAutomationModule,
-  onReorderUnifiedAutomationModules,
-  onChangeUnifiedAutomationState,
+  automationController,
   onListPartyPresets,
   onCreatePartyPreset,
   onUpdatePartyPreset,
@@ -222,12 +208,7 @@ export function MainScreen({
           onLoadBattleStats,
           onOpenCaptcha,
           onLoadCurrentAutomationJob,
-          onGetUnifiedAutomation,
-          onCreateUnifiedAutomationModule,
-          onUpdateUnifiedAutomationModule,
-          onDeleteUnifiedAutomationModule,
-          onReorderUnifiedAutomationModules,
-          onChangeUnifiedAutomationState,
+          automationController,
           onListPartyPresets,
           onCreatePartyPreset,
           onUpdatePartyPreset,
@@ -277,12 +258,7 @@ type RenderActiveTabArgs = {
   onLoadBattleStats: () => Promise<BattleStatsResponse>;
   onOpenCaptcha: () => void;
   onLoadCurrentAutomationJob: () => Promise<AutomationJobResponse | null>;
-  onGetUnifiedAutomation: () => Promise<UnifiedAutomationStatusResponse>;
-  onCreateUnifiedAutomationModule: (request: CreateUnifiedAutomationModuleRequest) => Promise<UnifiedAutomationModuleResponse>;
-  onUpdateUnifiedAutomationModule: (moduleId: number, request: UpdateUnifiedAutomationModuleRequest) => Promise<UnifiedAutomationModuleResponse>;
-  onDeleteUnifiedAutomationModule: (moduleId: number) => Promise<void>;
-  onReorderUnifiedAutomationModules: (moduleIds: number[]) => Promise<UnifiedAutomationStatusResponse>;
-  onChangeUnifiedAutomationState: (action: UnifiedAutomationAction) => Promise<UnifiedAutomationStatusResponse>;
+  automationController: UnifiedAutomationController;
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
   onCreatePartyPreset: (
     request: CreatePartyPresetRequest,
@@ -326,12 +302,7 @@ function renderActiveTab({
   onLoadBattleStats,
   onOpenCaptcha,
   onLoadCurrentAutomationJob,
-  onGetUnifiedAutomation,
-  onCreateUnifiedAutomationModule,
-  onUpdateUnifiedAutomationModule,
-  onDeleteUnifiedAutomationModule,
-  onReorderUnifiedAutomationModules,
-  onChangeUnifiedAutomationState,
+  automationController,
   onListPartyPresets,
   onCreatePartyPreset,
   onUpdatePartyPreset,
@@ -356,12 +327,7 @@ function renderActiveTab({
           onLoadBattleCategories={onLoadBattleCategories}
           onLoadBattleMaps={onLoadBattleMaps}
           onListPartyPresets={onListPartyPresets}
-          onGetUnifiedAutomation={onGetUnifiedAutomation}
-          onCreateUnifiedAutomationModule={onCreateUnifiedAutomationModule}
-          onUpdateUnifiedAutomationModule={onUpdateUnifiedAutomationModule}
-          onDeleteUnifiedAutomationModule={onDeleteUnifiedAutomationModule}
-          onReorderUnifiedAutomationModules={onReorderUnifiedAutomationModules}
-          onChangeUnifiedAutomationState={onChangeUnifiedAutomationState}
+          automationController={automationController}
           onOpenCaptcha={onOpenCaptcha}
         />
       );
