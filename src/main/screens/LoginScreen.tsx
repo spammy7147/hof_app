@@ -5,7 +5,6 @@ import { PrimaryButton } from '../components/PrimaryButton';
 import { theme } from '../styles/theme';
 
 type LoginScreenProps = {
-  backendBaseUrl: string;
   errorMessage: string | null;
   isSubmitting: boolean;
   onSubmit: (loginId: string, password: string) => Promise<void>;
@@ -14,7 +13,7 @@ type LoginScreenProps = {
 /**
  * HOF 계정으로 로그인하는 첫 화면이다.
  */
-export function LoginScreen({ backendBaseUrl, errorMessage, isSubmitting, onSubmit }: LoginScreenProps) {
+export function LoginScreen({ errorMessage, isSubmitting, onSubmit }: LoginScreenProps) {
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
@@ -79,8 +78,6 @@ export function LoginScreen({ backendBaseUrl, errorMessage, isSubmitting, onSubm
             onPress={handleSubmit}
           />
         </View>
-
-        <Text style={styles.backendText}>연결 주소 · {backendBaseUrl}</Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -127,9 +124,5 @@ const styles = StyleSheet.create({
     color: theme.colors.danger,
     fontSize: 14,
     lineHeight: 20,
-  },
-  backendText: {
-    color: theme.colors.textMuted,
-    fontSize: 12,
   },
 });

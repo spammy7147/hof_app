@@ -303,7 +303,6 @@ export default function App() {
   } else if (mode === 'login') {
     content = (
       <LoginScreen
-        backendBaseUrl={api.baseUrl}
         errorMessage={loginError}
         isSubmitting={isLoggingIn}
         onSubmit={handleManualLogin}
