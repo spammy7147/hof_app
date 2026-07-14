@@ -10,6 +10,7 @@ type Props = {
   busy: boolean;
   onChangeState: (action: UnifiedAutomationAction) => void;
   onOpenSettings: () => void;
+  onOpenModule: (moduleId: number) => void;
   onOpenCaptcha: () => void;
 };
 
@@ -19,6 +20,7 @@ export function UnifiedAutomationDashboard({
   busy,
   onChangeState,
   onOpenSettings,
+  onOpenModule,
   onOpenCaptcha,
 }: Props) {
   const status = automation.job?.status ?? null;
@@ -67,14 +69,20 @@ export function UnifiedAutomationDashboard({
           <Text style={styles.emptyText}>자동화 구성을 추가해 주세요.</Text>
         ) : null}
         {summaries.map((summary) => (
-          <View key={summary.id} style={styles.summaryRow}>
+          <Pressable
+            key={summary.id}
+            accessibilityLabel={`${summary.title} 설정 열기`}
+            accessibilityRole="button"
+            onPress={() => onOpenModule(summary.id)}
+            style={({ pressed }) => [styles.summaryRow, pressed && styles.pressed]}
+          >
             <View style={[styles.moduleDot, !summary.enabled && styles.moduleDotOff]} />
             <View style={styles.summaryCopy}>
               <Text style={styles.summaryTitle}>{summary.title}</Text>
               <Text style={styles.summaryDetail}>{summary.detail}</Text>
             </View>
             <ChevronRight color={theme.colors.textMuted} size={16} />
-          </View>
+          </Pressable>
         ))}
       </View>
     </View>

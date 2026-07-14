@@ -14,6 +14,10 @@ const dashboardSource = readFileSync(
   resolve(process.cwd(), 'src/main/features/automation/components/UnifiedAutomationDashboard.tsx'),
   'utf8',
 );
+const editorSource = readFileSync(
+  resolve(process.cwd(), 'src/main/features/automation/components/UnifiedAutomationModuleEditor.tsx'),
+  'utf8',
+);
 
 describe('통합 자동화 홈 화면', () => {
   it('한 계정의 자동화를 상태 대시보드와 설정 화면으로 나눈다', () => {
@@ -59,5 +63,38 @@ describe('통합 자동화 홈 화면', () => {
   it('세부 규칙은 정보 버튼으로 접어 둔다', () => {
     assert.match(homeSource, /accessibilityLabel="자동화 실행 규칙 보기"/);
     assert.match(homeSource, /위에서부터 우선순위대로/);
+  });
+
+  it('빈 상태에서 지원 유형을 고르고 같은 유형도 반복 추가할 수 있다', () => {
+    assert.match(settingsSource, /자동화 추가/);
+    assert.match(settingsSource, /KEY_QUEST/);
+    assert.match(settingsSource, /TIME_BURN/);
+    assert.match(settingsSource, /COOLDOWN_ADVENTURE/);
+    assert.match(settingsSource, /DAILY_ADVENTURE/);
+    assert.match(settingsSource, /OTHER_QUEST/);
+    assert.doesNotMatch(settingsSource, /filter\([^\n]*moduleType/);
+  });
+
+  it('드래그 핸들과 optimistic 순서 저장 큐를 실제 목록에 연결한다', () => {
+    assert.match(settingsSource, /NestableDraggableFlatList/);
+    assert.match(settingsSource, /GripVertical/);
+    assert.match(settingsSource, /onDragEnd/);
+    assert.match(homeSource, /UnifiedAutomationReorderQueue/);
+    assert.match(homeSource, /순서를 저장하지 못했습니다/);
+  });
+
+  it('모듈 편집기에서 이름, 사용 여부, 유형별 맵·프리셋·퀘스트를 저장한다', () => {
+    assert.match(editorSource, /AutomationMapSettings/);
+    assert.match(editorSource, /파티 프리셋/);
+    assert.match(editorSource, /퀘스트 코드/);
+    assert.match(editorSource, /Time 기준/);
+    assert.match(editorSource, /정말 삭제할까요/);
+    assert.match(homeSource, /buildUnifiedModuleRequest/);
+    assert.match(homeSource, /buildUpdateUnifiedModuleRequest/);
+  });
+
+  it('변경 사항은 현재 작업을 끊지 않고 다음 판단부터 적용된다고 안내한다', () => {
+    assert.match(settingsSource, /다음 작업부터 적용/);
+    assert.match(editorSource, /다음 작업부터 적용/);
   });
 });

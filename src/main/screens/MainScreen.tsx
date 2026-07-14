@@ -350,22 +350,20 @@ function renderActiveTab({
   switch (activeTabId) {
     case 'home':
       return (
-        <TabScrollContainer>
-          <HomeTabScreen
-            authenticated={authenticated}
-            battleCategories={battleCategories}
-            onLoadBattleCategories={onLoadBattleCategories}
-            onLoadBattleMaps={onLoadBattleMaps}
-            onListPartyPresets={onListPartyPresets}
-            onGetUnifiedAutomation={onGetUnifiedAutomation}
-            onCreateUnifiedAutomationModule={onCreateUnifiedAutomationModule}
-            onUpdateUnifiedAutomationModule={onUpdateUnifiedAutomationModule}
-            onDeleteUnifiedAutomationModule={onDeleteUnifiedAutomationModule}
-            onReorderUnifiedAutomationModules={onReorderUnifiedAutomationModules}
-            onChangeUnifiedAutomationState={onChangeUnifiedAutomationState}
-            onOpenCaptcha={onOpenCaptcha}
-          />
-        </TabScrollContainer>
+        <HomeTabScreen
+          authenticated={authenticated}
+          battleCategories={battleCategories}
+          onLoadBattleCategories={onLoadBattleCategories}
+          onLoadBattleMaps={onLoadBattleMaps}
+          onListPartyPresets={onListPartyPresets}
+          onGetUnifiedAutomation={onGetUnifiedAutomation}
+          onCreateUnifiedAutomationModule={onCreateUnifiedAutomationModule}
+          onUpdateUnifiedAutomationModule={onUpdateUnifiedAutomationModule}
+          onDeleteUnifiedAutomationModule={onDeleteUnifiedAutomationModule}
+          onReorderUnifiedAutomationModules={onReorderUnifiedAutomationModules}
+          onChangeUnifiedAutomationState={onChangeUnifiedAutomationState}
+          onOpenCaptcha={onOpenCaptcha}
+        />
       );
     case 'battle':
       return (
