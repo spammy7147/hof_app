@@ -129,6 +129,10 @@ export function BattlePartyPresetPicker({
         </View>
       ) : null}
 
+      {!expanded && !loading && errorMessage == null && presets.length === 0 ? (
+        <Text style={styles.emptyText}>저장된 프리셋이 없습니다.</Text>
+      ) : null}
+
       {expanded ? (
         <View style={styles.expandedArea}>
           <TextInput

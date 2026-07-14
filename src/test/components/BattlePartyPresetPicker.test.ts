@@ -30,4 +30,11 @@ describe('BattlePartyPresetPicker', () => {
     assert.match(source, /onRetry/);
     assert.doesNotMatch(source, /disabled=\{errorMessage != null\}/);
   });
+
+  it('shows the empty preset message while the successful empty picker is collapsed', () => {
+    assert.match(
+      source,
+      /!expanded && !loading && errorMessage == null && presets\.length === 0/,
+    );
+  });
 });
