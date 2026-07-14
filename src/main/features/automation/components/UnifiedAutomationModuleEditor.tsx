@@ -299,7 +299,9 @@ export function UnifiedAutomationModuleEditor({
 
       {(moduleUsesMaps || (draft.moduleType === 'KEY_QUEST' && activeQuest)) ? (
         <Section title={draft.moduleType === 'KEY_QUEST' ? '퀘스트 맵' : '실행 맵'}>
-          <Text style={styles.fieldHelp}>선택한 맵마다 전투에 사용할 파티 프리셋을 지정하세요.</Text>
+          <Text style={styles.fieldHelp}>
+            파티 프리셋 없이도 저장할 수 있지만, 지정하기 전까지 이 자동화는 준비 전 상태로 남아요.
+          </Text>
           {categoryIds.length > 1 ? (
             <View style={styles.segmentRow}>
               {categoryIds.map((categoryId) => (

@@ -282,14 +282,6 @@ export function validateUnifiedModuleDraft(draft: UnifiedAutomationModuleDraft):
     errors.push('같은 퀘스트 코드를 두 번 추가할 수 없습니다.');
   }
 
-  const mapsRequiringPreset = moduleUsesMaps
-    ? draft.maps
-    : draft.moduleType === 'KEY_QUEST'
-      ? draft.quests.flatMap((quest) => quest.maps)
-      : [];
-  if (mapsRequiringPreset.some((map) => map.partyPresetId == null)) {
-    errors.push('선택한 모든 맵에 파티 프리셋을 지정해 주세요.');
-  }
   return errors;
 }
 

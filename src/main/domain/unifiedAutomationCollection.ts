@@ -57,12 +57,17 @@ export function mergeConfirmedUnifiedAutomationOrder(
 ): UnifiedAutomationStatusResponse {
   if (!current) return serverState;
   const localById = new Map(current.modules.map((module) => [module.id, module]));
+  const serverIds = new Set(serverState.modules.map((module) => module.id));
+  const orderedCurrentModules = serverState.modules.flatMap((serverModule) => {
+    const localModule = localById.get(serverModule.id);
+    return localModule ? [{ ...serverModule, ...localModule }] : [];
+  });
+  const locallyAddedModules = current.modules.filter((module) => !serverIds.has(module.id));
   return {
     ...serverState,
-    modules: serverState.modules.map((serverModule, priority) => ({
-      ...serverModule,
-      ...localById.get(serverModule.id),
-      priority,
-    })),
+    modules: normalizeUnifiedAutomationPriorities([
+      ...orderedCurrentModules,
+      ...locallyAddedModules,
+    ]),
   };
 }

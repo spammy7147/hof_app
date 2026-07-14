@@ -80,7 +80,14 @@ describe('통합 자동화 홈 화면', () => {
     assert.match(settingsSource, /GripVertical/);
     assert.match(settingsSource, /onDragEnd/);
     assert.match(homeSource, /UnifiedAutomationReorderQueue/);
-    assert.match(homeSource, /순서를 저장하지 못했습니다/);
+    assert.match(homeSource, /순서를 저장하지 못해 이전 순서로 되돌렸어요/);
+  });
+
+  it('같은 모듈 저장을 조정하고 저장 중인 행 편집을 막는다', () => {
+    assert.match(homeSource, /UnifiedAutomationModuleMutationCoordinator/);
+    assert.match(homeSource, /runExclusive/);
+    assert.match(settingsSource, /accessibilityState=\{\{ disabled: saving \}\}/);
+    assert.match(settingsSource, /disabled=\{saving\}/);
   });
 
   it('모듈 편집기에서 이름, 사용 여부, 유형별 맵·프리셋·퀘스트를 저장한다', () => {
@@ -89,6 +96,7 @@ describe('통합 자동화 홈 화면', () => {
     assert.match(editorSource, /퀘스트 코드/);
     assert.match(editorSource, /Time 기준/);
     assert.match(editorSource, /정말 삭제할까요/);
+    assert.match(editorSource, /프리셋 없이도 저장할 수 있지만/);
     assert.match(homeSource, /buildUnifiedModuleRequest/);
     assert.match(homeSource, /buildUpdateUnifiedModuleRequest/);
   });

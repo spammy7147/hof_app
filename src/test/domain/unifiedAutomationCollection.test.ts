@@ -41,6 +41,40 @@ describe('통합 자동화 모듈 목록 변경', () => {
       { id: 1, enabled: true, priority: 1 },
     ]);
   });
+
+  it('늦은 재정렬 응답이 그 사이 생성 완료된 모듈을 목록에서 숨기지 않는다', () => {
+    const current = status([
+      module(2, '두 번째', 0),
+      module(1, '첫 번째', 1),
+      module(3, '새 모듈', 2),
+    ]);
+    const staleReorderResponse = status([
+      module(2, '두 번째', 0),
+      module(1, '첫 번째', 1),
+    ]);
+
+    const merged = mergeConfirmedUnifiedAutomationOrder(current, staleReorderResponse);
+
+    assert.deepEqual(merged.modules.map(({ id, priority }) => ({ id, priority })), [
+      { id: 2, priority: 0 },
+      { id: 1, priority: 1 },
+      { id: 3, priority: 2 },
+    ]);
+  });
+
+  it('늦은 재정렬 응답이 그 사이 삭제 완료된 모듈을 되살리지 않는다', () => {
+    const current = status([module(2, '두 번째', 0)]);
+    const staleReorderResponse = status([
+      module(2, '두 번째', 0),
+      module(1, '삭제됨', 1),
+    ]);
+
+    const merged = mergeConfirmedUnifiedAutomationOrder(current, staleReorderResponse);
+
+    assert.deepEqual(merged.modules.map(({ id, priority }) => ({ id, priority })), [
+      { id: 2, priority: 0 },
+    ]);
+  });
 });
 
 function module(id: number, displayName: string, priority: number): UnifiedAutomationModuleResponse {

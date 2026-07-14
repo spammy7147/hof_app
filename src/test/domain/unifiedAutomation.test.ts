@@ -152,7 +152,7 @@ describe('통합 자동화 도메인', () => {
     });
   });
 
-  it('이름, 유형별 필수값, 중복 퀘스트와 프리셋 누락을 사용자 문구로 검증한다', () => {
+  it('이름, 유형별 필수값과 중복 퀘스트를 검증하되 프리셋 누락은 저장을 허용한다', () => {
     const invalidTimeDraft = {
       ...buildCreateUnifiedModuleDraft('TIME_BURN', []),
       displayName: '   ',
@@ -162,8 +162,14 @@ describe('통합 자동화 도메인', () => {
     assert.deepEqual(validateUnifiedModuleDraft(invalidTimeDraft), [
       '자동화 이름을 입력해 주세요.',
       'Time 기준은 1%에서 100% 사이로 설정해 주세요.',
-      '선택한 모든 맵에 파티 프리셋을 지정해 주세요.',
     ]);
+
+    const saveableWithoutPreset = {
+      ...buildCreateUnifiedModuleDraft('TIME_BURN', []),
+      maps: [{ categoryId: 'battle_map', mapCode: 'gb0', partyPresetId: null, executionOrder: 0 }],
+    };
+    assert.deepEqual(validateUnifiedModuleDraft(saveableWithoutPreset), []);
+    assert.equal(buildUnifiedModuleRequest(saveableWithoutPreset).maps[0]?.partyPresetId, null);
 
     let questDraft = buildCreateUnifiedModuleDraft('OTHER_QUEST', []);
     questDraft = addUnifiedAutomationQuest(questDraft, 'quest-1');

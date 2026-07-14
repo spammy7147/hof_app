@@ -262,14 +262,14 @@ function AutomationMapRow({
   ].filter(Boolean).join(' · ') || map.mapCode || '맵 정보 없음';
   const mapUnavailable = saving || !mapEditable;
   const selectedPreset = partyPresets.find((preset) => preset.id === profileMap?.partyPresetId) ?? null;
-  const needsPreset = selected && selectedPreset == null;
+  const presetMissing = selected && selectedPreset == null;
 
   return (
     <View style={styles.mapRowBlock}>
       <View style={[
         styles.mapRow,
         selected && styles.mapRowSelected,
-        needsPreset && styles.mapRowNeedsPreset,
+        presetMissing && styles.mapRowPresetWarning,
         mapUnavailable && styles.buttonDisabled,
       ]}>
         <Pressable
@@ -298,7 +298,7 @@ function AutomationMapRow({
           style={({ pressed }) => [
             styles.mapPresetButton,
             !selected && styles.mapAddButton,
-            needsPreset && styles.mapPresetButtonRequired,
+            presetMissing && styles.mapPresetButtonWarning,
             pressed && !mapUnavailable && styles.buttonPressed,
           ]}
         >
@@ -307,13 +307,13 @@ function AutomationMapRow({
             style={[
               styles.mapPresetButtonText,
               !selected && styles.mapAddButtonText,
-              needsPreset && styles.mapPresetButtonRequiredText,
+              presetMissing && styles.mapPresetButtonWarningText,
             ]}
           >
-            {selected ? selectedPreset?.name ?? '프리셋 필요' : '추가'}
+            {selected ? selectedPreset?.name ?? '프리셋 미설정' : '추가'}
           </Text>
           {selected ? (
-            <ChevronDown color={needsPreset ? theme.colors.danger : theme.colors.textMuted} size={14} />
+            <ChevronDown color={presetMissing ? theme.colors.accentAmber : theme.colors.textMuted} size={14} />
           ) : null}
         </Pressable>
       </View>
@@ -394,7 +394,7 @@ const styles = StyleSheet.create({
   mapRowBlock: { gap: theme.spacing.xs },
   mapRow: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.sm, backgroundColor: theme.colors.background, paddingHorizontal: theme.spacing.sm, paddingVertical: theme.spacing.sm },
   mapRowSelected: { borderColor: theme.colors.accentGreen },
-  mapRowNeedsPreset: { borderColor: theme.colors.danger },
+  mapRowPresetWarning: { borderColor: theme.colors.accentAmber },
   mapToggleArea: { flex: 1, minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 6 },
   mapSelectMark: { width: 18, height: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, backgroundColor: theme.colors.surface },
   mapSelectMarkSelected: { borderColor: theme.colors.accentGreen, backgroundColor: theme.colors.accentGreen },
@@ -404,10 +404,10 @@ const styles = StyleSheet.create({
   mapMeta: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '700', lineHeight: 17 },
   mapPresetButton: { maxWidth: 132, minWidth: 74, minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.spacing.xs, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.sm, backgroundColor: theme.colors.surfaceAlt, paddingHorizontal: theme.spacing.sm },
   mapAddButton: { borderColor: theme.colors.accentGreen, backgroundColor: theme.colors.background },
-  mapPresetButtonRequired: { borderColor: theme.colors.danger, backgroundColor: theme.colors.background },
+  mapPresetButtonWarning: { borderColor: theme.colors.accentAmber, backgroundColor: theme.colors.background },
   mapPresetButtonText: { minWidth: 0, color: theme.colors.text, fontSize: 12, fontWeight: '900' },
   mapAddButtonText: { color: theme.colors.accentGreen },
-  mapPresetButtonRequiredText: { color: theme.colors.danger },
+  mapPresetButtonWarningText: { color: theme.colors.accentAmber },
   presetPicker: { gap: theme.spacing.xs, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.sm, backgroundColor: theme.colors.background, padding: theme.spacing.sm },
   presetPickerEmpty: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '800', lineHeight: 17 },
   presetOption: { minHeight: 34, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.sm, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.sm, backgroundColor: theme.colors.surface, paddingHorizontal: theme.spacing.sm },

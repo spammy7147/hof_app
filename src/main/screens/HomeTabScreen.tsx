@@ -13,11 +13,14 @@ import {
 } from '../domain/unifiedAutomation';
 import {
   appendUnifiedAutomationModule,
-  mergeConfirmedUnifiedAutomationOrder,
   normalizeUnifiedAutomationPriorities,
   removeUnifiedAutomationModule,
   replaceUnifiedAutomationModule,
 } from '../domain/unifiedAutomationCollection';
+import {
+  UnifiedAutomationListCoordinator,
+  UnifiedAutomationModuleMutationCoordinator,
+} from '../domain/unifiedAutomationOperations';
 import { UnifiedAutomationReorderQueue } from '../domain/unifiedAutomationReorder';
 import { toUserFacingErrorMessage } from '../domain/userFacingErrors';
 import { UnifiedAutomationDashboard } from '../features/automation/components/UnifiedAutomationDashboard';
@@ -52,6 +55,7 @@ type HomeTabScreenProps = {
 };
 
 type HomeRoute = 'dashboard' | 'settings' | 'editor';
+const NEW_MODULE_OPERATION_ID = -1;
 
 /**
  * 통합 자동화 상태 조회, 사용자 구성 CRUD와 optimistic 우선순위 저장을 조정하는 홈 화면이다.
@@ -83,6 +87,16 @@ export function HomeTabScreen({
   const [savingModuleIds, setSavingModuleIds] = useState<number[]>([]);
   const [reordering, setReordering] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const automationRef = useRef<UnifiedAutomationStatusResponse | null>(null);
+
+  const listCoordinatorRef = useRef<UnifiedAutomationListCoordinator | null>(null);
+  if (listCoordinatorRef.current == null) {
+    listCoordinatorRef.current = new UnifiedAutomationListCoordinator();
+  }
+  const mutationCoordinatorRef = useRef<UnifiedAutomationModuleMutationCoordinator | null>(null);
+  if (mutationCoordinatorRef.current == null) {
+    mutationCoordinatorRef.current = new UnifiedAutomationModuleMutationCoordinator();
+  }
 
   // 큐 인스턴스는 렌더 사이에 유지하되 최신 API callback은 ref를 통해 읽는다.
   const reorderRequestRef = useRef(onReorderUnifiedAutomationModules);
@@ -95,30 +109,60 @@ export function HomeTabScreen({
     reorderQueueRef.current = new UnifiedAutomationReorderQueue(
       (moduleIds) => reorderRequestRef.current(moduleIds),
       (serverState) => {
-        setAutomation((current) => mergeConfirmedUnifiedAutomationOrder(current, serverState));
+        applyAutomation(listCoordinatorRef.current!.mergeReorderSuccess(
+          automationRef.current,
+          serverState,
+        ));
         setReordering(false);
       },
       async () => {
         setReordering(false);
-        setMessage('순서를 저장하지 못했습니다. 서버에 저장된 순서로 다시 불러왔어요.');
-        try {
-          setAutomation(await reloadRequestRef.current());
-        } catch {
-          setMessage('순서를 저장하지 못했습니다. 잠시 후 자동화 목록을 다시 열어 주세요.');
+        setMessage('순서를 저장하지 못해 이전 순서로 되돌렸어요. 저장된 상태를 다시 확인하고 있어요.');
+        const current = automationRef.current;
+        if (current) {
+          const refreshed = await listCoordinatorRef.current!.rollbackAndReload(
+            current,
+            applyAutomation,
+            () => reloadRequestRef.current(),
+            () => automationRef.current ?? current,
+          );
+          if (!refreshed) {
+            setMessage('순서를 저장하지 못해 이전 순서로 되돌렸어요. 잠시 후 다시 시도해 주세요.');
+          }
         }
+      },
+      (_serverState, moduleIds) => {
+        listCoordinatorRef.current!.recordConfirmedOrder(moduleIds);
       },
     );
   }
 
+  /** React 렌더 전에도 비동기 응답이 항상 최신 목록을 읽도록 state와 ref를 함께 갱신한다. */
+  function applyAutomation(next: UnifiedAutomationStatusResponse | null) {
+    automationRef.current = next;
+    setAutomation(next);
+  }
+
+  /** 생성·수정·삭제 결과를 가장 최근 목록에 동기적으로 합친다. */
+  function updateAutomation(
+    transform: (
+      current: UnifiedAutomationStatusResponse | null,
+    ) => UnifiedAutomationStatusResponse | null,
+  ) {
+    applyAutomation(transform(automationRef.current));
+  }
+
   const loadAutomation = useCallback(async () => {
     if (!authenticated) {
-      setAutomation(null);
+      applyAutomation(null);
       return;
     }
     setLoading(true);
     setMessage(null);
     try {
-      setAutomation(await onGetUnifiedAutomation());
+      const loaded = await onGetUnifiedAutomation();
+      listCoordinatorRef.current!.recordAuthoritativeState(loaded);
+      applyAutomation(loaded);
     } catch (error) {
       setMessage(toUserFacingErrorMessage(error));
     } finally {
@@ -134,7 +178,9 @@ export function HomeTabScreen({
     setActionSaving(true);
     setMessage(null);
     try {
-      setAutomation(await onChangeUnifiedAutomationState(action));
+      const updated = await onChangeUnifiedAutomationState(action);
+      listCoordinatorRef.current!.recordAuthoritativeState(updated);
+      applyAutomation(updated);
     } catch (error) {
       setMessage(toUserFacingErrorMessage(error));
     } finally {
@@ -144,18 +190,23 @@ export function HomeTabScreen({
 
   /** 해당 행만 저장 상태로 표시하고 다른 모듈 조작은 유지한다. */
   async function toggleModule(module: UnifiedAutomationModuleResponse) {
-    setSavingModuleIds((ids) => [...ids, module.id]);
-    setMessage(null);
-    try {
-      const updated = await onUpdateUnifiedAutomationModule(
-        module.id,
-        buildToggleUnifiedModuleRequest(module),
-      );
-      setAutomation((current) => replaceUnifiedAutomationModule(current, updated));
-    } catch (error) {
-      setMessage(toUserFacingErrorMessage(error));
-    } finally {
-      setSavingModuleIds((ids) => ids.filter((id) => id !== module.id));
+    const task = mutationCoordinatorRef.current!.runExclusive(module.id, async () => {
+      setSavingModuleIds((ids) => [...ids, module.id]);
+      setMessage(null);
+      try {
+        const updated = await onUpdateUnifiedAutomationModule(
+          module.id,
+          buildToggleUnifiedModuleRequest(module),
+        );
+        updateAutomation((current) => replaceUnifiedAutomationModule(current, updated));
+      } catch (error) {
+        setMessage(toUserFacingErrorMessage(error));
+      } finally {
+        setSavingModuleIds((ids) => ids.filter((id) => id !== module.id));
+      }
+    });
+    if (task) {
+      await task;
     }
   }
 
@@ -167,6 +218,10 @@ export function HomeTabScreen({
   }
 
   function startEdit(module: UnifiedAutomationModuleResponse) {
+    if (mutationCoordinatorRef.current!.isBusy(module.id)) {
+      setMessage('이 자동화를 저장하고 있어요. 완료된 뒤 다시 열어 주세요.');
+      return;
+    }
     setEditorDraft(buildEditUnifiedModuleDraft(module));
     setMessage(null);
     setRoute('editor');
@@ -178,46 +233,63 @@ export function HomeTabScreen({
   }
 
   async function saveModule(draft: UnifiedAutomationModuleDraft) {
-    setEditorSaving(true);
-    setMessage(null);
-    try {
-      if (draft.moduleId == null) {
-        const created = await onCreateUnifiedAutomationModule(buildUnifiedModuleRequest(draft));
-        setAutomation((current) => appendUnifiedAutomationModule(current, created));
-      } else {
-        const updated = await onUpdateUnifiedAutomationModule(
-          draft.moduleId,
-          buildUpdateUnifiedModuleRequest(draft),
-        );
-        setAutomation((current) => replaceUnifiedAutomationModule(current, updated));
+    const operationId = draft.moduleId ?? NEW_MODULE_OPERATION_ID;
+    const task = mutationCoordinatorRef.current!.runExclusive(operationId, async () => {
+      setEditorSaving(true);
+      setMessage(null);
+      try {
+        if (draft.moduleId == null) {
+          const created = await onCreateUnifiedAutomationModule(buildUnifiedModuleRequest(draft));
+          listCoordinatorRef.current!.recordCreated(created.id);
+          updateAutomation((current) => appendUnifiedAutomationModule(current, created));
+        } else {
+          const updated = await onUpdateUnifiedAutomationModule(
+            draft.moduleId,
+            buildUpdateUnifiedModuleRequest(draft),
+          );
+          updateAutomation((current) => replaceUnifiedAutomationModule(current, updated));
+        }
+        setEditorDraft(null);
+        setRoute('settings');
+      } catch (error) {
+        setMessage(toUserFacingErrorMessage(error));
+      } finally {
+        setEditorSaving(false);
       }
-      setEditorDraft(null);
-      setRoute('settings');
-    } catch (error) {
-      setMessage(toUserFacingErrorMessage(error));
-    } finally {
-      setEditorSaving(false);
+    });
+    if (!task) {
+      setMessage('이 자동화를 저장하고 있어요. 잠시만 기다려 주세요.');
+      return;
     }
+    await task;
   }
 
   async function deleteModule(moduleId: number) {
-    setEditorSaving(true);
-    setMessage(null);
-    try {
-      await onDeleteUnifiedAutomationModule(moduleId);
-      setAutomation((current) => removeUnifiedAutomationModule(current, moduleId));
-      setEditorDraft(null);
-      setRoute('settings');
-    } catch (error) {
-      setMessage(toUserFacingErrorMessage(error));
-    } finally {
-      setEditorSaving(false);
+    const task = mutationCoordinatorRef.current!.runExclusive(moduleId, async () => {
+      setEditorSaving(true);
+      setMessage(null);
+      try {
+        await onDeleteUnifiedAutomationModule(moduleId);
+        listCoordinatorRef.current!.recordDeleted(moduleId);
+        updateAutomation((current) => removeUnifiedAutomationModule(current, moduleId));
+        setEditorDraft(null);
+        setRoute('settings');
+      } catch (error) {
+        setMessage(toUserFacingErrorMessage(error));
+      } finally {
+        setEditorSaving(false);
+      }
+    });
+    if (!task) {
+      setMessage('이 자동화를 저장하고 있어요. 잠시만 기다려 주세요.');
+      return;
     }
+    await task;
   }
 
   function reorderModules(modules: UnifiedAutomationModuleResponse[]) {
     const normalized = normalizeUnifiedAutomationPriorities(modules);
-    setAutomation((current) => current ? { ...current, modules: normalized } : current);
+    updateAutomation((current) => current ? { ...current, modules: normalized } : current);
     setReordering(true);
     reorderQueueRef.current?.enqueue(normalized.map((module) => module.id));
   }

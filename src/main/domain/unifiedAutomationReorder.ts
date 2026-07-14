@@ -14,6 +14,7 @@ export class UnifiedAutomationReorderQueue<T> {
     private readonly persist: (moduleIds: number[]) => Promise<T>,
     private readonly onSaved: (result: T) => void,
     private readonly onFailure: (error: unknown) => Promise<void>,
+    private readonly onPersisted?: (result: T, moduleIds: number[]) => void,
   ) {}
 
   /** 최신 사용자 순서를 복사해 보관하고 비동기 저장 루프를 시작한다. */
@@ -37,6 +38,7 @@ export class UnifiedAutomationReorderQueue<T> {
         this.pendingOrder = null;
         try {
           const result = await this.persist(order);
+          this.onPersisted?.(result, order);
           if (this.pendingOrder == null) this.onSaved(result);
         } catch (error) {
           this.pendingOrder = null;

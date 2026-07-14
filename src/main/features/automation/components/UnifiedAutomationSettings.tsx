@@ -162,8 +162,14 @@ function AutomationModuleRow({
       <Pressable
         accessibilityLabel={`${item.displayName} 편집`}
         accessibilityRole="button"
+        accessibilityState={{ disabled: saving }}
+        disabled={saving}
         onPress={() => onEdit(item)}
-        style={({ pressed }) => [styles.rowCopyButton, pressed && styles.pressed]}
+        style={({ pressed }) => [
+          styles.rowCopyButton,
+          saving && styles.disabled,
+          pressed && !saving && styles.pressed,
+        ]}
       >
         <Text numberOfLines={1} style={styles.rowTitle}>{item.displayName}</Text>
         <Text numberOfLines={1} style={styles.rowMeta}>
@@ -182,8 +188,14 @@ function AutomationModuleRow({
       <Pressable
         accessibilityLabel={`${item.displayName} 상세 설정`}
         accessibilityRole="button"
+        accessibilityState={{ disabled: saving }}
+        disabled={saving}
         onPress={() => onEdit(item)}
-        style={({ pressed }) => [styles.editButton, pressed && styles.pressed]}
+        style={({ pressed }) => [
+          styles.editButton,
+          saving && styles.disabled,
+          pressed && !saving && styles.pressed,
+        ]}
       >
         <ChevronRight color={theme.colors.textMuted} size={18} />
       </Pressable>
@@ -227,4 +239,5 @@ const styles = StyleSheet.create({
   editButton: { alignItems: 'center', height: 40, justifyContent: 'center', width: 28 },
   savingText: { color: theme.colors.textMuted, fontSize: 11, textAlign: 'right' },
   pressed: { opacity: 0.72 },
+  disabled: { opacity: 0.45 },
 });

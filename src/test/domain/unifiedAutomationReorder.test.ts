@@ -8,6 +8,7 @@ describe('통합 자동화 우선순위 저장 큐', () => {
     const requests: number[][] = [];
     const resolvers: Array<() => void> = [];
     const saved: number[][] = [];
+    const persisted: number[][] = [];
     const queue = new UnifiedAutomationReorderQueue(
       async (ids) => {
         requests.push(ids);
@@ -16,6 +17,7 @@ describe('통합 자동화 우선순위 저장 큐', () => {
       },
       (ids) => saved.push(ids),
       async () => undefined,
+      (_result, ids) => persisted.push(ids),
     );
 
     queue.enqueue([2, 1, 3]);
@@ -28,10 +30,12 @@ describe('통합 자동화 우선순위 저장 큐', () => {
     await tick();
     assert.deepEqual(requests, [[2, 1, 3], [3, 2, 1]]);
     assert.deepEqual(saved, []);
+    assert.deepEqual(persisted, [[2, 1, 3]]);
 
     resolvers.shift()?.();
     await queue.whenIdle();
     assert.deepEqual(saved, [[3, 2, 1]]);
+    assert.deepEqual(persisted, [[2, 1, 3], [3, 2, 1]]);
   });
 
   it('저장 실패 시 대기 순서를 버리고 서버 순서를 다시 불러온다', async () => {
