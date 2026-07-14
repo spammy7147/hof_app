@@ -8,6 +8,7 @@ import {
   buildBattlePartyPatternOptions,
   filterBattlePartyCharacterOptions,
   isBattlePartyReady,
+  sanitizeBattlePartyForCharacters,
   toRunBattleRequest,
   updateBattlePartyMember,
   updateBattlePartyPattern,
@@ -60,39 +61,24 @@ describe('battleParty', () => {
     });
   });
 
-  it('builds a battle request with only selected party members when slots are intentionally empty', () => {
+  it('rejects a battle request when the fifth party slot is empty', () => {
     const characters = Array.from({ length: 5 }, (_, index) => makeHofCharacter(index + 1));
-    const party = updateBattlePartyMember(
-      updateBattlePartyMember(
-        updateBattlePartyMember(createDefaultBattleParty(characters), 2, null, characters),
-        3,
-        null,
+    const party = updateBattlePartyMember(createDefaultBattleParty(characters), 4, null, characters);
+
+    assert.equal(isBattlePartyReady(party, characters), false);
+    assert.throws(
+      () => toRunBattleRequest({
+        categoryId: 'battle_map',
+        mapCode: 'snow22',
+        party,
         characters,
+        battleCount: 1,
+      }),
+      (error: unknown) => (
+        error instanceof Error
+        && error.message === '전투에 사용할 캐릭터 5명을 모두 선택해야 합니다.'
       ),
-      4,
-      null,
-      characters,
     );
-
-    const request = toRunBattleRequest({
-      categoryId: 'battle_map',
-      mapCode: 'snow22',
-      party,
-      characters,
-      battleCount: 1,
-    });
-
-    assert.equal(isBattlePartyReady(party, characters), true);
-    assert.deepEqual(request, {
-      categoryId: 'battle_map',
-      mapCode: 'snow22',
-      characterIds: ['char-1', 'char-2'],
-      patternLoads: [
-        { characterId: 'char-1', slot: 0 },
-        { characterId: 'char-2', slot: 0 },
-      ],
-      battleCount: 1,
-    });
   });
 
   it('does not allow battle requests when every party slot is empty', () => {
@@ -109,7 +95,10 @@ describe('battleParty', () => {
         characters,
         battleCount: 1,
       }),
-      /전투에 사용할 캐릭터를 1명 이상 선택해야 합니다/,
+      (error: unknown) => (
+        error instanceof Error
+        && error.message === '전투에 사용할 캐릭터 5명을 모두 선택해야 합니다.'
+      ),
     );
   });
 
@@ -201,5 +190,17 @@ describe('battleParty', () => {
         { slot: 1, label: '패턴 2', selected: true },
       ],
     );
+  });
+
+  it('clears stale party members while preserving slot indexes and synced members', () => {
+    const party = [
+      { slotIndex: 2, characterId: 'char-1', patternSlot: 1 },
+      { slotIndex: 4, characterId: 'missing-character', patternSlot: 3 },
+    ];
+
+    assert.deepEqual(sanitizeBattlePartyForCharacters(party, [makeHofCharacter(1)]), [
+      { slotIndex: 2, characterId: 'char-1', patternSlot: 1 },
+      { slotIndex: 4, characterId: null, patternSlot: null },
+    ]);
   });
 });

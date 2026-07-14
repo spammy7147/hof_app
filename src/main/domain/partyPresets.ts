@@ -1,5 +1,9 @@
-import { BATTLE_PARTY_SIZE, type BattlePartyMember } from './battleParty';
-import type { CreatePartyPresetRequest, PartyPresetResponse } from '../types/api';
+import {
+  BATTLE_PARTY_SIZE,
+  sanitizeBattlePartyForCharacters,
+  type BattlePartyMember,
+} from './battleParty';
+import type { CreatePartyPresetRequest, HofCharacter, PartyPresetResponse } from '../types/api';
 
 /**
  * 새 파티 프리셋을 만들 때 사용할 기본 요청값을 생성한다.
@@ -37,6 +41,86 @@ export function createPartyFromPreset(preset: PartyPresetResponse): BattlePartyM
 }
 
 /**
+ * 저장된 프리셋을 현재 동기화 상태에서 실행 가능한 5칸 파티로 변환한다.
+ */
+export function createExecutablePartyFromPreset(
+  preset: PartyPresetResponse,
+  characters: HofCharacter[],
+): BattlePartyMember[] {
+  return sanitizeBattlePartyForCharacters(createPartyFromPreset(preset), characters);
+}
+
+/**
+ * 프리셋 선택 후 캐릭터 동기화가 갱신될 때 실행 가능한 파티를 다시 만든다.
+ *
+ * 사용자가 건드리지 않은 슬롯은 원본 프리셋에서 복원하고, 편집한 슬롯은 현재 값을 유지한다.
+ */
+export function rehydrateExecutablePartyFromPresetSeed(
+  presetSeed: BattlePartyMember[],
+  currentParty: BattlePartyMember[],
+  dirtySlotIndexes: ReadonlySet<number>,
+  characters: HofCharacter[],
+): BattlePartyMember[] {
+  const currentBySlot = new Map(
+    currentParty.map((member) => [member.slotIndex, member]),
+  );
+  const mergedParty = presetSeed.map((seedMember) => (
+    dirtySlotIndexes.has(seedMember.slotIndex)
+      ? currentBySlot.get(seedMember.slotIndex) ?? seedMember
+      : seedMember
+  ));
+
+  return sanitizeBattlePartyForCharacters(mergedParty, characters);
+}
+
+/** 캐릭터 또는 패턴 값이 달라진 모든 파티 슬롯 번호를 반환한다. */
+export function getChangedBattlePartySlotIndexes(
+  currentParty: BattlePartyMember[],
+  nextParty: BattlePartyMember[],
+): number[] {
+  const currentBySlot = new Map(
+    currentParty.map((member) => [member.slotIndex, member]),
+  );
+
+  return nextParty.flatMap((nextMember) => {
+    const currentMember = currentBySlot.get(nextMember.slotIndex);
+    return currentMember?.characterId === nextMember.characterId
+      && currentMember.patternSlot === nextMember.patternSlot
+      ? []
+      : [nextMember.slotIndex];
+  });
+}
+
+/**
+ * 프리셋 이름이나 현재 동기화된 멤버 정보로 프리셋을 검색한다.
+ */
+export function filterPartyPresets(
+  presets: PartyPresetResponse[],
+  characters: HofCharacter[],
+  query: string,
+): PartyPresetResponse[] {
+  const normalizedQuery = normalizeSearchText(query);
+  if (normalizedQuery.length === 0) return presets;
+  const charactersById = new Map(
+    characters.map((character) => [character.hofCharacterId, character]),
+  );
+
+  return presets.filter((preset) => {
+    if (normalizeSearchText(preset.name).includes(normalizedQuery)) return true;
+
+    return preset.members.some((member) => {
+      const character = member.characterId == null
+        ? null
+        : charactersById.get(member.characterId) ?? null;
+      return character != null && (
+        normalizeSearchText(character.name).includes(normalizedQuery)
+        || normalizeSearchText(character.job).includes(normalizedQuery)
+      );
+    });
+  });
+}
+
+/**
  * 프리셋 카드에 표시할 `몇 명 설정` 요약 문구를 만든다.
  */
 export function formatPartyPresetSummary(preset: PartyPresetResponse): string {
@@ -68,4 +152,8 @@ function normalizePatternSlot(patternSlot: number | null): number | null {
   return Number.isInteger(patternSlot) && patternSlot != null && patternSlot >= 0
     ? patternSlot
     : null;
+}
+
+function normalizeSearchText(value: string): string {
+  return value.trim().toLocaleLowerCase('ko-KR');
 }

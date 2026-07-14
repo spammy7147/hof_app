@@ -12,4 +12,9 @@ describe('main screen character tabs', () => {
     assert.match(source, /프리셋/);
     assert.match(source, /PartyPresetList/);
   });
+
+  it('forwards the party preset loader into the battle tab', () => {
+    const battleTab = source.match(/<BattleTabScreen[\s\S]*?\/>/)?.[0] ?? '';
+    assert.match(battleTab, /onListPartyPresets=\{onListPartyPresets\}/);
+  });
 });
