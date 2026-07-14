@@ -123,6 +123,27 @@ describe('partyPresets', () => {
     );
   });
 
+  it('matches each member field independently without allowing a query to span name and job', () => {
+    const presets = [
+      makePreset({
+        id: 1,
+        name: '공략 파티',
+        members: [{ slotIndex: 0, characterId: 'char-1', patternSlot: 0 }],
+      }),
+    ];
+    const characters = [makeHofCharacter(1, { name: 'Alpha', job: 'Beta' })];
+
+    assert.deepEqual(filterPartyPresets(presets, characters, 'ha be'), []);
+    assert.deepEqual(
+      filterPartyPresets(presets, characters, '  aLpHa  ').map((preset) => preset.id),
+      [1],
+    );
+    assert.deepEqual(
+      filterPartyPresets(presets, characters, '  bEtA  ').map((preset) => preset.id),
+      [1],
+    );
+  });
+
   it('creates a five-slot executable party and clears a missing preset member', () => {
     const preset = makePreset({
       members: [

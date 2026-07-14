@@ -71,10 +71,10 @@ export function filterPartyPresets(
       const character = member.characterId == null
         ? null
         : charactersById.get(member.characterId) ?? null;
-      return character != null && normalizeSearchText([
-        character.name,
-        character.job,
-      ].join(' ')).includes(normalizedQuery);
+      return character != null && (
+        normalizeSearchText(character.name).includes(normalizedQuery)
+        || normalizeSearchText(character.job).includes(normalizedQuery)
+      );
     });
   });
 }
