@@ -8,6 +8,11 @@ const hookSource = readFileSync(resolve(process.cwd(), 'src/main/features/push/u
 const appConfig = readFileSync(resolve(process.cwd(), 'app.json'), 'utf8');
 
 describe('Android 직접 푸시 등록', () => {
+  it('Expo Go에서는 지원되지 않는 원격 푸시 모듈을 앱 시작 시 평가하지 않는다', () => {
+    assert.doesNotMatch(nativeSource, /import \* as Notifications from 'expo-notifications'/);
+    assert.match(nativeSource, /Constants\.appOwnership === 'expo'/);
+  });
+
   it('기기의 네이티브 FCM 토큰을 읽고 Expo push token은 사용하지 않는다', () => {
     assert.match(nativeSource, /getDevicePushTokenAsync/);
     assert.doesNotMatch(nativeSource, /getExpoPushTokenAsync/);
