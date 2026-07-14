@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { BattlePartySelector } from '../../../components/BattlePartySelector';
@@ -16,7 +16,10 @@ import {
 } from '../../../domain/battleResults';
 import {
   createExecutablePartyFromPreset,
+  createPartyFromPreset,
   emptyPartyMembers,
+  getChangedBattlePartySlotIndexes,
+  rehydrateExecutablePartyFromPresetSeed,
 } from '../../../domain/partyPresets';
 import { theme } from '../../../styles/theme';
 import type {
@@ -63,28 +66,53 @@ export function BattleRunPanel({
   const [selectedPresetId, setSelectedPresetId] = useState<number | null>(null);
   const [party, setParty] = useState<BattlePartyMember[]>(emptyPartyMembers);
   const [activeSlotIndex, setActiveSlotIndex] = useState(0);
+  const presetSeedRef = useRef<BattlePartyMember[] | null>(null);
+  const dirtySlotIndexesRef = useRef<Set<number>>(new Set());
   const ready = isBattlePartyReady(party, characters);
   const sortieCount = party.filter((member) => member.characterId != null).length;
   const partySelectionComplete = selectedMode != null;
 
   useEffect(() => {
-    setParty((current) => sanitizeBattlePartyForCharacters(current, characters));
+    setParty((current) => {
+      const presetSeed = presetSeedRef.current;
+      return selectedMode === 'preset' && presetSeed != null
+        ? rehydrateExecutablePartyFromPresetSeed(
+          presetSeed,
+          current,
+          dirtySlotIndexesRef.current,
+          characters,
+        )
+        : sanitizeBattlePartyForCharacters(current, characters);
+    });
     setActiveSlotIndex(0);
-  }, [characters]);
+  }, [characters, selectedMode]);
 
   const handleSelectDirect = useCallback(() => {
     setSelectedMode('direct');
     setSelectedPresetId(null);
+    presetSeedRef.current = null;
+    dirtySlotIndexesRef.current.clear();
     setParty(emptyPartyMembers());
     setActiveSlotIndex(0);
   }, []);
 
   const handleSelectPreset = useCallback((preset: PartyPresetResponse) => {
+    presetSeedRef.current = createPartyFromPreset(preset);
+    dirtySlotIndexesRef.current.clear();
     setSelectedMode('preset');
     setSelectedPresetId(preset.id);
     setParty(createExecutablePartyFromPreset(preset, characters));
     setActiveSlotIndex(0);
   }, [characters]);
+
+  const handlePartyChange = useCallback((nextParty: BattlePartyMember[]) => {
+    if (selectedMode === 'preset') {
+      getChangedBattlePartySlotIndexes(party, nextParty).forEach((slotIndex) => {
+        dirtySlotIndexesRef.current.add(slotIndex);
+      });
+    }
+    setParty(nextParty);
+  }, [party, selectedMode]);
 
   return (
     <View style={styles.runPanel}>
@@ -99,18 +127,19 @@ export function BattleRunPanel({
         onSelectDirect={handleSelectDirect}
         onSelectPreset={handleSelectPreset}
       />
+      {characters.length === 0 ? (
+        <Text style={styles.stateText}>동기화된 캐릭터가 없습니다.</Text>
+      ) : null}
       {partySelectionComplete ? (
         <>
-          {characters.length === 0 ? (
-            <Text style={styles.stateText}>동기화된 캐릭터가 없습니다.</Text>
-          ) : (
+          {characters.length > 0 ? (
             <>
               <BattlePartySelector
                 activeSlotIndex={activeSlotIndex}
                 characters={characters}
                 party={party}
                 onActiveSlotChange={setActiveSlotIndex}
-                onPartyChange={setParty}
+                onPartyChange={handlePartyChange}
               />
               <Text style={styles.sortieCountText}>{sortieCount}명 출정 예정</Text>
               <View style={styles.actionRow}>
@@ -131,7 +160,7 @@ export function BattleRunPanel({
                 />
               </View>
             </>
-          )}
+          ) : null}
           {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
           {result ? <BattleResultSummary result={result} /> : null}
         </>

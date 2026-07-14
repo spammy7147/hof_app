@@ -11,11 +11,17 @@ describe('BattleRunPanel', () => {
 
   it('requires a preset or direct-selection choice before showing the party editor', () => {
     const pickerIndex = source.indexOf('<BattlePartyPresetPicker');
+    const emptyCharacterMessageIndex = source.indexOf('동기화된 캐릭터가 없습니다.');
+    const editorGateIndex = source.indexOf('{partySelectionComplete ? (');
     const editorIndex = source.indexOf('<BattlePartySelector');
 
     assert.notEqual(pickerIndex, -1);
+    assert.notEqual(emptyCharacterMessageIndex, -1);
+    assert.notEqual(editorGateIndex, -1);
     assert.notEqual(editorIndex, -1);
-    assert.ok(pickerIndex < editorIndex);
+    assert.ok(pickerIndex < emptyCharacterMessageIndex);
+    assert.ok(emptyCharacterMessageIndex < editorGateIndex);
+    assert.ok(editorGateIndex < editorIndex);
     assert.match(source, /const partySelectionComplete = selectedMode != null;/);
     assert.match(source, /partySelectionComplete \? \([\s\S]*<BattlePartySelector/);
   });
@@ -29,13 +35,20 @@ describe('BattleRunPanel', () => {
     assert.doesNotMatch(source, /onUpdatePartyPreset|savePartyPreset/);
   });
 
-  it('keeps the picker visible without characters and sanitizes active edits after character updates', () => {
+  it('keeps the picker visible and rehydrates untouched preset slots after character updates', () => {
     assert.match(source, /characters=\{characters\}/);
     assert.match(source, /presets=\{partyPresets\}/);
     assert.match(source, /loading=\{arePartyPresetsLoading\}/);
     assert.match(source, /errorMessage=\{partyPresetsError\}/);
     assert.match(source, /onRetry=\{onRetryPartyPresets\}/);
-    assert.match(source, /setParty\(\(current\) => sanitizeBattlePartyForCharacters\(current, characters\)\);/);
+    assert.match(source, /useRef<BattlePartyMember\[\] \| null>\(null\)/);
+    assert.match(source, /useRef<Set<number>>\(new Set\(\)\)/);
+    assert.match(source, /presetSeedRef\.current = createPartyFromPreset\(preset\);/);
+    assert.match(source, /rehydrateExecutablePartyFromPresetSeed\(/);
+    assert.match(source, /getChangedBattlePartySlotIndexes\(party, nextParty\)/);
+    assert.match(source, /dirtySlotIndexesRef\.current\.add\(slotIndex\)/);
+    assert.match(source, /onPartyChange=\{handlePartyChange\}/);
+    assert.match(source, /sanitizeBattlePartyForCharacters\(current, characters\)/);
     assert.match(source, /characters\.length === 0[\s\S]*동기화된 캐릭터가 없습니다\./);
     assert.doesNotMatch(source, /createDefaultBattleParty/);
   });
