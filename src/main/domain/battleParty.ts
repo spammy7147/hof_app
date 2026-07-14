@@ -47,6 +47,22 @@ export function createDefaultBattleParty(characters: HofCharacter[]): BattlePart
 }
 
 /**
+ * 현재 동기화된 캐릭터가 아닌 파티 멤버를 빈 슬롯으로 정리한다.
+ */
+export function sanitizeBattlePartyForCharacters(
+  party: BattlePartyMember[],
+  characters: HofCharacter[],
+): BattlePartyMember[] {
+  const characterIds = new Set(characters.map((character) => character.hofCharacterId));
+
+  return party.map((member) => (
+    member.characterId != null && characterIds.has(member.characterId)
+      ? member
+      : { ...member, characterId: null, patternSlot: null }
+  ));
+}
+
+/**
  * 특정 파티 슬롯에 캐릭터를 배치한다.
  *
  * @remarks
@@ -191,7 +207,7 @@ export function buildBattlePartyPatternOptions(
  * 전투 요청을 만들 수 있는 파티 상태인지 검증한다.
  *
  * @remarks
- * 최소 1명 이상, 최대 5명 이하, 중복 캐릭터 없음, 선택된 캐릭터마다 유효한 패턴 슬롯이 있어야 한다.
+ * 정확히 5명, 중복 캐릭터 없음, 각 캐릭터마다 유효한 패턴 슬롯이 있어야 한다.
  */
 export function isBattlePartyReady(
   party: BattlePartyMember[],
@@ -202,11 +218,11 @@ export function isBattlePartyReady(
   const selectedIds = party
     .map((member) => member.characterId)
     .filter((characterId): characterId is string => characterId != null && characterId.trim().length > 0);
-  if (selectedIds.length === 0 || selectedIds.length > BATTLE_PARTY_SIZE) return false;
+  if (selectedIds.length !== BATTLE_PARTY_SIZE) return false;
   if (new Set(selectedIds).size !== selectedIds.length) return false;
 
   return party.every((member) => {
-    if (member.characterId == null || member.characterId.trim().length === 0) return true;
+    if (member.characterId == null || member.characterId.trim().length === 0) return false;
     const character = characters.find((candidate) => candidate.hofCharacterId === member.characterId);
     return character != null && isValidPatternSlot(character, member.patternSlot);
   });
@@ -219,7 +235,7 @@ export function isBattlePartyReady(
  */
 export function toRunBattleRequest(input: ToRunBattleRequestInput): RunBattleRequest {
   if (!isBattlePartyReady(input.party, input.characters)) {
-    throw new Error('전투에 사용할 캐릭터를 1명 이상 선택해야 합니다.');
+    throw new Error('전투에 사용할 캐릭터 5명을 모두 선택해야 합니다.');
   }
 
   const selectedMembers = input.party

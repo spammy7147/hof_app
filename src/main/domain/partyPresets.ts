@@ -1,5 +1,9 @@
-import { BATTLE_PARTY_SIZE, type BattlePartyMember } from './battleParty';
-import type { CreatePartyPresetRequest, PartyPresetResponse } from '../types/api';
+import {
+  BATTLE_PARTY_SIZE,
+  sanitizeBattlePartyForCharacters,
+  type BattlePartyMember,
+} from './battleParty';
+import type { CreatePartyPresetRequest, HofCharacter, PartyPresetResponse } from '../types/api';
 
 /**
  * 새 파티 프리셋을 만들 때 사용할 기본 요청값을 생성한다.
@@ -37,6 +41,45 @@ export function createPartyFromPreset(preset: PartyPresetResponse): BattlePartyM
 }
 
 /**
+ * 저장된 프리셋을 현재 동기화 상태에서 실행 가능한 5칸 파티로 변환한다.
+ */
+export function createExecutablePartyFromPreset(
+  preset: PartyPresetResponse,
+  characters: HofCharacter[],
+): BattlePartyMember[] {
+  return sanitizeBattlePartyForCharacters(createPartyFromPreset(preset), characters);
+}
+
+/**
+ * 프리셋 이름이나 현재 동기화된 멤버 정보로 프리셋을 검색한다.
+ */
+export function filterPartyPresets(
+  presets: PartyPresetResponse[],
+  characters: HofCharacter[],
+  query: string,
+): PartyPresetResponse[] {
+  const normalizedQuery = normalizeSearchText(query);
+  if (normalizedQuery.length === 0) return presets;
+  const charactersById = new Map(
+    characters.map((character) => [character.hofCharacterId, character]),
+  );
+
+  return presets.filter((preset) => {
+    if (normalizeSearchText(preset.name).includes(normalizedQuery)) return true;
+
+    return preset.members.some((member) => {
+      const character = member.characterId == null
+        ? null
+        : charactersById.get(member.characterId) ?? null;
+      return character != null && normalizeSearchText([
+        character.name,
+        character.job,
+      ].join(' ')).includes(normalizedQuery);
+    });
+  });
+}
+
+/**
  * 프리셋 카드에 표시할 `몇 명 설정` 요약 문구를 만든다.
  */
 export function formatPartyPresetSummary(preset: PartyPresetResponse): string {
@@ -68,4 +111,8 @@ function normalizePatternSlot(patternSlot: number | null): number | null {
   return Number.isInteger(patternSlot) && patternSlot != null && patternSlot >= 0
     ? patternSlot
     : null;
+}
+
+function normalizeSearchText(value: string): string {
+  return value.trim().toLocaleLowerCase('ko-KR');
 }
