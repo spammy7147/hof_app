@@ -89,8 +89,50 @@ describe('통합 자동화 우선순위 저장 큐', () => {
     assert.deepEqual(persisted, []);
     await queue.whenIdle();
   });
+
+  it('실패 복구 중 들어온 새 순서까지 저장한 뒤 idle로 끝난다', async () => {
+    const firstFailureRecovery = deferred<void>();
+    const secondRequest = deferred<number[]>();
+    const requests: number[][] = [];
+    let idleResolved = false;
+    const queue = new UnifiedAutomationReorderQueue(
+      async (ids) => {
+        requests.push(ids);
+        if (requests.length === 1) throw new Error('first reorder failed');
+        return secondRequest.promise;
+      },
+      () => undefined,
+      async () => firstFailureRecovery.promise,
+    );
+
+    queue.enqueue([2, 1]);
+    await tick();
+    queue.enqueue([1, 2]);
+    const idle = queue.whenIdle().then(() => {
+      idleResolved = true;
+    });
+
+    firstFailureRecovery.resolve();
+    await tick();
+    assert.deepEqual(requests, [[2, 1], [1, 2]]);
+    assert.equal(idleResolved, false);
+
+    secondRequest.resolve([1, 2]);
+    await idle;
+    assert.equal(idleResolved, true);
+  });
 });
 
 async function tick(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
 }

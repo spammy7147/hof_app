@@ -63,8 +63,11 @@ export class UnifiedAutomationReorderQueue<T> {
       }
     } finally {
       this.inFlight = false;
-      this.resolveIdleWaiters();
-      if (!this.disposed && this.pendingOrder != null) void this.drain();
+      if (!this.disposed && this.pendingOrder != null) {
+        void this.drain();
+      } else {
+        this.resolveIdleWaiters();
+      }
     }
   }
 
