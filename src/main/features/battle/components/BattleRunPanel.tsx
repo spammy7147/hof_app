@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { BattlePartySelector } from '../../../components/BattlePartySelector';
 import { PrimaryButton } from '../../../components/PrimaryButton';
 import {
   type BattlePartyMember,
-  createDefaultBattleParty,
   isBattlePartyReady,
+  sanitizeBattlePartyForCharacters,
 } from '../../../domain/battleParty';
 import {
   formatBattleOutcome,
@@ -14,15 +14,28 @@ import {
   formatBattleSideRow,
   getBattleResultRounds,
 } from '../../../domain/battleResults';
+import {
+  createExecutablePartyFromPreset,
+  emptyPartyMembers,
+} from '../../../domain/partyPresets';
 import { theme } from '../../../styles/theme';
 import type {
   BattleResultResponse,
   BattleRoundResultResponse,
   HofCharacter,
+  PartyPresetResponse,
 } from '../../../types/api';
+import {
+  BattlePartyPresetPicker,
+  type PartySelectionMode,
+} from './BattlePartyPresetPicker';
 
 type BattleRunPanelProps = {
   characters: HofCharacter[];
+  partyPresets: PartyPresetResponse[];
+  arePartyPresetsLoading: boolean;
+  partyPresetsError: string | null;
+  onRetryPartyPresets: () => void;
   isRunning: boolean;
   result: BattleResultResponse | null;
   errorMessage: string | null;
@@ -32,63 +45,97 @@ type BattleRunPanelProps = {
 /**
  * 펼친 맵 안에서 파티·패턴을 편집하고 1회 또는 3회 전투 실행 의도를 상위 화면에 전달한다.
  *
- * 캐릭터 동기화 결과가 바뀌면 더 이상 존재하지 않는 캐릭터가 파티에 남지 않도록 기본 파티를
- * 다시 만든다. 실제 API 호출, mapCode 검증, 캡차 처리와 결과 저장은 화면과 앱 전역 계층의 책임이다.
+ * 프리셋 또는 직접 선택 방식이 정해진 뒤 편집기를 열며, 캐릭터 동기화 결과가 바뀌면 유효한 편집은
+ * 유지하고 더 이상 존재하지 않는 캐릭터만 비운다. 실제 API 호출과 결과 저장은 상위 계층의 책임이다.
  */
 export function BattleRunPanel({
   characters,
+  partyPresets,
+  arePartyPresetsLoading,
+  partyPresetsError,
+  onRetryPartyPresets,
   isRunning,
   result,
   errorMessage,
   onRunBattle,
 }: BattleRunPanelProps) {
-  const [party, setParty] = useState<BattlePartyMember[]>(() => createDefaultBattleParty(characters));
+  const [selectedMode, setSelectedMode] = useState<PartySelectionMode>(null);
+  const [selectedPresetId, setSelectedPresetId] = useState<number | null>(null);
+  const [party, setParty] = useState<BattlePartyMember[]>(emptyPartyMembers);
   const [activeSlotIndex, setActiveSlotIndex] = useState(0);
   const ready = isBattlePartyReady(party, characters);
   const sortieCount = party.filter((member) => member.characterId != null).length;
+  const partySelectionComplete = selectedMode != null;
 
   useEffect(() => {
-    setParty(createDefaultBattleParty(characters));
+    setParty((current) => sanitizeBattlePartyForCharacters(current, characters));
     setActiveSlotIndex(0);
   }, [characters]);
 
-  if (characters.length === 0) {
-    return (
-      <View style={styles.runPanel}>
-        <Text style={styles.stateText}>동기화된 캐릭터가 없습니다.</Text>
-      </View>
-    );
-  }
+  const handleSelectDirect = useCallback(() => {
+    setSelectedMode('direct');
+    setSelectedPresetId(null);
+    setParty(emptyPartyMembers());
+    setActiveSlotIndex(0);
+  }, []);
+
+  const handleSelectPreset = useCallback((preset: PartyPresetResponse) => {
+    setSelectedMode('preset');
+    setSelectedPresetId(preset.id);
+    setParty(createExecutablePartyFromPreset(preset, characters));
+    setActiveSlotIndex(0);
+  }, [characters]);
 
   return (
     <View style={styles.runPanel}>
-      <BattlePartySelector
-        activeSlotIndex={activeSlotIndex}
+      <BattlePartyPresetPicker
         characters={characters}
-        party={party}
-        onActiveSlotChange={setActiveSlotIndex}
-        onPartyChange={setParty}
+        presets={partyPresets}
+        loading={arePartyPresetsLoading}
+        errorMessage={partyPresetsError}
+        selectedMode={selectedMode}
+        selectedPresetId={selectedPresetId}
+        onRetry={onRetryPartyPresets}
+        onSelectDirect={handleSelectDirect}
+        onSelectPreset={handleSelectPreset}
       />
-      <Text style={styles.sortieCountText}>{sortieCount}명 출정 예정</Text>
-      <View style={styles.actionRow}>
-        <PrimaryButton
-          label="1회 전투"
-          loading={isRunning}
-          disabled={isRunning || !ready}
-          onPress={() => onRunBattle(party, 1)}
-          style={styles.actionButton}
-        />
-        <PrimaryButton
-          label="3회 전투"
-          variant="secondary"
-          loading={isRunning}
-          disabled={isRunning || !ready}
-          onPress={() => onRunBattle(party, 3)}
-          style={styles.actionButton}
-        />
-      </View>
-      {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-      {result ? <BattleResultSummary result={result} /> : null}
+      {partySelectionComplete ? (
+        <>
+          {characters.length === 0 ? (
+            <Text style={styles.stateText}>동기화된 캐릭터가 없습니다.</Text>
+          ) : (
+            <>
+              <BattlePartySelector
+                activeSlotIndex={activeSlotIndex}
+                characters={characters}
+                party={party}
+                onActiveSlotChange={setActiveSlotIndex}
+                onPartyChange={setParty}
+              />
+              <Text style={styles.sortieCountText}>{sortieCount}명 출정 예정</Text>
+              <View style={styles.actionRow}>
+                <PrimaryButton
+                  label="1회 전투"
+                  loading={isRunning}
+                  disabled={isRunning || !ready}
+                  onPress={() => onRunBattle(party, 1)}
+                  style={styles.actionButton}
+                />
+                <PrimaryButton
+                  label="3회 전투"
+                  variant="secondary"
+                  loading={isRunning}
+                  disabled={isRunning || !ready}
+                  onPress={() => onRunBattle(party, 3)}
+                  style={styles.actionButton}
+                />
+              </View>
+            </>
+          )}
+          {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+          {result ? <BattleResultSummary result={result} /> : null}
+        </>
+      ) : null}
     </View>
   );
 }
