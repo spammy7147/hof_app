@@ -14,6 +14,31 @@ import type {
 } from '../../main/types/api';
 
 describe('앱 수명주기 통합 자동화 컨트롤러', () => {
+  it('먼저 시작한 load가 늦게 끝나도 나중에 시작한 load의 상태를 덮지 않는다', async () => {
+    const olderLoad = deferred<UnifiedAutomationStatusResponse>();
+    const newerLoad = deferred<UnifiedAutomationStatusResponse>();
+    let requestCount = 0;
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => {
+        requestCount += 1;
+        return requestCount === 1 ? olderLoad.promise : newerLoad.promise;
+      },
+    }));
+
+    const olderRequest = controller.load();
+    const newerRequest = controller.load();
+    newerLoad.resolve(status([module(2, '최신 모듈', 0)]));
+    await newerRequest;
+    olderLoad.resolve(status([module(1, '오래된 모듈', 0)]));
+    await olderRequest;
+
+    assert.deepEqual(
+      controller.getSnapshot().automation?.modules.map(({ id, displayName }) => ({ id, displayName })),
+      [{ id: 2, displayName: '최신 모듈' }],
+    );
+    assert.equal(controller.getSnapshot().loading, false);
+  });
+
   it('저장 중 홈을 나갔다 돌아와 GET이 먼저 끝나도 이전 저장 완료를 새 구독자에게 전달한다', async () => {
     const edit = deferred<UnifiedAutomationModuleResponse>();
     const remountGet = deferred<UnifiedAutomationStatusResponse>();
