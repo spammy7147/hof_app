@@ -13,6 +13,7 @@ import type {
   CharacterSyncEventResponse,
   CharacterSyncEventType,
   CharacterSyncJobResponse,
+  CreateUnifiedAutomationModuleRequest,
   CreateAutomationJobRequest,
   CreateAutomationProfileRequest,
   CreatePartyPresetRequest,
@@ -28,8 +29,9 @@ import type {
   SubmitCaptchaAnswerRequest,
   DevicePushTargetResponse,
   UnifiedAutomationAction,
-  UnifiedAutomationSettingsRequest,
+  UnifiedAutomationModuleResponse,
   UnifiedAutomationStatusResponse,
+  UpdateUnifiedAutomationModuleRequest,
   UpdateAutomationProfileRequest,
   UpdatePartyPresetRequest,
 } from '../types/api';
@@ -213,13 +215,37 @@ export class BackendApiClient {
     return this.request('/api/automation/unified');
   }
 
-  /** 통합 자동화 모듈 설정 전체를 원자적으로 저장한다. */
-  updateUnifiedAutomation(
-    request: UnifiedAutomationSettingsRequest,
-  ): Promise<UnifiedAutomationStatusResponse> {
-    return this.request('/api/automation/unified', {
+  /** 새 사용자 구성 모듈을 현재 우선순위의 마지막에 추가한다. */
+  createUnifiedAutomationModule(
+    request: CreateUnifiedAutomationModuleRequest,
+  ): Promise<UnifiedAutomationModuleResponse> {
+    return this.request('/api/automation/unified/modules', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  /** 모듈의 이름, 활성 상태와 유형별 세부 설정을 교체한다. */
+  updateUnifiedAutomationModule(
+    moduleId: number,
+    request: UpdateUnifiedAutomationModuleRequest,
+  ): Promise<UnifiedAutomationModuleResponse> {
+    return this.request(`/api/automation/unified/modules/${moduleId}`, {
       method: 'PUT',
       body: JSON.stringify(request),
+    });
+  }
+
+  /** 사용자 소유 모듈 한 개를 삭제한다. 204 응답에는 JSON 본문이 없다. */
+  deleteUnifiedAutomationModule(moduleId: number): Promise<void> {
+    return this.request(`/api/automation/unified/modules/${moduleId}`, { method: 'DELETE' });
+  }
+
+  /** 드래그가 끝난 뒤 전체 모듈 ID 순서를 한 번에 저장한다. */
+  reorderUnifiedAutomationModules(moduleIds: number[]): Promise<UnifiedAutomationStatusResponse> {
+    return this.request('/api/automation/unified/modules/order', {
+      method: 'PATCH',
+      body: JSON.stringify({ moduleIds }),
     });
   }
 

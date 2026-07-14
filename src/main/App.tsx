@@ -1,6 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { LoginScreen } from './screens/LoginScreen';
 import { MainScreen } from './screens/MainScreen';
@@ -10,6 +11,7 @@ import { useCharacterSync } from './features/characters/useCharacterSync';
 import { useCaptchaGate } from './features/captcha/useCaptchaGate';
 import { useAndroidPushRegistration } from './features/push/useAndroidPushRegistration';
 import { isCaptchaRequiredError } from './domain/captchaGate';
+import { UnifiedAutomationController } from './domain/unifiedAutomationController';
 import { toUserFacingErrorMessage } from './domain/userFacingErrors';
 import type {
   AutomationJobResponse,
@@ -24,9 +26,6 @@ import type {
   LoadPatternResponse,
   PartyPresetResponse,
   RunBattleRequest,
-  UnifiedAutomationAction,
-  UnifiedAutomationSettingsRequest,
-  UnifiedAutomationStatusResponse,
   UpdatePartyPresetRequest,
 } from './types/api';
 import { theme } from './styles/theme';
@@ -45,6 +44,14 @@ type AppSession = {
  */
 export default function App() {
   const api = useMemo(() => new BackendApiClient(), []);
+  const automationController = useMemo(() => new UnifiedAutomationController({
+    fetch: () => api.fetchUnifiedAutomation(),
+    create: (request) => api.createUnifiedAutomationModule(request),
+    update: (moduleId, request) => api.updateUnifiedAutomationModule(moduleId, request),
+    delete: (moduleId) => api.deleteUnifiedAutomationModule(moduleId),
+    reorder: (moduleIds) => api.reorderUnifiedAutomationModules(moduleIds),
+    changeState: (action) => api.changeUnifiedAutomationState(action),
+  }), [api]);
   const [mode, setMode] = useState<ScreenMode>('boot');
   const [session, setSession] = useState<AppSession | null>(null);
   const [battleCategories, setBattleCategories] = useState<BattleCategoryResponse[]>([]);
@@ -157,18 +164,6 @@ export default function App() {
     api.fetchCurrentAutomationJob()
   ), [api]);
 
-  const getUnifiedAutomation = useCallback((): Promise<UnifiedAutomationStatusResponse> => (
-    api.fetchUnifiedAutomation()
-  ), [api]);
-
-  const updateUnifiedAutomation = useCallback((
-    request: UnifiedAutomationSettingsRequest,
-  ): Promise<UnifiedAutomationStatusResponse> => api.updateUnifiedAutomation(request), [api]);
-
-  const changeUnifiedAutomationState = useCallback((
-    action: UnifiedAutomationAction,
-  ): Promise<UnifiedAutomationStatusResponse> => api.changeUnifiedAutomationState(action), [api]);
-
   const listPartyPresets = useCallback((): Promise<PartyPresetResponse[]> => api.listPartyPresets(), [api]);
 
   const createPartyPreset = useCallback((
@@ -224,6 +219,8 @@ export default function App() {
         loggedIn: Boolean(loginResponse.accessToken),
       };
 
+      // 같은 앱 프로세스에서 다른 계정으로 로그인해도 이전 계정의 진행 요청과 snapshot을 넘기지 않는다.
+      automationController.reset();
       setSession(nextSession);
       setMode('main');
       setNotice(null);
@@ -237,7 +234,7 @@ export default function App() {
     } finally {
       setIsLoggingIn(false);
     }
-  }, [api, describeError, hydrateAfterLogin]);
+  }, [api, automationController, describeError, hydrateAfterLogin]);
 
   useEffect(() => {
     let cancelled = false;
@@ -281,6 +278,7 @@ export default function App() {
    */
   const handleLogout = useCallback(async () => {
     await api.logout().catch(() => undefined);
+    automationController.reset();
     resetCaptchaGate(new Error('로그아웃되었습니다.'));
     setSession(null);
     resetCharacterSync();
@@ -290,7 +288,7 @@ export default function App() {
     setNotice(null);
     setLoginError(null);
     setMode('login');
-  }, [api, resetCaptchaGate, resetCharacterSync]);
+  }, [api, automationController, resetCaptchaGate, resetCharacterSync]);
 
   let content;
   if (mode === 'boot') {
@@ -326,9 +324,7 @@ export default function App() {
         onLoadBattleStats={loadBattleStats}
         onOpenCaptcha={handleOpenCaptchaModal}
         onLoadCurrentAutomationJob={loadCurrentAutomationJob}
-        onGetUnifiedAutomation={getUnifiedAutomation}
-        onUpdateUnifiedAutomation={updateUnifiedAutomation}
-        onChangeUnifiedAutomationState={changeUnifiedAutomationState}
+        automationController={automationController}
         onListPartyPresets={listPartyPresets}
         onCreatePartyPreset={createPartyPreset}
         onUpdatePartyPreset={updatePartyPreset}
@@ -343,24 +339,26 @@ export default function App() {
   }
 
   return (
-    <View style={styles.container}>
-      {content}
-      <CaptchaChallengeModal
-        visible={captchaModalVisible}
-        captcha={currentCaptcha}
-        isLoading={isCaptchaLoading}
-        isSubmitting={isCaptchaSubmitting}
-        message={captchaMessage}
-        errorMessage={captchaErrorMessage}
-        blocking={captchaModalBlocking}
-        onRefresh={() => {
-          void openCaptchaModal({ blocking: captchaModalBlocking });
-        }}
-        onSubmit={submitGlobalCaptchaAnswer}
-        onRequestClose={closeCaptchaModal}
-      />
-      <StatusBar style="light" />
-    </View>
+    <GestureHandlerRootView style={styles.container}>
+      <View style={styles.container}>
+        {content}
+        <CaptchaChallengeModal
+          visible={captchaModalVisible}
+          captcha={currentCaptcha}
+          isLoading={isCaptchaLoading}
+          isSubmitting={isCaptchaSubmitting}
+          message={captchaMessage}
+          errorMessage={captchaErrorMessage}
+          blocking={captchaModalBlocking}
+          onRefresh={() => {
+            void openCaptchaModal({ blocking: captchaModalBlocking });
+          }}
+          onSubmit={submitGlobalCaptchaAnswer}
+          onRequestClose={closeCaptchaModal}
+        />
+        <StatusBar style="light" />
+      </View>
+    </GestureHandlerRootView>
   );
 }
 

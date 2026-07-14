@@ -10,6 +10,7 @@ import { GameStatusBar } from '../components/GameStatusBar';
 import { PartyPresetList } from '../components/PartyPresetList';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { DEFAULT_MAIN_TAB_ID, MainTabId } from '../domain/mainTabs';
+import type { UnifiedAutomationController } from '../domain/unifiedAutomationController';
 import { toUserFacingErrorMessage } from '../domain/userFacingErrors';
 import { theme } from '../styles/theme';
 import type {
@@ -26,9 +27,6 @@ import type {
   LoadPatternResponse,
   PartyPresetResponse,
   RunBattleRequest,
-  UnifiedAutomationAction,
-  UnifiedAutomationSettingsRequest,
-  UnifiedAutomationStatusResponse,
   UpdatePartyPresetRequest,
 } from '../types/api';
 import { BattleTabScreen } from './BattleTabScreen';
@@ -59,9 +57,7 @@ type MainScreenProps = {
   onLoadBattleStats: () => Promise<BattleStatsResponse>;
   onOpenCaptcha: () => void;
   onLoadCurrentAutomationJob: () => Promise<AutomationJobResponse | null>;
-  onGetUnifiedAutomation: () => Promise<UnifiedAutomationStatusResponse>;
-  onUpdateUnifiedAutomation: (request: UnifiedAutomationSettingsRequest) => Promise<UnifiedAutomationStatusResponse>;
-  onChangeUnifiedAutomationState: (action: UnifiedAutomationAction) => Promise<UnifiedAutomationStatusResponse>;
+  automationController: UnifiedAutomationController;
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
   onCreatePartyPreset: (
     request: CreatePartyPresetRequest,
@@ -99,9 +95,7 @@ export function MainScreen({
   onLoadBattleStats,
   onOpenCaptcha,
   onLoadCurrentAutomationJob,
-  onGetUnifiedAutomation,
-  onUpdateUnifiedAutomation,
-  onChangeUnifiedAutomationState,
+  automationController,
   onListPartyPresets,
   onCreatePartyPreset,
   onUpdatePartyPreset,
@@ -214,9 +208,7 @@ export function MainScreen({
           onLoadBattleStats,
           onOpenCaptcha,
           onLoadCurrentAutomationJob,
-          onGetUnifiedAutomation,
-          onUpdateUnifiedAutomation,
-          onChangeUnifiedAutomationState,
+          automationController,
           onListPartyPresets,
           onCreatePartyPreset,
           onUpdatePartyPreset,
@@ -266,9 +258,7 @@ type RenderActiveTabArgs = {
   onLoadBattleStats: () => Promise<BattleStatsResponse>;
   onOpenCaptcha: () => void;
   onLoadCurrentAutomationJob: () => Promise<AutomationJobResponse | null>;
-  onGetUnifiedAutomation: () => Promise<UnifiedAutomationStatusResponse>;
-  onUpdateUnifiedAutomation: (request: UnifiedAutomationSettingsRequest) => Promise<UnifiedAutomationStatusResponse>;
-  onChangeUnifiedAutomationState: (action: UnifiedAutomationAction) => Promise<UnifiedAutomationStatusResponse>;
+  automationController: UnifiedAutomationController;
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
   onCreatePartyPreset: (
     request: CreatePartyPresetRequest,
@@ -312,9 +302,7 @@ function renderActiveTab({
   onLoadBattleStats,
   onOpenCaptcha,
   onLoadCurrentAutomationJob,
-  onGetUnifiedAutomation,
-  onUpdateUnifiedAutomation,
-  onChangeUnifiedAutomationState,
+  automationController,
   onListPartyPresets,
   onCreatePartyPreset,
   onUpdatePartyPreset,
@@ -333,19 +321,15 @@ function renderActiveTab({
   switch (activeTabId) {
     case 'home':
       return (
-        <TabScrollContainer>
-          <HomeTabScreen
-            authenticated={authenticated}
-            battleCategories={battleCategories}
-            onLoadBattleCategories={onLoadBattleCategories}
-            onLoadBattleMaps={onLoadBattleMaps}
-            onListPartyPresets={onListPartyPresets}
-            onGetUnifiedAutomation={onGetUnifiedAutomation}
-            onUpdateUnifiedAutomation={onUpdateUnifiedAutomation}
-            onChangeUnifiedAutomationState={onChangeUnifiedAutomationState}
-            onOpenCaptcha={onOpenCaptcha}
-          />
-        </TabScrollContainer>
+        <HomeTabScreen
+          authenticated={authenticated}
+          battleCategories={battleCategories}
+          onLoadBattleCategories={onLoadBattleCategories}
+          onLoadBattleMaps={onLoadBattleMaps}
+          onListPartyPresets={onListPartyPresets}
+          automationController={automationController}
+          onOpenCaptcha={onOpenCaptcha}
+        />
       );
     case 'battle':
       return (

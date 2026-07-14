@@ -1,73 +1,243 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { ChevronRight } from 'lucide-react-native';
+import { useCallback, useState } from 'react';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import {
+  CalendarDays,
+  ChevronRight,
+  Clock3,
+  GripVertical,
+  KeyRound,
+  ListTodo,
+  Plus,
+  TimerReset,
+  X,
+} from 'lucide-react-native';
+import {
+  NestableDraggableFlatList,
+  type RenderItemParams,
+} from 'react-native-draggable-flatlist';
 
+import { getUnifiedModuleTypeLabel } from '../../../domain/unifiedAutomation';
 import { theme } from '../../../styles/theme';
-import type { UnifiedAutomationSettingsRequest } from '../../../types/api';
-
-export type UnifiedSettingsRoute =
-  | 'keyQuest'
-  | 'time'
-  | 'cooldownAdventure'
-  | 'dailyAdventure'
-  | 'union'
-  | 'normalQuest';
+import type {
+  UnifiedAutomationModuleResponse,
+  UnifiedAutomationModuleType,
+} from '../../../types/api';
 
 type Props = {
-  settings: UnifiedAutomationSettingsRequest;
-  onOpen: (route: UnifiedSettingsRoute) => void;
-  onToggle: (route: UnifiedSettingsRoute) => void;
+  modules: UnifiedAutomationModuleResponse[];
+  savingModuleIds: number[];
+  reordering: boolean;
+  onAdd: (type: UnifiedAutomationModuleType) => void;
+  onEdit: (module: UnifiedAutomationModuleResponse) => void;
+  onReorder: (modules: UnifiedAutomationModuleResponse[]) => void;
+  onToggle: (module: UnifiedAutomationModuleResponse) => void;
 };
 
-const MODULES: Array<{ route: UnifiedSettingsRoute; title: string; description: string }> = [
-  { route: 'keyQuest', title: '열쇠 퀘스트', description: '수락·완료를 먼저 확인하고 필요한 맵 실행' },
-  { route: 'time', title: 'Time 자동 소모', description: '설정 비율을 넘으면 일반맵 우선 실행' },
-  { route: 'cooldownAdventure', title: '쿨다운 모험맵', description: '쿨다운이 끝난 맵부터 실행' },
-  { route: 'dailyAdventure', title: '일일 제한 모험맵', description: '하루 안에 승리 제한까지 실행' },
-  { route: 'union', title: '유니온', description: '발생 중인 유니온만 확인 후 실행' },
-  { route: 'normalQuest', title: '일반 퀘스트', description: '선택한 다른 퀘스트를 순서대로 처리' },
+const MODULE_TYPES: UnifiedAutomationModuleType[] = [
+  'KEY_QUEST',
+  'TIME_BURN',
+  'COOLDOWN_ADVENTURE',
+  'DAILY_ADVENTURE',
+  'OTHER_QUEST',
 ];
 
-/** 상세 옵션은 행을 눌러 들어가고 첫 화면에는 모듈 스위치만 남긴다. */
-export function UnifiedAutomationSettings({ settings, onOpen, onToggle }: Props) {
+/**
+ * 서버에 실제로 저장된 모듈만 우선순위 순서로 보여주는 설정 목록이다.
+ *
+ * 드래그가 끝나면 부모가 먼저 화면 순서를 바꾸고 백그라운드 저장 큐에 전달한다. 개별 토글은 해당
+ * 행만 비활성화하므로 다른 모듈 편집이나 토글이 불필요하게 막히지 않는다.
+ */
+export function UnifiedAutomationSettings({
+  modules,
+  savingModuleIds,
+  reordering,
+  onAdd,
+  onEdit,
+  onReorder,
+  onToggle,
+}: Props) {
+  const [typePickerOpen, setTypePickerOpen] = useState(false);
+  const renderItem = useCallback((params: RenderItemParams<UnifiedAutomationModuleResponse>) => (
+    <AutomationModuleRow
+      {...params}
+      saving={savingModuleIds.includes(params.item.id)}
+      onEdit={onEdit}
+      onToggle={onToggle}
+    />
+  ), [onEdit, onToggle, savingModuleIds]);
+
   return (
-    <View style={styles.card}>
-      {MODULES.map((module) => {
-        const enabled = settings[module.route].enabled;
-        return (
-          <View key={module.route} style={styles.row}>
-            <Pressable
-              accessibilityLabel={`${module.title} ${enabled ? '끄기' : '켜기'}`}
-              accessibilityRole="switch"
-              accessibilityState={{ checked: enabled }}
-              onPress={() => onToggle(module.route)}
-              style={[styles.toggle, enabled && styles.toggleOn]}
-            >
-              <View style={[styles.toggleKnob, enabled && styles.toggleKnobOn]} />
-            </Pressable>
-            <Pressable onPress={() => onOpen(module.route)} style={({ pressed }) => [styles.copyButton, pressed && styles.pressed]}>
-              <View style={styles.copy}>
-                <Text style={styles.title}>{module.title}</Text>
-                <Text numberOfLines={1} style={styles.description}>{module.description}</Text>
-              </View>
-              <ChevronRight color={theme.colors.textMuted} size={18} />
-            </Pressable>
+    <View style={styles.stack}>
+      <View style={styles.listHeader}>
+        <View style={styles.headerCopy}>
+          <Text style={styles.sectionTitle}>자동화 구성</Text>
+          <Text style={styles.helper}>위에서부터 실행하며 변경은 다음 작업부터 적용돼요.</Text>
+        </View>
+        <Pressable
+          accessibilityLabel={typePickerOpen ? '자동화 유형 선택 닫기' : '자동화 추가'}
+          accessibilityRole="button"
+          onPress={() => setTypePickerOpen((open) => !open)}
+          style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
+        >
+          {typePickerOpen ? <X color={theme.colors.buttonText} size={17} /> : <Plus color={theme.colors.buttonText} size={17} />}
+          <Text style={styles.addButtonText}>{typePickerOpen ? '닫기' : '자동화 추가'}</Text>
+        </Pressable>
+      </View>
+
+      {typePickerOpen ? (
+        <View style={styles.typePicker}>
+          <Text style={styles.typePickerTitle}>추가할 자동화 유형</Text>
+          <View style={styles.typeGrid}>
+            {MODULE_TYPES.map((type) => (
+              <Pressable
+                key={type}
+                accessibilityRole="button"
+                onPress={() => {
+                  setTypePickerOpen(false);
+                  onAdd(type);
+                }}
+                style={({ pressed }) => [styles.typeOption, pressed && styles.pressed]}
+              >
+                <ModuleTypeIcon type={type} />
+                <Text numberOfLines={2} style={styles.typeOptionText}>{getUnifiedModuleTypeLabel(type)}</Text>
+              </Pressable>
+            ))}
           </View>
-        );
-      })}
+        </View>
+      ) : null}
+
+      {modules.length === 0 ? (
+        <View style={styles.emptyState}>
+          <ListTodo color={theme.colors.textMuted} size={24} />
+          <View style={styles.emptyCopy}>
+            <Text style={styles.emptyTitle}>아직 자동화가 없습니다.</Text>
+            <Text style={styles.helper}>필요한 항목만 추가해 나만의 실행 순서를 만드세요.</Text>
+          </View>
+        </View>
+      ) : (
+        <NestableDraggableFlatList
+          activationDistance={8}
+          data={modules}
+          keyExtractor={(module) => String(module.id)}
+          onDragEnd={({ data, from, to }) => {
+            if (from !== to) onReorder(data);
+          }}
+          renderItem={renderItem}
+        />
+      )}
+
+      {reordering ? <Text style={styles.savingText}>우선순위 저장 중</Text> : null}
     </View>
   );
 }
 
+type AutomationModuleRowProps = RenderItemParams<UnifiedAutomationModuleResponse> & {
+  saving: boolean;
+  onEdit: (module: UnifiedAutomationModuleResponse) => void;
+  onToggle: (module: UnifiedAutomationModuleResponse) => void;
+};
+
+function AutomationModuleRow({
+  item,
+  drag,
+  isActive,
+  saving,
+  onEdit,
+  onToggle,
+}: AutomationModuleRowProps) {
+  const readiness = item.ready ? item.summary : item.summary || '설정을 확인해 주세요';
+  return (
+    <View style={[styles.row, isActive && styles.rowActive]}>
+      <Pressable
+        accessibilityHint="길게 눌러 위아래로 이동하세요"
+        accessibilityLabel={`${item.displayName} 우선순위 이동`}
+        delayLongPress={120}
+        disabled={saving}
+        onLongPress={drag}
+        style={({ pressed }) => [styles.dragHandle, pressed && styles.pressed]}
+      >
+        <GripVertical color={theme.colors.textMuted} size={20} />
+      </Pressable>
+
+      <Pressable
+        accessibilityLabel={`${item.displayName} 편집`}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: saving }}
+        disabled={saving}
+        onPress={() => onEdit(item)}
+        style={({ pressed }) => [
+          styles.rowCopyButton,
+          saving && styles.disabled,
+          pressed && !saving && styles.pressed,
+        ]}
+      >
+        <Text numberOfLines={1} style={styles.rowTitle}>{item.displayName}</Text>
+        <Text numberOfLines={1} style={styles.rowMeta}>
+          {getUnifiedModuleTypeLabel(item.moduleType)} · {readiness}
+        </Text>
+      </Pressable>
+
+      <Switch
+        accessibilityLabel={`${item.displayName} ${item.enabled ? '끄기' : '켜기'}`}
+        disabled={saving}
+        onValueChange={() => onToggle(item)}
+        thumbColor={item.enabled ? theme.colors.buttonText : theme.colors.textMuted}
+        trackColor={{ false: theme.colors.border, true: theme.colors.accentGreen }}
+        value={item.enabled}
+      />
+      <Pressable
+        accessibilityLabel={`${item.displayName} 상세 설정`}
+        accessibilityRole="button"
+        accessibilityState={{ disabled: saving }}
+        disabled={saving}
+        onPress={() => onEdit(item)}
+        style={({ pressed }) => [
+          styles.editButton,
+          saving && styles.disabled,
+          pressed && !saving && styles.pressed,
+        ]}
+      >
+        <ChevronRight color={theme.colors.textMuted} size={18} />
+      </Pressable>
+    </View>
+  );
+}
+
+function ModuleTypeIcon({ type }: { type: UnifiedAutomationModuleType }) {
+  const props = { color: theme.colors.accentGreen, size: 18 };
+  switch (type) {
+    case 'KEY_QUEST': return <KeyRound {...props} />;
+    case 'TIME_BURN': return <TimerReset {...props} />;
+    case 'COOLDOWN_ADVENTURE': return <Clock3 {...props} />;
+    case 'DAILY_ADVENTURE': return <CalendarDays {...props} />;
+    case 'OTHER_QUEST': return <ListTodo {...props} />;
+  }
+}
+
 const styles = StyleSheet.create({
-  card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, paddingHorizontal: theme.spacing.md },
-  row: { alignItems: 'center', borderBottomColor: theme.colors.border, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: 10, minHeight: 66 },
-  toggle: { backgroundColor: theme.colors.border, borderRadius: 12, height: 24, padding: 3, width: 42 },
-  toggleOn: { backgroundColor: theme.colors.accentGreen },
-  toggleKnob: { backgroundColor: theme.colors.text, borderRadius: 9, height: 18, width: 18 },
-  toggleKnobOn: { alignSelf: 'flex-end' },
-  copyButton: { alignItems: 'center', flex: 1, flexDirection: 'row', minHeight: 64 },
-  copy: { flex: 1 },
-  title: { color: theme.colors.text, fontSize: 14, fontWeight: '700' },
-  description: { color: theme.colors.textMuted, fontSize: 12, marginTop: 3 },
-  pressed: { opacity: 0.7 },
+  stack: { gap: theme.spacing.md },
+  listHeader: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
+  headerCopy: { flex: 1, minWidth: 0 },
+  sectionTitle: { color: theme.colors.text, fontSize: 16, fontWeight: '900' },
+  helper: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 17, marginTop: 2 },
+  addButton: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.sm, flexDirection: 'row', gap: 5, minHeight: 38, paddingHorizontal: 11 },
+  addButtonText: { color: theme.colors.buttonText, fontSize: 13, fontWeight: '900' },
+  typePicker: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, gap: theme.spacing.sm, paddingBottom: theme.spacing.md },
+  typePickerTitle: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '800' },
+  typeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
+  typeOption: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.border, borderRadius: theme.radius.sm, borderWidth: 1, flexBasis: '31%', flexGrow: 1, gap: 6, justifyContent: 'center', minHeight: 68, padding: theme.spacing.sm },
+  typeOptionText: { color: theme.colors.text, fontSize: 12, fontWeight: '800', textAlign: 'center' },
+  emptyState: { alignItems: 'center', borderColor: theme.colors.border, borderRadius: theme.radius.md, borderStyle: 'dashed', borderWidth: 1, flexDirection: 'row', gap: theme.spacing.md, minHeight: 84, padding: theme.spacing.md },
+  emptyCopy: { flex: 1 },
+  emptyTitle: { color: theme.colors.text, fontSize: 14, fontWeight: '800' },
+  row: { alignItems: 'center', backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.sm, borderWidth: 1, flexDirection: 'row', gap: 6, marginBottom: theme.spacing.sm, minHeight: 60, paddingHorizontal: 6 },
+  rowActive: { borderColor: theme.colors.accentGreen, opacity: 0.96 },
+  dragHandle: { alignItems: 'center', height: 44, justifyContent: 'center', width: 34 },
+  rowCopyButton: { flex: 1, minWidth: 0, paddingVertical: 9 },
+  rowTitle: { color: theme.colors.text, fontSize: 14, fontWeight: '900' },
+  rowMeta: { color: theme.colors.textMuted, fontSize: 11, marginTop: 3 },
+  editButton: { alignItems: 'center', height: 40, justifyContent: 'center', width: 28 },
+  savingText: { color: theme.colors.textMuted, fontSize: 11, textAlign: 'right' },
+  pressed: { opacity: 0.72 },
+  disabled: { opacity: 0.45 },
 });
