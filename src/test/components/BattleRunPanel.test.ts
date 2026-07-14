@@ -26,6 +26,17 @@ describe('BattleRunPanel', () => {
     assert.match(source, /partySelectionComplete \? \([\s\S]*<BattlePartySelector/);
   });
 
+  it('labels the preset picker as the first party-selection step', () => {
+    assert.match(
+      source,
+      /<Text style=\{styles\.stepLabel\}>STEP 1 · 파티 선택<\/Text>\s*<BattlePartyPresetPicker/,
+    );
+    assert.match(
+      source,
+      /stepLabel: \{ color: theme\.colors\.accentGreen, fontSize: 12, fontWeight: '900' \}/,
+    );
+  });
+
   it('starts empty and records direct or preset selection without mutating saved presets', () => {
     assert.match(source, /useState<PartySelectionMode>\(null\)/);
     assert.match(source, /useState<number \| null>\(null\)/);

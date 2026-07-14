@@ -116,6 +116,7 @@ export function BattleRunPanel({
 
   return (
     <View style={styles.runPanel}>
+      <Text style={styles.stepLabel}>STEP 1 · 파티 선택</Text>
       <BattlePartyPresetPicker
         characters={characters}
         presets={partyPresets}
@@ -225,6 +226,7 @@ function BattleRoundSummary({
 
 const styles = StyleSheet.create({
   runPanel: { gap: theme.spacing.sm, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.sm, backgroundColor: theme.colors.surfaceAlt, padding: theme.spacing.md },
+  stepLabel: { color: theme.colors.accentGreen, fontSize: 12, fontWeight: '900' },
   stateText: { color: theme.colors.textMuted, fontSize: 14, fontWeight: '800' },
   errorText: { color: theme.colors.danger, fontSize: 14, lineHeight: 20, textAlign: 'center' },
   actionRow: { flexDirection: 'row', gap: theme.spacing.sm },
