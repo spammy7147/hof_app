@@ -341,6 +341,7 @@ function renderActiveTab({
           characters={characters}
           onLoadCategories={onLoadBattleCategories}
           onLoadMaps={onLoadBattleMaps}
+          onListPartyPresets={onListPartyPresets}
           onRunBattle={onRunBattle}
         />
       );

@@ -34,4 +34,24 @@ describe('battle tab screen', () => {
     assert.match(source, /buildBattleMapStateKey/);
     assert.doesNotMatch(source, /function battleMapKey/);
   });
+
+  it('loads and caches party presets only when a runnable map opens', () => {
+    assert.match(source, /onListPartyPresets: \(\) => Promise<PartyPresetResponse\[\]>/);
+    assert.match(source, /const \[partyPresets, setPartyPresets\] = useState<PartyPresetResponse\[\]>\(\[\]\)/);
+    assert.match(source, /const loadPartyPresets = useCallback/);
+    assert.match(source, /if \(!force && partyPresetsLoaded\) return/);
+    assert.match(source, /setPartyPresetsLoaded\(true\)/);
+    assert.match(source, /void loadPartyPresets\(\)/);
+  });
+
+  it('passes party preset loading state and retry through each battle map row', () => {
+    assert.match(source, /partyPresets=\{partyPresets\}/);
+    assert.match(source, /arePartyPresetsLoading=\{arePartyPresetsLoading\}/);
+    assert.match(source, /partyPresetsError=\{partyPresetsError\}/);
+    assert.match(source, /onRetryPartyPresets=\{\(\) => loadPartyPresets\(true\)\}/);
+  });
+
+  it('lets the first preset or direct-choice tap through while the keyboard is open', () => {
+    assert.match(source, /<FlatList[\s\S]*keyboardShouldPersistTaps="handled"[\s\S]*renderItem=\{renderItem\}/);
+  });
 });
