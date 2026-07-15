@@ -46,6 +46,7 @@ export type UnifiedAutomationControllerSnapshot = {
 };
 
 type ReorderResult = { aggregate: TypedAutomationAggregateResponse; sequence: number };
+const STRUCTURAL_MUTATION_KEY = 'structure';
 
 function initialSnapshot(): UnifiedAutomationControllerSnapshot {
   return {
@@ -161,7 +162,7 @@ export class UnifiedAutomationController {
   }
 
   createEntry(type: AutomationType): Promise<boolean> {
-    return this.runTypedMutation(`type:${type}`, type, null, async (sequence, generation) => {
+    return this.runTypedMutation(STRUCTURAL_MUTATION_KEY, type, null, async (sequence, generation) => {
       const response = await this.api.create({ type });
       if (this.generation === generation) this.mergeStructuralResponse(response, sequence, type);
     });
@@ -169,11 +170,17 @@ export class UnifiedAutomationController {
 
   deleteEntry(entryId: number): Promise<boolean> {
     const type = this.snapshot.aggregate?.entries.find(({ id }) => id === entryId)?.type;
-    const key = type ? `type:${type}` : `entry:${entryId}`;
-    return this.runTypedMutation(key, type ?? null, entryId, async (sequence, generation) => {
-      const response = await this.api.delete(entryId);
-      if (this.generation === generation) this.mergeStructuralResponse(response, sequence, type ?? null);
-    });
+    return this.runTypedMutation(
+      STRUCTURAL_MUTATION_KEY,
+      type ?? null,
+      entryId,
+      async (sequence, generation) => {
+        const response = await this.api.delete(entryId);
+        if (this.generation === generation) {
+          this.mergeStructuralResponse(response, sequence, type ?? null);
+        }
+      },
+    );
   }
 
   saveQuestSettings(request: UpdateQuestAutomationRequest): Promise<boolean> {

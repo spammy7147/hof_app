@@ -165,6 +165,100 @@ describe('typed unified automation controller', () => {
     assert.deepEqual(second.getSnapshot().aggregate?.entries.map(({ id }) => id), [2, 1]);
   });
 
+  it('serializes different-type creates in invocation order', async () => {
+    const first = deferred<TypedAutomationAggregateResponse>();
+    const second = deferred<TypedAutomationAggregateResponse>();
+    const calls: AutomationType[] = [];
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([]),
+      create: ({ type }) => {
+        calls.push(type);
+        return calls.length === 1 ? first.promise : second.promise;
+      },
+    }));
+    await controller.load();
+
+    const creatingQuest = controller.createEntry('QUEST');
+    const creatingBattle = controller.createEntry('BATTLE_MAP');
+    assert.deepEqual(calls, ['QUEST']);
+
+    first.resolve(aggregate([entry(1, 'QUEST', 0)]));
+    assert.equal(await creatingQuest, true);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(calls, ['QUEST', 'BATTLE_MAP']);
+    second.resolve(aggregate([entry(1, 'QUEST', 0), entry(2, 'BATTLE_MAP', 1)]));
+    assert.equal(await creatingBattle, true);
+    assert.deepEqual(controller.getSnapshot().aggregate?.entries.map(({ id }) => id), [1, 2]);
+  });
+
+  it('releases the structural queue after failure so the next create starts', async () => {
+    const first = deferred<TypedAutomationAggregateResponse>();
+    const second = deferred<TypedAutomationAggregateResponse>();
+    const calls: AutomationType[] = [];
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([]),
+      create: ({ type }) => {
+        calls.push(type);
+        return calls.length === 1 ? first.promise : second.promise;
+      },
+    }));
+    await controller.load();
+
+    const failedCreate = controller.createEntry('QUEST');
+    const successfulCreate = controller.createEntry('BATTLE_MAP');
+    first.reject(new Error('create failed'));
+    assert.equal(await failedCreate, false);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(calls, ['QUEST', 'BATTLE_MAP']);
+    second.resolve(aggregate([entry(2, 'BATTLE_MAP', 0)]));
+    assert.equal(await successfulCreate, true);
+  });
+
+  it('reset prevents queued structural work for the old account from starting', async () => {
+    const first = deferred<TypedAutomationAggregateResponse>();
+    const calls: AutomationType[] = [];
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([]),
+      create: ({ type }) => {
+        calls.push(type);
+        return first.promise;
+      },
+    }));
+    await controller.load();
+
+    const inFlight = controller.createEntry('QUEST');
+    const queued = controller.createEntry('BATTLE_MAP');
+    controller.reset();
+    first.resolve(aggregate([entry(1, 'QUEST', 0)]));
+    assert.equal(await inFlight, false);
+    assert.equal(await queued, false);
+    assert.deepEqual(calls, ['QUEST']);
+    assert.equal(controller.getSnapshot().aggregate, null);
+  });
+
+  it('uses the same structural queue for create followed by delete', async () => {
+    const create = deferred<TypedAutomationAggregateResponse>();
+    const remove = deferred<TypedAutomationAggregateResponse>();
+    const calls: string[] = [];
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([entry(1, 'QUEST', 0)]),
+      create: () => { calls.push('create'); return create.promise; },
+      delete: () => { calls.push('delete'); return remove.promise; },
+    }));
+    await controller.load();
+
+    const creating = controller.createEntry('BATTLE_MAP');
+    const deleting = controller.deleteEntry(1);
+    assert.deepEqual(calls, ['create']);
+    create.resolve(aggregate([entry(1, 'QUEST', 0), entry(2, 'BATTLE_MAP', 1)]));
+    await creating;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(calls, ['create', 'delete']);
+    remove.resolve(aggregate([entry(2, 'BATTLE_MAP', 0)]));
+    await deleting;
+    assert.deepEqual(controller.getSnapshot().aggregate?.entries.map(({ id }) => id), [2]);
+  });
+
   it('rolls optimistic order back and reloads after reorder failure', async () => {
     let fetches = 0;
     const controller = new UnifiedAutomationController(apiStub({
