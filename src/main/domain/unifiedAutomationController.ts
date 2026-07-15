@@ -191,6 +191,10 @@ export class UnifiedAutomationController {
     return this.saveSettings('QUEST', request, (body) => this.api.updateQuest(body));
   }
 
+  fetchQuests(): Promise<QuestSnapshot[]> {
+    return this.api.fetchQuests();
+  }
+
   saveBattleMapSettings(request: UpdateBattleMapAutomationRequest): Promise<boolean> {
     return this.saveSettings('BATTLE_MAP', request, (body) => this.api.updateBattle(body));
   }

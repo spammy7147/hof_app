@@ -31,6 +31,10 @@ const editorSource = readFileSync(
   resolve(process.cwd(), 'src/main/features/automation/components/UnifiedAutomationModuleEditor.tsx'),
   'utf8',
 );
+const questEditorSource = readFileSync(
+  resolve(process.cwd(), 'src/main/features/automation/components/QuestAutomationEditor.tsx'),
+  'utf8',
+);
 
 describe('통합 자동화 홈 화면', () => {
   it('한 계정의 자동화를 상태 대시보드와 설정 화면으로 나눈다', () => {
@@ -133,6 +137,16 @@ describe('통합 자동화 홈 화면', () => {
     assert.match(editorSource, /프리셋 없이도 저장할 수 있지만/);
     assert.match(homeSource, /buildUpdateUnifiedModuleRequest/);
     assert.match(homeSource, /createEntry/);
+  });
+
+  it('QUEST 상세만 typed editor와 saveQuestSettings를 사용하고 다른 유형은 임시 편집기를 유지한다', () => {
+    assert.match(homeSource, /entry\.type === 'QUEST'/);
+    assert.match(homeSource, /<QuestAutomationEditor/);
+    assert.match(homeSource, /automationController\.fetchQuests/);
+    assert.match(homeSource, /automationController\.saveQuestSettings/);
+    assert.match(homeSource, /function openModule[\s\S]*aggregate\?\.entries[\s\S]*openEntryDetail/);
+    assert.match(homeSource, /<UnifiedAutomationModuleEditor/);
+    assert.doesNotMatch(questEditorSource, /updateModule|buildUpdateUnifiedModuleRequest/);
   });
 
   it('변경 사항은 현재 작업을 끊지 않고 다음 판단부터 적용된다고 안내한다', () => {

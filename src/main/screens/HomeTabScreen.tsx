@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ArrowLeft, Info } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
@@ -10,6 +10,7 @@ import {
 } from '../domain/unifiedAutomation';
 import type { UnifiedAutomationController } from '../domain/unifiedAutomationController';
 import { UnifiedAutomationDashboard } from '../features/automation/components/UnifiedAutomationDashboard';
+import { QuestAutomationEditor } from '../features/automation/components/QuestAutomationEditor';
 import { UnifiedAutomationModuleEditor } from '../features/automation/components/UnifiedAutomationModuleEditor';
 import { UnifiedAutomationSettings } from '../features/automation/components/UnifiedAutomationSettings';
 import { theme } from '../styles/theme';
@@ -51,6 +52,7 @@ export function HomeTabScreen({
 }: HomeTabScreenProps) {
   const [route, setRoute] = useState<HomeRoute>('dashboard');
   const [editorDraft, setEditorDraft] = useState<UnifiedAutomationModuleDraft | null>(null);
+  const [questEditorEntry, setQuestEditorEntry] = useState<TypedAutomationEntryResponse | null>(null);
   const [rulesOpen, setRulesOpen] = useState(false);
   const {
     automation,
@@ -84,6 +86,11 @@ export function HomeTabScreen({
   }
 
   function openModule(moduleId: number) {
+    const entry = aggregate?.entries.find(({ id }) => id === moduleId);
+    if (entry) {
+      openEntryDetail(entry);
+      return;
+    }
     const module = automation?.modules.find((candidate) => candidate.id === moduleId);
     if (module) startEdit(module);
   }
@@ -106,6 +113,17 @@ export function HomeTabScreen({
   }
 
   function openEntryDetail(entry: TypedAutomationEntryResponse) {
+    if (entry.type === 'QUEST') {
+      if (savingEntryIds.includes(entry.id) || savingTypes.includes('QUEST')) {
+        automationController.showMessage('이 자동화를 저장하고 있어요. 완료된 뒤 다시 열어 주세요.');
+        return;
+      }
+      setEditorDraft(null);
+      setQuestEditorEntry(entry);
+      automationController.clearMessage();
+      setRoute('editor');
+      return;
+    }
     const module = automation?.modules.find(({ id }) => id === entry.id);
     if (module) startEdit(module);
   }
@@ -123,6 +141,41 @@ export function HomeTabScreen({
   function deleteEditedModule() {
     const moduleId = editorDraft?.moduleId;
     return moduleId == null ? null : () => deleteEditorEntry(moduleId);
+  }
+
+  const closeEditor = useCallback(() => {
+    setEditorDraft(null);
+    setQuestEditorEntry(null);
+    automationController.clearMessage();
+    setRoute('settings');
+  }, [automationController]);
+
+  const fetchQuestSnapshots = useCallback(
+    () => automationController.fetchQuests(),
+    [automationController],
+  );
+
+  if (aggregate && route === 'editor' && questEditorEntry?.type === 'QUEST') {
+    const currentEntry = aggregate.entries.find(({ id }) => id === questEditorEntry.id);
+    const entry = currentEntry?.type === 'QUEST' ? currentEntry : questEditorEntry;
+    return (
+      <QuestAutomationEditor
+        battleCategories={battleCategories}
+        entry={entry}
+        fetchQuests={fetchQuestSnapshots}
+        saving={savingEntryIds.includes(entry.id) || savingTypes.includes('QUEST')}
+        onBack={closeEditor}
+        onDelete={() => automationController.deleteEntry(entry.id)}
+        onListPartyPresets={onListPartyPresets}
+        onLoadBattleCategories={onLoadBattleCategories}
+        onLoadBattleMaps={onLoadBattleMaps}
+        onSave={async (request) => {
+          const saved = await automationController.saveQuestSettings(request);
+          if (saved) closeEditor();
+          return saved;
+        }}
+      />
+    );
   }
 
   const showPageHeader = route !== 'editor';
@@ -207,9 +260,7 @@ export function HomeTabScreen({
           initialDraft={editorDraft}
           saving={editorSaving}
           onBack={() => {
-            setEditorDraft(null);
-            automationController.clearMessage();
-            setRoute('settings');
+            closeEditor();
           }}
           onDelete={deleteEditedModule()}
           onListPartyPresets={onListPartyPresets}

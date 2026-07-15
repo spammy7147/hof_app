@@ -18,6 +18,12 @@ import type {
 } from '../../main/types/api';
 
 describe('typed unified automation controller', () => {
+  it('exposes typed quest discovery for the dedicated editor', async () => {
+    const snapshots = [questSnapshot('quest-1', [mission('kill', 'MONSTER_KILL')])];
+    const controller = new UnifiedAutomationController(apiStub({ fetchQuests: async () => snapshots }));
+
+    assert.deepEqual(await controller.fetchQuests(), snapshots);
+  });
   it('fences an older load and account-reset responses', async () => {
     const first = deferred<TypedAutomationAggregateResponse>();
     const second = deferred<TypedAutomationAggregateResponse>();
