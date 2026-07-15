@@ -83,6 +83,9 @@ export default function App() {
     waitForResolution: waitForCaptchaResolution,
     reset: resetCaptchaGate,
   } = useCaptchaGate({ authenticated: session?.loggedIn === true, api, describeError });
+  const captchaImageSource = currentCaptcha?.imageUrl
+    ? api.getAuthenticatedImageSource(currentCaptcha.imageUrl)
+    : null;
 
   /** 설정 화면에서 pending 캡차를 직접 확인할 때 blocking 없이 모달을 연다. */
   const handleOpenCaptchaModal = useCallback(() => {
@@ -345,6 +348,7 @@ export default function App() {
         <CaptchaChallengeModal
           visible={captchaModalVisible}
           captcha={currentCaptcha}
+          imageSource={captchaImageSource}
           isLoading={isCaptchaLoading}
           isSubmitting={isCaptchaSubmitting}
           message={captchaMessage}

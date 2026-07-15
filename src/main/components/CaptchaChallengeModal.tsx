@@ -1,4 +1,4 @@
-import { Image } from 'expo-image';
+import { Image, type ImageSource } from 'expo-image';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -17,6 +17,7 @@ import { PrimaryButton } from './PrimaryButton';
 type CaptchaChallengeModalProps = {
   visible: boolean;
   captcha: CaptchaChallengeResponse | null;
+  imageSource: ImageSource | null;
   isLoading: boolean;
   isSubmitting: boolean;
   message: string | null;
@@ -35,6 +36,7 @@ type CaptchaChallengeModalProps = {
 export function CaptchaChallengeModal({
   visible,
   captcha,
+  imageSource,
   isLoading,
   isSubmitting,
   message,
@@ -45,6 +47,7 @@ export function CaptchaChallengeModal({
   blocking = false,
 }: CaptchaChallengeModalProps) {
   const [answer, setAnswer] = useState('');
+  const [imageErrorMessage, setImageErrorMessage] = useState<string | null>(null);
   const trimmedAnswer = answer.trim();
 
   /**
@@ -53,11 +56,17 @@ export function CaptchaChallengeModal({
   useEffect(() => {
     if (!visible) {
       setAnswer('');
+      setImageErrorMessage(null);
       return;
     }
 
     setAnswer('');
+    setImageErrorMessage(null);
   }, [captcha?.id, visible]);
+
+  const handleImageError = useCallback(() => {
+    setImageErrorMessage('캡차 이미지를 불러오지 못했습니다. 새로고침해 주세요.');
+  }, []);
 
   /**
    * 모달 닫기 요청을 처리한다. blocking 모드에서는 부모가 닫기 거부 메시지를 표시한다.
@@ -120,15 +129,20 @@ export function CaptchaChallengeModal({
           {!isLoading && captcha ? (
             <View style={styles.body}>
               <Text style={styles.promptText}>{captcha.prompt}</Text>
-              {captcha.imageUrl ? (
-                <View style={styles.imageFrame}>
-                  <Image
-                    cachePolicy="none"
-                    contentFit="contain"
-                    source={{ uri: captcha.imageUrl }}
-                    style={styles.captchaImage}
-                  />
-                </View>
+              {imageSource ? (
+                <>
+                  <View style={styles.imageFrame}>
+                    <Image
+                      cachePolicy="none"
+                      contentFit="contain"
+                      onError={handleImageError}
+                      onLoad={() => setImageErrorMessage(null)}
+                      source={imageSource}
+                      style={styles.captchaImage}
+                    />
+                  </View>
+                  {imageErrorMessage ? <Text style={styles.errorText}>{imageErrorMessage}</Text> : null}
+                </>
               ) : (
                 <Text style={styles.mutedText}>캡차 이미지 주소가 없습니다.</Text>
               )}
