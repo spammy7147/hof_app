@@ -221,10 +221,10 @@ export function buildQuestAutomationRequest(
   if (errors.length > 0) throw new Error(errors.join('\n'));
   return {
     enabled: draft.enabled,
-    quests: draft.quests.map((quest) => ({
+    quests: draft.quests.map((quest, sourceOrder) => ({
       questCode: quest.questCode,
       enabled: quest.enabled,
-      sourceOrder: quest.sourceOrder,
+      sourceOrder,
       maps: normalizeMapOrder(quest.missions.flatMap((mission) => (
         isCombatMission(mission)
           ? mission.maps.map((map) => ({ ...map, missionKey: mission.key }))

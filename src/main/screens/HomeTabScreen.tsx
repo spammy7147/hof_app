@@ -26,6 +26,9 @@ import type {
 type HomeTabScreenProps = {
   authenticated: boolean;
   battleCategories: BattleCategoryResponse[];
+  areBattleCategoriesLoaded: boolean;
+  isBattleCategoriesLoading: boolean;
+  battleCategoriesError: string | null;
   onLoadBattleCategories: () => void;
   onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
@@ -44,6 +47,9 @@ type HomeRoute = 'dashboard' | 'settings' | 'editor';
 export function HomeTabScreen({
   authenticated,
   battleCategories,
+  areBattleCategoriesLoaded,
+  isBattleCategoriesLoading,
+  battleCategoriesError,
   onLoadBattleCategories,
   onLoadBattleMaps,
   onListPartyPresets,
@@ -63,6 +69,7 @@ export function HomeTabScreen({
     savingEntryIds,
     savingTypes,
     reordering,
+    error,
     message,
   } = useSyncExternalStore(
     automationController.subscribe,
@@ -161,12 +168,17 @@ export function HomeTabScreen({
     return (
       <QuestAutomationEditor
         battleCategories={battleCategories}
+        areBattleCategoriesLoaded={areBattleCategoriesLoaded}
+        isBattleCategoriesLoading={isBattleCategoriesLoading}
+        battleCategoriesError={battleCategoriesError}
         entry={entry}
         fetchQuests={fetchQuestSnapshots}
+        mutationMessage={message ?? error}
         saving={savingEntryIds.includes(entry.id) || savingTypes.includes('QUEST')}
         onBack={closeEditor}
         onDelete={() => automationController.deleteEntry(entry.id)}
         onListPartyPresets={onListPartyPresets}
+        onClearMutationMessage={() => automationController.clearMessage()}
         onLoadBattleCategories={onLoadBattleCategories}
         onLoadBattleMaps={onLoadBattleMaps}
         onSave={async (request) => {

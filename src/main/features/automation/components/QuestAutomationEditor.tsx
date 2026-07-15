@@ -47,6 +47,10 @@ type VisibleSection = Extract<QuestSection, 'ACTIVE' | 'AVAILABLE' | 'WAITING'>;
 type Props = {
   entry: TypedAutomationEntryResponse;
   battleCategories: BattleCategoryResponse[];
+  areBattleCategoriesLoaded: boolean;
+  isBattleCategoriesLoading: boolean;
+  battleCategoriesError: string | null;
+  mutationMessage: string | null;
   saving: boolean;
   fetchQuests: () => Promise<QuestSnapshot[]>;
   onBack: () => void;
@@ -54,6 +58,7 @@ type Props = {
   onLoadBattleCategories: () => void;
   onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
+  onClearMutationMessage: () => void;
   onSave: (request: UpdateQuestAutomationRequest) => Promise<boolean>;
 };
 
@@ -66,6 +71,10 @@ const TABS: readonly { section: VisibleSection; label: string; empty: string }[]
 export function QuestAutomationEditor({
   entry,
   battleCategories,
+  areBattleCategoriesLoaded,
+  isBattleCategoriesLoading,
+  battleCategoriesError,
+  mutationMessage,
   saving,
   fetchQuests,
   onBack,
@@ -73,6 +82,7 @@ export function QuestAutomationEditor({
   onLoadBattleCategories,
   onLoadBattleMaps,
   onListPartyPresets,
+  onClearMutationMessage,
   onSave,
 }: Props) {
   const [section, setSection] = useState<VisibleSection>('ACTIVE');
@@ -81,48 +91,143 @@ export function QuestAutomationEditor({
   const [catalog, setCatalog] = useState<BattleMapResponse[]>([]);
   const [presets, setPresets] = useState<PartyPresetResponse[]>([]);
   const [draft, setDraft] = useState<QuestAutomationDraft | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [questLoading, setQuestLoading] = useState(true);
+  const [questLoaded, setQuestLoaded] = useState(false);
+  const [questError, setQuestError] = useState<string | null>(null);
+  const [presetLoading, setPresetLoading] = useState(true);
+  const [presetError, setPresetError] = useState<string | null>(null);
+  const [categoryRequested, setCategoryRequested] = useState(false);
+  const [mapResources, setMapResources] = useState<Record<string, { loading: boolean; error: string | null }>>({});
+  const [refreshWarning, setRefreshWarning] = useState(false);
   const [localBusy, setLocalBusy] = useState(false);
   const [mapQueries, setMapQueries] = useState<Record<string, string>>({});
   const baselineRef = useRef('');
-  const generationRef = useRef(0);
+  const mountedGenerationRef = useRef(0);
+  const questGenerationRef = useRef(0);
+  const presetGenerationRef = useRef(0);
+  const mapGenerationRef = useRef<Record<string, number>>({});
+  const mapResourceRef = useRef(mapResources);
+  const requestedCategoriesRef = useRef(false);
 
-  const load = useCallback(async () => {
-    const generation = ++generationRef.current;
-    setLoading(true);
-    setLoadError(null);
-    if (battleCategories.length === 0) onLoadBattleCategories();
+  const loadQuests = useCallback(async () => {
+    const generation = ++questGenerationRef.current;
+    const mountedGeneration = mountedGenerationRef.current;
+    setQuestLoading(true);
+    setQuestError(null);
     try {
-      const enabledCategories = filterAutomationProfileCategories(battleCategories).filter(({ enabled }) => enabled);
-      const [nextSnapshots, nextPresets, ...mapGroups] = await Promise.all([
-        fetchQuests(),
-        onListPartyPresets(),
-        ...enabledCategories.map(({ id }) => onLoadBattleMaps(id)),
-      ]);
-      if (generation !== generationRef.current) return;
-      const nextCatalog = (mapGroups as BattleMapResponse[][]).flat().filter(
-        (map): map is BattleMapResponse & { mapCode: string } => map.resolved && map.mapCode != null,
-      );
-      const nextDraft = buildQuestAutomationDraft(entry, nextSnapshots, nextCatalog);
-      setSnapshots(nextSnapshots);
-      setCatalog(nextCatalog);
-      setPresets(nextPresets);
-      setDraft(nextDraft);
-      baselineRef.current = serializeDraft(nextDraft);
+      const nextSnapshots = await fetchQuests();
+      if (mountedGeneration === mountedGenerationRef.current && generation === questGenerationRef.current) {
+        setSnapshots(nextSnapshots);
+        setQuestLoaded(true);
+      }
     } catch (error: unknown) {
-      if (generation === generationRef.current) {
-        setLoadError(toUserFacingErrorMessage(error));
+      if (mountedGeneration === mountedGenerationRef.current && generation === questGenerationRef.current) {
+        setQuestError(toUserFacingErrorMessage(error));
       }
     } finally {
-      if (generation === generationRef.current) setLoading(false);
+      if (mountedGeneration === mountedGenerationRef.current && generation === questGenerationRef.current) {
+        setQuestLoading(false);
+      }
     }
-  }, [battleCategories, entry, fetchQuests, onListPartyPresets, onLoadBattleCategories, onLoadBattleMaps]);
+  }, [fetchQuests]);
+
+  const loadPresets = useCallback(async () => {
+    const generation = ++presetGenerationRef.current;
+    const mountedGeneration = mountedGenerationRef.current;
+    setPresetLoading(true);
+    setPresetError(null);
+    try {
+      const nextPresets = await onListPartyPresets();
+      if (mountedGeneration === mountedGenerationRef.current && generation === presetGenerationRef.current) {
+        setPresets(nextPresets);
+      }
+    } catch (error: unknown) {
+      if (mountedGeneration === mountedGenerationRef.current && generation === presetGenerationRef.current) {
+        setPresetError(toUserFacingErrorMessage(error));
+      }
+    } finally {
+      if (mountedGeneration === mountedGenerationRef.current && generation === presetGenerationRef.current) {
+        setPresetLoading(false);
+      }
+    }
+  }, [onListPartyPresets]);
+
+  const loadCategoryMaps = useCallback(async (category: BattleCategoryResponse) => {
+    const generation = (mapGenerationRef.current[category.id] ?? 0) + 1;
+    mapGenerationRef.current[category.id] = generation;
+    const mountedGeneration = mountedGenerationRef.current;
+    const loadingState = { loading: true, error: null };
+    mapResourceRef.current = { ...mapResourceRef.current, [category.id]: loadingState };
+    setMapResources(mapResourceRef.current);
+    try {
+      const maps = await onLoadBattleMaps(category.id);
+      if (mountedGeneration !== mountedGenerationRef.current || mapGenerationRef.current[category.id] !== generation) return;
+      setCatalog((current) => [
+        ...current.filter(({ categoryId }) => categoryId !== category.id),
+        ...maps.filter((map): map is BattleMapResponse & { mapCode: string } => map.resolved && map.mapCode != null),
+      ]);
+      const successState = { loading: false, error: null };
+      mapResourceRef.current = { ...mapResourceRef.current, [category.id]: successState };
+      setMapResources(mapResourceRef.current);
+    } catch (error: unknown) {
+      if (mountedGeneration !== mountedGenerationRef.current || mapGenerationRef.current[category.id] !== generation) return;
+      const errorState = { loading: false, error: toUserFacingErrorMessage(error) };
+      mapResourceRef.current = { ...mapResourceRef.current, [category.id]: errorState };
+      setMapResources(mapResourceRef.current);
+    }
+  }, [onLoadBattleMaps]);
 
   useEffect(() => {
-    void load();
-    return () => { generationRef.current += 1; };
-  }, [load]);
+    void loadQuests();
+    void loadPresets();
+    return () => {
+      mountedGenerationRef.current += 1;
+      questGenerationRef.current += 1;
+      presetGenerationRef.current += 1;
+    };
+  }, [loadPresets, loadQuests]);
+
+  useEffect(() => {
+    mapResourceRef.current = mapResources;
+  }, [mapResources]);
+
+  useEffect(() => {
+    if (!areBattleCategoriesLoaded && battleCategories.length === 0 && !isBattleCategoriesLoading && !battleCategoriesError && !requestedCategoriesRef.current) {
+      requestedCategoriesRef.current = true;
+      setCategoryRequested(true);
+      onLoadBattleCategories();
+    }
+    if (battleCategories.length > 0 || battleCategoriesError || isBattleCategoriesLoading) {
+      requestedCategoriesRef.current = false;
+      setCategoryRequested(false);
+    }
+  }, [areBattleCategoriesLoaded, battleCategories.length, battleCategoriesError, isBattleCategoriesLoading, onLoadBattleCategories]);
+
+  const eligibleCategories = useMemo(
+    () => filterAutomationProfileCategories(battleCategories).filter(({ enabled }) => enabled),
+    [battleCategories],
+  );
+  const categoryKey = eligibleCategories.map(({ id }) => id).join('|');
+
+  useEffect(() => {
+    for (const category of eligibleCategories) {
+      if (!mapResourceRef.current[category.id]) void loadCategoryMaps(category);
+    }
+  }, [categoryKey, eligibleCategories, loadCategoryMaps]);
+
+  useEffect(() => {
+    if (!questLoaded) return;
+    const nextDraft = buildQuestAutomationDraft(entry, snapshots, catalog);
+    setDraft((current) => {
+      if (current == null || serializeDraft(current) === baselineRef.current) {
+        baselineRef.current = serializeDraft(nextDraft);
+        setRefreshWarning(false);
+        return nextDraft;
+      }
+      setRefreshWarning(true);
+      return current;
+    });
+  }, [catalog, entry, questLoaded, snapshots]);
 
   const visibleQuests = useMemo(
     () => filterQuests(snapshots, section, query),
@@ -135,7 +240,24 @@ export function QuestAutomationEditor({
   );
   const dirty = draft != null && serializeDraft(draft) !== baselineRef.current;
   const busy = saving || localBusy;
-  const saveDisabled = busy || loading || draft == null || validationErrors.length > 0;
+  const combatMissions = draft?.quests.flatMap(({ missions }) => missions.filter(isCombatMission)) ?? [];
+  const hasExplicitPreset = combatMissions.some(({ maps }) => maps.some(({ presetMode }) => presetMode === 'EXPLICIT'));
+  const hasMissingCombatMap = combatMissions.some(({ maps }) => maps.length === 0 || maps.some(({ categoryId, mapCode }) => !categoryId || !mapCode));
+  const mapErrors = eligibleCategories.filter(({ id }) => mapResources[id]?.error);
+  const needsFullCatalog = hasMissingCombatMap || combatMissions.some((mission) => (
+    mission.type === 'MAP_CLEAR' && mission.maps.every(({ manuallyOverridden }) => !manuallyOverridden)
+  ));
+  const categoryLoading = isBattleCategoriesLoading || (!areBattleCategoriesLoaded && battleCategories.length === 0 && !battleCategoriesError && categoryRequested);
+  const supportingResourcesBlockSave = combatMissions.length > 0 && (
+    (needsFullCatalog && (
+      categoryLoading ||
+      (battleCategories.length === 0 && battleCategoriesError != null) ||
+      eligibleCategories.some(({ id }) => mapResources[id]?.loading) ||
+      mapErrors.length > 0
+    )) ||
+    (hasExplicitPreset && (presetLoading || presetError != null))
+  );
+  const saveDisabled = busy || questLoading || draft == null || validationErrors.length > 0 || supportingResourcesBlockSave;
 
   const updateDraft = useCallback((updater: (current: QuestAutomationDraft) => QuestAutomationDraft) => {
     setDraft((current) => current ? updater(current) : current);
@@ -151,12 +273,17 @@ export function QuestAutomationEditor({
         presets={presets}
         selected={selection ?? null}
         snapshot={item}
-        onMapQuery={(missionKey, value) => setMapQueries((current) => ({ ...current, [missionKey]: value }))}
+        onMapQuery={(missionKey, value) => setMapQueries((current) => ({
+          ...current,
+          [buildMapQueryKey(item.questId, missionKey)]: value,
+        }))}
         onToggle={() => updateDraft((current) => selectQuest(current, item, !selection, catalog))}
         onUpdateMission={(missionKey, maps) => updateDraft((current) => updateMissionMaps(current, item.questId, missionKey, maps))}
       />
     );
   }, [busy, catalog, draft, mapQueries, presets, updateDraft]);
+
+  const missingSelections = draft?.quests.filter(({ missing }) => missing) ?? [];
 
   function requestBack() {
     if (!dirty) {
@@ -177,6 +304,7 @@ export function QuestAutomationEditor({
         style: 'destructive',
         onPress: async () => {
           if (busy) return;
+          onClearMutationMessage();
           setLocalBusy(true);
           try {
             if (await onDelete()) onBack();
@@ -190,6 +318,7 @@ export function QuestAutomationEditor({
 
   async function save() {
     if (!draft || saveDisabled) return;
+    onClearMutationMessage();
     setLocalBusy(true);
     try {
       const request = buildQuestAutomationRequest(draft, presetIds);
@@ -249,16 +378,60 @@ export function QuestAutomationEditor({
         value={query}
       />
 
-      {loading ? (
+      {mutationMessage ? (
+        <Text accessibilityLabel="퀘스트 자동화 작업 오류" accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.problem}>
+          {mutationMessage}
+        </Text>
+      ) : null}
+      {categoryLoading ? <Text style={styles.muted}>맵 카테고리 불러오는 중</Text> : null}
+      {battleCategoriesError ? (
+        <ResourceWarning
+          label="맵 카테고리"
+          retryLabel="맵 카테고리 다시 불러오기"
+          onRetry={onLoadBattleCategories}
+        />
+      ) : null}
+      {presetError ? (
+        <ResourceWarning label="프리셋" retryLabel="프리셋 다시 불러오기" onRetry={() => loadPresets()} />
+      ) : presetLoading ? <Text style={styles.muted}>프리셋 불러오는 중</Text> : null}
+      {mapErrors.map((category) => (
+        <ResourceWarning
+          key={category.id}
+          label={`${category.label} 맵`}
+          retryLabel={`${category.label} 맵 다시 불러오기`}
+          onRetry={() => loadCategoryMaps(category)}
+        />
+      ))}
+      {refreshWarning ? (
+        <View style={styles.warningRow}>
+          <Text style={styles.problem}>새 서버 설정이 있어요. 편집 중인 변경은 유지했습니다.</Text>
+          <Pressable
+            accessibilityLabel="서버 설정으로 다시 불러오기"
+            accessibilityRole="button"
+            disabled={busy}
+            onPress={() => {
+              const nextDraft = buildQuestAutomationDraft(entry, snapshots, catalog);
+              baselineRef.current = serializeDraft(nextDraft);
+              setDraft(nextDraft);
+              setRefreshWarning(false);
+            }}
+            style={styles.secondaryButton}
+          >
+            <Text style={styles.secondaryButtonText}>다시 불러오기</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {questLoading ? (
         <View style={styles.centerState}>
           <ActivityIndicator color={theme.colors.accentGreen} />
           <Text style={styles.muted}>퀘스트 불러오는 중</Text>
         </View>
-      ) : loadError ? (
+      ) : questError ? (
         <View style={styles.centerState}>
           <Text style={styles.problem}>퀘스트를 불러오지 못했어요.</Text>
-          <Text style={styles.muted}>{loadError}</Text>
-          <Pressable accessibilityLabel="퀘스트 다시 불러오기" accessibilityRole="button" onPress={() => load()} style={styles.secondaryButton}>
+          <Text style={styles.muted}>{questError}</Text>
+          <Pressable accessibilityLabel="퀘스트 다시 불러오기" accessibilityRole="button" onPress={() => loadQuests()} style={styles.secondaryButton}>
             <Text style={styles.secondaryButtonText}>다시 시도</Text>
           </Pressable>
         </View>
@@ -269,17 +442,38 @@ export function QuestAutomationEditor({
           initialNumToRender={12}
           keyboardShouldPersistTaps="handled"
           keyExtractor={({ questId }) => questId}
+          ListHeaderComponent={missingSelections.length > 0 ? (
+            <View style={styles.missingList}>
+              {missingSelections.map((selection) => (
+                <MissingSelectionCard
+                  key={selection.questCode}
+                  catalog={catalog}
+                  disabled={busy}
+                  mapQueries={mapQueries}
+                  presets={presets}
+                  selection={selection}
+                  onMapQuery={(missionKey, value) => setMapQueries((current) => ({
+                    ...current,
+                    [buildMapQueryKey(selection.questCode, missionKey)]: value,
+                  }))}
+                  onRemove={() => updateDraft((current) => ({
+                    ...current,
+                    quests: current.quests.filter(({ questCode }) => questCode !== selection.questCode),
+                  }))}
+                  onUpdateMission={(missionKey, maps) => updateDraft((current) => updateMissionMaps(current, selection.questCode, missionKey, maps))}
+                />
+              ))}
+            </View>
+          ) : null}
           ListEmptyComponent={<Text style={styles.empty}>{activeTab.empty}</Text>}
           maxToRenderPerBatch={12}
           removeClippedSubviews
           renderItem={renderQuest}
+          style={styles.questList}
           windowSize={7}
         />
       )}
 
-      {draft?.quests.some(({ missing }) => missing) ? (
-        <Text style={styles.muted}>현재 목록에서 사라진 선택 퀘스트도 저장 시 그대로 유지됩니다.</Text>
-      ) : null}
       {validationErrors.length > 0 ? <Text style={styles.problem}>{validationErrors[0]}</Text> : null}
 
       <View style={styles.footer}>
@@ -292,6 +486,67 @@ export function QuestAutomationEditor({
           <Text style={styles.saveText}>저장</Text>
         </Pressable>
       </View>
+    </View>
+  );
+}
+
+function ResourceWarning({ label, retryLabel, onRetry }: { label: string; retryLabel: string; onRetry: () => void | Promise<unknown> }) {
+  return (
+    <View style={styles.warningRow}>
+      <Text accessibilityLiveRegion="polite" style={styles.problem}>{label}을 불러오지 못했어요.</Text>
+      <Pressable accessibilityLabel={retryLabel} accessibilityRole="button" onPress={() => { void onRetry(); }} style={styles.secondaryButton}>
+        <Text style={styles.secondaryButtonText}>다시 시도</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+type MissingSelectionCardProps = {
+  selection: QuestAutomationDraft['quests'][number];
+  catalog: BattleMapResponse[];
+  presets: PartyPresetResponse[];
+  mapQueries: Record<string, string>;
+  disabled: boolean;
+  onRemove: () => void;
+  onMapQuery: (missionKey: string, value: string) => void;
+  onUpdateMission: (missionKey: string, maps: QuestMapSettingRequest[]) => void;
+};
+
+function MissingSelectionCard({ selection, catalog, presets, mapQueries, disabled, onRemove, onMapQuery, onUpdateMission }: MissingSelectionCardProps) {
+  const presetIds = presets.map(({ id }) => id);
+  return (
+    <View style={[styles.questCard, styles.missingCard]}>
+      <View style={styles.questHeading}>
+        <View style={styles.questCopy}>
+          <Text accessibilityLabel={`${selection.questCode} 저장된 선택`} accessibilityRole="header" style={styles.questName}>{selection.questCode}</Text>
+          <Text style={styles.problem}>저장된 반복 퀘스트 · 현재 목록에 없음</Text>
+        </View>
+        <Pressable
+          accessibilityLabel={`${selection.questCode} 저장된 선택 제거`}
+          accessibilityRole="button"
+          accessibilityState={{ disabled }}
+          disabled={disabled}
+          onPress={onRemove}
+          style={styles.iconButton}
+        >
+          <Trash2 color={theme.colors.danger} size={17} />
+        </Pressable>
+      </View>
+      {selection.missions.map((mission) => (
+        <View key={mission.key} style={styles.missionBlock}>
+          <Text style={styles.missionBadge}>저장된 전투 설정 · {mission.key}</Text>
+          <CombatMissionEditor
+            catalog={catalog}
+            disabled={disabled}
+            mapQuery={mapQueries[buildMapQueryKey(selection.questCode, mission.key)] ?? ''}
+            mission={mission}
+            presetIds={presetIds}
+            presets={presets}
+            onMapQuery={(value) => onMapQuery(mission.key, value)}
+            onUpdate={(maps) => onUpdateMission(mission.key, maps)}
+          />
+        </View>
+      ))}
     </View>
   );
 }
@@ -342,7 +597,7 @@ function QuestRow({ snapshot, selected, catalog, presets, mapQueries, disabled, 
                 <CombatMissionEditor
                   catalog={catalog}
                   disabled={disabled}
-                  mapQuery={mapQueries[configured.key] ?? ''}
+                  mapQuery={mapQueries[buildMapQueryKey(snapshot.questId, configured.key)] ?? ''}
                   mission={configured}
                   presetIds={presetIds}
                   presets={presets}
@@ -451,6 +706,7 @@ function updateMissionMaps(draft: QuestAutomationDraft, questCode: string, missi
   };
 }
 
+function buildMapQueryKey(questCode: string, missionKey: string): string { return `${questCode}\u0000${missionKey}`; }
 function serializeDraft(draft: QuestAutomationDraft): string { return JSON.stringify(draft); }
 function sectionLabel(section: QuestSection): string { return TABS.find((tab) => tab.section === section)?.label ?? '완료'; }
 
@@ -468,6 +724,10 @@ const styles = StyleSheet.create({
   tabTextActive: { color: theme.colors.accentGreen },
   search: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: 46, paddingHorizontal: theme.spacing.md },
   listContent: { gap: theme.spacing.sm, paddingBottom: theme.spacing.sm },
+  questList: { flex: 1 },
+  missingList: { gap: theme.spacing.sm, marginBottom: theme.spacing.sm },
+  missingCard: { borderColor: theme.colors.accentAmber },
+  warningRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between' },
   centerState: { alignItems: 'center', gap: theme.spacing.sm, minHeight: 180, justifyContent: 'center' },
   empty: { color: theme.colors.textMuted, padding: theme.spacing.xl, textAlign: 'center' },
   muted: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },

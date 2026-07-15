@@ -49,7 +49,7 @@ describe('quest automation domain', () => {
     assert.equal(draft.quests[0]?.missing, true);
     assert.deepEqual(buildQuestAutomationRequest(draft, [4]), {
       enabled: true,
-      quests: [{ questCode: 'repeat', enabled: true, sourceOrder: 7, maps: [mapSetting('kill', 'a', 0)] }],
+      quests: [{ questCode: 'repeat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }],
     });
   });
 
@@ -142,6 +142,20 @@ describe('quest automation domain', () => {
     draft.quests[0]!.missions[0]!.maps = [{ ...mapSetting('kill', 'a', 0), manuallyOverridden: true }];
     assert.equal(getMissionReadiness(draft.quests[0]!.missions[0]!, [9]), '사용자 변경');
     assert.deepEqual(buildQuestAutomationRequest(draft, [9]).quests[0]?.maps.map(({ missionKey }) => missionKey), ['kill']);
+  });
+
+  it('emits contiguous unique source order in deterministic draft order', () => {
+    const missing = questEntry([
+      { questCode: 'missing', enabled: true, sourceOrder: 4, maps: [] },
+      { questCode: 'live', enabled: true, sourceOrder: 4, maps: [] },
+    ]);
+    const live = snapshot('live', 'Live', 'ACTIVE', 4, [mission('now', 'IMMEDIATE', null)]);
+    const request = buildQuestAutomationRequest(buildQuestAutomationDraft(missing, [live]), []);
+
+    assert.deepEqual(request.quests.map(({ questCode, sourceOrder }) => [questCode, sourceOrder]), [
+      ['missing', 0],
+      ['live', 1],
+    ]);
   });
 });
 

@@ -45,6 +45,7 @@ type MainScreenProps = {
   session: MainSession | null;
   status: HofStatusResponse | null;
   battleCategories: BattleCategoryResponse[];
+  areBattleCategoriesLoaded: boolean;
   isBattleCategoriesLoading: boolean;
   battleCategoriesError: string | null;
   characters: HofCharacter[];
@@ -83,6 +84,7 @@ export function MainScreen({
   session,
   status,
   battleCategories,
+  areBattleCategoriesLoaded,
   isBattleCategoriesLoading,
   battleCategoriesError,
   characters,
@@ -195,6 +197,7 @@ export function MainScreen({
           activeTabId,
           authenticated: session?.loggedIn === true,
           battleCategories,
+          areBattleCategoriesLoaded,
           isBattleCategoriesLoading,
           battleCategoriesError,
           characters,
@@ -245,6 +248,7 @@ type RenderActiveTabArgs = {
   activeTabId: MainTabId;
   authenticated: boolean;
   battleCategories: BattleCategoryResponse[];
+  areBattleCategoriesLoaded: boolean;
   isBattleCategoriesLoading: boolean;
   battleCategoriesError: string | null;
   characters: HofCharacter[];
@@ -289,6 +293,7 @@ function renderActiveTab({
   activeTabId,
   authenticated,
   battleCategories,
+  areBattleCategoriesLoaded,
   isBattleCategoriesLoading,
   battleCategoriesError,
   characters,
@@ -324,6 +329,9 @@ function renderActiveTab({
         <HomeTabScreen
           authenticated={authenticated}
           battleCategories={battleCategories}
+          areBattleCategoriesLoaded={areBattleCategoriesLoaded}
+          isBattleCategoriesLoading={isBattleCategoriesLoading}
+          battleCategoriesError={battleCategoriesError}
           onLoadBattleCategories={onLoadBattleCategories}
           onLoadBattleMaps={onLoadBattleMaps}
           onListPartyPresets={onListPartyPresets}

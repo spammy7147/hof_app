@@ -58,6 +58,7 @@ export default function App() {
   const [mode, setMode] = useState<ScreenMode>('boot');
   const [session, setSession] = useState<AppSession | null>(null);
   const [battleCategories, setBattleCategories] = useState<BattleCategoryResponse[]>([]);
+  const [areBattleCategoriesLoaded, setAreBattleCategoriesLoaded] = useState(false);
   const [isBattleCategoriesLoading, setIsBattleCategoriesLoading] = useState(false);
   const [battleCategoriesError, setBattleCategoriesError] = useState<string | null>(null);
   const [status, setStatus] = useState<HofStatusResponse | null>(null);
@@ -116,6 +117,7 @@ export default function App() {
 
     try {
       setBattleCategories(await api.fetchBattleCategories());
+      setAreBattleCategoriesLoaded(true);
     } catch (error) {
       setBattleCategoriesError(describeError(error));
     } finally {
@@ -289,6 +291,7 @@ export default function App() {
     setSession(null);
     resetCharacterSync();
     setBattleCategories([]);
+    setAreBattleCategoriesLoaded(false);
     setBattleCategoriesError(null);
     setStatus(null);
     setNotice(null);
@@ -318,6 +321,7 @@ export default function App() {
         session={session}
         status={status}
         battleCategories={battleCategories}
+        areBattleCategoriesLoaded={areBattleCategoriesLoaded}
         isBattleCategoriesLoading={isBattleCategoriesLoading}
         battleCategoriesError={battleCategoriesError}
         characters={characters}
