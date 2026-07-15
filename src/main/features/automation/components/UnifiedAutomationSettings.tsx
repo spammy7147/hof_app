@@ -96,14 +96,30 @@ export function UnifiedAutomationSettings({
     }, 250);
   }, []);
 
-  const closeAddSheet = useCallback(() => {
-    addGenerationRef.current += 1;
-    setAddSheetOpen(false);
+  const restoreAddTriggerFocus = useCallback(() => {
     if (restoreFocusTimerRef.current) clearTimeout(restoreFocusTimerRef.current);
     restoreFocusTimerRef.current = setTimeout(() => {
       if (mountedRef.current) focusNode(addTriggerRef.current);
     }, 250);
   }, []);
+
+  const closeMenuToAddTrigger = useCallback(() => {
+    menuGenerationRef.current += 1;
+    setMenuEntry(null);
+    restoreAddTriggerFocus();
+  }, [restoreAddTriggerFocus]);
+
+  const closeAddSheet = useCallback(() => {
+    addGenerationRef.current += 1;
+    setAddSheetOpen(false);
+    restoreAddTriggerFocus();
+  }, [restoreAddTriggerFocus]);
+
+  useEffect(() => {
+    if (menuEntry && !entries.some(({ id }) => id === menuEntry.id)) {
+      closeMenuToAddTrigger();
+    }
+  }, [closeMenuToAddTrigger, entries, menuEntry]);
 
   const addEntry = useCallback(async (type: AutomationType) => {
     const addGeneration = addGenerationRef.current;
@@ -138,7 +154,7 @@ export function UnifiedAutomationSettings({
             const menuGeneration = menuGenerationRef.current;
             void onDelete(entry.id).then((deleted) => {
               if (deleted && mountedRef.current && menuGenerationRef.current === menuGeneration) {
-                closeMenu();
+                closeMenuToAddTrigger();
               }
             });
           },

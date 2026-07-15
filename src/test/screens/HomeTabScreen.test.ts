@@ -21,6 +21,7 @@ const addSheetSource = readFileSync(
   'utf8',
 );
 const appSource = readFileSync(resolve(process.cwd(), 'src/main/App.tsx'), 'utf8');
+const appProvidersSource = readFileSync(resolve(process.cwd(), 'src/main/components/AppProviders.tsx'), 'utf8');
 const entrySource = readFileSync(resolve(process.cwd(), 'index.ts'), 'utf8');
 const dashboardSource = readFileSync(
   resolve(process.cwd(), 'src/main/features/automation/components/UnifiedAutomationDashboard.tsx'),
@@ -60,7 +61,8 @@ describe('통합 자동화 홈 화면', () => {
 
   it('앱 진입점과 최상위 화면이 제스처 런타임을 초기화한다', () => {
     assert.equal(entrySource.trimStart().startsWith("import 'react-native-gesture-handler';"), true);
-    assert.match(appSource, /GestureHandlerRootView/);
+    assert.match(appSource, /AppProviders/);
+    assert.match(appProvidersSource, /GestureHandlerRootView/);
   });
 
   it('캡차와 파티 설정 대기 상태를 사용자 친화적으로 안내한다', () => {

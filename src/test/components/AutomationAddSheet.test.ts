@@ -84,6 +84,9 @@ const originalLoad = moduleWithLoader._load;
 moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') return reactNativeMock;
   if (request === 'lucide-react-native') return iconsMock;
+  if (request === 'react-native-gesture-handler') {
+    return { GestureHandlerRootView: host('GestureHandlerRootView') };
+  }
   if (request === './NativeSafeAreaProvider' && parent?.filename.includes('react-native-safe-area-context')) {
     return { NativeSafeAreaProvider: host('NativeSafeAreaProvider') };
   }
@@ -110,6 +113,9 @@ const { AutomationAddSheet } = require(
 const { UnifiedAutomationSettings } = require(
   '../../main/features/automation/components/UnifiedAutomationSettings',
 ) as typeof import('../../main/features/automation/components/UnifiedAutomationSettings');
+const { AppProviders } = require(
+  '../../main/components/AppProviders',
+) as typeof import('../../main/components/AppProviders');
 const { theme } = require('../../main/styles/theme') as typeof import('../../main/styles/theme');
 moduleWithLoader._load = originalLoad;
 
@@ -117,6 +123,20 @@ moduleWithLoader._load = originalLoad;
   .IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('AutomationAddSheet mounted interactions', () => {
+  it('receives bottom insets through the exact production provider shell', async () => {
+    windowHeight = 320;
+    safeAreaBottom = 37;
+    const renderer = await renderRaw(React.createElement(
+      AppProviders,
+      { initialMetrics: safeAreaMetrics() },
+      React.createElement(AutomationAddSheet, sheetProps({ visible: true })),
+    ));
+
+    assert.ok(findHost(renderer.root, 'GestureHandlerRootView'));
+    const scroller = findHost(renderer.root, 'ScrollView');
+    assert.equal(flattenStyle(scroller.props.contentContainerStyle).paddingBottom, 61);
+  });
+
   it('clamps the panel to a short viewport and applies one explicit bottom safe-area inset', async () => {
     windowHeight = 320;
     safeAreaBottom = 37;
@@ -408,6 +428,42 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
     assert.equal(visibleModals(renderer.root).length, 1);
   });
 
+  it('closes a removed entry menu and restores focus to a live add trigger', async () => {
+    focusCalls.length = 0;
+    const pending = deferred<boolean>();
+    const quest = entry(1, 'QUEST');
+    const battle = entry(2, 'BATTLE_MAP');
+    const props = settingsProps({
+      entries: [quest, battle],
+      onDelete: async () => pending.promise,
+    });
+    const renderer = await renderElement(React.createElement(UnifiedAutomationSettings, props));
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '퀘스트 더 보기' }).props.onPress();
+    });
+    renderer.root.findByProps({ accessibilityLabel: '퀘스트 삭제' }).props.onPress();
+    const actions = alertArguments?.[2] as Array<{ onPress?: () => void }>;
+    actions[1]?.onPress?.();
+    await act(async () => { await delay(280); });
+    focusCalls.length = 0;
+
+    await act(async () => {
+      renderer.update(withSafeArea(React.createElement(UnifiedAutomationSettings, {
+        ...props,
+        entries: [battle],
+      })));
+    });
+    assert.equal(visibleModals(renderer.root).length, 0);
+    await act(async () => { await delay(280); });
+    assert.equal(focusId(focusCalls.at(-1)), 'automation-add-trigger');
+
+    await act(async () => { pending.resolve(true); await pending.promise; });
+    await act(async () => { await delay(280); });
+    assert.equal(visibleModals(renderer.root).length, 0);
+    assert.equal(focusId(focusCalls.at(-1)), 'automation-add-trigger');
+    assert.equal(focusCalls.some((node) => focusId(node) === 'automation-more-1'), false);
+  });
+
   it('moves focus into overlays and restores their invoking controls on close', async () => {
     focusCalls.length = 0;
     const renderer = await renderSettings({ entries: [entry(1, 'QUEST')] });
@@ -482,6 +538,10 @@ async function renderSettings(overrides: Partial<React.ComponentProps<typeof Uni
 }
 
 async function renderElement(element: React.ReactElement): Promise<ReactTestRenderer> {
+  return renderRaw(withSafeArea(element));
+}
+
+async function renderRaw(element: React.ReactElement): Promise<ReactTestRenderer> {
   let renderer: ReactTestRenderer | undefined;
   const originalError = console.error;
   console.error = (...args: unknown[]) => {
@@ -491,7 +551,7 @@ async function renderElement(element: React.ReactElement): Promise<ReactTestRend
   try {
     await act(async () => {
       renderer = create(
-        withSafeArea(element),
+        element,
         {
           createNodeMock: (candidate) => {
             const props = candidate.props as Record<string, unknown>;
@@ -514,13 +574,17 @@ function withSafeArea(element: React.ReactElement): React.ReactElement {
   return React.createElement(
     safeAreaMock.SafeAreaProvider,
     {
-      initialMetrics: {
-        frame: { x: 0, y: 0, width: 390, height: windowHeight },
-        insets: { bottom: safeAreaBottom, left: 0, right: 0, top: 0 },
-      },
+      initialMetrics: safeAreaMetrics(),
     },
     element,
   );
+}
+
+function safeAreaMetrics() {
+  return {
+    frame: { x: 0, y: 0, width: 390, height: windowHeight },
+    insets: { bottom: safeAreaBottom, left: 0, right: 0, top: 0 },
+  };
 }
 
 function findAutomationChoices(root: ReactTestInstance): ReactTestInstance[] {
