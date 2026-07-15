@@ -377,7 +377,7 @@ function CombatMissionEditor({ mission, catalog, presets, presetIds, mapQuery, d
   const canAdd = mission.type === 'MONSTER_KILL' || mission.maps.length === 0;
 
   function addMap() {
-    if (!canAdd) return;
+    if (disabled || !canAdd) return;
     onMapQuery('');
     onUpdate([...mission.maps, {
       missionKey: mission.key,
@@ -391,6 +391,7 @@ function CombatMissionEditor({ mission, catalog, presets, presetIds, mapQuery, d
   }
 
   function chooseMap(selected: BattleMapResponse) {
+    if (disabled) return;
     const index = pendingIndex >= 0 ? pendingIndex : 0;
     const current = mission.maps[index];
     if (!current) return;
@@ -399,6 +400,7 @@ function CombatMissionEditor({ mission, catalog, presets, presetIds, mapQuery, d
   }
 
   function updatePreset(index: number, partyPresetId: number | null) {
+    if (disabled) return;
     onUpdate(mission.maps.map((map, currentIndex) => currentIndex !== index ? map : partyPresetId == null
       ? { ...map, presetMode: 'PRIMARY', partyPresetId: null }
       : { ...map, presetMode: 'EXPLICIT', partyPresetId }));
@@ -411,14 +413,14 @@ function CombatMissionEditor({ mission, catalog, presets, presetIds, mapQuery, d
         <View key={`${mission.key}:${index}`} style={styles.mapCard}>
           <View style={styles.mapHeading}>
             <Text style={styles.mapName}>{map.mapCode ? catalog.find((candidate) => candidate.categoryId === map.categoryId && candidate.mapCode === map.mapCode)?.name ?? map.mapCode : '맵을 선택해 주세요'}</Text>
-            <Pressable accessibilityLabel={`${mission.key} ${index + 1}번째 맵 위로`} disabled={disabled || index === 0} onPress={() => onUpdate(moveMissionMap(mission.maps, index, index - 1))} style={styles.smallIcon}><ArrowUp color={theme.colors.textMuted} size={15} /></Pressable>
-            <Pressable accessibilityLabel={`${mission.key} ${index + 1}번째 맵 아래로`} disabled={disabled || index === mission.maps.length - 1} onPress={() => onUpdate(moveMissionMap(mission.maps, index, index + 1))} style={styles.smallIcon}><ArrowDown color={theme.colors.textMuted} size={15} /></Pressable>
-            <Pressable accessibilityLabel={`${mission.key} ${index + 1}번째 맵 제거`} disabled={disabled} onPress={() => onUpdate(removeMissionMap(mission.maps, index))} style={styles.smallIcon}><X color={theme.colors.danger} size={15} /></Pressable>
+            <Pressable accessibilityLabel={`${mission.key} ${index + 1}번째 맵 위로`} accessibilityRole="button" accessibilityState={{ disabled: disabled || index === 0 }} disabled={disabled || index === 0} onPress={() => { if (!disabled && index > 0) onUpdate(moveMissionMap(mission.maps, index, index - 1)); }} style={styles.smallIcon}><ArrowUp color={theme.colors.textMuted} size={15} /></Pressable>
+            <Pressable accessibilityLabel={`${mission.key} ${index + 1}번째 맵 아래로`} accessibilityRole="button" accessibilityState={{ disabled: disabled || index === mission.maps.length - 1 }} disabled={disabled || index === mission.maps.length - 1} onPress={() => { if (!disabled && index < mission.maps.length - 1) onUpdate(moveMissionMap(mission.maps, index, index + 1)); }} style={styles.smallIcon}><ArrowDown color={theme.colors.textMuted} size={15} /></Pressable>
+            <Pressable accessibilityLabel={`${mission.key} ${index + 1}번째 맵 제거`} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={() => { if (!disabled) onUpdate(removeMissionMap(mission.maps, index)); }} style={styles.smallIcon}><X color={theme.colors.danger} size={15} /></Pressable>
           </View>
           {map.mapCode ? (
             <View style={styles.presetRow}>
-              <Pressable accessibilityLabel={`${mission.key} ${index + 1}번째 맵 대표 프리셋`} onPress={() => updatePreset(index, null)} style={[styles.choice, map.presetMode === 'PRIMARY' && styles.choiceActive]}><Text style={styles.choiceText}>대표 프리셋</Text></Pressable>
-              {presets.map((preset) => <Pressable key={preset.id} accessibilityLabel={`${mission.key} ${index + 1}번째 맵 ${preset.name} 프리셋`} onPress={() => updatePreset(index, preset.id)} style={[styles.choice, map.partyPresetId === preset.id && styles.choiceActive]}><Text style={styles.choiceText}>{preset.name}</Text></Pressable>)}
+              <Pressable accessibilityLabel={`${mission.key} ${index + 1}번째 맵 대표 프리셋`} accessibilityRole="radio" accessibilityState={{ checked: map.presetMode === 'PRIMARY', disabled }} disabled={disabled} onPress={() => updatePreset(index, null)} style={[styles.choice, map.presetMode === 'PRIMARY' && styles.choiceActive]}><Text style={styles.choiceText}>대표 프리셋</Text></Pressable>
+              {presets.map((preset) => <Pressable key={preset.id} accessibilityLabel={`${mission.key} ${index + 1}번째 맵 ${preset.name} 프리셋`} accessibilityRole="radio" accessibilityState={{ checked: map.partyPresetId === preset.id, disabled }} disabled={disabled} onPress={() => updatePreset(index, preset.id)} style={[styles.choice, map.partyPresetId === preset.id && styles.choiceActive]}><Text style={styles.choiceText}>{preset.name}</Text></Pressable>)}
             </View>
           ) : null}
         </View>
@@ -426,12 +428,12 @@ function CombatMissionEditor({ mission, catalog, presets, presetIds, mapQuery, d
       {pendingIndex >= 0 ? (
         <View style={styles.picker}>
           <TextInput accessibilityLabel={`${mission.key} 맵 검색`} editable={!disabled} onChangeText={onMapQuery} placeholder="맵 이름 검색" placeholderTextColor={theme.colors.textMuted} style={styles.mapSearch} value={mapQuery} />
-          {options.map((map) => <Pressable key={`${map.categoryId}:${map.mapCode}`} accessibilityLabel={`${map.name} 맵 선택`} onPress={() => chooseMap(map)} style={styles.mapOption}><Text style={styles.mapOptionText}>{map.name}</Text><Text style={styles.muted}>{map.groupName}</Text></Pressable>)}
+          {options.map((map) => <Pressable key={`${map.categoryId}:${map.mapCode}`} accessibilityLabel={`${map.name} 맵 선택`} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={() => chooseMap(map)} style={styles.mapOption}><Text style={styles.mapOptionText}>{map.name}</Text><Text style={styles.muted}>{map.groupName}</Text></Pressable>)}
           {options.length === 0 ? <Text style={styles.muted}>검색 결과가 없습니다.</Text> : null}
         </View>
       ) : null}
       {canAdd && pendingIndex < 0 ? (
-        <Pressable accessibilityLabel={`${mission.key} 맵 추가`} accessibilityRole="button" disabled={disabled} onPress={addMap} style={styles.addMapButton}>
+        <Pressable accessibilityLabel={`${mission.key} 맵 추가`} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={addMap} style={styles.addMapButton}>
           <Plus color={theme.colors.accentGreen} size={16} /><Text style={styles.addMapText}>맵 추가</Text>
         </Pressable>
       ) : null}

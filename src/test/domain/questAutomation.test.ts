@@ -75,6 +75,47 @@ describe('quest automation domain', () => {
     assert.deepEqual(applyAutoMatchedMap(manual, maps[0]!), manual);
   });
 
+  it('matches map-clear against canonical names and explicit aliases only', () => {
+    const clear = mission('clear-key', 'MAP_CLEAR', 'Hidden Alias');
+    const groupOnly = catalogMap('battle_map', 'group-map', 'Different Name');
+    groupOnly.groupName = 'Hidden Alias';
+    const codeOnly = catalogMap('battle_map', 'Hidden Alias', 'Another Name');
+    const explicitAlias = { ...catalogMap('adventure_map', 'alias-map', 'Alias Canonical'), aliases: ['Hidden Alias'] };
+
+    assert.equal(matchMapClearMission(clear, [groupOnly]), null);
+    assert.equal(matchMapClearMission(clear, [codeOnly]), null);
+    assert.equal(matchMapClearMission(clear, [explicitAlias])?.mapCode, 'alias-map');
+  });
+
+  it('clears a stale stored automatic map when current matching is missing or ambiguous', () => {
+    const clearQuest = snapshot('q-clear', 'Clear', 'ACTIVE', 0, [mission('clear-key', 'MAP_CLEAR', 'Target')]);
+    const entry = questEntry([{ questCode: 'q-clear', enabled: true, sourceOrder: 0, maps: [mapSetting('clear-key', 'stale', 0)] }]);
+
+    for (const catalog of [
+      [catalogMap('battle_map', 'other', 'Other')],
+      [catalogMap('battle_map', 'a', 'Target'), catalogMap('adventure_map', 'b', 'Target')],
+    ]) {
+      const draft = buildQuestAutomationDraft(entry, [clearQuest], catalog);
+      const configured = draft.quests[0]!.missions[0]!;
+      assert.equal(configured.maps[0]?.mapCode, '');
+      assert.equal(getMissionReadiness(configured, []), '맵 설정 필요');
+      assert.match(validateQuestAutomationDraft(draft, []).join(' '), /맵 설정 필요/);
+    }
+  });
+
+  it('preserves a stored manual map when current matching is missing', () => {
+    const clearQuest = snapshot('q-clear', 'Clear', 'ACTIVE', 0, [mission('clear-key', 'MAP_CLEAR', 'Missing')]);
+    const manual = { ...mapSetting('clear-key', 'chosen', 0), manuallyOverridden: true };
+    const draft = buildQuestAutomationDraft(
+      questEntry([{ questCode: 'q-clear', enabled: true, sourceOrder: 0, maps: [manual] }]),
+      [clearQuest],
+      [],
+    );
+
+    assert.deepEqual(draft.quests[0]?.missions[0]?.maps, [manual]);
+    assert.equal(getMissionReadiness(draft.quests[0]!.missions[0]!, []), '사용자 변경');
+  });
+
   it('supports ordered monster maps with reorder and remove', () => {
     const maps = [mapSetting('kill', 'a', 0), mapSetting('kill', 'b', 1), mapSetting('kill', 'c', 2)];
     assert.deepEqual(moveMissionMap(maps, 2, 0).map(({ mapCode, executionOrder }) => [mapCode, executionOrder]), [['c', 0], ['a', 1], ['b', 2]]);

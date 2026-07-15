@@ -115,8 +115,6 @@ export function matchMapClearMission(
   const target = normalizeIdentity(mission.target);
   const matches = catalog.filter((map) => map.mapCode != null && [
     map.name,
-    map.groupName ?? '',
-    map.mapCode,
     ...(map.aliases ?? []),
   ].some((candidate) => normalizeIdentity(candidate) === target));
   return matches.length === 1 ? matches[0]! : null;
@@ -174,7 +172,9 @@ export function getMissionReadiness(
   validPresetIds: readonly number[],
 ): QuestMissionReadiness | null {
   if (!isCombatMission(mission)) return null;
-  if (mission.maps.length === 0) return '맵 설정 필요';
+  if (mission.maps.length === 0 || mission.maps.some((map) => !map.categoryId.trim() || !map.mapCode.trim())) {
+    return '맵 설정 필요';
+  }
   if (mission.maps.some((map) => !isValidPreset(map, validPresetIds))) return '프리셋 설정 필요';
   return mission.type === 'MAP_CLEAR' && mission.maps.every((map) => !map.manuallyOverridden)
     ? '자동 매칭됨'
@@ -248,6 +248,8 @@ function buildSelection(
       if (matched) {
         const seed = maps[0] ?? emptyMapSetting(mission.key);
         maps = [applyAutoMatchedMap(seed, matched)];
+      } else if (maps.length > 0) {
+        maps = [{ ...maps[0]!, categoryId: '', mapCode: '', executionOrder: 0 }];
       }
     }
     return { ...mission, maps };
