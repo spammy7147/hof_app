@@ -212,6 +212,120 @@ export type AutomationProfileResponse = {
   updatedAt: string;
 };
 
+/** 저장 가능한 자동화는 백엔드가 소유하는 세 가지 singleton 유형으로 제한된다. */
+export type AutomationType = 'QUEST' | 'BATTLE_MAP' | 'ADVENTURE_MAP';
+
+/** PRIMARY는 ID를 보내지 않고 EXPLICIT은 유효한 preset ID를 반드시 보낸다. */
+export type PresetSelection =
+  | { presetMode: 'PRIMARY'; partyPresetId: null }
+  | { presetMode: 'EXPLICIT'; partyPresetId: number };
+
+export type CreateAutomationEntryRequest = { type: AutomationType };
+export type ReorderAutomationEntriesRequest = { entryIds: number[] };
+
+export type QuestMapSettingRequest = PresetSelection & {
+  missionKey: string;
+  categoryId: string;
+  mapCode: string;
+  executionOrder: number;
+  manuallyOverridden: boolean;
+};
+
+export type QuestSelectionRequest = {
+  questCode: string;
+  enabled: boolean;
+  sourceOrder: number;
+  maps: QuestMapSettingRequest[];
+};
+
+export type UpdateQuestAutomationRequest = {
+  enabled: boolean;
+  quests: QuestSelectionRequest[];
+};
+
+export type BattleMapSettingRequest = PresetSelection & {
+  categoryId: string;
+  mapCode: string;
+  dailyTargetCount: number;
+  executionOrder: number;
+};
+
+export type UpdateBattleMapAutomationRequest = {
+  enabled: boolean;
+  maps: BattleMapSettingRequest[];
+};
+
+export type AdventureMapSettingRequest = PresetSelection & {
+  categoryId: string;
+  mapCode: string;
+  executionOrder: number;
+};
+
+export type UpdateAdventureMapAutomationRequest = {
+  enabled: boolean;
+  maps: AdventureMapSettingRequest[];
+};
+
+export type QuestMapSettingResponse = QuestMapSettingRequest;
+export type QuestSelectionResponse = QuestSelectionRequest;
+export type BattleMapSettingResponse = BattleMapSettingRequest;
+export type AdventureMapSettingResponse = AdventureMapSettingRequest;
+
+export type TypedAutomationEntryResponse = {
+  id: number;
+  type: AutomationType;
+  enabled: boolean;
+  priority: number;
+  ready: boolean;
+  warnings: string[];
+  quests: QuestSelectionResponse[];
+  battleMaps: BattleMapSettingResponse[];
+  adventureMaps: AdventureMapSettingResponse[];
+};
+
+export type TypedAutomationLifecycle = 'RUNNING' | 'PAUSED' | 'STOPPED';
+export type AutomationStopReason =
+  | 'AUTHENTICATION'
+  | 'CAPTCHA'
+  | 'MANUAL_STOP'
+  | 'NETWORK'
+  | 'FATAL'
+  | 'UNKNOWN';
+
+export type TypedAutomationRuntimeResponse = {
+  lifecycle: TypedAutomationLifecycle;
+  stopReason: AutomationStopReason | null;
+  nextAttemptAt: string | null;
+  warnings: string[];
+  lastError: string | null;
+};
+
+export type TypedAutomationAggregateResponse = {
+  entries: TypedAutomationEntryResponse[];
+  runtime: TypedAutomationRuntimeResponse;
+};
+
+export type QuestState = 'AVAILABLE' | 'ACTIVE' | 'CLAIMABLE' | 'COMPLETED' | 'UNAVAILABLE';
+export type QuestSection = 'ACTIVE' | 'AVAILABLE' | 'WAITING' | 'COMPLETED';
+export type QuestMissionType = 'IMMEDIATE' | 'ITEM_TURN_IN' | 'MONSTER_KILL' | 'MAP_CLEAR' | 'OTHER';
+export type QuestProgress = { current: number; required: number };
+export type QuestMission = {
+  key: string;
+  type: QuestMissionType;
+  target: string | null;
+  progress: QuestProgress | null;
+  completable: boolean;
+};
+export type QuestSnapshot = {
+  questId: string;
+  name: string;
+  state: QuestState;
+  section: QuestSection;
+  sourceOrder: number;
+  missions: QuestMission[];
+  actionNo: string | null;
+};
+
 /** 자동화 모듈이 실행할 맵과 그 맵에서 사용할 파티 프리셋을 나타낸다. */
 export type UnifiedAutomationMap = {
   categoryId: string;

@@ -13,7 +13,7 @@ import type {
   CharacterSyncEventResponse,
   CharacterSyncEventType,
   CharacterSyncJobResponse,
-  CreateUnifiedAutomationModuleRequest,
+  CreateAutomationEntryRequest,
   CreateAutomationJobRequest,
   CreateAutomationProfileRequest,
   CreatePartyPresetRequest,
@@ -23,17 +23,19 @@ import type {
   TokenResponse,
   HofStatusResponse,
   LoadPatternResponse,
+  QuestSnapshot,
   PartyPresetResponse,
   RunBattleRequest,
   RegisterAndroidPushTargetRequest,
   SubmitCaptchaAnswerRequest,
   DevicePushTargetResponse,
   UnifiedAutomationAction,
-  UnifiedAutomationModuleResponse,
-  UnifiedAutomationStatusResponse,
-  UpdateUnifiedAutomationModuleRequest,
+  TypedAutomationAggregateResponse,
+  UpdateAdventureMapAutomationRequest,
   UpdateAutomationProfileRequest,
+  UpdateBattleMapAutomationRequest,
   UpdatePartyPresetRequest,
+  UpdateQuestAutomationRequest,
 } from '../types/api';
 import { refreshTokenStorage, type RefreshTokenStorage } from '../platform/tokenStorage';
 import { createSseConnection, type SseSubscription } from './sseClient';
@@ -224,48 +226,63 @@ export class BackendApiClient {
   }
 
   /** 계정별 통합 자동화의 현재 상태와 저장 설정을 조회한다. */
-  fetchUnifiedAutomation(): Promise<UnifiedAutomationStatusResponse> {
+  fetchUnifiedAutomation(): Promise<TypedAutomationAggregateResponse> {
     return this.request('/api/automation/unified');
   }
 
-  /** 새 사용자 구성 모듈을 현재 우선순위의 마지막에 추가한다. */
-  createUnifiedAutomationModule(
-    request: CreateUnifiedAutomationModuleRequest,
-  ): Promise<UnifiedAutomationModuleResponse> {
-    return this.request('/api/automation/unified/modules', {
+  /** 세 singleton 자동화 유형 중 아직 없는 항목을 마지막에 추가한다. */
+  createAutomationEntry(
+    request: CreateAutomationEntryRequest,
+  ): Promise<TypedAutomationAggregateResponse> {
+    return this.request('/api/automation/unified/entries', {
       method: 'POST',
       body: JSON.stringify(request),
     });
   }
 
-  /** 모듈의 이름, 활성 상태와 유형별 세부 설정을 교체한다. */
-  updateUnifiedAutomationModule(
-    moduleId: number,
-    request: UpdateUnifiedAutomationModuleRequest,
-  ): Promise<UnifiedAutomationModuleResponse> {
-    return this.request(`/api/automation/unified/modules/${moduleId}`, {
+  /** 사용자 소유 typed entry를 삭제하고 정규화된 aggregate를 받는다. */
+  deleteAutomationEntry(entryId: number): Promise<TypedAutomationAggregateResponse> {
+    return this.request(`/api/automation/unified/entries/${entryId}`, { method: 'DELETE' });
+  }
+
+  /** 드래그가 끝난 뒤 전체 entry ID 순서를 한 번에 저장한다. */
+  reorderAutomationEntries(entryIds: number[]): Promise<TypedAutomationAggregateResponse> {
+    return this.request('/api/automation/unified/entries/order', {
       method: 'PUT',
-      body: JSON.stringify(request),
+      body: JSON.stringify({ entryIds }),
     });
   }
 
-  /** 사용자 소유 모듈 한 개를 삭제한다. 204 응답에는 JSON 본문이 없다. */
-  deleteUnifiedAutomationModule(moduleId: number): Promise<void> {
-    return this.request(`/api/automation/unified/modules/${moduleId}`, { method: 'DELETE' });
+  updateQuestAutomation(request: UpdateQuestAutomationRequest): Promise<TypedAutomationAggregateResponse> {
+    return this.request('/api/automation/unified/quest', {
+      method: 'PUT', body: JSON.stringify(request),
+    });
   }
 
-  /** 드래그가 끝난 뒤 전체 모듈 ID 순서를 한 번에 저장한다. */
-  reorderUnifiedAutomationModules(moduleIds: number[]): Promise<UnifiedAutomationStatusResponse> {
-    return this.request('/api/automation/unified/modules/order', {
-      method: 'PATCH',
-      body: JSON.stringify({ moduleIds }),
+  updateBattleMapAutomation(
+    request: UpdateBattleMapAutomationRequest,
+  ): Promise<TypedAutomationAggregateResponse> {
+    return this.request('/api/automation/unified/battle-maps', {
+      method: 'PUT', body: JSON.stringify(request),
     });
+  }
+
+  updateAdventureMapAutomation(
+    request: UpdateAdventureMapAutomationRequest,
+  ): Promise<TypedAutomationAggregateResponse> {
+    return this.request('/api/automation/unified/adventure-maps', {
+      method: 'PUT', body: JSON.stringify(request),
+    });
+  }
+
+  fetchQuests(): Promise<QuestSnapshot[]> {
+    return this.request('/api/quests');
   }
 
   /** 통합 자동화를 시작, 일시정지, 재개 또는 종료한다. */
   changeUnifiedAutomationState(
     action: UnifiedAutomationAction,
-  ): Promise<UnifiedAutomationStatusResponse> {
+  ): Promise<TypedAutomationAggregateResponse> {
     return this.request(`/api/automation/unified/${action}`, { method: 'POST' });
   }
 

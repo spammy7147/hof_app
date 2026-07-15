@@ -410,78 +410,80 @@ describe('BackendApiClient', () => {
     assert.equal(requests[0]?.init.body, '{"profileId":4}');
   });
 
-  it('uses the customizable unified automation module and lifecycle endpoints', async () => {
+  it('uses the exact typed automation aggregate, settings, lifecycle, and quest endpoints', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const requests: CapturedRequest[] = [];
-    const status = {
-      profileId: 4,
-      job: null,
-      modules: [],
-      currentTitle: null,
-      nextRunAt: null,
+    const aggregate = {
+      entries: [],
+      runtime: {
+        lifecycle: 'STOPPED' as const,
+        stopReason: null,
+        nextAttemptAt: null,
+        warnings: [],
+        lastError: null,
+      },
     };
-    const createRequest = {
-      displayName: '저녁 Time',
-      moduleType: 'TIME_BURN' as const,
+    const questRequest = {
       enabled: true,
-      thresholdPercent: 90,
-      maps: [{
-        categoryId: 'battle_map',
-        mapCode: 'gb0',
-        partyPresetId: 7,
-        executionOrder: 0,
-      }],
-      quests: [],
+      quests: [{ questCode: 'daily', enabled: true, sourceOrder: 0, maps: [] }],
     };
-    const module = {
-      id: 31,
-      ...createRequest,
-      priority: 0,
-      ready: true,
-      summary: '1개 맵 선택됨',
+    const battleRequest = {
+      enabled: true,
+      maps: [{ categoryId: 'battle_map', mapCode: 'gb0', dailyTargetCount: 2,
+        presetMode: 'PRIMARY' as const, partyPresetId: null, executionOrder: 0 }],
     };
-    const updateRequest = {
-      displayName: '밤 Time',
+    const adventureRequest = {
       enabled: false,
-      thresholdPercent: 95,
-      maps: createRequest.maps,
-      quests: [],
+      maps: [{ categoryId: 'adventure_map', mapCode: 'Noble101',
+        presetMode: 'EXPLICIT' as const, partyPresetId: 7, executionOrder: 0 }],
     };
     const client = new BackendApiClient('http://backend.test');
 
-    mockFetchWithCapture(status, requests);
+    mockFetchWithCapture(aggregate, requests);
     await client.fetchUnifiedAutomation();
-    mockFetchWithCapture(module, requests);
-    await client.createUnifiedAutomationModule(createRequest);
-    mockFetchWithCapture({ ...module, ...updateRequest }, requests);
-    await client.updateUnifiedAutomationModule(31, updateRequest);
-    mockFetchWithCapture(null, requests, { status: 204 });
-    await client.deleteUnifiedAutomationModule(31);
-    mockFetchWithCapture(status, requests);
-    await client.reorderUnifiedAutomationModules([31, 18]);
+    mockFetchWithCapture(aggregate, requests);
+    await client.createAutomationEntry({ type: 'QUEST' });
+    mockFetchWithCapture(aggregate, requests);
+    await client.deleteAutomationEntry(31);
+    mockFetchWithCapture(aggregate, requests);
+    await client.reorderAutomationEntries([31, 18]);
+    mockFetchWithCapture(aggregate, requests);
+    await client.updateQuestAutomation(questRequest);
+    mockFetchWithCapture(aggregate, requests);
+    await client.updateBattleMapAutomation(battleRequest);
+    mockFetchWithCapture(aggregate, requests);
+    await client.updateAdventureMapAutomation(adventureRequest);
     for (const action of ['start', 'pause', 'resume', 'stop'] as const) {
-      mockFetchWithCapture(status, requests);
+      mockFetchWithCapture(aggregate, requests);
       await client.changeUnifiedAutomationState(action);
     }
+    mockFetchWithCapture([], requests);
+    await client.fetchQuests();
 
     assert.deepEqual(
       requests.map((request) => [request.url, request.init.method ?? 'GET']),
       [
         ['http://backend.test/api/automation/unified', 'GET'],
-        ['http://backend.test/api/automation/unified/modules', 'POST'],
-        ['http://backend.test/api/automation/unified/modules/31', 'PUT'],
-        ['http://backend.test/api/automation/unified/modules/31', 'DELETE'],
-        ['http://backend.test/api/automation/unified/modules/order', 'PATCH'],
+        ['http://backend.test/api/automation/unified/entries', 'POST'],
+        ['http://backend.test/api/automation/unified/entries/31', 'DELETE'],
+        ['http://backend.test/api/automation/unified/entries/order', 'PUT'],
+        ['http://backend.test/api/automation/unified/quest', 'PUT'],
+        ['http://backend.test/api/automation/unified/battle-maps', 'PUT'],
+        ['http://backend.test/api/automation/unified/adventure-maps', 'PUT'],
         ['http://backend.test/api/automation/unified/start', 'POST'],
         ['http://backend.test/api/automation/unified/pause', 'POST'],
         ['http://backend.test/api/automation/unified/resume', 'POST'],
         ['http://backend.test/api/automation/unified/stop', 'POST'],
+        ['http://backend.test/api/quests', 'GET'],
       ],
     );
-    assert.equal(requests[1]?.init.body, JSON.stringify(createRequest));
-    assert.equal(requests[2]?.init.body, JSON.stringify(updateRequest));
-    assert.equal(requests[3]?.init.body, undefined);
-    assert.equal(requests[4]?.init.body, '{"moduleIds":[31,18]}');
+    assert.equal(requests[1]?.init.body, '{"type":"QUEST"}');
+    assert.equal(requests[2]?.init.body, undefined);
+    assert.equal(requests[3]?.init.body, '{"entryIds":[31,18]}');
+    assert.equal(requests[4]?.init.body, JSON.stringify(questRequest));
+    assert.equal(requests[5]?.init.body, JSON.stringify(battleRequest));
+    assert.equal(requests[6]?.init.body, JSON.stringify(adventureRequest));
+    assert.equal(requests.some(({ url }) => url.includes('/modules')), false);
   });
 
   it('registers an Android native FCM token without an Expo push token', async () => {

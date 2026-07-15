@@ -46,10 +46,12 @@ export default function App() {
   const api = useMemo(() => new BackendApiClient(), []);
   const automationController = useMemo(() => new UnifiedAutomationController({
     fetch: () => api.fetchUnifiedAutomation(),
-    create: (request) => api.createUnifiedAutomationModule(request),
-    update: (moduleId, request) => api.updateUnifiedAutomationModule(moduleId, request),
-    delete: (moduleId) => api.deleteUnifiedAutomationModule(moduleId),
-    reorder: (moduleIds) => api.reorderUnifiedAutomationModules(moduleIds),
+    create: (request) => api.createAutomationEntry(request),
+    delete: (entryId) => api.deleteAutomationEntry(entryId),
+    reorder: (entryIds) => api.reorderAutomationEntries(entryIds),
+    updateQuest: (request) => api.updateQuestAutomation(request),
+    updateBattle: (request) => api.updateBattleMapAutomation(request),
+    updateAdventure: (request) => api.updateAdventureMapAutomation(request),
     changeState: (action) => api.changeUnifiedAutomationState(action),
   }), [api]);
   const [mode, setMode] = useState<ScreenMode>('boot');

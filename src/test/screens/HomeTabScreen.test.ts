@@ -86,12 +86,12 @@ describe('통합 자동화 홈 화면', () => {
     assert.match(settingsSource, /GripVertical/);
     assert.match(settingsSource, /onDragEnd/);
     assert.match(controllerSource, /UnifiedAutomationReorderQueue/);
-    assert.match(controllerSource, /순서를 저장하지 못해 이전 순서로 되돌렸어요/);
+    assert.match(controllerSource, /순서를 저장하지 못해 저장된 순서로 되돌렸어요/);
   });
 
-  it('같은 모듈 저장을 조정하고 저장 중인 행 편집을 막는다', () => {
-    assert.match(controllerSource, /UnifiedAutomationModuleMutationCoordinator/);
-    assert.match(controllerSource, /runExclusive/);
+  it('같은 typed entry 저장을 직렬화하고 저장 중인 행 편집을 막는다', () => {
+    assert.match(controllerSource, /mutationTails/);
+    assert.match(controllerSource, /runTypedMutation/);
     assert.match(homeSource, /automationController\.isModuleBusy/);
     assert.match(settingsSource, /accessibilityState=\{\{ disabled: saving \}\}/);
     assert.match(settingsSource, /disabled=\{saving\}/);
