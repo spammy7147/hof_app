@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import Module from 'node:module';
-import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
 import React from 'react';
 import {
@@ -19,10 +17,16 @@ import type {
 let windowHeight = 800;
 let safeAreaBottom = 0;
 let alertArguments: unknown[] | null = null;
+const focusCalls: unknown[] = [];
+const AUTOMATION_LABELS: Record<AutomationType, string> = {
+  QUEST: '퀘스트',
+  BATTLE_MAP: '전투 맵',
+  ADVENTURE_MAP: '모험 맵',
+};
 
-const host = (name: string) => (props: Record<string, unknown>) => (
-  React.createElement(name, props, props.children as React.ReactNode)
-);
+const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => (
+  React.createElement(name, { ...props, ref }, props.children as React.ReactNode)
+));
 const modal = (props: Record<string, unknown>) => React.createElement(
   'Modal',
   props,
@@ -50,11 +54,12 @@ const draggableList = (props: Record<string, unknown>) => {
 const reactNativeMock = {
   AccessibilityInfo: {
     announceForAccessibility: () => undefined,
-    setAccessibilityFocus: () => undefined,
+    setAccessibilityFocus: (node: unknown) => { focusCalls.push(node); },
   },
   ActivityIndicator: host('ActivityIndicator'),
   Alert: { alert: (...args: unknown[]) => { alertArguments = args; } },
-  findNodeHandle: () => 1,
+  Dimensions: { get: () => ({ height: windowHeight, width: 390 }) },
+  findNodeHandle: (node: unknown) => node,
   Modal: modal,
   Pressable: host('Pressable'),
   ScrollView: host('ScrollView'),
@@ -67,10 +72,7 @@ const reactNativeMock = {
 const iconsMock = new Proxy({}, {
   get: (_target, property) => host(String(property)),
 });
-const safeAreaMock = {
-  SafeAreaProvider: host('SafeAreaProvider'),
-  useSafeAreaInsets: () => ({ bottom: safeAreaBottom, left: 0, right: 0, top: 0 }),
-};
+let safeAreaMock: typeof import('react-native-safe-area-context');
 
 type ModuleLoader = (
   request: string,
@@ -82,13 +84,24 @@ const originalLoad = moduleWithLoader._load;
 moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') return reactNativeMock;
   if (request === 'lucide-react-native') return iconsMock;
-  if (request === 'react-native-safe-area-context') return safeAreaMock;
+  if (request === './NativeSafeAreaProvider' && parent?.filename.includes('react-native-safe-area-context')) {
+    return { NativeSafeAreaProvider: host('NativeSafeAreaProvider') };
+  }
   if (request === 'react-native-draggable-flatlist') {
     return {
       NestableDraggableFlatList: draggableList,
     };
   }
   return originalLoad(request, parent, isMain);
+};
+
+safeAreaMock = require(
+  'react-native-safe-area-context/lib/commonjs/SafeAreaContext',
+) as typeof import('react-native-safe-area-context');
+const originalMockedLoad = moduleWithLoader._load;
+moduleWithLoader._load = (request, parent, isMain) => {
+  if (request === 'react-native-safe-area-context') return safeAreaMock;
+  return originalMockedLoad(request, parent, isMain);
 };
 
 const { AutomationAddSheet } = require(
@@ -187,6 +200,23 @@ describe('AutomationAddSheet mounted interactions', () => {
     assert.equal(closes, 0);
     assert.equal(findHost(renderer.root, 'Modal').props.visible, true);
   });
+
+  it('ignores a deferred add completion after the sheet unmounts', async () => {
+    const pending = deferred<boolean>();
+    let closes = 0;
+    const renderer = await renderSheet({
+      visible: true,
+      onAdd: async () => pending.promise,
+      onClose: () => { closes += 1; },
+    });
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 추가' }).props.onPress();
+    });
+    await act(async () => { renderer.unmount(); });
+
+    await act(async () => { pending.resolve(true); await pending.promise; });
+    assert.equal(closes, 0);
+  });
 });
 
 describe('UnifiedAutomationSettings mounted interactions', () => {
@@ -252,10 +282,10 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
       renderer.root.findByProps({ accessibilityLabel: '퀘스트 더 보기' }).props.onPress();
     });
     await act(async () => {
-      renderer.update(React.createElement(UnifiedAutomationSettings, {
+      renderer.update(withSafeArea(React.createElement(UnifiedAutomationSettings, {
         ...props,
         savingEntryIds: [1],
-      }));
+      })));
     });
     assert.equal(
       renderer.root.findByProps({ accessibilityLabel: '퀘스트 삭제' }).props.disabled,
@@ -266,7 +296,7 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
       true,
     );
     await act(async () => {
-      renderer.update(React.createElement(UnifiedAutomationSettings, props));
+      renderer.update(withSafeArea(React.createElement(UnifiedAutomationSettings, props)));
     });
 
     renderer.root.findByProps({ accessibilityLabel: '퀘스트 삭제' }).props.onPress();
@@ -307,6 +337,103 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
     assert.deepEqual(reordered, [second, first]);
   });
 
+  it('offers bounded accessible reorder actions through the same reorder callback', async () => {
+    const first = entry(1, 'QUEST');
+    const second = entry(2, 'BATTLE_MAP');
+    const third = entry(3, 'ADVENTURE_MAP');
+    const reordered: TypedAutomationEntryResponse[][] = [];
+    const props = settingsProps({
+      entries: [first, second, third],
+      onReorder: (items) => { reordered.push(items); },
+    });
+    const renderer = await renderElement(React.createElement(UnifiedAutomationSettings, props));
+    const handles = () => [first, second, third].map((item) => renderer.root.findByProps({
+      accessibilityLabel: `${AUTOMATION_LABELS[item.type]} 우선순위 이동`,
+    }));
+
+    assert.deepEqual(handles().map(({ props: handleProps }) => (
+      handleProps.accessibilityActions.map(({ name }: { name: string }) => name)
+    )), [['increment'], ['decrement', 'increment'], ['decrement']]);
+    handles()[0].props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } });
+    assert.deepEqual(reordered, [[second, first, third]]);
+    handles()[0].props.onAccessibilityAction({ nativeEvent: { actionName: 'decrement' } });
+    assert.equal(reordered.length, 1);
+
+    await act(async () => {
+      renderer.update(withSafeArea(React.createElement(UnifiedAutomationSettings, {
+        ...props,
+        savingEntryIds: [1],
+      })));
+    });
+    assert.equal(handles()[0].props.accessibilityState.disabled, true);
+    handles()[0].props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } });
+    assert.equal(reordered.length, 1);
+  });
+
+  it('does not let an old add completion close a newly reopened sheet', async () => {
+    const pending = deferred<boolean>();
+    const renderer = await renderSettings({ onAdd: async () => pending.promise });
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '자동화 추가' }).props.onPress();
+    });
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 추가' }).props.onPress();
+    });
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '자동화 추가 배경 닫기' }).props.onPress();
+      renderer.root.findByProps({ accessibilityHint: '자동화 유형 선택 창을 엽니다' }).props.onPress();
+    });
+
+    await act(async () => { pending.resolve(true); await pending.promise; });
+    assert.equal(visibleModals(renderer.root).length, 1);
+  });
+
+  it('does not let an old delete completion close a newly reopened menu', async () => {
+    const pending = deferred<boolean>();
+    const quest = entry(1, 'QUEST');
+    const renderer = await renderSettings({ entries: [quest], onDelete: async () => pending.promise });
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '퀘스트 더 보기' }).props.onPress();
+    });
+    renderer.root.findByProps({ accessibilityLabel: '퀘스트 삭제' }).props.onPress();
+    const actions = alertArguments?.[2] as Array<{ onPress?: () => void }>;
+    actions[1]?.onPress?.();
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '자동화 메뉴 닫기' }).props.onPress();
+      renderer.root.findByProps({ accessibilityLabel: '퀘스트 더 보기' }).props.onPress();
+    });
+
+    await act(async () => { pending.resolve(true); await pending.promise; });
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '퀘스트 삭제' }).props.disabled, false);
+    assert.equal(visibleModals(renderer.root).length, 1);
+  });
+
+  it('moves focus into overlays and restores their invoking controls on close', async () => {
+    focusCalls.length = 0;
+    const renderer = await renderSettings({ entries: [entry(1, 'QUEST')] });
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityHint: '자동화 유형 선택 창을 엽니다' }).props.onPress();
+    });
+    await act(async () => { await delay(280); });
+    await act(async () => {
+      visibleModals(renderer.root)[0]?.props.onRequestClose();
+    });
+    await act(async () => { await delay(280); });
+    assert.equal(focusLabel(focusCalls.at(-1)), '자동화 추가');
+
+    focusCalls.length = 0;
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '퀘스트 더 보기' }).props.onPress();
+    });
+    await act(async () => { await delay(280); });
+    assert.equal(focusId(focusCalls.at(-1)), 'automation-menu-first-action');
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '자동화 메뉴 닫기' }).props.onPress();
+    });
+    await act(async () => { await delay(280); });
+    assert.equal(focusLabel(focusCalls.at(-1)), '퀘스트 더 보기');
+  });
+
   it('uses the same semantic overlay for the overflow menu', async () => {
     const renderer = await renderSettings({ entries: [entry(1, 'QUEST')] });
     await act(async () => {
@@ -315,13 +442,6 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
     const backdrop = renderer.root.findByProps({ accessibilityLabel: '자동화 메뉴 닫기' });
 
     assert.equal(flattenStyle(backdrop.props.style).backgroundColor, theme.colors.overlay);
-  });
-});
-
-describe('safe-area application integration', () => {
-  it('provides native safe-area insets at the app root', () => {
-    const appSource = readFileSync(resolve(process.cwd(), 'src/main/App.tsx'), 'utf8');
-    assert.match(appSource, /SafeAreaProvider/);
   });
 });
 
@@ -369,11 +489,38 @@ async function renderElement(element: React.ReactElement): Promise<ReactTestRend
     originalError(...args);
   };
   try {
-    await act(async () => { renderer = create(element); });
+    await act(async () => {
+      renderer = create(
+        withSafeArea(element),
+        {
+          createNodeMock: (candidate) => {
+            const props = candidate.props as Record<string, unknown>;
+            return {
+              accessibilityLabel: props.accessibilityLabel,
+              nativeID: props.nativeID,
+              type: candidate.type,
+            };
+          },
+        },
+      );
+    });
   } finally {
     console.error = originalError;
   }
   return renderer!;
+}
+
+function withSafeArea(element: React.ReactElement): React.ReactElement {
+  return React.createElement(
+    safeAreaMock.SafeAreaProvider,
+    {
+      initialMetrics: {
+        frame: { x: 0, y: 0, width: 390, height: windowHeight },
+        insets: { bottom: safeAreaBottom, left: 0, right: 0, top: 0 },
+      },
+    },
+    element,
+  );
 }
 
 function findAutomationChoices(root: ReactTestInstance): ReactTestInstance[] {
@@ -432,4 +579,20 @@ function deferred<T>() {
   let resolvePromise!: (value: T) => void;
   const promise = new Promise<T>((resolve) => { resolvePromise = resolve; });
   return { promise, resolve: resolvePromise };
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
+}
+
+function focusLabel(node: unknown): unknown {
+  return node && typeof node === 'object'
+    ? (node as { accessibilityLabel?: unknown }).accessibilityLabel
+    : undefined;
+}
+
+function focusId(node: unknown): unknown {
+  return node && typeof node === 'object'
+    ? (node as { nativeID?: unknown }).nativeID
+    : undefined;
 }

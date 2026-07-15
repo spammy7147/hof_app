@@ -5,6 +5,10 @@ import {
   UnifiedAutomationController,
   type UnifiedAutomationControllerApi,
 } from '../../main/domain/unifiedAutomationController';
+import {
+  buildEditUnifiedModuleDraft,
+  buildUpdateUnifiedModuleRequest,
+} from '../../main/domain/unifiedAutomation';
 import type {
   AutomationType,
   CreateUnifiedAutomationModuleRequest,
@@ -420,6 +424,121 @@ describe('typed unified automation controller', () => {
       { moduleType: 'TIME_BURN', displayName: '전투 맵' },
       { moduleType: 'DAILY_ADVENTURE', displayName: '모험 맵' },
     ]);
+  });
+
+  it('round-trips transitional battle edits without resetting typed daily targets', async () => {
+    const existing = entry(2, 'BATTLE_MAP', 0, {
+      battleMaps: [
+        { categoryId: 'battle', mapCode: 'a', dailyTargetCount: 7, executionOrder: 0, presetMode: 'PRIMARY', partyPresetId: null },
+        { categoryId: 'battle', mapCode: 'b', dailyTargetCount: 3, executionOrder: 1, presetMode: 'EXPLICIT', partyPresetId: 9 },
+      ],
+    });
+    const requests: Parameters<UnifiedAutomationControllerApi['updateBattle']>[0][] = [];
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([existing]),
+      updateBattle: async (request) => {
+        requests.push(request);
+        return aggregate([existing]);
+      },
+    }));
+    await controller.load();
+    const projected = controller.getSnapshot().automation!.modules[0]!;
+    const draft = buildEditUnifiedModuleDraft(projected);
+    draft.maps = [
+      { ...draft.maps[1]!, partyPresetId: null },
+      { ...draft.maps[0]!, partyPresetId: 5 },
+      { categoryId: 'battle', mapCode: 'new', partyPresetId: null, executionOrder: 2 },
+    ];
+
+    assert.equal(await controller.updateModule(2, buildUpdateUnifiedModuleRequest(draft)), true);
+    assert.deepEqual(requests[0]?.maps, [
+      { categoryId: 'battle', mapCode: 'b', dailyTargetCount: 3, executionOrder: 0, presetMode: 'PRIMARY', partyPresetId: null },
+      { categoryId: 'battle', mapCode: 'a', dailyTargetCount: 7, executionOrder: 1, presetMode: 'EXPLICIT', partyPresetId: 5 },
+      { categoryId: 'battle', mapCode: 'new', dailyTargetCount: 1, executionOrder: 2, presetMode: 'PRIMARY', partyPresetId: null },
+    ]);
+  });
+
+  it('round-trips transitional quest edits while preserving typed selection and mission fields', async () => {
+    const existing = entry(1, 'QUEST', 0, {
+      quests: [{
+        questCode: 'quest-1', enabled: false, sourceOrder: 0,
+        maps: [
+          { missionKey: 'kill', categoryId: 'battle', mapCode: 'a', executionOrder: 0, manuallyOverridden: false, presetMode: 'PRIMARY', partyPresetId: null },
+          { missionKey: 'clear', categoryId: 'battle', mapCode: 'b', executionOrder: 1, manuallyOverridden: true, presetMode: 'EXPLICIT', partyPresetId: 8 },
+        ],
+      }],
+    });
+    const requests: Parameters<UnifiedAutomationControllerApi['updateQuest']>[0][] = [];
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([existing]),
+      fetchQuests: async () => [questSnapshot('quest-1', [
+        mission('kill', 'MONSTER_KILL'),
+        mission('clear', 'MAP_CLEAR'),
+      ])],
+      updateQuest: async (request) => {
+        requests.push(request);
+        return aggregate([existing]);
+      },
+    }));
+    await controller.load();
+    const draft = buildEditUnifiedModuleDraft(controller.getSnapshot().automation!.modules[0]!);
+    draft.quests[0]!.maps = [
+      { ...draft.quests[0]!.maps[1]!, partyPresetId: null },
+      { ...draft.quests[0]!.maps[0]!, partyPresetId: 6 },
+    ];
+
+    assert.equal(await controller.updateModule(1, buildUpdateUnifiedModuleRequest(draft)), true);
+    assert.deepEqual(requests[0]?.quests, [{
+      questCode: 'quest-1', enabled: false, sourceOrder: 0,
+      maps: [
+        { missionKey: 'clear', categoryId: 'battle', mapCode: 'b', executionOrder: 0, manuallyOverridden: true, presetMode: 'PRIMARY', partyPresetId: null },
+        { missionKey: 'kill', categoryId: 'battle', mapCode: 'a', executionOrder: 1, manuallyOverridden: false, presetMode: 'EXPLICIT', partyPresetId: 6 },
+      ],
+    }]);
+  });
+
+  it('round-trips transitional adventure edits while preserving typed-only map fields', async () => {
+    const typedMap = {
+      categoryId: 'adventure', mapCode: 'a', executionOrder: 0,
+      presetMode: 'PRIMARY' as const, partyPresetId: null,
+      cooldownPolicy: 'SERVER',
+    };
+    const existing = entry(3, 'ADVENTURE_MAP', 0, { adventureMaps: [typedMap] });
+    const requests: Parameters<UnifiedAutomationControllerApi['updateAdventure']>[0][] = [];
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([existing]),
+      updateAdventure: async (request) => {
+        requests.push(request);
+        return aggregate([existing]);
+      },
+    }));
+    await controller.load();
+    const draft = buildEditUnifiedModuleDraft(controller.getSnapshot().automation!.modules[0]!);
+    draft.maps[0]!.partyPresetId = 4;
+
+    assert.equal(await controller.updateModule(3, buildUpdateUnifiedModuleRequest(draft)), true);
+    assert.deepEqual(requests[0]?.maps[0], {
+      categoryId: 'adventure', mapCode: 'a', executionOrder: 0,
+      presetMode: 'EXPLICIT', partyPresetId: 4,
+      cooldownPolicy: 'SERVER',
+    });
+  });
+
+  it('rejects ambiguous transitional map identities instead of mutating typed settings', async () => {
+    let battleUpdates = 0;
+    const duplicate = { categoryId: 'battle', mapCode: 'same', executionOrder: 0, presetMode: 'PRIMARY' as const, partyPresetId: null, dailyTargetCount: 2 };
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([entry(2, 'BATTLE_MAP', 0, {
+        battleMaps: [duplicate, { ...duplicate, executionOrder: 1, dailyTargetCount: 4 }],
+      })]),
+      updateBattle: async () => { battleUpdates += 1; return aggregate([]); },
+    }));
+    await controller.load();
+    const draft = buildEditUnifiedModuleDraft(controller.getSnapshot().automation!.modules[0]!);
+
+    assert.equal(await controller.updateModule(2, buildUpdateUnifiedModuleRequest(draft)), false);
+    assert.equal(battleUpdates, 0);
+    assert.match(controller.getSnapshot().message ?? '', /중복.*안전하게/);
   });
 
   it('resolves transitional quest maps to the authoritative single combat mission key', async () => {

@@ -578,7 +578,7 @@ export class UnifiedAutomationController {
       return this.runTypedMutation('QUEST', entry.id, async (sequence, generation) => {
         const quests = await this.api.fetchQuests();
         if (this.generation !== generation) return;
-        const body = buildLegacyQuestRequest(request, quests);
+        const body = buildLegacyQuestRequest(entry, request, quests);
         const response = await this.api.updateQuest(body);
         if (this.generation === generation) {
           this.mergeSettingsResponse(response, sequence, 'QUEST');
@@ -586,20 +586,19 @@ export class UnifiedAutomationController {
       });
     }
     if (entry.type === 'BATTLE_MAP') {
-      return this.saveBattleMapSettings({
-        enabled: request.enabled,
-        maps: request.maps.map((map, executionOrder) => ({
-          categoryId: map.categoryId, mapCode: map.mapCode, dailyTargetCount: 1,
-          executionOrder, ...legacyPreset(map),
-        })),
-      });
+      try {
+        return this.saveBattleMapSettings(buildLegacyBattleRequest(entry, request));
+      } catch (error) {
+        this.setError(error);
+        return Promise.resolve(false);
+      }
     }
-    return this.saveAdventureMapSettings({
-      enabled: request.enabled,
-      maps: request.maps.map((map, executionOrder) => ({
-        categoryId: map.categoryId, mapCode: map.mapCode, executionOrder, ...legacyPreset(map),
-      })),
-    });
+    try {
+      return this.saveAdventureMapSettings(buildLegacyAdventureRequest(entry, request));
+    } catch (error) {
+      this.setError(error);
+      return Promise.resolve(false);
+    }
   }
 
   private saveExistingEntry(entry: TypedAutomationEntryResponse, enabled: boolean): Promise<boolean> {
@@ -616,9 +615,21 @@ function legacyPreset(map: UnifiedAutomationMap) {
 }
 
 function buildLegacyQuestRequest(
+  entry: TypedAutomationEntryResponse,
   request: UpdateUnifiedAutomationModuleRequest | CreateUnifiedAutomationModuleRequest,
   snapshots: readonly QuestSnapshot[],
 ): UpdateQuestAutomationRequest {
+  const currentQuests = indexUnique(
+    entry.quests,
+    ({ questCode }) => questCode,
+    '저장된 퀘스트에 중복된 항목이 있어 안전하게 저장할 수 없어요.',
+  );
+  assertUnique(
+    request.quests,
+    ({ questCode }) => questCode,
+    '선택한 퀘스트에 중복된 항목이 있어 안전하게 저장할 수 없어요.',
+  );
+
   return {
     enabled: request.enabled,
     quests: request.quests.map((quest, sourceOrder) => {
@@ -627,32 +638,119 @@ function buildLegacyQuestRequest(
         throw new Error(`선택한 퀘스트 '${quest.questCode}'를 찾을 수 없어요.`);
       }
 
-      const combatMissions = snapshot.missions.filter(
-        ({ type }) => type === 'MONSTER_KILL' || type === 'MAP_CLEAR',
+      const currentQuest = currentQuests.get(quest.questCode);
+      const currentMaps = indexUnique(
+        currentQuest?.maps ?? [],
+        mapIdentity,
+        `퀘스트 '${quest.questCode}'에 중복된 맵이 있어 안전하게 저장할 수 없어요.`,
       );
-      if (quest.maps.length > 0 && combatMissions.length === 0) {
-        throw new Error(`퀘스트 '${quest.questCode}'의 맵 자동화에 사용할 전투 미션을 찾을 수 없어요.`);
-      }
-      if (quest.maps.length > 0 && combatMissions.length > 1) {
-        throw new Error(`퀘스트 '${quest.questCode}'에 여러 전투 미션이 있어 맵을 안전하게 연결할 수 없어요.`);
-      }
+      assertUnique(
+        quest.maps,
+        mapIdentity,
+        `퀘스트 '${quest.questCode}'에 중복된 맵이 있어 안전하게 저장할 수 없어요.`,
+      );
 
-      const missionKey = combatMissions[0]?.key;
       return {
+        ...currentQuest,
         questCode: quest.questCode,
-        enabled: true,
+        enabled: currentQuest?.enabled ?? true,
         sourceOrder,
-        maps: quest.maps.map((map, executionOrder) => ({
-          missionKey: missionKey!,
-          categoryId: map.categoryId,
-          mapCode: map.mapCode,
-          executionOrder,
-          manuallyOverridden: true,
-          ...legacyPreset(map),
-        })),
+        maps: quest.maps.map((map, executionOrder) => {
+          const currentMap = currentMaps.get(mapIdentity(map));
+          if (currentMap) {
+            return {
+              ...currentMap,
+              categoryId: map.categoryId,
+              mapCode: map.mapCode,
+              executionOrder,
+              ...legacyPreset(map),
+            };
+          }
+
+          const combatMissions = snapshot.missions.filter(
+            ({ type }) => type === 'MONSTER_KILL' || type === 'MAP_CLEAR',
+          );
+          if (combatMissions.length === 0) {
+            throw new Error(`퀘스트 '${quest.questCode}'의 맵 자동화에 사용할 전투 미션을 찾을 수 없어요.`);
+          }
+          if (combatMissions.length > 1) {
+            throw new Error(`퀘스트 '${quest.questCode}'에 여러 전투 미션이 있어 맵을 안전하게 연결할 수 없어요.`);
+          }
+          return {
+            missionKey: combatMissions[0].key,
+            categoryId: map.categoryId,
+            mapCode: map.mapCode,
+            executionOrder,
+            manuallyOverridden: true,
+            ...legacyPreset(map),
+          };
+        }),
       };
     }),
   };
+}
+
+function buildLegacyBattleRequest(
+  entry: TypedAutomationEntryResponse,
+  request: UpdateUnifiedAutomationModuleRequest | CreateUnifiedAutomationModuleRequest,
+): UpdateBattleMapAutomationRequest {
+  const currentMaps = indexUnique(
+    entry.battleMaps,
+    mapIdentity,
+    '저장된 전투 맵에 중복된 맵이 있어 안전하게 저장할 수 없어요.',
+  );
+  assertUnique(request.maps, mapIdentity, '선택한 전투 맵에 중복된 맵이 있어 안전하게 저장할 수 없어요.');
+  return {
+    enabled: request.enabled,
+    maps: request.maps.map((map, executionOrder) => ({
+      ...currentMaps.get(mapIdentity(map)),
+      categoryId: map.categoryId,
+      mapCode: map.mapCode,
+      dailyTargetCount: currentMaps.get(mapIdentity(map))?.dailyTargetCount ?? 1,
+      executionOrder,
+      ...legacyPreset(map),
+    })),
+  };
+}
+
+function buildLegacyAdventureRequest(
+  entry: TypedAutomationEntryResponse,
+  request: UpdateUnifiedAutomationModuleRequest | CreateUnifiedAutomationModuleRequest,
+): UpdateAdventureMapAutomationRequest {
+  const currentMaps = indexUnique(
+    entry.adventureMaps,
+    mapIdentity,
+    '저장된 모험 맵에 중복된 맵이 있어 안전하게 저장할 수 없어요.',
+  );
+  assertUnique(request.maps, mapIdentity, '선택한 모험 맵에 중복된 맵이 있어 안전하게 저장할 수 없어요.');
+  return {
+    enabled: request.enabled,
+    maps: request.maps.map((map, executionOrder) => ({
+      ...currentMaps.get(mapIdentity(map)),
+      categoryId: map.categoryId,
+      mapCode: map.mapCode,
+      executionOrder,
+      ...legacyPreset(map),
+    })),
+  };
+}
+
+function mapIdentity(map: { categoryId: string; mapCode: string }): string {
+  return `${map.categoryId}\u0000${map.mapCode}`;
+}
+
+function assertUnique<T>(items: readonly T[], keyOf: (item: T) => string, message: string): void {
+  indexUnique(items, keyOf, message);
+}
+
+function indexUnique<T>(items: readonly T[], keyOf: (item: T) => string, message: string): Map<string, T> {
+  const byKey = new Map<string, T>();
+  for (const item of items) {
+    const key = keyOf(item);
+    if (byKey.has(key)) throw new Error(message);
+    byKey.set(key, item);
+  }
+  return byKey;
 }
 
 function legacyTypeToTyped(type: UnifiedAutomationModuleType): AutomationType {

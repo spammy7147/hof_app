@@ -1,5 +1,15 @@
-import { useCallback, useState } from 'react';
-import { Alert, Modal, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState, type ElementRef } from 'react';
+import {
+  AccessibilityInfo,
+  Alert,
+  findNodeHandle,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from 'react-native';
 import { GripVertical, Map, MoreHorizontal, Plus, ScrollText, Swords } from 'lucide-react-native';
 import {
   NestableDraggableFlatList,
@@ -41,15 +51,77 @@ export function UnifiedAutomationSettings({
 }: Props) {
   const [addSheetOpen, setAddSheetOpen] = useState(false);
   const [menuEntry, setMenuEntry] = useState<TypedAutomationEntryResponse | null>(null);
+  const mountedRef = useRef(false);
+  const addTriggerRef = useRef<ElementRef<typeof Pressable>>(null);
+  const menuActionRef = useRef<ElementRef<typeof Pressable>>(null);
+  const menuTriggerNodeRef = useRef<ReturnType<typeof findNodeHandle>>(null);
+  const addGenerationRef = useRef(0);
+  const menuGenerationRef = useRef(0);
+  const menuFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const restoreFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const allTypesAdded = hasAllAutomationTypes(entries);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      menuGenerationRef.current += 1;
+      if (menuFocusTimerRef.current) clearTimeout(menuFocusTimerRef.current);
+      if (restoreFocusTimerRef.current) clearTimeout(restoreFocusTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!menuEntry) return undefined;
+    if (menuFocusTimerRef.current) clearTimeout(menuFocusTimerRef.current);
+    menuFocusTimerRef.current = setTimeout(() => focusNode(menuActionRef.current), 250);
+    return () => {
+      if (menuFocusTimerRef.current) clearTimeout(menuFocusTimerRef.current);
+    };
+  }, [menuEntry]);
+
+  const openMenu = useCallback((entry: TypedAutomationEntryResponse, triggerNode: ReturnType<typeof findNodeHandle>) => {
+    menuGenerationRef.current += 1;
+    menuTriggerNodeRef.current = triggerNode;
+    setMenuEntry(entry);
+  }, []);
+
+  const closeMenu = useCallback(() => {
+    menuGenerationRef.current += 1;
+    setMenuEntry(null);
+    const triggerNode = menuTriggerNodeRef.current;
+    if (restoreFocusTimerRef.current) clearTimeout(restoreFocusTimerRef.current);
+    restoreFocusTimerRef.current = setTimeout(() => {
+      if (mountedRef.current && triggerNode != null) AccessibilityInfo.setAccessibilityFocus(triggerNode);
+    }, 250);
+  }, []);
+
+  const closeAddSheet = useCallback(() => {
+    addGenerationRef.current += 1;
+    setAddSheetOpen(false);
+    if (restoreFocusTimerRef.current) clearTimeout(restoreFocusTimerRef.current);
+    restoreFocusTimerRef.current = setTimeout(() => {
+      if (mountedRef.current) focusNode(addTriggerRef.current);
+    }, 250);
+  }, []);
+
+  const addEntry = useCallback(async (type: AutomationType) => {
+    const addGeneration = addGenerationRef.current;
+    const added = await onAdd(type);
+    return addGenerationRef.current === addGeneration && added;
+  }, [onAdd]);
+
   const renderItem = useCallback((params: RenderItemParams<TypedAutomationEntryResponse>) => (
     <AutomationEntryRow
       {...params}
+      entries={entries}
+      reorderBusy={reordering}
       saving={savingEntryIds.includes(params.item.id)}
-      onMore={setMenuEntry}
+      onMore={openMenu}
+      onReorder={onReorder}
       onToggle={onToggle}
     />
-  ), [onToggle, savingEntryIds]);
+  ), [entries, onReorder, onToggle, openMenu, reordering, savingEntryIds]);
   const menuBusy = menuEntry != null && savingEntryIds.includes(menuEntry.id);
 
   function confirmDelete(entry: TypedAutomationEntryResponse) {
@@ -63,8 +135,11 @@ export function UnifiedAutomationSettings({
           text: '삭제',
           style: 'destructive',
           onPress: () => {
+            const menuGeneration = menuGenerationRef.current;
             void onDelete(entry.id).then((deleted) => {
-              if (deleted) setMenuEntry(null);
+              if (deleted && mountedRef.current && menuGenerationRef.current === menuGeneration) {
+                closeMenu();
+              }
             });
           },
         },
@@ -100,12 +175,17 @@ export function UnifiedAutomationSettings({
       )}
 
       <Pressable
+        ref={addTriggerRef}
         accessibilityHint={allTypesAdded ? '추가할 수 있는 자동화 유형이 없습니다' : '자동화 유형 선택 창을 엽니다'}
         accessibilityLabel={allTypesAdded ? '모든 자동화가 추가되었습니다' : '자동화 추가'}
         accessibilityRole="button"
         accessibilityState={{ disabled: allTypesAdded }}
         disabled={allTypesAdded}
-        onPress={() => setAddSheetOpen(true)}
+        nativeID="automation-add-trigger"
+        onPress={() => {
+          addGenerationRef.current += 1;
+          setAddSheetOpen(true);
+        }}
         style={({ pressed }) => [
           styles.addButton,
           allTypesAdded && styles.disabled,
@@ -127,15 +207,15 @@ export function UnifiedAutomationSettings({
       <AutomationAddSheet
         entries={entries}
         error={error}
-        onAdd={onAdd}
-        onClose={() => setAddSheetOpen(false)}
+        onAdd={addEntry}
+        onClose={closeAddSheet}
         pendingTypes={savingTypes}
         visible={addSheetOpen}
       />
 
       <Modal
         animationType="fade"
-        onRequestClose={() => setMenuEntry(null)}
+        onRequestClose={closeMenu}
         transparent
         visible={menuEntry != null}
       >
@@ -143,20 +223,22 @@ export function UnifiedAutomationSettings({
           <Pressable
             accessibilityLabel="자동화 메뉴 닫기"
             accessibilityRole="button"
-            onPress={() => setMenuEntry(null)}
+            onPress={closeMenu}
             style={styles.menuBackdrop}
           />
           {menuEntry ? (
             <View accessibilityViewIsModal style={styles.menu}>
               <Text style={styles.menuTitle}>{AUTOMATION_TYPE_METADATA[menuEntry.type].label}</Text>
               <Pressable
+                ref={menuActionRef}
                 accessibilityHint="선택한 자동화의 세부 설정 화면을 엽니다"
                 accessibilityLabel={`${AUTOMATION_TYPE_METADATA[menuEntry.type].label} 상세 설정`}
                 accessibilityRole="button"
                 accessibilityState={{ disabled: menuBusy }}
                 disabled={menuBusy}
+                nativeID="automation-menu-first-action"
                 onPress={() => {
-                  setMenuEntry(null);
+                  closeMenu();
                   onDetail(menuEntry);
                 }}
                 style={({ pressed }) => [styles.menuAction, pressed && styles.pressed]}
@@ -183,29 +265,63 @@ export function UnifiedAutomationSettings({
 }
 
 type AutomationEntryRowProps = RenderItemParams<TypedAutomationEntryResponse> & {
+  entries: readonly TypedAutomationEntryResponse[];
+  reorderBusy: boolean;
   saving: boolean;
-  onMore: (entry: TypedAutomationEntryResponse) => void;
+  onMore: (entry: TypedAutomationEntryResponse, triggerNode: ReturnType<typeof findNodeHandle>) => void;
+  onReorder: (entries: TypedAutomationEntryResponse[]) => void;
   onToggle: (entry: TypedAutomationEntryResponse) => void;
 };
 
 function AutomationEntryRow({
   item,
   drag,
+  getIndex,
   isActive,
+  entries,
+  reorderBusy,
   saving,
   onMore,
+  onReorder,
   onToggle,
 }: AutomationEntryRowProps) {
+  const moreButtonRef = useRef<ElementRef<typeof Pressable>>(null);
   const metadata = AUTOMATION_TYPE_METADATA[item.type];
   const summary = getEntrySummary(item);
   const warning = item.warnings[0];
+  const index = getIndex() ?? -1;
+  const canMoveUp = index > 0;
+  const canMoveDown = index >= 0 && index < entries.length - 1;
+  const reorderDisabled = saving || reorderBusy;
+
+  function moveEntry(offset: -1 | 1) {
+    if (reorderDisabled) return;
+    const currentIndex = getIndex() ?? -1;
+    const targetIndex = currentIndex + offset;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= entries.length) return;
+    const reordered = [...entries];
+    const [moved] = reordered.splice(currentIndex, 1);
+    reordered.splice(targetIndex, 0, moved);
+    onReorder(reordered);
+  }
+
   return (
     <View style={[styles.row, isActive && styles.rowActive]}>
       <Pressable
-        accessibilityHint="길게 눌러 위아래로 이동하세요"
+        accessibilityActions={[
+          ...(canMoveUp ? [{ name: 'decrement' as const, label: '위로 이동' }] : []),
+          ...(canMoveDown ? [{ name: 'increment' as const, label: '아래로 이동' }] : []),
+        ]}
+        accessibilityHint="길게 누르거나 접근성 동작으로 위아래로 이동하세요"
         accessibilityLabel={`${metadata.label} 우선순위 이동`}
+        accessibilityRole="adjustable"
+        accessibilityState={{ disabled: reorderDisabled }}
         delayLongPress={120}
-        disabled={saving}
+        disabled={reorderDisabled}
+        onAccessibilityAction={({ nativeEvent: { actionName } }) => {
+          if (actionName === 'decrement') moveEntry(-1);
+          if (actionName === 'increment') moveEntry(1);
+        }}
         onLongPress={drag}
         style={({ pressed }) => [styles.dragHandle, pressed && styles.pressed]}
       >
@@ -240,17 +356,24 @@ function AutomationEntryRow({
         value={item.enabled}
       />
       <Pressable
+        ref={moreButtonRef}
         accessibilityLabel={`${metadata.label} 더 보기`}
         accessibilityRole="button"
         accessibilityState={{ disabled: saving }}
         disabled={saving}
-        onPress={() => onMore(item)}
+        nativeID={`automation-more-${item.id}`}
+        onPress={() => onMore(item, findNodeHandle(moreButtonRef.current))}
         style={({ pressed }) => [styles.moreButton, pressed && styles.pressed]}
       >
         <MoreHorizontal color={theme.colors.textMuted} size={21} />
       </Pressable>
     </View>
   );
+}
+
+function focusNode(node: ElementRef<typeof Pressable> | null): void {
+  const handle = findNodeHandle(node);
+  if (handle != null) AccessibilityInfo.setAccessibilityFocus(handle);
 }
 
 function getEntrySummary(entry: TypedAutomationEntryResponse): string {

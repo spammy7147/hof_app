@@ -48,6 +48,9 @@ export function AutomationAddSheet({
   const { bottom } = useSafeAreaInsets();
   const titleRef = useRef<ElementRef<typeof Text>>(null);
   const submittingTypes = useRef(new Set<AutomationType>());
+  const mountedRef = useRef(false);
+  const visibleRef = useRef(visible);
+  const visibilityGenerationRef = useRef(0);
   const [locallyPending, setLocallyPending] = useState<AutomationType[]>([]);
   const existingTypes = useMemo(() => new Set(entries.map(({ type }) => type)), [entries]);
   const busyTypes = useMemo(
@@ -55,7 +58,19 @@ export function AutomationAddSheet({
     [locallyPending, pendingTypes],
   );
 
+  visibleRef.current = visible;
+
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      visibilityGenerationRef.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
+    visibilityGenerationRef.current += 1;
+    setLocallyPending([]);
     if (!visible) return undefined;
     AccessibilityInfo.announceForAccessibility('자동화 추가 창이 열렸습니다.');
     const focusTimer = setTimeout(() => {
@@ -67,14 +82,26 @@ export function AutomationAddSheet({
 
   async function handleAdd(type: AutomationType) {
     if (existingTypes.has(type) || busyTypes.has(type) || submittingTypes.current.has(type)) return;
+    const visibilityGeneration = visibilityGenerationRef.current;
     submittingTypes.current.add(type);
     setLocallyPending((current) => [...current, type]);
     try {
       const added = await onAdd(type);
-      if (added) onClose();
+      if (
+        added
+        && mountedRef.current
+        && visibleRef.current
+        && visibilityGenerationRef.current === visibilityGeneration
+      ) onClose();
     } finally {
       submittingTypes.current.delete(type);
-      setLocallyPending((current) => current.filter((candidate) => candidate !== type));
+      if (
+        mountedRef.current
+        && visibleRef.current
+        && visibilityGenerationRef.current === visibilityGeneration
+      ) {
+        setLocallyPending((current) => current.filter((candidate) => candidate !== type));
+      }
     }
   }
 
