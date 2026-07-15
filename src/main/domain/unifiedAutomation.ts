@@ -34,12 +34,19 @@ export type UnifiedAutomationModuleDraft = {
 };
 
 const MODULE_TYPE_LABELS: Record<UnifiedAutomationModuleType, string> = {
-  KEY_QUEST: '열쇠 퀘스트',
-  TIME_BURN: 'Time 자동 소모',
-  COOLDOWN_ADVENTURE: '쿨다운 모험맵',
-  DAILY_ADVENTURE: '일일 제한 모험맵',
-  OTHER_QUEST: '일반 퀘스트',
+  KEY_QUEST: '퀘스트',
+  TIME_BURN: '전투 맵',
+  COOLDOWN_ADVENTURE: '모험 맵',
+  DAILY_ADVENTURE: '모험 맵',
+  OTHER_QUEST: '퀘스트',
 };
+
+/** Task 12 전까지 typed singleton 세 가지를 표현하는 유일한 legacy projection이다. */
+export const CANONICAL_UNIFIED_MODULE_TYPES = [
+  'OTHER_QUEST',
+  'TIME_BURN',
+  'DAILY_ADVENTURE',
+] as const satisfies readonly UnifiedAutomationModuleType[];
 
 /** 내부 enum 대신 사용자가 이해할 수 있는 모듈 유형 이름을 반환한다. */
 export function getUnifiedModuleTypeLabel(type: UnifiedAutomationModuleType): string {

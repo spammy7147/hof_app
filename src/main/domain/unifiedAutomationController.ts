@@ -4,6 +4,7 @@ import type {
   AutomationType,
   CreateAutomationEntryRequest,
   CreateUnifiedAutomationModuleRequest,
+  QuestSnapshot,
   TypedAutomationAggregateResponse,
   TypedAutomationEntryResponse,
   UnifiedAutomationAction,
@@ -25,6 +26,7 @@ export type UnifiedAutomationControllerApi = {
   updateQuest: (request: UpdateQuestAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
   updateBattle: (request: UpdateBattleMapAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
   updateAdventure: (request: UpdateAdventureMapAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
+  fetchQuests: () => Promise<QuestSnapshot[]>;
   changeState: (action: UnifiedAutomationAction) => Promise<TypedAutomationAggregateResponse>;
 };
 
@@ -123,7 +125,9 @@ export class UnifiedAutomationController {
   }
 
   isEntryBusy(entryId: number): boolean {
-    return this.savingEntryIds.has(entryId);
+    if (this.savingEntryIds.has(entryId)) return true;
+    const type = this.snapshot.aggregate?.entries.find((entry) => entry.id === entryId)?.type;
+    return type != null && (this.pendingTypeCounts.get(type) ?? 0) > 0;
   }
 
   /** @deprecated Transitional alias until Task 12 replaces the generic module screen. */
@@ -519,9 +523,12 @@ export class UnifiedAutomationController {
   // Transitional generic-screen operations. They route only through typed endpoints.
   async createModule(request: CreateUnifiedAutomationModuleRequest): Promise<boolean> {
     const type = legacyTypeToTyped(request.moduleType);
-    if (!await this.createEntry(type)) return false;
-    const created = this.snapshot.aggregate?.entries.find((entry) => entry.type === type);
-    return created ? this.updateLegacyEntry(created, request) : false;
+    let entry = this.snapshot.aggregate?.entries.find((candidate) => candidate.type === type);
+    if (!entry) {
+      if (!await this.createEntry(type)) return false;
+      entry = this.snapshot.aggregate?.entries.find((candidate) => candidate.type === type);
+    }
+    return entry ? this.updateLegacyEntry(entry, request) : false;
   }
 
   updateModule(entryId: number, request: UpdateUnifiedAutomationModuleRequest): Promise<boolean> {
@@ -552,21 +559,13 @@ export class UnifiedAutomationController {
     request: UpdateUnifiedAutomationModuleRequest | CreateUnifiedAutomationModuleRequest,
   ): Promise<boolean> {
     if (entry.type === 'QUEST') {
-      return this.saveQuestSettings({
-        enabled: request.enabled,
-        quests: request.quests.map((quest, sourceOrder) => ({
-          questCode: quest.questCode,
-          enabled: true,
-          sourceOrder,
-          maps: quest.maps.map((map, executionOrder) => ({
-            missionKey: `${quest.questCode}:${executionOrder}`,
-            categoryId: map.categoryId,
-            mapCode: map.mapCode,
-            executionOrder,
-            manuallyOverridden: true,
-            ...legacyPreset(map),
-          })),
-        })),
+      return this.runTypedMutation('QUEST', entry.id, async (sequence, generation) => {
+        const quests = await this.api.fetchQuests();
+        const body = buildLegacyQuestRequest(request, quests);
+        const response = await this.api.updateQuest(body);
+        if (this.generation === generation) {
+          this.mergeSettingsResponse(response, sequence, 'QUEST');
+        }
       });
     }
     if (entry.type === 'BATTLE_MAP') {
@@ -597,6 +596,46 @@ function legacyPreset(map: UnifiedAutomationMap) {
   return map.partyPresetId == null
     ? { presetMode: 'PRIMARY' as const, partyPresetId: null }
     : { presetMode: 'EXPLICIT' as const, partyPresetId: map.partyPresetId };
+}
+
+function buildLegacyQuestRequest(
+  request: UpdateUnifiedAutomationModuleRequest | CreateUnifiedAutomationModuleRequest,
+  snapshots: readonly QuestSnapshot[],
+): UpdateQuestAutomationRequest {
+  return {
+    enabled: request.enabled,
+    quests: request.quests.map((quest, sourceOrder) => {
+      const snapshot = snapshots.find(({ questId }) => questId === quest.questCode);
+      if (!snapshot) {
+        throw new Error(`선택한 퀘스트 '${quest.questCode}'를 찾을 수 없어요.`);
+      }
+
+      const combatMissions = snapshot.missions.filter(
+        ({ type }) => type === 'MONSTER_KILL' || type === 'MAP_CLEAR',
+      );
+      if (quest.maps.length > 0 && combatMissions.length === 0) {
+        throw new Error(`퀘스트 '${quest.questCode}'의 맵 자동화에 사용할 전투 미션을 찾을 수 없어요.`);
+      }
+      if (quest.maps.length > 0 && combatMissions.length > 1) {
+        throw new Error(`퀘스트 '${quest.questCode}'에 여러 전투 미션이 있어 맵을 안전하게 연결할 수 없어요.`);
+      }
+
+      const missionKey = combatMissions[0]?.key;
+      return {
+        questCode: quest.questCode,
+        enabled: true,
+        sourceOrder,
+        maps: quest.maps.map((map, executionOrder) => ({
+          missionKey: missionKey!,
+          categoryId: map.categoryId,
+          mapCode: map.mapCode,
+          executionOrder,
+          manuallyOverridden: true,
+          ...legacyPreset(map),
+        })),
+      };
+    }),
+  };
 }
 
 function legacyTypeToTyped(type: UnifiedAutomationModuleType): AutomationType {

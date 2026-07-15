@@ -7,6 +7,8 @@ import {
 } from '../../main/domain/unifiedAutomationController';
 import type {
   AutomationType,
+  CreateUnifiedAutomationModuleRequest,
+  QuestSnapshot,
   TypedAutomationAggregateResponse,
   TypedAutomationEntryResponse,
 } from '../../main/types/api';
@@ -274,14 +276,17 @@ describe('typed unified automation controller', () => {
     const deleting = controller.deleteEntry(2);
     assert.deepEqual(calls, ['save']);
     assert.deepEqual(controller.getSnapshot().savingTypes, ['BATTLE_MAP']);
+    assert.equal(controller.isEntryBusy(2), true);
     save.resolve(aggregate([entry(2, 'BATTLE_MAP', 0, { warnings: ['saved'] })]));
     await saving;
     await new Promise<void>((resolve) => setImmediate(resolve));
     assert.deepEqual(calls, ['save', 'delete']);
     assert.deepEqual(controller.getSnapshot().savingTypes, ['BATTLE_MAP']);
+    assert.equal(controller.isEntryBusy(2), true);
     remove.resolve(aggregate([]));
     await deleting;
     assert.deepEqual(controller.getSnapshot().savingTypes, []);
+    assert.equal(controller.isEntryBusy(2), false);
   });
 
   it('runs delete then save through the same type queue', async () => {
@@ -336,12 +341,118 @@ describe('typed unified automation controller', () => {
 
     const saving = controller.saveBattleMapSettings({ enabled: true, maps: [] });
     const deleting = controller.deleteEntry(2);
+    assert.equal(controller.isEntryBusy(2), true);
     controller.reset();
     save.resolve(aggregate([entry(2, 'BATTLE_MAP', 0)]));
     assert.equal(await saving, false);
     assert.equal(await deleting, false);
     assert.deepEqual(calls, ['save']);
     assert.deepEqual(controller.getSnapshot().savingTypes, []);
+    assert.equal(controller.isEntryBusy(2), false);
+  });
+
+  it('projects each typed singleton to exactly one canonical transitional module', async () => {
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([
+        entry(1, 'QUEST', 0),
+        entry(2, 'BATTLE_MAP', 1),
+        entry(3, 'ADVENTURE_MAP', 2),
+      ]),
+    }));
+
+    await controller.load();
+
+    assert.deepEqual(controller.getSnapshot().automation?.modules.map((module) => ({
+      moduleType: module.moduleType,
+      displayName: module.displayName,
+    })), [
+      { moduleType: 'OTHER_QUEST', displayName: '퀘스트' },
+      { moduleType: 'TIME_BURN', displayName: '전투 맵' },
+      { moduleType: 'DAILY_ADVENTURE', displayName: '모험 맵' },
+    ]);
+  });
+
+  it('resolves transitional quest maps to the authoritative single combat mission key', async () => {
+    const savedRequests: Parameters<UnifiedAutomationControllerApi['updateQuest']>[0][] = [];
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([entry(1, 'QUEST', 0)]),
+      fetchQuests: async () => [questSnapshot('quest-1', [mission('real-mission', 'MAP_CLEAR')])],
+      updateQuest: async (request) => {
+        savedRequests.push(request);
+        return aggregate([entry(1, 'QUEST', 0)]);
+      },
+    }));
+    await controller.load();
+
+    const saved = await controller.updateModule(1, legacyQuestUpdate('quest-1', true));
+
+    assert.equal(saved, true);
+    assert.equal(savedRequests[0]?.quests[0]?.maps[0]?.missionKey, 'real-mission');
+  });
+
+  it('rejects missing or ambiguous quest mission resolution without updating settings', async () => {
+    let questSnapshots: QuestSnapshot[] = [];
+    let updates = 0;
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([entry(1, 'QUEST', 0)]),
+      fetchQuests: async () => questSnapshots,
+      updateQuest: async () => { updates += 1; return aggregate([entry(1, 'QUEST', 0)]); },
+    }));
+    await controller.load();
+
+    assert.equal(await controller.updateModule(1, legacyQuestUpdate('missing', true)), false);
+    assert.match(controller.getSnapshot().message ?? '', /퀘스트.*찾을 수/);
+    questSnapshots = [questSnapshot('quest-1', [mission('immediate', 'IMMEDIATE')])];
+    assert.equal(await controller.updateModule(1, legacyQuestUpdate('quest-1', true)), false);
+    assert.match(controller.getSnapshot().message ?? '', /전투 미션.*찾을 수/);
+    questSnapshots = [questSnapshot('quest-1', [
+      mission('kill', 'MONSTER_KILL'),
+      mission('clear', 'MAP_CLEAR'),
+    ])];
+    assert.equal(await controller.updateModule(1, legacyQuestUpdate('quest-1', true)), false);
+    assert.match(controller.getSnapshot().message ?? '', /여러.*미션/);
+    assert.equal(updates, 0);
+  });
+
+  it('allows authoritative immediate or item quests with no configured map rows', async () => {
+    let updates = 0;
+    for (const type of ['IMMEDIATE', 'ITEM_TURN_IN'] as const) {
+      const controller = new UnifiedAutomationController(apiStub({
+        fetch: async () => aggregate([entry(1, 'QUEST', 0)]),
+        fetchQuests: async () => [questSnapshot('quest-1', [mission(type, type)])],
+        updateQuest: async () => { updates += 1; return aggregate([entry(1, 'QUEST', 0)]); },
+      }));
+      await controller.load();
+
+      assert.equal(await controller.updateModule(1, legacyQuestUpdate('quest-1', false)), true);
+    }
+    assert.equal(updates, 2);
+  });
+
+  it('adopts a created typed entry when settings fail and retries without another create', async () => {
+    let creates = 0;
+    let updates = 0;
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([]),
+      create: async () => {
+        creates += 1;
+        return aggregate([entry(1, 'QUEST', 0)]);
+      },
+      fetchQuests: async () => [questSnapshot('quest-1', [mission('real-key', 'MAP_CLEAR')])],
+      updateQuest: async () => {
+        updates += 1;
+        if (updates === 1) throw new Error('settings failed');
+        return aggregate([entry(1, 'QUEST', 0)]);
+      },
+    }));
+    await controller.load();
+    const request = legacyQuestCreate('quest-1');
+
+    assert.equal(await controller.createModule(request), false);
+    assert.deepEqual(controller.getSnapshot().aggregate?.entries.map(({ id }) => id), [1]);
+    assert.equal(await controller.createModule(request), true);
+    assert.equal(creates, 1);
+    assert.equal(updates, 2);
   });
 
   it('atomically reserves the type lane so a later same-type save cannot overtake queued create', async () => {
@@ -591,6 +702,7 @@ function apiStub(overrides: Overrides): UnifiedAutomationControllerApi {
     updateQuest: overrides.updateQuest ?? (async () => aggregate([])),
     updateBattle: overrides.updateBattle ?? (async () => aggregate([])),
     updateAdventure: overrides.updateAdventure ?? (async () => aggregate([])),
+    fetchQuests: overrides.fetchQuests ?? (async () => []),
     changeState: overrides.changeState ?? (async () => aggregate([])),
   };
 }
@@ -627,4 +739,43 @@ function aggregate(
     entries,
     runtime: { lifecycle, stopReason: null, nextAttemptAt: null, warnings: [], lastError: null },
   };
+}
+
+function mission(key: string, type: QuestSnapshot['missions'][number]['type']) {
+  return { key, type, target: null, progress: null, completable: false };
+}
+
+function questSnapshot(questId: string, missions: QuestSnapshot['missions']): QuestSnapshot {
+  return {
+    questId,
+    name: questId,
+    state: 'ACTIVE',
+    section: 'ACTIVE',
+    sourceOrder: 0,
+    missions,
+    actionNo: null,
+  };
+}
+
+function legacyQuestUpdate(
+  questCode: string,
+  withMap: boolean,
+): Omit<CreateUnifiedAutomationModuleRequest, 'moduleType'> {
+  return {
+    displayName: '퀘스트',
+    enabled: true,
+    thresholdPercent: null,
+    maps: [],
+    quests: [{
+      questCode,
+      executionOrder: 0,
+      maps: withMap ? [{
+        categoryId: 'battle_map', mapCode: 'gb0', partyPresetId: null, executionOrder: 0,
+      }] : [],
+    }],
+  };
+}
+
+function legacyQuestCreate(questCode: string): CreateUnifiedAutomationModuleRequest {
+  return { ...legacyQuestUpdate(questCode, true), moduleType: 'OTHER_QUEST' };
 }

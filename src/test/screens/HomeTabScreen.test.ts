@@ -8,6 +8,10 @@ const controllerSource = readFileSync(
   resolve(process.cwd(), 'src/main/domain/unifiedAutomationController.ts'),
   'utf8',
 );
+const domainSource = readFileSync(
+  resolve(process.cwd(), 'src/main/domain/unifiedAutomation.ts'),
+  'utf8',
+);
 const settingsSource = readFileSync(
   resolve(process.cwd(), 'src/main/features/automation/components/UnifiedAutomationSettings.tsx'),
   'utf8',
@@ -71,14 +75,13 @@ describe('통합 자동화 홈 화면', () => {
     assert.match(homeSource, /위에서부터 우선순위대로/);
   });
 
-  it('빈 상태에서 지원 유형을 고르고 같은 유형도 반복 추가할 수 있다', () => {
+  it('세 canonical 유형만 보여주고 이미 추가한 유형은 반복 추가하지 않는다', () => {
     assert.match(settingsSource, /자동화 추가/);
-    assert.match(settingsSource, /KEY_QUEST/);
-    assert.match(settingsSource, /TIME_BURN/);
-    assert.match(settingsSource, /COOLDOWN_ADVENTURE/);
-    assert.match(settingsSource, /DAILY_ADVENTURE/);
-    assert.match(settingsSource, /OTHER_QUEST/);
-    assert.doesNotMatch(settingsSource, /filter\([^\n]*moduleType/);
+    assert.doesNotMatch(settingsSource, /KEY_QUEST/);
+    assert.doesNotMatch(settingsSource, /COOLDOWN_ADVENTURE/);
+    assert.match(domainSource, /'OTHER_QUEST',[\s\S]*'TIME_BURN',[\s\S]*'DAILY_ADVENTURE'/);
+    assert.match(settingsSource, /CANONICAL_UNIFIED_MODULE_TYPES/);
+    assert.match(settingsSource, /filter\([^\n]*moduleType/);
   });
 
   it('드래그 핸들과 optimistic 순서 저장 큐를 실제 목록에 연결한다', () => {

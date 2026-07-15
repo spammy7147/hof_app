@@ -3,9 +3,7 @@ import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import {
   CalendarDays,
   ChevronRight,
-  Clock3,
   GripVertical,
-  KeyRound,
   ListTodo,
   Plus,
   TimerReset,
@@ -16,7 +14,10 @@ import {
   type RenderItemParams,
 } from 'react-native-draggable-flatlist';
 
-import { getUnifiedModuleTypeLabel } from '../../../domain/unifiedAutomation';
+import {
+  CANONICAL_UNIFIED_MODULE_TYPES,
+  getUnifiedModuleTypeLabel,
+} from '../../../domain/unifiedAutomation';
 import { theme } from '../../../styles/theme';
 import type {
   UnifiedAutomationModuleResponse,
@@ -32,14 +33,6 @@ type Props = {
   onReorder: (modules: UnifiedAutomationModuleResponse[]) => void;
   onToggle: (module: UnifiedAutomationModuleResponse) => void;
 };
-
-const MODULE_TYPES: UnifiedAutomationModuleType[] = [
-  'KEY_QUEST',
-  'TIME_BURN',
-  'COOLDOWN_ADVENTURE',
-  'DAILY_ADVENTURE',
-  'OTHER_QUEST',
-];
 
 /**
  * 서버에 실제로 저장된 모듈만 우선순위 순서로 보여주는 설정 목록이다.
@@ -57,6 +50,7 @@ export function UnifiedAutomationSettings({
   onToggle,
 }: Props) {
   const [typePickerOpen, setTypePickerOpen] = useState(false);
+  const addableTypes = CANONICAL_UNIFIED_MODULE_TYPES.filter((type) => !modules.some((module) => module.moduleType === type));
   const renderItem = useCallback((params: RenderItemParams<UnifiedAutomationModuleResponse>) => (
     <AutomationModuleRow
       {...params}
@@ -88,7 +82,7 @@ export function UnifiedAutomationSettings({
         <View style={styles.typePicker}>
           <Text style={styles.typePickerTitle}>추가할 자동화 유형</Text>
           <View style={styles.typeGrid}>
-            {MODULE_TYPES.map((type) => (
+            {addableTypes.map((type) => (
               <Pressable
                 key={type}
                 accessibilityRole="button"
@@ -206,11 +200,9 @@ function AutomationModuleRow({
 function ModuleTypeIcon({ type }: { type: UnifiedAutomationModuleType }) {
   const props = { color: theme.colors.accentGreen, size: 18 };
   switch (type) {
-    case 'KEY_QUEST': return <KeyRound {...props} />;
     case 'TIME_BURN': return <TimerReset {...props} />;
-    case 'COOLDOWN_ADVENTURE': return <Clock3 {...props} />;
     case 'DAILY_ADVENTURE': return <CalendarDays {...props} />;
-    case 'OTHER_QUEST': return <ListTodo {...props} />;
+    default: return <ListTodo {...props} />;
   }
 }
 

@@ -52,6 +52,7 @@ export default function App() {
     updateQuest: (request) => api.updateQuestAutomation(request),
     updateBattle: (request) => api.updateBattleMapAutomation(request),
     updateAdventure: (request) => api.updateAdventureMapAutomation(request),
+    fetchQuests: () => api.fetchQuests(),
     changeState: (action) => api.changeUnifiedAutomationState(action),
   }), [api]);
   const [mode, setMode] = useState<ScreenMode>('boot');
