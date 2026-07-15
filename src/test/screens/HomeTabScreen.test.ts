@@ -90,7 +90,8 @@ describe('통합 자동화 홈 화면', () => {
   });
 
   it('같은 typed entry 저장을 직렬화하고 저장 중인 행 편집을 막는다', () => {
-    assert.match(controllerSource, /mutationTails/);
+    assert.match(controllerSource, /typeTails/);
+    assert.match(controllerSource, /structuralTail/);
     assert.match(controllerSource, /runTypedMutation/);
     assert.match(homeSource, /automationController\.isModuleBusy/);
     assert.match(settingsSource, /accessibilityState=\{\{ disabled: saving \}\}/);

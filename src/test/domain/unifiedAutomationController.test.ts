@@ -344,6 +344,67 @@ describe('typed unified automation controller', () => {
     assert.deepEqual(controller.getSnapshot().savingTypes, []);
   });
 
+  it('atomically reserves the type lane so a later same-type save cannot overtake queued create', async () => {
+    const createBattle = deferred<TypedAutomationAggregateResponse>();
+    const createQuest = deferred<TypedAutomationAggregateResponse>();
+    const saveQuest = deferred<TypedAutomationAggregateResponse>();
+    const calls: string[] = [];
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([]),
+      create: ({ type }) => {
+        calls.push(`create:${type}`);
+        return type === 'BATTLE_MAP' ? createBattle.promise : createQuest.promise;
+      },
+      updateQuest: () => { calls.push('save:QUEST'); return saveQuest.promise; },
+    }));
+    await controller.load();
+
+    const battle = controller.createEntry('BATTLE_MAP');
+    const quest = controller.createEntry('QUEST');
+    const saving = controller.saveQuestSettings({ enabled: true, quests: [] });
+    assert.deepEqual(calls, ['create:BATTLE_MAP']);
+
+    createBattle.resolve(aggregate([entry(2, 'BATTLE_MAP', 0)]));
+    await battle;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(calls, ['create:BATTLE_MAP', 'create:QUEST']);
+    createQuest.resolve(aggregate([entry(2, 'BATTLE_MAP', 0), entry(1, 'QUEST', 1)]));
+    await quest;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(calls, ['create:BATTLE_MAP', 'create:QUEST', 'save:QUEST']);
+    saveQuest.resolve(aggregate([entry(2, 'BATTLE_MAP', 0), entry(1, 'QUEST', 1)]));
+    await saving;
+  });
+
+  it('reserves global structural order while delete waits behind an earlier same-type setting', async () => {
+    const saveAdventure = deferred<TypedAutomationAggregateResponse>();
+    const deleteAdventure = deferred<TypedAutomationAggregateResponse>();
+    const createBattle = deferred<TypedAutomationAggregateResponse>();
+    const calls: string[] = [];
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([entry(3, 'ADVENTURE_MAP', 0)]),
+      updateAdventure: () => { calls.push('save:ADVENTURE'); return saveAdventure.promise; },
+      delete: () => { calls.push('delete:ADVENTURE'); return deleteAdventure.promise; },
+      create: () => { calls.push('create:BATTLE'); return createBattle.promise; },
+    }));
+    await controller.load();
+
+    const saving = controller.saveAdventureMapSettings({ enabled: true, maps: [] });
+    const deleting = controller.deleteEntry(3);
+    const creating = controller.createEntry('BATTLE_MAP');
+    assert.deepEqual(calls, ['save:ADVENTURE']);
+    saveAdventure.resolve(aggregate([entry(3, 'ADVENTURE_MAP', 0)]));
+    await saving;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(calls, ['save:ADVENTURE', 'delete:ADVENTURE']);
+    deleteAdventure.resolve(aggregate([]));
+    await deleting;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(calls, ['save:ADVENTURE', 'delete:ADVENTURE', 'create:BATTLE']);
+    createBattle.resolve(aggregate([entry(2, 'BATTLE_MAP', 0)]));
+    await creating;
+  });
+
   it('rolls optimistic order back and reloads after reorder failure', async () => {
     let fetches = 0;
     const controller = new UnifiedAutomationController(apiStub({

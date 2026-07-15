@@ -76,7 +76,7 @@ export class UnifiedAutomationController {
   private orderRevision = 0;
   private queuedReorderSequence = 0;
   private readonly typeRevisions = new Map<AutomationType, number>();
-  private readonly mutationTails = new Map<string, Promise<void>>();
+  private readonly typeTails = new Map<AutomationType, Promise<void>>();
   private structuralTail: Promise<void> | null = null;
   private readonly savingEntryIds = new Set<number>();
   private readonly pendingTypeCounts = new Map<AutomationType, number>();
@@ -105,7 +105,7 @@ export class UnifiedAutomationController {
     this.orderRevision = 0;
     this.queuedReorderSequence = 0;
     this.typeRevisions.clear();
-    this.mutationTails.clear();
+    this.typeTails.clear();
     this.structuralTail = null;
     this.savingEntryIds.clear();
     this.pendingTypeCounts.clear();
@@ -232,47 +232,31 @@ export class UnifiedAutomationController {
     persist: (request: T) => Promise<TypedAutomationAggregateResponse>,
   ): Promise<boolean> {
     const entryId = this.snapshot.aggregate?.entries.find((entry) => entry.type === type)?.id ?? null;
-    return this.runTypedMutation(`type:${type}`, type, entryId, async (sequence, generation) => {
+    return this.runTypedMutation(type, entryId, async (sequence, generation) => {
       const response = await persist(request);
       if (this.generation === generation) this.mergeSettingsResponse(response, sequence, type);
     });
   }
 
   private runTypedMutation(
-    key: string,
-    type: AutomationType | null,
+    type: AutomationType,
     entryId: number | null,
     operation: (sequence: number, generation: number) => Promise<void>,
-    trackPendingType = true,
   ): Promise<boolean> {
     const generation = this.generation;
     const sequence = ++this.operationSequence;
-    if (trackPendingType && type) this.incrementTypePending(type);
-    const previous = this.mutationTails.get(key);
-    const execute = async () => {
-      if (this.generation !== generation) return false;
-      this.beginSaving(entryId);
-      try {
-        await operation(sequence, generation);
-        return this.generation === generation;
-      } catch (error) {
-        if (this.generation === generation) this.setError(error);
-        return false;
-      } finally {
-        if (this.generation === generation) this.endSaving(entryId);
-      }
-    };
+    this.incrementTypePending(type);
+    const previous = this.typeTails.get(type);
+    const execute = () => this.executeMutation(generation, sequence, entryId, operation);
     const result = previous ? previous.catch(() => undefined).then(execute) : execute();
     const completed = result.then((value) => {
-      if (trackPendingType && type && this.generation === generation) {
-        this.decrementTypePending(type);
-      }
+      if (this.generation === generation) this.decrementTypePending(type);
       return value;
     });
     const tail = completed.then(() => undefined);
-    this.mutationTails.set(key, tail);
+    this.typeTails.set(type, tail);
     void tail.finally(() => {
-      if (this.mutationTails.get(key) === tail) this.mutationTails.delete(key);
+      if (this.typeTails.get(type) === tail) this.typeTails.delete(type);
     });
     return completed;
   }
@@ -283,24 +267,47 @@ export class UnifiedAutomationController {
     operation: (sequence: number, generation: number) => Promise<void>,
   ): Promise<boolean> {
     const generation = this.generation;
+    const sequence = ++this.operationSequence;
     if (type) this.incrementTypePending(type);
-    const previous = this.structuralTail;
-    const execute = (): Promise<boolean> => {
-      if (this.generation !== generation) return Promise.resolve(false);
-      const typeKey = type ? `type:${type}` : `entry:${entryId ?? 'unknown'}`;
-      return this.runTypedMutation(typeKey, type, entryId, operation, false);
-    };
-    const result = previous ? previous.catch(() => undefined).then(execute) : execute();
+    const predecessors = new Set<Promise<void>>();
+    if (this.structuralTail) predecessors.add(this.structuralTail);
+    const previousType = type ? this.typeTails.get(type) : null;
+    if (previousType) predecessors.add(previousType);
+    const execute = () => this.executeMutation(generation, sequence, entryId, operation);
+    const result = predecessors.size === 0
+      ? execute()
+      : Promise.all([...predecessors].map((tail) => tail.catch(() => undefined))).then(execute);
     const completed = result.then((value) => {
       if (type && this.generation === generation) this.decrementTypePending(type);
       return value;
     });
     const tail = completed.then(() => undefined);
     this.structuralTail = tail;
+    if (type) this.typeTails.set(type, tail);
     void tail.finally(() => {
       if (this.structuralTail === tail) this.structuralTail = null;
+      if (type && this.typeTails.get(type) === tail) this.typeTails.delete(type);
     });
     return completed;
+  }
+
+  private async executeMutation(
+    generation: number,
+    sequence: number,
+    entryId: number | null,
+    operation: (sequence: number, generation: number) => Promise<void>,
+  ): Promise<boolean> {
+    if (this.generation !== generation) return false;
+    this.beginSaving(entryId);
+    try {
+      await operation(sequence, generation);
+      return this.generation === generation;
+    } catch (error) {
+      if (this.generation === generation) this.setError(error);
+      return false;
+    } finally {
+      if (this.generation === generation) this.endSaving(entryId);
+    }
   }
 
   private mergeSettingsResponse(
