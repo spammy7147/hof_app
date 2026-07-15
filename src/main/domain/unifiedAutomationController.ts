@@ -46,7 +46,6 @@ export type UnifiedAutomationControllerSnapshot = {
 };
 
 type ReorderResult = { aggregate: TypedAutomationAggregateResponse; sequence: number };
-const STRUCTURAL_MUTATION_KEY = 'structure';
 
 function initialSnapshot(): UnifiedAutomationControllerSnapshot {
   return {
@@ -78,8 +77,9 @@ export class UnifiedAutomationController {
   private queuedReorderSequence = 0;
   private readonly typeRevisions = new Map<AutomationType, number>();
   private readonly mutationTails = new Map<string, Promise<void>>();
+  private structuralTail: Promise<void> | null = null;
   private readonly savingEntryIds = new Set<number>();
-  private readonly savingTypes = new Set<AutomationType>();
+  private readonly pendingTypeCounts = new Map<AutomationType, number>();
   private reorderQueue: UnifiedAutomationReorderQueue<ReorderResult>;
   private confirmedOrder: number[] = [];
 
@@ -106,8 +106,9 @@ export class UnifiedAutomationController {
     this.queuedReorderSequence = 0;
     this.typeRevisions.clear();
     this.mutationTails.clear();
+    this.structuralTail = null;
     this.savingEntryIds.clear();
-    this.savingTypes.clear();
+    this.pendingTypeCounts.clear();
     this.confirmedOrder = [];
     this.reorderQueue = this.createReorderQueue(this.generation);
     this.replaceSnapshot(initialSnapshot());
@@ -162,7 +163,7 @@ export class UnifiedAutomationController {
   }
 
   createEntry(type: AutomationType): Promise<boolean> {
-    return this.runTypedMutation(STRUCTURAL_MUTATION_KEY, type, null, async (sequence, generation) => {
+    return this.runStructuralMutation(type, null, async (sequence, generation) => {
       const response = await this.api.create({ type });
       if (this.generation === generation) this.mergeStructuralResponse(response, sequence, type);
     });
@@ -170,8 +171,7 @@ export class UnifiedAutomationController {
 
   deleteEntry(entryId: number): Promise<boolean> {
     const type = this.snapshot.aggregate?.entries.find(({ id }) => id === entryId)?.type;
-    return this.runTypedMutation(
-      STRUCTURAL_MUTATION_KEY,
+    return this.runStructuralMutation(
       type ?? null,
       entryId,
       async (sequence, generation) => {
@@ -243,13 +243,15 @@ export class UnifiedAutomationController {
     type: AutomationType | null,
     entryId: number | null,
     operation: (sequence: number, generation: number) => Promise<void>,
+    trackPendingType = true,
   ): Promise<boolean> {
     const generation = this.generation;
     const sequence = ++this.operationSequence;
+    if (trackPendingType && type) this.incrementTypePending(type);
     const previous = this.mutationTails.get(key);
     const execute = async () => {
       if (this.generation !== generation) return false;
-      this.beginSaving(type, entryId);
+      this.beginSaving(entryId);
       try {
         await operation(sequence, generation);
         return this.generation === generation;
@@ -257,16 +259,48 @@ export class UnifiedAutomationController {
         if (this.generation === generation) this.setError(error);
         return false;
       } finally {
-        if (this.generation === generation) this.endSaving(type, entryId);
+        if (this.generation === generation) this.endSaving(entryId);
       }
     };
     const result = previous ? previous.catch(() => undefined).then(execute) : execute();
-    const tail = result.then(() => undefined);
+    const completed = result.then((value) => {
+      if (trackPendingType && type && this.generation === generation) {
+        this.decrementTypePending(type);
+      }
+      return value;
+    });
+    const tail = completed.then(() => undefined);
     this.mutationTails.set(key, tail);
     void tail.finally(() => {
       if (this.mutationTails.get(key) === tail) this.mutationTails.delete(key);
     });
-    return result;
+    return completed;
+  }
+
+  private runStructuralMutation(
+    type: AutomationType | null,
+    entryId: number | null,
+    operation: (sequence: number, generation: number) => Promise<void>,
+  ): Promise<boolean> {
+    const generation = this.generation;
+    if (type) this.incrementTypePending(type);
+    const previous = this.structuralTail;
+    const execute = (): Promise<boolean> => {
+      if (this.generation !== generation) return Promise.resolve(false);
+      const typeKey = type ? `type:${type}` : `entry:${entryId ?? 'unknown'}`;
+      return this.runTypedMutation(typeKey, type, entryId, operation, false);
+    };
+    const result = previous ? previous.catch(() => undefined).then(execute) : execute();
+    const completed = result.then((value) => {
+      if (type && this.generation === generation) this.decrementTypePending(type);
+      return value;
+    });
+    const tail = completed.then(() => undefined);
+    this.structuralTail = tail;
+    void tail.finally(() => {
+      if (this.structuralTail === tail) this.structuralTail = null;
+    });
+    return completed;
   }
 
   private mergeSettingsResponse(
@@ -419,22 +453,32 @@ export class UnifiedAutomationController {
     }
   }
 
-  private beginSaving(type: AutomationType | null, entryId: number | null): void {
-    if (type) this.savingTypes.add(type);
+  private beginSaving(entryId: number | null): void {
     if (entryId != null) this.savingEntryIds.add(entryId);
     this.publishSavingState();
     this.patchSnapshot({ error: null, message: null });
   }
 
-  private endSaving(type: AutomationType | null, entryId: number | null): void {
-    if (type) this.savingTypes.delete(type);
+  private endSaving(entryId: number | null): void {
     if (entryId != null) this.savingEntryIds.delete(entryId);
+    this.publishSavingState();
+  }
+
+  private incrementTypePending(type: AutomationType): void {
+    this.pendingTypeCounts.set(type, (this.pendingTypeCounts.get(type) ?? 0) + 1);
+    this.publishSavingState();
+  }
+
+  private decrementTypePending(type: AutomationType): void {
+    const next = (this.pendingTypeCounts.get(type) ?? 0) - 1;
+    if (next > 0) this.pendingTypeCounts.set(type, next);
+    else this.pendingTypeCounts.delete(type);
     this.publishSavingState();
   }
 
   private publishSavingState(): void {
     const savingEntryIds = [...this.savingEntryIds];
-    const savingTypes = [...this.savingTypes];
+    const savingTypes = [...this.pendingTypeCounts.keys()];
     this.patchSnapshot({
       savingEntryIds,
       savingModuleIds: savingEntryIds,

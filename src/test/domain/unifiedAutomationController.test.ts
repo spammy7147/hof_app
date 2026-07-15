@@ -259,6 +259,91 @@ describe('typed unified automation controller', () => {
     assert.deepEqual(controller.getSnapshot().aggregate?.entries.map(({ id }) => id), [2]);
   });
 
+  it('runs save then delete through the same type queue without clearing savingTypes between them', async () => {
+    const save = deferred<TypedAutomationAggregateResponse>();
+    const remove = deferred<TypedAutomationAggregateResponse>();
+    const calls: string[] = [];
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([entry(2, 'BATTLE_MAP', 0)]),
+      updateBattle: () => { calls.push('save'); return save.promise; },
+      delete: () => { calls.push('delete'); return remove.promise; },
+    }));
+    await controller.load();
+
+    const saving = controller.saveBattleMapSettings({ enabled: true, maps: [] });
+    const deleting = controller.deleteEntry(2);
+    assert.deepEqual(calls, ['save']);
+    assert.deepEqual(controller.getSnapshot().savingTypes, ['BATTLE_MAP']);
+    save.resolve(aggregate([entry(2, 'BATTLE_MAP', 0, { warnings: ['saved'] })]));
+    await saving;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(calls, ['save', 'delete']);
+    assert.deepEqual(controller.getSnapshot().savingTypes, ['BATTLE_MAP']);
+    remove.resolve(aggregate([]));
+    await deleting;
+    assert.deepEqual(controller.getSnapshot().savingTypes, []);
+  });
+
+  it('runs delete then save through the same type queue', async () => {
+    const remove = deferred<TypedAutomationAggregateResponse>();
+    const save = deferred<TypedAutomationAggregateResponse>();
+    const calls: string[] = [];
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([entry(2, 'BATTLE_MAP', 0)]),
+      delete: () => { calls.push('delete'); return remove.promise; },
+      updateBattle: () => { calls.push('save'); return save.promise; },
+    }));
+    await controller.load();
+
+    const deleting = controller.deleteEntry(2);
+    const saving = controller.saveBattleMapSettings({ enabled: false, maps: [] });
+    assert.deepEqual(calls, ['delete']);
+    remove.resolve(aggregate([]));
+    await deleting;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(calls, ['delete', 'save']);
+    save.resolve(aggregate([]));
+    await saving;
+  });
+
+  it('releases a failed same-type save so queued delete can start', async () => {
+    const save = deferred<TypedAutomationAggregateResponse>();
+    const calls: string[] = [];
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([entry(2, 'BATTLE_MAP', 0)]),
+      updateBattle: () => { calls.push('save'); return save.promise; },
+      delete: async () => { calls.push('delete'); return aggregate([]); },
+    }));
+    await controller.load();
+
+    const saving = controller.saveBattleMapSettings({ enabled: true, maps: [] });
+    const deleting = controller.deleteEntry(2);
+    save.reject(new Error('save failed'));
+    assert.equal(await saving, false);
+    assert.equal(await deleting, true);
+    assert.deepEqual(calls, ['save', 'delete']);
+  });
+
+  it('reset cancels structural work queued behind an old-account same-type save', async () => {
+    const save = deferred<TypedAutomationAggregateResponse>();
+    const calls: string[] = [];
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([entry(2, 'BATTLE_MAP', 0)]),
+      updateBattle: () => { calls.push('save'); return save.promise; },
+      delete: async () => { calls.push('delete'); return aggregate([]); },
+    }));
+    await controller.load();
+
+    const saving = controller.saveBattleMapSettings({ enabled: true, maps: [] });
+    const deleting = controller.deleteEntry(2);
+    controller.reset();
+    save.resolve(aggregate([entry(2, 'BATTLE_MAP', 0)]));
+    assert.equal(await saving, false);
+    assert.equal(await deleting, false);
+    assert.deepEqual(calls, ['save']);
+    assert.deepEqual(controller.getSnapshot().savingTypes, []);
+  });
+
   it('rolls optimistic order back and reloads after reorder failure', async () => {
     let fetches = 0;
     const controller = new UnifiedAutomationController(apiStub({
