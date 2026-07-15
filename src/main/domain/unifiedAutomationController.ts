@@ -74,7 +74,6 @@ export class UnifiedAutomationController {
   private entriesRevision = 0;
   private runtimeRevision = 0;
   private orderRevision = 0;
-  private structuralRevision = 0;
   private queuedReorderSequence = 0;
   private readonly typeRevisions = new Map<AutomationType, number>();
   private readonly mutationTails = new Map<string, Promise<void>>();
@@ -103,7 +102,6 @@ export class UnifiedAutomationController {
     this.entriesRevision = 0;
     this.runtimeRevision = 0;
     this.orderRevision = 0;
-    this.structuralRevision = 0;
     this.queuedReorderSequence = 0;
     this.typeRevisions.clear();
     this.mutationTails.clear();
@@ -296,7 +294,6 @@ export class UnifiedAutomationController {
     const current = this.snapshot.aggregate;
     if (!current) {
       this.entriesRevision = Math.max(this.entriesRevision, sequence);
-      this.structuralRevision = Math.max(this.structuralRevision, sequence);
       if (targetType) this.typeRevisions.set(targetType, sequence);
       this.confirmedOrder = response.entries.map(({ id }) => id);
       this.applyAggregate(response);
@@ -320,24 +317,11 @@ export class UnifiedAutomationController {
       entries.splice(insertionIndex, 0, serverTarget);
     }
 
-    const ownsOrder = this.orderRevision <= sequence && this.structuralRevision <= sequence;
-    if (ownsOrder) {
-      const serverRank = new Map(response.entries.map(({ id }, index) => [id, index]));
-      entries = entries
-        .map((entry, stableIndex) => ({ entry, stableIndex }))
-        .sort((a, b) => (
-          (serverRank.get(a.entry.id) ?? Number.MAX_SAFE_INTEGER)
-          - (serverRank.get(b.entry.id) ?? Number.MAX_SAFE_INTEGER)
-          || a.stableIndex - b.stableIndex
-        ))
-        .map(({ entry }) => entry);
-    }
     entries = entries.map((entry, priority) => ({ ...entry, priority }));
 
     this.entriesRevision = Math.max(this.entriesRevision, sequence);
-    this.structuralRevision = Math.max(this.structuralRevision, sequence);
     if (targetType) this.typeRevisions.set(targetType, sequence);
-    this.recordConfirmedMembership(entries, ownsOrder);
+    this.recordConfirmedMembership(entries);
     this.applyAggregate({ entries, runtime: current.runtime });
   }
 
@@ -393,13 +377,8 @@ export class UnifiedAutomationController {
 
   private recordConfirmedMembership(
     entries: readonly TypedAutomationEntryResponse[],
-    ownsOrder: boolean,
   ): void {
     const ids = entries.map(({ id }) => id);
-    if (ownsOrder) {
-      this.confirmedOrder = ids;
-      return;
-    }
     const liveIds = new Set(ids);
     const next = this.confirmedOrder.filter((id) => liveIds.has(id));
     for (const id of ids) if (!next.includes(id)) next.push(id);

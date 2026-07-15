@@ -79,6 +79,92 @@ describe('typed unified automation controller', () => {
     assert.deepEqual(controller.getSnapshot().aggregate?.entries.map(({ id }) => id), [2, 3]);
   });
 
+  it('appends a pending create after a completed reorder instead of applying the stale create order', async () => {
+    const create = deferred<TypedAutomationAggregateResponse>();
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([entry(1, 'QUEST', 0), entry(2, 'BATTLE_MAP', 1)]),
+      create: () => create.promise,
+      reorder: async () => aggregate([entry(2, 'BATTLE_MAP', 0), entry(1, 'QUEST', 1)]),
+    }));
+    await controller.load();
+
+    const creating = controller.createEntry('ADVENTURE_MAP');
+    controller.reorderEntries([entry(2, 'BATTLE_MAP', 0), entry(1, 'QUEST', 1)]);
+    await controller.whenReorderIdle();
+    create.resolve(aggregate([
+      entry(1, 'QUEST', 0),
+      entry(2, 'BATTLE_MAP', 1),
+      entry(3, 'ADVENTURE_MAP', 2),
+    ]));
+    await creating;
+
+    assert.deepEqual(controller.getSnapshot().aggregate?.entries.map(({ id }) => id), [2, 1, 3]);
+  });
+
+  it('preserves a completed reorder when a later create response carries stale existing-id order', async () => {
+    const create = deferred<TypedAutomationAggregateResponse>();
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([entry(1, 'QUEST', 0), entry(2, 'BATTLE_MAP', 1)]),
+      create: () => create.promise,
+      reorder: async () => aggregate([entry(2, 'BATTLE_MAP', 0), entry(1, 'QUEST', 1)]),
+    }));
+    await controller.load();
+
+    controller.reorderEntries([entry(2, 'BATTLE_MAP', 0), entry(1, 'QUEST', 1)]);
+    await controller.whenReorderIdle();
+    const creating = controller.createEntry('ADVENTURE_MAP');
+    create.resolve(aggregate([
+      entry(1, 'QUEST', 0),
+      entry(2, 'BATTLE_MAP', 1),
+      entry(3, 'ADVENTURE_MAP', 2),
+    ]));
+    await creating;
+
+    assert.deepEqual(controller.getSnapshot().aggregate?.entries.map(({ id }) => id), [2, 1, 3]);
+  });
+
+  it('preserves relative order when delete and reorder complete in either direction', async () => {
+    const deleteBeforeReorder = deferred<TypedAutomationAggregateResponse>();
+    const first = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([
+        entry(1, 'QUEST', 0), entry(2, 'BATTLE_MAP', 1), entry(3, 'ADVENTURE_MAP', 2),
+      ]),
+      delete: () => deleteBeforeReorder.promise,
+      reorder: async () => aggregate([
+        entry(2, 'BATTLE_MAP', 0), entry(1, 'QUEST', 1), entry(3, 'ADVENTURE_MAP', 2),
+      ]),
+    }));
+    await first.load();
+    const deletingFirst = first.deleteEntry(3);
+    first.reorderEntries([
+      entry(2, 'BATTLE_MAP', 0), entry(1, 'QUEST', 1), entry(3, 'ADVENTURE_MAP', 2),
+    ]);
+    await first.whenReorderIdle();
+    deleteBeforeReorder.resolve(aggregate([entry(1, 'QUEST', 0), entry(2, 'BATTLE_MAP', 1)]));
+    await deletingFirst;
+    assert.deepEqual(first.getSnapshot().aggregate?.entries.map(({ id }) => id), [2, 1]);
+
+    const deleteAfterReorder = deferred<TypedAutomationAggregateResponse>();
+    const second = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([
+        entry(1, 'QUEST', 0), entry(2, 'BATTLE_MAP', 1), entry(3, 'ADVENTURE_MAP', 2),
+      ]),
+      delete: () => deleteAfterReorder.promise,
+      reorder: async () => aggregate([
+        entry(2, 'BATTLE_MAP', 0), entry(1, 'QUEST', 1), entry(3, 'ADVENTURE_MAP', 2),
+      ]),
+    }));
+    await second.load();
+    second.reorderEntries([
+      entry(2, 'BATTLE_MAP', 0), entry(1, 'QUEST', 1), entry(3, 'ADVENTURE_MAP', 2),
+    ]);
+    await second.whenReorderIdle();
+    const deletingSecond = second.deleteEntry(3);
+    deleteAfterReorder.resolve(aggregate([entry(1, 'QUEST', 0), entry(2, 'BATTLE_MAP', 1)]));
+    await deletingSecond;
+    assert.deepEqual(second.getSnapshot().aggregate?.entries.map(({ id }) => id), [2, 1]);
+  });
+
   it('rolls optimistic order back and reloads after reorder failure', async () => {
     let fetches = 0;
     const controller = new UnifiedAutomationController(apiStub({
