@@ -97,6 +97,7 @@ describe('통합 자동화 홈 화면', () => {
     assert.match(controllerSource, /structuralTail/);
     assert.match(controllerSource, /runTypedMutation/);
     assert.match(homeSource, /automationController\.isModuleBusy/);
+    assert.match(settingsSource, /savingModuleIds\.includes\(params\.item\.id\)/);
     assert.match(settingsSource, /accessibilityState=\{\{ disabled: saving \}\}/);
     assert.match(settingsSource, /disabled=\{saving\}/);
   });

@@ -488,14 +488,24 @@ export class UnifiedAutomationController {
   }
 
   private publishSavingState(): void {
-    const savingEntryIds = [...this.savingEntryIds];
+    this.patchSnapshot(this.buildSavingState(this.snapshot.aggregate));
+  }
+
+  private buildSavingState(
+    aggregate: TypedAutomationAggregateResponse | null,
+  ): Pick<UnifiedAutomationControllerSnapshot, 'savingEntryIds' | 'savingModuleIds' | 'savingTypes' | 'editorSaving'> {
+    const busyEntryIds = new Set(this.savingEntryIds);
+    for (const entry of aggregate?.entries ?? []) {
+      if ((this.pendingTypeCounts.get(entry.type) ?? 0) > 0) busyEntryIds.add(entry.id);
+    }
+    const savingEntryIds = [...busyEntryIds];
     const savingTypes = [...this.pendingTypeCounts.keys()];
-    this.patchSnapshot({
+    return {
       savingEntryIds,
       savingModuleIds: savingEntryIds,
       savingTypes,
       editorSaving: savingTypes.length > 0,
-    });
+    };
   }
 
   private setError(error: unknown): void {
@@ -508,7 +518,11 @@ export class UnifiedAutomationController {
   }
 
   private applyAggregate(aggregate: TypedAutomationAggregateResponse): void {
-    this.patchSnapshot({ aggregate, automation: toLegacyAutomation(aggregate) });
+    this.patchSnapshot({
+      aggregate,
+      automation: toLegacyAutomation(aggregate),
+      ...this.buildSavingState(aggregate),
+    });
   }
 
   private patchSnapshot(patch: Partial<UnifiedAutomationControllerSnapshot>): void {
@@ -522,10 +536,12 @@ export class UnifiedAutomationController {
 
   // Transitional generic-screen operations. They route only through typed endpoints.
   async createModule(request: CreateUnifiedAutomationModuleRequest): Promise<boolean> {
+    const generation = this.generation;
     const type = legacyTypeToTyped(request.moduleType);
     let entry = this.snapshot.aggregate?.entries.find((candidate) => candidate.type === type);
     if (!entry) {
-      if (!await this.createEntry(type)) return false;
+      const created = await this.createEntry(type);
+      if (this.generation !== generation || !created) return false;
       entry = this.snapshot.aggregate?.entries.find((candidate) => candidate.type === type);
     }
     return entry ? this.updateLegacyEntry(entry, request) : false;
@@ -561,6 +577,7 @@ export class UnifiedAutomationController {
     if (entry.type === 'QUEST') {
       return this.runTypedMutation('QUEST', entry.id, async (sequence, generation) => {
         const quests = await this.api.fetchQuests();
+        if (this.generation !== generation) return;
         const body = buildLegacyQuestRequest(request, quests);
         const response = await this.api.updateQuest(body);
         if (this.generation === generation) {

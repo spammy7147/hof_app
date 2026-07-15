@@ -261,6 +261,56 @@ describe('typed unified automation controller', () => {
     assert.deepEqual(controller.getSnapshot().aggregate?.entries.map(({ id }) => id), [2]);
   });
 
+  it('publishes queued structural row ids while another structural mutation is running', async () => {
+    const create = deferred<TypedAutomationAggregateResponse>();
+    const remove = deferred<TypedAutomationAggregateResponse>();
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([
+        entry(1, 'QUEST', 0),
+        entry(2, 'BATTLE_MAP', 1),
+      ]),
+      create: () => create.promise,
+      delete: () => remove.promise,
+    }));
+    await controller.load();
+
+    const creating = controller.createEntry('ADVENTURE_MAP');
+    const deleting = controller.deleteEntry(2);
+    assert.deepEqual(controller.getSnapshot().savingModuleIds, [2]);
+    assert.equal(controller.getSnapshot().savingModuleIds.includes(1), false);
+
+    create.resolve(aggregate([
+      entry(1, 'QUEST', 0),
+      entry(2, 'BATTLE_MAP', 1),
+      entry(3, 'ADVENTURE_MAP', 2),
+    ]));
+    await creating;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(controller.getSnapshot().savingModuleIds, [2]);
+
+    remove.resolve(aggregate([entry(1, 'QUEST', 0), entry(3, 'ADVENTURE_MAP', 1)]));
+    await deleting;
+    assert.deepEqual(controller.getSnapshot().savingModuleIds, []);
+  });
+
+  it('recomputes published busy ids when a pending create adds its typed row', async () => {
+    const create = deferred<TypedAutomationAggregateResponse>();
+    const publishedBusyIds: number[][] = [];
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([]),
+      create: () => create.promise,
+    }));
+    await controller.load();
+    controller.subscribe(() => publishedBusyIds.push(controller.getSnapshot().savingModuleIds));
+
+    const creating = controller.createEntry('BATTLE_MAP');
+    create.resolve(aggregate([entry(2, 'BATTLE_MAP', 0)]));
+    await creating;
+
+    assert.equal(publishedBusyIds.some((ids) => ids.includes(2)), true);
+    assert.deepEqual(controller.getSnapshot().savingModuleIds, []);
+  });
+
   it('runs save then delete through the same type queue without clearing savingTypes between them', async () => {
     const save = deferred<TypedAutomationAggregateResponse>();
     const remove = deferred<TypedAutomationAggregateResponse>();
@@ -390,6 +440,26 @@ describe('typed unified automation controller', () => {
     assert.equal(savedRequests[0]?.quests[0]?.maps[0]?.missionKey, 'real-mission');
   });
 
+  it('does not issue a transitional quest PUT after reset while quest discovery is pending', async () => {
+    const quests = deferred<QuestSnapshot[]>();
+    let updates = 0;
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([entry(1, 'QUEST', 0)]),
+      fetchQuests: () => quests.promise,
+      updateQuest: async () => { updates += 1; return aggregate([entry(1, 'QUEST', 0)]); },
+    }));
+    await controller.load();
+
+    const saving = controller.updateModule(1, legacyQuestUpdate('quest-1', true));
+    controller.reset();
+    quests.resolve([questSnapshot('quest-1', [mission('real-key', 'MAP_CLEAR')])]);
+
+    assert.equal(await saving, false);
+    assert.equal(updates, 0);
+    assert.equal(controller.getSnapshot().aggregate, null);
+    assert.deepEqual(controller.getSnapshot().savingModuleIds, []);
+  });
+
   it('rejects missing or ambiguous quest mission resolution without updating settings', async () => {
     let questSnapshots: QuestSnapshot[] = [];
     let updates = 0;
@@ -453,6 +523,38 @@ describe('typed unified automation controller', () => {
     assert.equal(await controller.createModule(request), true);
     assert.equal(creates, 1);
     assert.equal(updates, 2);
+  });
+
+  it('does not apply an old create flow to the new account loaded before settings scheduling', async () => {
+    let fetches = 0;
+    let questFetches = 0;
+    let updates = 0;
+    const api = apiStub({
+      fetch: async () => (++fetches === 1
+        ? aggregate([])
+        : aggregate([entry(99, 'QUEST', 0)])),
+      create: async () => aggregate([entry(1, 'QUEST', 0)]),
+      fetchQuests: async () => {
+        questFetches += 1;
+        return [questSnapshot('quest-1', [mission('real-key', 'MAP_CLEAR')])];
+      },
+      updateQuest: async () => { updates += 1; return aggregate([entry(99, 'QUEST', 0)]); },
+    });
+    class AccountSwitchAfterCreateController extends UnifiedAutomationController {
+      override async createEntry(type: AutomationType): Promise<boolean> {
+        const created = await super.createEntry(type);
+        this.reset();
+        await this.load();
+        return created;
+      }
+    }
+    const controller = new AccountSwitchAfterCreateController(api);
+    await controller.load();
+
+    assert.equal(await controller.createModule(legacyQuestCreate('quest-1')), false);
+    assert.deepEqual(controller.getSnapshot().aggregate?.entries.map(({ id }) => id), [99]);
+    assert.equal(questFetches, 0);
+    assert.equal(updates, 0);
   });
 
   it('atomically reserves the type lane so a later same-type save cannot overtake queued create', async () => {
