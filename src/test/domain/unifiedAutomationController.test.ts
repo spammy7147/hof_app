@@ -115,6 +115,96 @@ describe('typed unified automation controller', () => {
     assert.deepEqual(controller.getSnapshot().aggregate?.entries.map(({ id }) => id), [1, 2]);
   });
 
+  it('keeps both cross-type setting saves when stale aggregates complete in reverse ownership order', async () => {
+    const questSave = deferred<TypedAutomationAggregateResponse>();
+    const battleSave = deferred<TypedAutomationAggregateResponse>();
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([
+        entry(1, 'QUEST', 0, { warnings: ['quest-old'] }),
+        entry(2, 'BATTLE_MAP', 1, { warnings: ['battle-old'] }),
+      ]),
+      updateQuest: () => questSave.promise,
+      updateBattle: () => battleSave.promise,
+    }));
+    await controller.load();
+
+    const savingQuest = controller.saveQuestSettings({ enabled: true, quests: [] });
+    const savingBattle = controller.saveBattleMapSettings({ enabled: true, maps: [] });
+    questSave.resolve(aggregate([
+      entry(1, 'QUEST', 0, { warnings: ['quest-saved'] }),
+      entry(2, 'BATTLE_MAP', 1, { warnings: ['battle-old'] }),
+    ]));
+    await savingQuest;
+    battleSave.resolve(aggregate([
+      entry(1, 'QUEST', 0, { warnings: ['quest-old'] }),
+      entry(2, 'BATTLE_MAP', 1, { warnings: ['battle-saved'] }),
+    ]));
+    await savingBattle;
+
+    assert.deepEqual(
+      controller.getSnapshot().aggregate?.entries.map(({ type, warnings }) => ({ type, warnings })),
+      [
+        { type: 'QUEST', warnings: ['quest-saved'] },
+        { type: 'BATTLE_MAP', warnings: ['battle-saved'] },
+      ],
+    );
+  });
+
+  it('does not let a pre-reorder settings aggregate restore its old priorities', async () => {
+    const settings = deferred<TypedAutomationAggregateResponse>();
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([entry(1, 'QUEST', 0), entry(2, 'BATTLE_MAP', 1)]),
+      updateQuest: () => settings.promise,
+      reorder: async (ids) => aggregate(ids.map((id, priority) => entry(id, typeFor(id), priority))),
+    }));
+    await controller.load();
+
+    const saving = controller.saveQuestSettings({ enabled: true, quests: [] });
+    controller.reorderEntries([entry(2, 'BATTLE_MAP', 0), entry(1, 'QUEST', 1)]);
+    await controller.whenReorderIdle();
+    settings.resolve(aggregate([
+      entry(1, 'QUEST', 0, { warnings: ['quest-saved'] }),
+      entry(2, 'BATTLE_MAP', 1),
+    ]));
+    await saving;
+
+    assert.deepEqual(
+      controller.getSnapshot().aggregate?.entries.map(({ id, priority }) => ({ id, priority })),
+      [{ id: 2, priority: 0 }, { id: 1, priority: 1 }],
+    );
+    assert.deepEqual(controller.getSnapshot().aggregate?.entries[1]?.warnings, ['quest-saved']);
+  });
+
+  it('lets lifecycle own runtime only when its old aggregate finishes after settings and reorder', async () => {
+    const lifecycle = deferred<TypedAutomationAggregateResponse>();
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([entry(1, 'QUEST', 0), entry(2, 'BATTLE_MAP', 1)]),
+      changeState: () => lifecycle.promise,
+      updateQuest: async () => aggregate([
+        entry(1, 'QUEST', 0, { warnings: ['quest-saved'] }),
+        entry(2, 'BATTLE_MAP', 1),
+      ]),
+      reorder: async (ids) => aggregate(ids.map((id, priority) => entry(id, typeFor(id), priority))),
+    }));
+    await controller.load();
+
+    const starting = controller.changeState('start');
+    await controller.saveQuestSettings({ enabled: true, quests: [] });
+    controller.reorderEntries([entry(2, 'BATTLE_MAP', 0), entry(1, 'QUEST', 1, { warnings: ['quest-saved'] })]);
+    await controller.whenReorderIdle();
+    lifecycle.resolve(aggregate([
+      entry(1, 'QUEST', 0, { warnings: ['quest-old'] }),
+      entry(2, 'BATTLE_MAP', 1),
+    ], 'RUNNING'));
+    await starting;
+
+    assert.equal(controller.getSnapshot().aggregate?.runtime.lifecycle, 'RUNNING');
+    assert.deepEqual(
+      controller.getSnapshot().aggregate?.entries.map(({ id, warnings }) => ({ id, warnings })),
+      [{ id: 2, warnings: [] }, { id: 1, warnings: ['quest-saved'] }],
+    );
+  });
+
   it('serializes saves for the same type while allowing different types concurrently', async () => {
     const firstBattle = deferred<TypedAutomationAggregateResponse>();
     const secondBattle = deferred<TypedAutomationAggregateResponse>();
@@ -190,10 +280,16 @@ function typeFor(id: number): AutomationType {
   return id === 1 ? 'QUEST' : id === 2 ? 'BATTLE_MAP' : 'ADVENTURE_MAP';
 }
 
-function entry(id: number, type: AutomationType, priority: number): TypedAutomationEntryResponse {
+function entry(
+  id: number,
+  type: AutomationType,
+  priority: number,
+  overrides: Partial<TypedAutomationEntryResponse> = {},
+): TypedAutomationEntryResponse {
   return {
     id, type, priority, enabled: true, ready: true, warnings: [],
     quests: [], battleMaps: [], adventureMaps: [],
+    ...overrides,
   };
 }
 
