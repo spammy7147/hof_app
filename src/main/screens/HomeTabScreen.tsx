@@ -4,9 +4,7 @@ import { ArrowLeft, Info } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
 
 import {
-  buildCreateUnifiedModuleDraft,
   buildEditUnifiedModuleDraft,
-  buildUnifiedModuleRequest,
   buildUpdateUnifiedModuleRequest,
   type UnifiedAutomationModuleDraft,
 } from '../domain/unifiedAutomation';
@@ -18,9 +16,10 @@ import { theme } from '../styles/theme';
 import type {
   BattleCategoryResponse,
   BattleMapResponse,
+  AutomationType,
   PartyPresetResponse,
+  TypedAutomationEntryResponse,
   UnifiedAutomationModuleResponse,
-  UnifiedAutomationModuleType,
 } from '../types/api';
 
 type HomeTabScreenProps = {
@@ -55,10 +54,12 @@ export function HomeTabScreen({
   const [rulesOpen, setRulesOpen] = useState(false);
   const {
     automation,
+    aggregate,
     loading,
     actionSaving,
     editorSaving,
-    savingModuleIds,
+    savingEntryIds,
+    savingTypes,
     reordering,
     message,
   } = useSyncExternalStore(
@@ -71,13 +72,6 @@ export function HomeTabScreen({
     if (authenticated) void automationController.load();
     else automationController.reset();
   }, [authenticated, automationController]);
-
-  function startCreate(type: UnifiedAutomationModuleType) {
-    if (!automation) return;
-    setEditorDraft(buildCreateUnifiedModuleDraft(type, automation.modules));
-    automationController.clearMessage();
-    setRoute('editor');
-  }
 
   function startEdit(module: UnifiedAutomationModuleResponse) {
     if (automationController.isModuleBusy(module.id)) {
@@ -95,30 +89,40 @@ export function HomeTabScreen({
   }
 
   async function saveModule(draft: UnifiedAutomationModuleDraft) {
-    const saved = draft.moduleId == null
-      ? await automationController.createModule(buildUnifiedModuleRequest(draft))
-      : await automationController.updateModule(
-        draft.moduleId,
-        buildUpdateUnifiedModuleRequest(draft),
-      );
+    if (draft.moduleId == null) return;
+    const saved = await automationController.updateModule(
+      draft.moduleId,
+      buildUpdateUnifiedModuleRequest(draft),
+    );
     if (!saved) return;
     setEditorDraft(null);
     setRoute('settings');
   }
 
-  async function deleteModule(moduleId: number) {
-    if (!await automationController.deleteModule(moduleId)) return;
+  async function deleteEditorEntry(entryId: number) {
+    if (!await automationController.deleteEntry(entryId)) return;
     setEditorDraft(null);
     setRoute('settings');
   }
 
-  function reorderModules(modules: UnifiedAutomationModuleResponse[]) {
-    automationController.reorderModules(modules);
+  function openEntryDetail(entry: TypedAutomationEntryResponse) {
+    const module = automation?.modules.find(({ id }) => id === entry.id);
+    if (module) startEdit(module);
+  }
+
+  function toggleEntry(entry: TypedAutomationEntryResponse) {
+    if (entry.type === 'QUEST') {
+      return automationController.saveQuestSettings({ enabled: !entry.enabled, quests: entry.quests });
+    }
+    if (entry.type === 'BATTLE_MAP') {
+      return automationController.saveBattleMapSettings({ enabled: !entry.enabled, maps: entry.battleMaps });
+    }
+    return automationController.saveAdventureMapSettings({ enabled: !entry.enabled, maps: entry.adventureMaps });
   }
 
   function deleteEditedModule() {
     const moduleId = editorDraft?.moduleId;
-    return moduleId == null ? null : () => deleteModule(moduleId);
+    return moduleId == null ? null : () => deleteEditorEntry(moduleId);
   }
 
   const showPageHeader = route !== 'editor';
@@ -181,15 +185,18 @@ export function HomeTabScreen({
         />
       ) : null}
 
-      {automation && route === 'settings' ? (
+      {aggregate && route === 'settings' ? (
         <UnifiedAutomationSettings
-          modules={automation.modules}
+          entries={aggregate.entries}
+          error={message}
           reordering={reordering}
-          savingModuleIds={savingModuleIds}
-          onAdd={startCreate}
-          onEdit={startEdit}
-          onReorder={reorderModules}
-          onToggle={(module) => { void automationController.toggleModule(module); }}
+          savingEntryIds={savingEntryIds}
+          savingTypes={savingTypes}
+          onAdd={(type: AutomationType) => automationController.createEntry(type)}
+          onDelete={(entryId) => automationController.deleteEntry(entryId)}
+          onDetail={openEntryDetail}
+          onReorder={(entries) => automationController.reorderEntries(entries)}
+          onToggle={(entry) => { void toggleEntry(entry); }}
         />
       ) : null}
 

@@ -16,6 +16,10 @@ const settingsSource = readFileSync(
   resolve(process.cwd(), 'src/main/features/automation/components/UnifiedAutomationSettings.tsx'),
   'utf8',
 );
+const addSheetSource = readFileSync(
+  resolve(process.cwd(), 'src/main/features/automation/components/AutomationAddSheet.tsx'),
+  'utf8',
+);
 const appSource = readFileSync(resolve(process.cwd(), 'src/main/App.tsx'), 'utf8');
 const entrySource = readFileSync(resolve(process.cwd(), 'index.ts'), 'utf8');
 const dashboardSource = readFileSync(
@@ -38,19 +42,19 @@ describe('통합 자동화 홈 화면', () => {
   });
 
   it('고정 모듈을 만들지 않고 서버가 반환한 동적 모듈 목록을 사용한다', () => {
-    assert.match(homeSource, /automation\.modules/);
-    assert.match(settingsSource, /UnifiedAutomationModuleResponse\[\]/);
+    assert.match(homeSource, /aggregate\.entries/);
+    assert.match(settingsSource, /TypedAutomationEntryResponse\[\]/);
     assert.doesNotMatch(settingsSource, /const MODULES/);
     assert.doesNotMatch(settingsSource, /union|유니온/i);
   });
 
-  it('앱 수명주기 컨트롤러의 CRUD와 전체 순서 변경을 화면에 연결한다', () => {
+  it('앱 수명주기 컨트롤러의 typed CRUD와 전체 순서 변경을 화면에 연결한다', () => {
     assert.match(appSource, /new UnifiedAutomationController/);
-    assert.match(homeSource, /automationController\.createModule/);
-    assert.match(homeSource, /automationController\.updateModule/);
-    assert.match(homeSource, /automationController\.deleteModule/);
-    assert.match(homeSource, /automationController\.reorderModules/);
+    assert.match(homeSource, /automationController\.createEntry/);
+    assert.match(homeSource, /automationController\.deleteEntry/);
+    assert.match(homeSource, /automationController\.reorderEntries/);
     assert.match(homeSource, /useSyncExternalStore/);
+    assert.doesNotMatch(homeSource, /automationController\.createModule/);
     assert.doesNotMatch(homeSource, /onUpdateUnifiedAutomation:/);
   });
 
@@ -75,13 +79,23 @@ describe('통합 자동화 홈 화면', () => {
     assert.match(homeSource, /위에서부터 우선순위대로/);
   });
 
-  it('세 canonical 유형만 보여주고 이미 추가한 유형은 반복 추가하지 않는다', () => {
+  it('자동화 추가 단일 trigger와 세 canonical 유형만 보여준다', () => {
     assert.match(settingsSource, /자동화 추가/);
-    assert.doesNotMatch(settingsSource, /KEY_QUEST/);
-    assert.doesNotMatch(settingsSource, /COOLDOWN_ADVENTURE/);
+    assert.equal((settingsSource.match(/<AutomationAddSheet/g) ?? []).length, 1);
+    assert.match(settingsSource, /hasAllAutomationTypes\(entries\)/);
+    assert.match(settingsSource, /accessibilityState=\{\{ disabled: allTypesAdded \}\}/);
+    assert.match(addSheetSource, /AUTOMATION_TYPE_ORDER\.map/);
+    assert.doesNotMatch(settingsSource, /typeGrid|typeOption|CANONICAL_UNIFIED_MODULE_TYPES/);
     assert.match(domainSource, /'OTHER_QUEST',[\s\S]*'TIME_BURN',[\s\S]*'DAILY_ADVENTURE'/);
-    assert.match(settingsSource, /CANONICAL_UNIFIED_MODULE_TYPES/);
-    assert.match(settingsSource, /filter\([^\n]*moduleType/);
+  });
+
+  it('overflow 메뉴에서 상세 설정과 typed 삭제를 제공한다', () => {
+    assert.match(settingsSource, /accessibilityLabel=\{`\$\{metadata\.label\} 더 보기`\}/);
+    assert.match(settingsSource, />상세 설정</);
+    assert.match(settingsSource, />삭제</);
+    assert.match(settingsSource, /Alert\.alert/);
+    assert.match(homeSource, /onDelete=\{[^}]*automationController\.deleteEntry/);
+    assert.match(homeSource, /onDetail=/);
   });
 
   it('드래그 핸들과 optimistic 순서 저장 큐를 실제 목록에 연결한다', () => {
@@ -97,9 +111,15 @@ describe('통합 자동화 홈 화면', () => {
     assert.match(controllerSource, /structuralTail/);
     assert.match(controllerSource, /runTypedMutation/);
     assert.match(homeSource, /automationController\.isModuleBusy/);
-    assert.match(settingsSource, /savingModuleIds\.includes\(params\.item\.id\)/);
+    assert.match(settingsSource, /savingEntryIds\.includes\(params\.item\.id\)/);
     assert.match(settingsSource, /accessibilityState=\{\{ disabled: saving \}\}/);
     assert.match(settingsSource, /disabled=\{saving\}/);
+  });
+
+  it('typed 준비 상태와 경고를 행 chip으로 표시한다', () => {
+    assert.match(settingsSource, /item\.ready/);
+    assert.match(settingsSource, /item\.warnings\[0\]/);
+    assert.match(settingsSource, />경고</);
   });
 
   it('모듈 편집기에서 이름, 사용 여부, 유형별 맵·프리셋·퀘스트를 저장한다', () => {
@@ -109,8 +129,8 @@ describe('통합 자동화 홈 화면', () => {
     assert.match(editorSource, /Time 기준/);
     assert.match(editorSource, /정말 삭제할까요/);
     assert.match(editorSource, /프리셋 없이도 저장할 수 있지만/);
-    assert.match(homeSource, /buildUnifiedModuleRequest/);
     assert.match(homeSource, /buildUpdateUnifiedModuleRequest/);
+    assert.match(homeSource, /createEntry/);
   });
 
   it('변경 사항은 현재 작업을 끊지 않고 다음 판단부터 적용된다고 안내한다', () => {

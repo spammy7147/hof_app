@@ -1,0 +1,199 @@
+import { useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
+import {
+  AccessibilityInfo,
+  ActivityIndicator,
+  findNodeHandle,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
+import { Map, ScrollText, Swords, X } from 'lucide-react-native';
+
+import {
+  AUTOMATION_TYPE_METADATA,
+  AUTOMATION_TYPE_ORDER,
+} from '../../../domain/typedAutomation';
+import { theme } from '../../../styles/theme';
+import type { AutomationType, TypedAutomationEntryResponse } from '../../../types/api';
+
+type Props = {
+  entries: readonly TypedAutomationEntryResponse[];
+  error: string | null;
+  pendingTypes: readonly AutomationType[];
+  visible: boolean;
+  onAdd: (type: AutomationType) => Promise<boolean>;
+  onClose: () => void;
+};
+
+const TYPE_DESCRIPTIONS: Readonly<Record<AutomationType, string>> = {
+  QUEST: '수락·완료와 전투 퀘스트를 자동으로 진행해요.',
+  BATTLE_MAP: '일일 목표 횟수에 맞춰 전투 맵을 실행해요.',
+  ADVENTURE_MAP: '쿨다운과 횟수 제한에 맞춰 모험 맵을 진행해요.',
+};
+
+export function AutomationAddSheet({
+  entries,
+  error,
+  pendingTypes,
+  visible,
+  onAdd,
+  onClose,
+}: Props) {
+  const { height } = useWindowDimensions();
+  const titleRef = useRef<ElementRef<typeof Text>>(null);
+  const submittingTypes = useRef(new Set<AutomationType>());
+  const [locallyPending, setLocallyPending] = useState<AutomationType[]>([]);
+  const existingTypes = useMemo(() => new Set(entries.map(({ type }) => type)), [entries]);
+  const busyTypes = useMemo(
+    () => new Set<AutomationType>([...pendingTypes, ...locallyPending]),
+    [locallyPending, pendingTypes],
+  );
+
+  useEffect(() => {
+    if (!visible) return undefined;
+    AccessibilityInfo.announceForAccessibility('자동화 추가 창이 열렸습니다.');
+    const focusTimer = setTimeout(() => {
+      const titleNode = findNodeHandle(titleRef.current);
+      if (titleNode != null) AccessibilityInfo.setAccessibilityFocus(titleNode);
+    }, 250);
+    return () => clearTimeout(focusTimer);
+  }, [visible]);
+
+  async function handleAdd(type: AutomationType) {
+    if (existingTypes.has(type) || busyTypes.has(type) || submittingTypes.current.has(type)) return;
+    submittingTypes.current.add(type);
+    setLocallyPending((current) => [...current, type]);
+    try {
+      const added = await onAdd(type);
+      if (added) onClose();
+    } finally {
+      submittingTypes.current.delete(type);
+      setLocallyPending((current) => current.filter((candidate) => candidate !== type));
+    }
+  }
+
+  return (
+    <Modal
+      animationType="slide"
+      onRequestClose={onClose}
+      transparent
+      visible={visible}
+    >
+      <View style={styles.modalRoot}>
+        <Pressable
+          accessibilityHint="자동화 추가 창을 닫습니다"
+          accessibilityLabel="자동화 추가 배경 닫기"
+          accessibilityRole="button"
+          onPress={onClose}
+          style={styles.backdrop}
+        />
+        <View
+          accessibilityLabel="자동화 추가"
+          accessibilityViewIsModal
+          style={[styles.panel, { maxHeight: Math.max(360, height * 0.82) }]}
+        >
+          <View style={styles.dragHandle} />
+          <View style={styles.header}>
+            <View style={styles.headerCopy}>
+              <Text ref={titleRef} accessibilityRole="header" style={styles.title}>자동화 추가</Text>
+              <Text style={styles.subtitle}>필요한 항목만 골라 우선순위에 추가하세요.</Text>
+            </View>
+            <Pressable
+              accessibilityHint="자동화 추가 창을 닫습니다"
+              accessibilityLabel="자동화 추가 닫기"
+              accessibilityRole="button"
+              onPress={onClose}
+              style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
+            >
+              <X color={theme.colors.textMuted} size={20} />
+            </Pressable>
+          </View>
+
+          <ScrollView
+            contentContainerStyle={styles.list}
+            contentInsetAdjustmentBehavior="automatic"
+            keyboardShouldPersistTaps="handled"
+          >
+            {error ? (
+              <Text accessibilityLiveRegion="polite" style={styles.error}>{error}</Text>
+            ) : null}
+            {AUTOMATION_TYPE_ORDER.map((type) => {
+              const metadata = AUTOMATION_TYPE_METADATA[type];
+              const exists = existingTypes.has(type);
+              const busy = busyTypes.has(type);
+              const disabled = exists || busy;
+              return (
+                <Pressable
+                  key={type}
+                  accessibilityHint={exists ? '이미 추가한 자동화입니다' : '실행 우선순위 끝에 추가합니다'}
+                  accessibilityLabel={`${metadata.label} 자동화 ${exists ? '추가됨' : '추가'}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ disabled: disabled, busy: busy }}
+                  disabled={disabled}
+                  onPress={() => { void handleAdd(type); }}
+                  style={({ pressed }) => [
+                    styles.typeRow,
+                    disabled && styles.disabled,
+                    pressed && !disabled && styles.pressed,
+                  ]}
+                >
+                  <View style={styles.typeIcon}><AutomationTypeIcon type={type} /></View>
+                  <View style={styles.typeCopy}>
+                    <Text style={styles.typeLabel}>{metadata.label}</Text>
+                    <Text style={styles.typeDescription}>{TYPE_DESCRIPTIONS[type]}</Text>
+                  </View>
+                  {busy ? (
+                    <ActivityIndicator
+                      accessibilityLabel={`${metadata.label} 추가 중`}
+                      color={theme.colors.accentGreen}
+                      size="small"
+                    />
+                  ) : (
+                    <Text style={[styles.typeState, !exists && styles.typeStateAvailable]}>
+                      {exists ? '추가됨' : '추가'}
+                    </Text>
+                  )}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function AutomationTypeIcon({ type }: { type: AutomationType }) {
+  const iconProps = { color: theme.colors.accentGreen, size: 21 };
+  const icon = AUTOMATION_TYPE_METADATA[type].icon;
+  if (icon === 'scroll-text') return <ScrollText {...iconProps} />;
+  if (icon === 'swords') return <Swords {...iconProps} />;
+  return <Map {...iconProps} />;
+}
+
+const styles = StyleSheet.create({
+  modalRoot: { flex: 1, justifyContent: 'flex-end' },
+  backdrop: { backgroundColor: 'rgba(0, 0, 0, 0.68)', bottom: 0, left: 0, position: 'absolute', right: 0, top: 0 },
+  panel: { backgroundColor: theme.colors.header, borderColor: theme.colors.borderStrong, borderTopLeftRadius: theme.radius.md * 3, borderTopRightRadius: theme.radius.md * 3, borderTopWidth: 1, paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.sm },
+  dragHandle: { alignSelf: 'center', backgroundColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, height: 4, marginBottom: theme.spacing.lg, width: 42 },
+  header: { alignItems: 'flex-start', flexDirection: 'row', gap: theme.spacing.md, marginBottom: theme.spacing.md },
+  headerCopy: { flex: 1 },
+  title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' },
+  subtitle: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 17, marginTop: theme.spacing.xs },
+  closeButton: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderRadius: 20, height: 40, justifyContent: 'center', width: 40 },
+  list: { gap: theme.spacing.sm, paddingBottom: theme.spacing.xl },
+  error: { borderLeftColor: theme.colors.danger, borderLeftWidth: 3, color: theme.colors.text, fontSize: 12, lineHeight: 18, marginBottom: theme.spacing.xs, paddingLeft: theme.spacing.sm },
+  typeRow: { alignItems: 'center', backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md * 2, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.md, minHeight: 72, padding: theme.spacing.md },
+  typeIcon: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md + 4, height: 44, justifyContent: 'center', width: 44 },
+  typeCopy: { flex: 1, minWidth: 0 },
+  typeLabel: { color: theme.colors.text, fontSize: 14, fontWeight: '900' },
+  typeDescription: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16, marginTop: 3 },
+  typeState: { backgroundColor: theme.colors.surfaceAlt, borderRadius: 12, color: theme.colors.textMuted, fontSize: 10, fontWeight: '800', overflow: 'hidden', paddingHorizontal: theme.spacing.sm, paddingVertical: 5 },
+  typeStateAvailable: { backgroundColor: theme.colors.accentGreen, color: theme.colors.buttonText },
+  pressed: { opacity: 0.72 },
+  disabled: { opacity: 0.48 },
+});
