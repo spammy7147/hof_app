@@ -2,6 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { LoginScreen } from './screens/LoginScreen';
 import { MainScreen } from './screens/MainScreen';
@@ -346,25 +347,27 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={styles.container}>
-      <View style={styles.container}>
-        {content}
-        <CaptchaChallengeModal
-          visible={captchaModalVisible}
-          captcha={currentCaptcha}
-          imageSource={captchaImageSource}
-          isLoading={isCaptchaLoading}
-          isSubmitting={isCaptchaSubmitting}
-          message={captchaMessage}
-          errorMessage={captchaErrorMessage}
-          blocking={captchaModalBlocking}
-          onRefresh={() => {
-            void openCaptchaModal({ blocking: captchaModalBlocking });
-          }}
-          onSubmit={submitGlobalCaptchaAnswer}
-          onRequestClose={closeCaptchaModal}
-        />
-        <StatusBar style="light" />
-      </View>
+      <SafeAreaProvider>
+        <View style={styles.container}>
+          {content}
+          <CaptchaChallengeModal
+            visible={captchaModalVisible}
+            captcha={currentCaptcha}
+            imageSource={captchaImageSource}
+            isLoading={isCaptchaLoading}
+            isSubmitting={isCaptchaSubmitting}
+            message={captchaMessage}
+            errorMessage={captchaErrorMessage}
+            blocking={captchaModalBlocking}
+            onRefresh={() => {
+              void openCaptchaModal({ blocking: captchaModalBlocking });
+            }}
+            onSubmit={submitGlobalCaptchaAnswer}
+            onRequestClose={closeCaptchaModal}
+          />
+          <StatusBar style="light" />
+        </View>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

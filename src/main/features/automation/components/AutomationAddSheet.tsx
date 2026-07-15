@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { Map, ScrollText, Swords, X } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   AUTOMATION_TYPE_METADATA,
@@ -44,6 +45,7 @@ export function AutomationAddSheet({
   onClose,
 }: Props) {
   const { height } = useWindowDimensions();
+  const { bottom } = useSafeAreaInsets();
   const titleRef = useRef<ElementRef<typeof Text>>(null);
   const submittingTypes = useRef(new Set<AutomationType>());
   const [locallyPending, setLocallyPending] = useState<AutomationType[]>([]);
@@ -94,7 +96,7 @@ export function AutomationAddSheet({
         <View
           accessibilityLabel="자동화 추가"
           accessibilityViewIsModal
-          style={[styles.panel, { maxHeight: Math.max(360, height * 0.82) }]}
+          style={[styles.panel, { maxHeight: Math.min(height, height * 0.82) }]}
         >
           <View style={styles.dragHandle} />
           <View style={styles.header}>
@@ -114,8 +116,8 @@ export function AutomationAddSheet({
           </View>
 
           <ScrollView
-            contentContainerStyle={styles.list}
-            contentInsetAdjustmentBehavior="automatic"
+            contentContainerStyle={[styles.list, { paddingBottom: theme.spacing.xl + bottom }]}
+            contentInsetAdjustmentBehavior="never"
             keyboardShouldPersistTaps="handled"
           >
             {error ? (
@@ -177,7 +179,7 @@ function AutomationTypeIcon({ type }: { type: AutomationType }) {
 
 const styles = StyleSheet.create({
   modalRoot: { flex: 1, justifyContent: 'flex-end' },
-  backdrop: { backgroundColor: 'rgba(0, 0, 0, 0.68)', bottom: 0, left: 0, position: 'absolute', right: 0, top: 0 },
+  backdrop: { backgroundColor: theme.colors.overlay, bottom: 0, left: 0, position: 'absolute', right: 0, top: 0 },
   panel: { backgroundColor: theme.colors.header, borderColor: theme.colors.borderStrong, borderTopLeftRadius: theme.radius.md * 3, borderTopRightRadius: theme.radius.md * 3, borderTopWidth: 1, paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.sm },
   dragHandle: { alignSelf: 'center', backgroundColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, height: 4, marginBottom: theme.spacing.lg, width: 42 },
   header: { alignItems: 'flex-start', flexDirection: 'row', gap: theme.spacing.md, marginBottom: theme.spacing.md },
@@ -185,7 +187,7 @@ const styles = StyleSheet.create({
   title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' },
   subtitle: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 17, marginTop: theme.spacing.xs },
   closeButton: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderRadius: 20, height: 40, justifyContent: 'center', width: 40 },
-  list: { gap: theme.spacing.sm, paddingBottom: theme.spacing.xl },
+  list: { gap: theme.spacing.sm },
   error: { borderLeftColor: theme.colors.danger, borderLeftWidth: 3, color: theme.colors.text, fontSize: 12, lineHeight: 18, marginBottom: theme.spacing.xs, paddingLeft: theme.spacing.sm },
   typeRow: { alignItems: 'center', backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md * 2, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.md, minHeight: 72, padding: theme.spacing.md },
   typeIcon: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md + 4, height: 44, justifyContent: 'center', width: 44 },

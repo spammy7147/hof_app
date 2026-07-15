@@ -150,6 +150,8 @@ export function UnifiedAutomationSettings({
             <View accessibilityViewIsModal style={styles.menu}>
               <Text style={styles.menuTitle}>{AUTOMATION_TYPE_METADATA[menuEntry.type].label}</Text>
               <Pressable
+                accessibilityHint="선택한 자동화의 세부 설정 화면을 엽니다"
+                accessibilityLabel={`${AUTOMATION_TYPE_METADATA[menuEntry.type].label} 상세 설정`}
                 accessibilityRole="button"
                 accessibilityState={{ disabled: menuBusy }}
                 disabled={menuBusy}
@@ -162,6 +164,8 @@ export function UnifiedAutomationSettings({
                 <Text style={styles.menuActionText}>상세 설정</Text>
               </Pressable>
               <Pressable
+                accessibilityHint="확인 후 선택한 자동화를 삭제합니다"
+                accessibilityLabel={`${AUTOMATION_TYPE_METADATA[menuEntry.type].label} 삭제`}
                 accessibilityRole="button"
                 accessibilityState={{ busy: menuBusy, disabled: menuBusy }}
                 disabled={menuBusy}
@@ -216,7 +220,16 @@ function AutomationEntryRow({
           </Text>
           {warning ? <Text style={[styles.statusChip, styles.warningChip]}>경고</Text> : null}
         </View>
-        <Text numberOfLines={1} style={styles.rowMeta}>{warning ?? summary}</Text>
+        <Text numberOfLines={1} style={styles.rowMeta}>{summary}</Text>
+        {warning ? (
+          <Text
+            accessibilityLabel={`경고: ${warning}`}
+            numberOfLines={1}
+            style={styles.warningText}
+          >
+            {warning}
+          </Text>
+        ) : null}
       </View>
       <Switch
         accessibilityLabel={`${metadata.label} ${item.enabled ? '끄기' : '켜기'}`}
@@ -269,6 +282,7 @@ const styles = StyleSheet.create({
   rowTitleLine: { alignItems: 'center', flexDirection: 'row', gap: 6 },
   rowTitle: { color: theme.colors.text, flexShrink: 1, fontSize: 14, fontWeight: '900' },
   rowMeta: { color: theme.colors.textMuted, fontSize: 11, marginTop: 4 },
+  warningText: { color: theme.colors.accentAmber, fontSize: 10, marginTop: 3 },
   statusChip: { backgroundColor: theme.colors.surfaceAlt, borderRadius: 10, color: theme.colors.accentGreen, fontSize: 9, fontWeight: '800', overflow: 'hidden', paddingHorizontal: 6, paddingVertical: 3 },
   warningChip: { color: theme.colors.accentAmber },
   moreButton: { alignItems: 'center', height: 42, justifyContent: 'center', width: 32 },
@@ -277,7 +291,7 @@ const styles = StyleSheet.create({
   addButtonTextDisabled: { color: theme.colors.textMuted },
   savingText: { color: theme.colors.textMuted, fontSize: 11, textAlign: 'right' },
   menuRoot: { flex: 1, justifyContent: 'center', padding: theme.spacing.xl },
-  menuBackdrop: { backgroundColor: 'rgba(0, 0, 0, 0.58)', bottom: 0, left: 0, position: 'absolute', right: 0, top: 0 },
+  menuBackdrop: { backgroundColor: theme.colors.overlay, bottom: 0, left: 0, position: 'absolute', right: 0, top: 0 },
   menu: { alignSelf: 'center', backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.border, borderRadius: theme.radius.md + 4, borderWidth: 1, maxWidth: 280, padding: theme.spacing.sm, width: '100%' },
   menuTitle: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '800', paddingHorizontal: theme.spacing.sm, paddingVertical: theme.spacing.sm },
   menuAction: { borderRadius: theme.radius.sm, minHeight: 44, justifyContent: 'center', paddingHorizontal: theme.spacing.md },

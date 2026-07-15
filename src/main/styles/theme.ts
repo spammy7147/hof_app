@@ -15,6 +15,7 @@ export const theme = {
     statusGreen: '#7dff7b',
     danger: '#ff7b7b',
     buttonText: '#121820',
+    overlay: 'rgba(0, 0, 0, 0.64)',
   },
   spacing: {
     xs: 4,
