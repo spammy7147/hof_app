@@ -163,6 +163,22 @@ describe('BackendApiClient', () => {
     assert.equal(result?.imageUrl, 'http://backend.test/api/captcha/3/image');
   });
 
+  it('builds captcha image sources with the current Bearer access token', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    mockFetch(tokenResponse('captcha-access-token', 'captcha-refresh-token'));
+    const client = new BackendApiClient('http://backend.test');
+
+    await client.login({ loginId: 'hof-id', password: 'hof-password' });
+
+    assert.deepEqual(
+      client.getAuthenticatedImageSource('http://backend.test/api/captcha/3/image'),
+      {
+        uri: 'http://backend.test/api/captcha/3/image',
+        headers: { Authorization: 'Bearer captcha-access-token' },
+      },
+    );
+  });
+
   it('keeps absolute current captcha image URLs unchanged', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const httpUrl = 'http://assets.test/api/captcha/3/image';

@@ -119,6 +119,19 @@ export class BackendApiClient {
     return this.accessToken;
   }
 
+  /** 인증이 필요한 백엔드 이미지를 expo-image가 읽을 수 있는 source로 만든다. */
+  getAuthenticatedImageSource(imageUrl: string): {
+    uri: string;
+    headers?: Record<string, string>;
+  } {
+    if (!this.accessToken) return { uri: imageUrl };
+
+    return {
+      uri: imageUrl,
+      headers: { Authorization: `Bearer ${this.accessToken}` },
+    };
+  }
+
   /**
    * 상단 상태바에 필요한 Time/Funds/Work/Auction 상태를 조회한다.
    */
