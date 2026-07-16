@@ -50,6 +50,33 @@ const draggableList = (props: Record<string, unknown>) => {
     )),
   );
 };
+type SwipeableMockMethods = {
+  close: () => void;
+  openLeft: () => void;
+  openRight: () => void;
+  reset: () => void;
+  closeCalls: number;
+};
+const reanimatedSwipeable = React.forwardRef<SwipeableMockMethods, Record<string, unknown>>((props, ref) => {
+  const methods = React.useMemo<SwipeableMockMethods>(() => ({
+    closeCalls: 0,
+    close() { methods.closeCalls += 1; },
+    openLeft: () => undefined,
+    openRight: () => undefined,
+    reset: () => undefined,
+  }), []);
+  React.useImperativeHandle(ref, () => methods, [methods]);
+  const renderRightActions = props.renderRightActions as
+    | ((progress: unknown, translation: unknown, swipeable: SwipeableMockMethods) => React.ReactNode)
+    | undefined;
+
+  return React.createElement(
+    'ReanimatedSwipeable',
+    { ...props, mockMethods: methods },
+    props.children as React.ReactNode,
+    renderRightActions?.({}, {}, methods),
+  );
+});
 
 const reactNativeMock = {
   AccessibilityInfo: {
@@ -86,6 +113,9 @@ moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'lucide-react-native') return iconsMock;
   if (request === 'react-native-gesture-handler') {
     return { GestureHandlerRootView: host('GestureHandlerRootView') };
+  }
+  if (request === 'react-native-gesture-handler/ReanimatedSwipeable') {
+    return { __esModule: true, default: reanimatedSwipeable };
   }
   if (request === './NativeSafeAreaProvider' && parent?.filename.includes('react-native-safe-area-context')) {
     return { NativeSafeAreaProvider: host('NativeSafeAreaProvider') };
@@ -279,7 +309,7 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
     assert.equal(trigger.props.accessibilityState.disabled, true);
   });
 
-  it('opens overflow detail and delete actions, confirms delete, and disables them while busy', async () => {
+  it('opens details from the row, confirms swipe delete, and disables both while busy', async () => {
     const quest = entry(1, 'QUEST');
     let detailed: TypedAutomationEntryResponse | null = null;
     const deleted: number[] = [];
@@ -291,16 +321,14 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
     const renderer = await renderElement(React.createElement(UnifiedAutomationSettings, props));
 
     await act(async () => {
-      renderer.root.findByProps({ accessibilityLabel: '퀘스트 더 보기' }).props.onPress();
-    });
-    await act(async () => {
       renderer.root.findByProps({ accessibilityLabel: '퀘스트 상세 설정' }).props.onPress();
     });
     assert.equal(detailed, quest);
+    assert.equal(
+      renderer.root.findAllByProps({ accessibilityLabel: '퀘스트 더 보기' }).length,
+      0,
+    );
 
-    await act(async () => {
-      renderer.root.findByProps({ accessibilityLabel: '퀘스트 더 보기' }).props.onPress();
-    });
     await act(async () => {
       renderer.update(withSafeArea(React.createElement(UnifiedAutomationSettings, {
         ...props,
@@ -319,12 +347,36 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
       renderer.update(withSafeArea(React.createElement(UnifiedAutomationSettings, props)));
     });
 
+    alertArguments = null;
     renderer.root.findByProps({ accessibilityLabel: '퀘스트 삭제' }).props.onPress();
     assert.ok(alertArguments);
     const actions = alertArguments[2] as Array<{ text: string; onPress?: () => void }>;
     assert.deepEqual(actions.map(({ text }) => text), ['취소', '삭제']);
     await act(async () => { actions[1]?.onPress?.(); });
     assert.deepEqual(deleted, [1]);
+  });
+
+  it('offers delete as an accessibility action on the detail target', async () => {
+    const renderer = await renderSettings({ entries: [entry(1, 'QUEST')] });
+    const detail = renderer.root.findByProps({ accessibilityLabel: '퀘스트 상세 설정' });
+
+    assert.deepEqual(detail.props.accessibilityActions, [{ name: 'delete', label: '삭제' }]);
+    alertArguments = null;
+    detail.props.onAccessibilityAction({ nativeEvent: { actionName: 'delete' } });
+    assert.ok(alertArguments);
+  });
+
+  it('closes the previously open swipe row when another row opens', async () => {
+    const renderer = await renderSettings({
+      entries: [entry(1, 'QUEST'), entry(2, 'BATTLE_MAP')],
+    });
+    const swipeables = renderer.root.findAll(({ type }) => String(type) === 'ReanimatedSwipeable');
+    const firstMethods = swipeables[0]?.props.mockMethods as SwipeableMockMethods;
+
+    swipeables[0]?.props.onSwipeableWillOpen();
+    swipeables[1]?.props.onSwipeableWillOpen();
+
+    assert.equal(firstMethods.closeCalls, 1);
   });
 
   it('renders summary independently from warnings', async () => {
@@ -408,63 +460,7 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
     assert.equal(visibleModals(renderer.root).length, 1);
   });
 
-  it('does not let an old delete completion close a newly reopened menu', async () => {
-    const pending = deferred<boolean>();
-    const quest = entry(1, 'QUEST');
-    const renderer = await renderSettings({ entries: [quest], onDelete: async () => pending.promise });
-    await act(async () => {
-      renderer.root.findByProps({ accessibilityLabel: '퀘스트 더 보기' }).props.onPress();
-    });
-    renderer.root.findByProps({ accessibilityLabel: '퀘스트 삭제' }).props.onPress();
-    const actions = alertArguments?.[2] as Array<{ onPress?: () => void }>;
-    actions[1]?.onPress?.();
-    await act(async () => {
-      renderer.root.findByProps({ accessibilityLabel: '자동화 메뉴 닫기' }).props.onPress();
-      renderer.root.findByProps({ accessibilityLabel: '퀘스트 더 보기' }).props.onPress();
-    });
-
-    await act(async () => { pending.resolve(true); await pending.promise; });
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: '퀘스트 삭제' }).props.disabled, false);
-    assert.equal(visibleModals(renderer.root).length, 1);
-  });
-
-  it('closes a removed entry menu and restores focus to a live add trigger', async () => {
-    focusCalls.length = 0;
-    const pending = deferred<boolean>();
-    const quest = entry(1, 'QUEST');
-    const battle = entry(2, 'BATTLE_MAP');
-    const props = settingsProps({
-      entries: [quest, battle],
-      onDelete: async () => pending.promise,
-    });
-    const renderer = await renderElement(React.createElement(UnifiedAutomationSettings, props));
-    await act(async () => {
-      renderer.root.findByProps({ accessibilityLabel: '퀘스트 더 보기' }).props.onPress();
-    });
-    renderer.root.findByProps({ accessibilityLabel: '퀘스트 삭제' }).props.onPress();
-    const actions = alertArguments?.[2] as Array<{ onPress?: () => void }>;
-    actions[1]?.onPress?.();
-    await act(async () => { await delay(280); });
-    focusCalls.length = 0;
-
-    await act(async () => {
-      renderer.update(withSafeArea(React.createElement(UnifiedAutomationSettings, {
-        ...props,
-        entries: [battle],
-      })));
-    });
-    assert.equal(visibleModals(renderer.root).length, 0);
-    await act(async () => { await delay(280); });
-    assert.equal(focusId(focusCalls.at(-1)), 'automation-add-trigger');
-
-    await act(async () => { pending.resolve(true); await pending.promise; });
-    await act(async () => { await delay(280); });
-    assert.equal(visibleModals(renderer.root).length, 0);
-    assert.equal(focusId(focusCalls.at(-1)), 'automation-add-trigger');
-    assert.equal(focusCalls.some((node) => focusId(node) === 'automation-more-1'), false);
-  });
-
-  it('moves focus into overlays and restores their invoking controls on close', async () => {
+  it('moves focus into the add overlay and restores its invoking control on close', async () => {
     focusCalls.length = 0;
     const renderer = await renderSettings({ entries: [entry(1, 'QUEST')] });
     await act(async () => {
@@ -476,28 +472,6 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
     });
     await act(async () => { await delay(280); });
     assert.equal(focusLabel(focusCalls.at(-1)), '자동화 추가');
-
-    focusCalls.length = 0;
-    await act(async () => {
-      renderer.root.findByProps({ accessibilityLabel: '퀘스트 더 보기' }).props.onPress();
-    });
-    await act(async () => { await delay(280); });
-    assert.equal(focusId(focusCalls.at(-1)), 'automation-menu-first-action');
-    await act(async () => {
-      renderer.root.findByProps({ accessibilityLabel: '자동화 메뉴 닫기' }).props.onPress();
-    });
-    await act(async () => { await delay(280); });
-    assert.equal(focusLabel(focusCalls.at(-1)), '퀘스트 더 보기');
-  });
-
-  it('uses the same semantic overlay for the overflow menu', async () => {
-    const renderer = await renderSettings({ entries: [entry(1, 'QUEST')] });
-    await act(async () => {
-      renderer.root.findByProps({ accessibilityLabel: '퀘스트 더 보기' }).props.onPress();
-    });
-    const backdrop = renderer.root.findByProps({ accessibilityLabel: '자동화 메뉴 닫기' });
-
-    assert.equal(flattenStyle(backdrop.props.style).backgroundColor, theme.colors.overlay);
   });
 });
 
@@ -653,11 +627,5 @@ function delay(milliseconds: number): Promise<void> {
 function focusLabel(node: unknown): unknown {
   return node && typeof node === 'object'
     ? (node as { accessibilityLabel?: unknown }).accessibilityLabel
-    : undefined;
-}
-
-function focusId(node: unknown): unknown {
-  return node && typeof node === 'object'
-    ? (node as { nativeID?: unknown }).nativeID
     : undefined;
 }

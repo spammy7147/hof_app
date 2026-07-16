@@ -96,11 +96,13 @@ describe('통합 자동화 홈 화면', () => {
     assert.doesNotMatch(controllerSource, /moduleType|legacyTypeToTyped/);
   });
 
-  it('overflow 메뉴에서 상세 설정과 typed 삭제를 제공한다', () => {
-    assert.match(settingsSource, /accessibilityLabel=\{`\$\{metadata\.label\} 더 보기`\}/);
-    assert.match(settingsSource, />상세 설정</);
-    assert.match(settingsSource, />삭제</);
+  it('행 탭으로 상세 설정을 열고 왼쪽 스와이프로 typed 삭제를 제공한다', () => {
+    assert.match(settingsSource, /ReanimatedSwipeable/);
+    assert.match(settingsSource, /renderRightActions/);
+    assert.match(settingsSource, /accessibilityLabel=\{`\$\{metadata\.label\} 상세 설정`\}/);
+    assert.match(settingsSource, /accessibilityLabel=\{`\$\{metadata\.label\} 삭제`\}/);
     assert.match(settingsSource, /Alert\.alert/);
+    assert.doesNotMatch(settingsSource, /MoreHorizontal|자동화 메뉴 닫기|더 보기/);
     assert.match(homeSource, /onDelete=\{[^}]*automationController\.deleteEntry/);
     assert.match(homeSource, /onDetail=/);
   });
