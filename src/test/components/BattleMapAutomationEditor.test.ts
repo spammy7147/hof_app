@@ -302,6 +302,43 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(categoryRetries, 1);
   });
 
+  it('does not load or offer adventure/union maps but keeps legacy rows and a dynamically unavailable supported map selectable', async () => {
+    const loadedCategories: string[] = [];
+    const legacyAdventure = { ...setting('legacy-adventure', 3, 0), categoryId: 'adventure_map' };
+    const legacyUnion = { ...setting('legacy-union', 3, 1), categoryId: 'union' };
+    const renderer = await renderEditor({
+      entry: battleEntry([legacyAdventure, legacyUnion]),
+      battleCategories: [
+        { id: 'battle', label: '전투맵', description: '', order: 0, enabled: true },
+        { id: 'adventure_map', label: '모험맵', description: '', order: 1, enabled: true },
+        { id: 'union', label: '유니온', description: '', order: 2, enabled: true },
+      ],
+      onLoadBattleMaps: async (categoryId) => {
+        loadedCategories.push(categoryId);
+        if (categoryId === 'adventure_map') return [catalogMap('adventure-new', 'Adventure New', { categoryId })];
+        if (categoryId === 'union') return [catalogMap('union-new', 'Union New', { categoryId })];
+        return [catalogMap('limited', 'Limited Supported', {
+          categoryId,
+          availableCount: 0,
+          attemptCount: 0,
+          winCount: 0,
+          cooldownRemainingSeconds: 3_600,
+          keyCount: 0,
+        })];
+      },
+    });
+
+    assert.deepEqual(loadedCategories, ['battle']);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Adventure New 맵 선택' }).length, 0);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Union New 맵 선택' }).length, 0);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'legacy-adventure 맵 제거' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'legacy-union 맵 제거' }));
+    const supported = renderer.root.findByProps({ accessibilityLabel: 'Limited Supported 맵 선택' });
+    assert.equal(supported.props.disabled, false);
+    await act(async () => { supported.props.onPress(); });
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Limited Supported 맵 선택' }).props.accessibilityState.checked, true);
+  });
+
   it('stays mounted after failed save/delete and ignores late resource responses after unmount', async () => {
     let backs = 0;
     const renderer = await renderEditor({

@@ -18,6 +18,7 @@ import {
   buildBattleMapAutomationRequest,
   buildBattleProgress,
   describeBattleBatch,
+  filterBattleAutomationCategories,
   filterBattleMapCatalog,
   moveBattleMapSetting,
   removeBattleMapSetting,
@@ -25,7 +26,6 @@ import {
   validateBattleMapAutomationDraft,
   type BattleMapAutomationDraft,
 } from '../../../domain/battleMapAutomation';
-import { filterAutomationProfileCategories } from '../../../domain/automationProfiles';
 import { toUserFacingErrorMessage } from '../../../domain/userFacingErrors';
 import { theme } from '../../../styles/theme';
 import type {
@@ -166,7 +166,7 @@ export function BattleMapAutomationEditor({
   }, [areBattleCategoriesLoaded, battleCategories.length, battleCategoriesError, isBattleCategoriesLoading, onLoadBattleCategories]);
 
   const eligibleCategories = useMemo(
-    () => filterAutomationProfileCategories(battleCategories).filter(({ enabled }) => enabled),
+    () => filterBattleAutomationCategories(battleCategories).filter(({ enabled }) => enabled),
     [battleCategories],
   );
   const categoryKey = eligibleCategories.map(({ id }) => id).join('|');

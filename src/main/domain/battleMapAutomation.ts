@@ -1,4 +1,5 @@
 import type {
+  BattleCategoryResponse,
   BattleMapResponse,
   TypedAutomationEntryResponse,
   UpdateBattleMapAutomationRequest,
@@ -92,6 +93,13 @@ export function filterBattleMapCatalog(
       || left.map.mapOrder - right.map.mapOrder
       || left.sourceIndex - right.sourceIndex)
     .map(({ map }) => map);
+}
+
+/** 전투맵 typed API가 거절하는 두 카테고리만 새 선택 후보에서 제외한다. */
+export function filterBattleAutomationCategories(
+  categories: readonly BattleCategoryResponse[],
+): BattleCategoryResponse[] {
+  return categories.filter(({ id }) => id !== 'adventure_map' && id !== 'union');
 }
 
 export function selectBattleMap(

@@ -6,6 +6,7 @@ import {
   buildBattleMapAutomationRequest,
   buildBattleProgress,
   describeBattleBatch,
+  filterBattleAutomationCategories,
   filterBattleMapCatalog,
   moveBattleMapSetting,
   selectBattleMap,
@@ -114,6 +115,20 @@ describe('battle map automation domain', () => {
     assert.deepEqual(filterBattleMapCatalog([unavailableNow], '').map(({ mapCode }) => mapCode), ['later']);
     const selected = selectBattleMap(buildBattleMapAutomationDraft(entry(), []), unavailableNow, true);
     assert.deepEqual(selected.maps.map(({ mapCode }) => mapCode), ['a', 'later']);
+  });
+
+  it('filters only the exact adventure and union categories rejected for battle automation', () => {
+    const categories = [
+      { id: 'battle_map', label: '전투맵', description: '', order: 0, enabled: true },
+      { id: 'adventure_map', label: '모험맵', description: '', order: 1, enabled: true },
+      { id: 'union', label: '유니온', description: '', order: 2, enabled: true },
+      { id: 'scenario_union', label: '유니온 이름을 포함한 별도 카테고리', description: '', order: 3, enabled: true },
+    ];
+
+    assert.deepEqual(filterBattleAutomationCategories(categories).map(({ id }) => id), [
+      'battle_map',
+      'scenario_union',
+    ]);
   });
 });
 
