@@ -11,9 +11,22 @@ import type {
 } from '../../main/types/api';
 
 let alertArguments: unknown[] | null = null;
-const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => (
-  React.createElement(name, { ...props, ref }, props.children as React.ReactNode)
-));
+const accessibilityFocusCalls: unknown[] = [];
+const keyboardFocusCalls: unknown[] = [];
+const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
+  const nodeRef = React.useRef<Record<string, unknown>>({});
+  Object.assign(nodeRef.current, props);
+  React.useImperativeHandle(ref, () => nodeRef.current, []);
+  return React.createElement(name, props, props.children as React.ReactNode);
+});
+const textInput = React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
+  const nodeRef = React.useRef<Record<string, unknown>>({});
+  Object.assign(nodeRef.current, props, {
+    focus: () => { keyboardFocusCalls.push(nodeRef.current.accessibilityLabel); },
+  });
+  React.useImperativeHandle(ref, () => nodeRef.current, []);
+  return React.createElement('TextInput', props, props.children as React.ReactNode);
+});
 const flatList = React.forwardRef<unknown, Record<string, unknown>>((props, ref) => React.createElement(
   'FlatList',
   { ...props, ref },
@@ -27,10 +40,14 @@ const modal = React.forwardRef<unknown, Record<string, unknown>>((props, ref) =>
   props.visible ? React.createElement('Modal', { ...props, ref }, props.children as React.ReactNode) : null
 ));
 const reactNativeMock = {
+  AccessibilityInfo: {
+    setAccessibilityFocus: (node: unknown) => { accessibilityFocusCalls.push(node); },
+  },
   ActivityIndicator: host('ActivityIndicator'),
   Alert: { alert: (...args: unknown[]) => { alertArguments = args; } },
+  findNodeHandle: (node: unknown) => node,
   FlatList: flatList, Modal: modal, Pressable: host('Pressable'), ScrollView: host('ScrollView'), StyleSheet: { create: <T,>(styles: T) => styles },
-  Switch: host('Switch'), Text: host('Text'), TextInput: host('TextInput'), View: host('View'),
+  Switch: host('Switch'), Text: host('Text'), TextInput: textInput, View: host('View'),
 };
 const iconsMock = new Proxy({}, { get: (_target, property) => host(String(property)) });
 type Loader = (request: string, parent: NodeModule | undefined, isMain: boolean) => unknown;
@@ -305,6 +322,64 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'missing 맵 제거' }).length, 0);
   });
 
+  it('shows explicit preset verification as pending without claiming deletion', async () => {
+    const presets = deferred<ReturnType<typeof preset>[]>();
+    const explicit = { ...setting('a', 3, 0), presetMode: 'EXPLICIT' as const, partyPresetId: 99 };
+    const renderer = await renderEditor({
+      entry: battleEntry([explicit]),
+      maps: [catalogMap('a', 'Alpha')],
+      onListPartyPresets: () => presets.promise,
+    });
+
+    assert.equal(hasText(renderer.root, '프리셋 확인 중'), true);
+    assert.equal(hasText(renderer.root, '삭제된 프리셋 #99'), false);
+    assert.equal(hasText(renderer.root, '선택한 프리셋이 삭제되었습니다. 다른 프리셋을 선택해 주세요.'), false);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투 맵 자동화 입력 오류' }).length, 0);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.disabled, true);
+  });
+
+  it('shows explicit preset verification as unavailable after failure without claiming deletion', async () => {
+    const presets = deferred<ReturnType<typeof preset>[]>();
+    const explicit = { ...setting('a', 3, 0), presetMode: 'EXPLICIT' as const, partyPresetId: 99 };
+    const renderer = await renderEditor({
+      entry: battleEntry([explicit]),
+      maps: [catalogMap('a', 'Alpha')],
+      onListPartyPresets: () => presets.promise,
+    });
+
+    await act(async () => {
+      presets.reject(new Error('preset down'));
+      await presets.promise.catch(() => undefined);
+    });
+
+    assert.equal(hasText(renderer.root, '프리셋 확인 불가'), true);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '프리셋 다시 불러오기' }));
+    assert.equal(hasText(renderer.root, '삭제된 프리셋 #99'), false);
+    assert.equal(hasText(renderer.root, '선택한 프리셋이 삭제되었습니다. 다른 프리셋을 선택해 주세요.'), false);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투 맵 자동화 입력 오류' }).length, 0);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.disabled, true);
+  });
+
+  it('claims explicit preset deletion only after a successful empty verification', async () => {
+    const presets = deferred<ReturnType<typeof preset>[]>();
+    const explicit = { ...setting('a', 3, 0), presetMode: 'EXPLICIT' as const, partyPresetId: 99 };
+    const renderer = await renderEditor({
+      entry: battleEntry([explicit]),
+      maps: [catalogMap('a', 'Alpha')],
+      onListPartyPresets: () => presets.promise,
+    });
+
+    await act(async () => {
+      presets.resolve([]);
+      await presets.promise;
+    });
+
+    assert.equal(hasText(renderer.root, '삭제된 프리셋 #99'), true);
+    assert.equal(hasText(renderer.root, '선택한 프리셋이 삭제되었습니다. 다른 프리셋을 선택해 주세요.'), true);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 입력 오류' }));
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.disabled, true);
+  });
+
   it('uses one virtualized list without nesting a scroll view', async () => {
     const renderer = await renderEditor({ maps: [catalogMap('a', 'Alpha')] });
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'FlatList').length, 1);
@@ -391,6 +466,69 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 프리셋 선택 열기' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'Modal').length, 0);
+  });
+
+  it('moves focus into the preset modal and restores each live invoking row on every ordinary close path', async () => {
+    accessibilityFocusCalls.length = 0;
+    keyboardFocusCalls.length = 0;
+    const renderer = await renderEditor({
+      entry: battleEntry([setting('a', 3, 0), setting('b', 3, 1)]),
+      maps: [catalogMap('a', 'Alpha'), catalogMap('b', 'Beta')],
+      presets: [preset(7, 'Existing')],
+    });
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.find((node) => (node.type as unknown) === 'Modal').props.onShow(); });
+    assert.equal(focusedRole(accessibilityFocusCalls.at(-1)), 'header');
+    assert.equal(keyboardFocusCalls.at(-1), '프리셋 검색');
+    await act(async () => { renderer.root.find((node) => (node.type as unknown) === 'Modal').props.onRequestClose(); });
+    await act(async () => { await delay(280); });
+    assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), 'Alpha 프리셋 선택 열기');
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 프리셋 선택 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 배경 닫기' }).props.onPress(); });
+    await act(async () => { await delay(280); });
+    assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), 'Beta 프리셋 선택 열기');
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
+    await act(async () => { await delay(280); });
+    assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), 'Alpha 프리셋 선택 열기');
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 프리셋 선택 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Existing 프리셋 선택' }).props.onPress(); });
+    await act(async () => { await delay(280); });
+    assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), 'Beta 프리셋 선택 열기');
+  });
+
+  it('does not restore a stale preset trigger after its row is removed, the editor becomes busy, or it unmounts', async () => {
+    accessibilityFocusCalls.length = 0;
+    const base = editorProps({
+      entry: battleEntry([setting('a', 3, 0), setting('b', 3, 1)]),
+      maps: [catalogMap('a', 'Alpha'), catalogMap('b', 'Beta')],
+      presets: [preset(7, 'Existing')],
+    });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(BattleMapAutomationEditor, base)); });
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' }).props.onPress(); });
+    accessibilityFocusCalls.length = 0;
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Alpha 맵 제거' }).props.onPress(); });
+    await act(async () => { await delay(280); });
+    assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === 'Alpha 프리셋 선택 열기'), false);
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 프리셋 선택 열기' }).props.onPress(); });
+    accessibilityFocusCalls.length = 0;
+    await act(async () => { renderer.update(React.createElement(BattleMapAutomationEditor, { ...base, saving: true })); });
+    await act(async () => { await delay(280); });
+    assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === 'Beta 프리셋 선택 열기'), false);
+
+    await act(async () => { renderer.update(React.createElement(BattleMapAutomationEditor, base)); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 프리셋 선택 열기' }).props.onPress(); });
+    accessibilityFocusCalls.length = 0;
+    await act(async () => { renderer.unmount(); });
+    await act(async () => { await delay(280); });
+    assert.equal(accessibilityFocusCalls.length, 0);
   });
 
   it('repairs a deleted preset through the shared picker and supports explicit and primary selections', async () => {
@@ -520,6 +658,16 @@ function editorProps(overrides: Overrides = {}) {
 function hasText(root: ReactTestInstance, text: string): boolean {
   return root.findAll((node) => (node.type as unknown) === 'Text' && node.children.join('') === text).length > 0;
 }
+function focusedLabel(node: unknown): unknown {
+  return node && typeof node === 'object'
+    ? (node as { accessibilityLabel?: unknown }).accessibilityLabel
+    : undefined;
+}
+function focusedRole(node: unknown): unknown {
+  return node && typeof node === 'object'
+    ? (node as { accessibilityRole?: unknown }).accessibilityRole
+    : undefined;
+}
 function battleEntry(battleMaps = [] as TypedAutomationEntryResponse['battleMaps'], battleMapProgress: NonNullable<TypedAutomationEntryResponse['battleMapProgress']> = []): TypedAutomationEntryResponse {
   return { id: 14, type: 'BATTLE_MAP', enabled: true, priority: 0, ready: true, warnings: [], quests: [], battleMaps, battleMapProgress, adventureMaps: [] };
 }
@@ -532,6 +680,10 @@ function catalogMap(mapCode: string, name: string, overrides: Partial<BattleMapR
 function preset(id: number, name: string) { return { id, accountId: 1, name, members: [], createdAt: '', updatedAt: '' }; }
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
-  return { promise, resolve };
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+  return { promise, reject, resolve };
+}
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

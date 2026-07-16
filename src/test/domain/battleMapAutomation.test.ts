@@ -52,6 +52,31 @@ describe('battle map automation domain', () => {
     assert.ok(errors.includes('맵 실행 순서는 0부터 빠짐없이 한 번씩 지정해야 합니다.'));
   });
 
+  it('skips only preset membership validation while verification is unsettled and keeps request building strict', () => {
+    const draft = buildBattleMapAutomationDraft(entry(), []);
+    draft.maps[0] = {
+      ...draft.maps[0]!,
+      presetMode: 'EXPLICIT',
+      partyPresetId: 99,
+    };
+    const missingPreset = '선택한 프리셋을 찾을 수 없습니다. 다른 프리셋을 선택해 주세요.';
+
+    assert.equal(validateBattleMapAutomationDraft(draft, []).includes(missingPreset), true);
+    assert.equal(validateBattleMapAutomationDraft(
+      draft,
+      [],
+      { validatePresetMembership: false },
+    ).includes(missingPreset), false);
+    assert.throws(() => buildBattleMapAutomationRequest(draft, []), /선택한 프리셋/);
+
+    draft.maps[0]!.partyPresetId = null;
+    assert.equal(validateBattleMapAutomationDraft(
+      draft,
+      [],
+      { validatePresetMembership: false },
+    ).includes(missingPreset), true);
+  });
+
   it('keeps missing stored settings and server progress editable but excludes progress from the exact request', () => {
     const stored = entry();
     const draft = buildBattleMapAutomationDraft(stored, []);

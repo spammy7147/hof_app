@@ -568,17 +568,27 @@ export class UnifiedAutomationController {
     sequence: number,
     entries: TypedAutomationEntryResponse[],
   ): TypedAutomationEntryResponse[] {
-    if (sequence < this.battleProgressRevision) return entries;
-    const serverBattle = response.entries.find(({ type }) => type === 'BATTLE_MAP');
     const currentIndex = entries.findIndex(({ type }) => type === 'BATTLE_MAP');
     const currentBattle = entries[currentIndex];
+    if (sequence < this.battleProgressRevision) {
+      if (currentIndex < 0 || !currentBattle) return entries;
+      const publishedBattle = this.snapshot.aggregate?.entries.find(({ type }) => type === 'BATTLE_MAP');
+      const next = [...entries];
+      next[currentIndex] = {
+        ...currentBattle,
+        battleMapProgress: publishedBattle?.battleMapProgress ?? [],
+      };
+      return next;
+    }
+
+    this.battleProgressRevision = sequence;
+    const serverBattle = response.entries.find(({ type }) => type === 'BATTLE_MAP');
     if (!serverBattle || currentIndex < 0 || !currentBattle) return entries;
     const next = [...entries];
     next[currentIndex] = {
       ...currentBattle,
       battleMapProgress: serverBattle.battleMapProgress,
     };
-    this.battleProgressRevision = sequence;
     return next;
   }
 

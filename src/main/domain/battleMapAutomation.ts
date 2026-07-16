@@ -32,6 +32,10 @@ export type BattleMapAutomationDraft = {
   dailyProgress: Record<string, BattleMapServerProgress>;
 };
 
+export type BattleMapAutomationValidationOptions = {
+  validatePresetMembership?: boolean;
+};
+
 export type BattleProgress = { remaining: number; percent: number; complete: boolean };
 
 export function buildBattleProgress({ target, successes }: { target: number; successes: number }): BattleProgress {
@@ -151,6 +155,7 @@ export function removeBattleMapSetting(draft: BattleMapAutomationDraft, index: n
 export function validateBattleMapAutomationDraft(
   draft: BattleMapAutomationDraft,
   validPresetIds: readonly number[],
+  { validatePresetMembership = true }: BattleMapAutomationValidationOptions = {},
 ): string[] {
   const errors: string[] = [];
   const identities = new Set<string>();
@@ -170,9 +175,11 @@ export function validateBattleMapAutomationDraft(
     if (map.presetMode === 'PRIMARY' && map.partyPresetId != null) {
       errors.push('대표 프리셋 사용 시 개별 프리셋을 함께 지정할 수 없습니다.');
     }
-    if (map.presetMode === 'EXPLICIT'
-      && (typeof map.partyPresetId !== 'number' || !Number.isSafeInteger(map.partyPresetId) || !validPresetIds.includes(map.partyPresetId))) {
-      errors.push('선택한 프리셋을 찾을 수 없습니다. 다른 프리셋을 선택해 주세요.');
+    if (map.presetMode === 'EXPLICIT') {
+      const validPresetId = typeof map.partyPresetId === 'number' && Number.isSafeInteger(map.partyPresetId);
+      if (!validPresetId || (validatePresetMembership && !validPresetIds.includes(map.partyPresetId!))) {
+        errors.push('선택한 프리셋을 찾을 수 없습니다. 다른 프리셋을 선택해 주세요.');
+      }
     }
     if (map.source === 'CATALOG' && (!map.resolved || !map.categoryId.trim() || !map.mapCode.trim())) {
       errors.push('확인되지 않은 맵은 새로 선택할 수 없습니다.');

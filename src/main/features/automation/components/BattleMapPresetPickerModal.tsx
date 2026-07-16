@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
 import {
+  AccessibilityInfo,
+  findNodeHandle,
   FlatList,
   Modal,
   Pressable,
@@ -38,6 +40,7 @@ export function BattleMapPresetPickerModal({
   visible,
 }: Props) {
   const [query, setQuery] = useState('');
+  const titleRef = useRef<ElementRef<typeof Text>>(null);
   const searchRef = useRef<TextInput>(null);
 
   useEffect(() => {
@@ -53,11 +56,17 @@ export function BattleMapPresetPickerModal({
     ];
   }, [presets, query]);
 
+  function handleShow() {
+    searchRef.current?.focus();
+    const titleNode = findNodeHandle(titleRef.current);
+    if (titleNode != null) AccessibilityInfo.setAccessibilityFocus(titleNode);
+  }
+
   return (
     <Modal
       animationType="fade"
       onRequestClose={onClose}
-      onShow={() => searchRef.current?.focus()}
+      onShow={handleShow}
       transparent
       visible={visible}
     >
@@ -71,7 +80,7 @@ export function BattleMapPresetPickerModal({
         />
         <View accessibilityLabel="전투 맵 프리셋 선택기" accessibilityViewIsModal style={styles.panel}>
           <View style={styles.headingRow}>
-            <Text accessibilityRole="header" style={styles.title}>{mapName} 프리셋 선택</Text>
+            <Text ref={titleRef} accessible accessibilityRole="header" style={styles.title}>{mapName} 프리셋 선택</Text>
             <Pressable
               accessibilityLabel="프리셋 선택기 닫기"
               accessibilityRole="button"

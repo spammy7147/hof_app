@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Alert,
+  findNodeHandle,
   FlatList,
   Pressable,
   StyleSheet,
@@ -99,6 +101,15 @@ export function BattleMapAutomationEditor({
   const mapSequenceRef = useRef(0);
   const eligibleIdsRef = useRef(new Set<string>());
   const requestedCategoriesRef = useRef(false);
+  const mountedRef = useRef(false);
+  const controlsDisabledRef = useRef(false);
+  const presetTriggerNodesRef = useRef(new Map<string, ElementRef<typeof Pressable>>());
+  const invokingPresetTriggerRef = useRef<{
+    identity: string;
+    nodeHandle: ReturnType<typeof findNodeHandle>;
+  } | null>(null);
+  const presetFocusGenerationRef = useRef(0);
+  const restorePresetFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const updateDraft = useCallback((updater: (current: BattleMapAutomationDraft) => BattleMapAutomationDraft) => {
     const next = updater(draftRef.current);
@@ -148,12 +159,24 @@ export function BattleMapAutomationEditor({
   }, [onLoadBattleMaps]);
 
   useEffect(() => {
-    void loadPresets();
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       mountedGenerationRef.current += 1;
       presetGenerationRef.current += 1;
       mapGenerationRef.current = {};
+      presetFocusGenerationRef.current += 1;
+      presetTriggerNodesRef.current.clear();
+      invokingPresetTriggerRef.current = null;
+      if (restorePresetFocusTimerRef.current) {
+        clearTimeout(restorePresetFocusTimerRef.current);
+        restorePresetFocusTimerRef.current = null;
+      }
     };
+  }, []);
+
+  useEffect(() => {
+    void loadPresets();
   }, [loadPresets]);
 
   useEffect(() => {
@@ -235,12 +258,18 @@ export function BattleMapAutomationEditor({
   }, [catalog, entry, updateDraft]);
 
   const validPresetIds = useMemo(() => presets.map(({ id }) => id), [presets]);
+  const presetsVerified = !presetState.loading && presetState.error == null;
   const validationErrors = useMemo(
-    () => validateBattleMapAutomationDraft(draft, validPresetIds),
-    [draft, validPresetIds],
+    () => validateBattleMapAutomationDraft(
+      draft,
+      validPresetIds,
+      { validatePresetMembership: presetsVerified },
+    ),
+    [draft, presetsVerified, validPresetIds],
   );
   const busy = saving || localBusy;
   const controlsDisabled = busy || !draftReady;
+  controlsDisabledRef.current = controlsDisabled;
   const dirty = serializeEditableDraft(draft) !== baselineRef.current;
   const hasExplicitPreset = draft.maps.some(({ presetMode }) => presetMode === 'EXPLICIT');
   const saveDisabled = controlsDisabled || validationErrors.length > 0
@@ -251,6 +280,54 @@ export function BattleMapAutomationEditor({
   const activePresetSetting = activePresetIdentity == null
     ? null
     : draft.maps.find((setting) => battleMapIdentity(setting) === activePresetIdentity) ?? null;
+  const closePresetPicker = useCallback((restoreFocus: boolean) => {
+    const focusGeneration = ++presetFocusGenerationRef.current;
+    const invocation = invokingPresetTriggerRef.current;
+    setActivePresetIdentity(null);
+    if (restorePresetFocusTimerRef.current) {
+      clearTimeout(restorePresetFocusTimerRef.current);
+      restorePresetFocusTimerRef.current = null;
+    }
+    if (!restoreFocus || !invocation) {
+      invokingPresetTriggerRef.current = null;
+      return;
+    }
+    restorePresetFocusTimerRef.current = setTimeout(() => {
+      restorePresetFocusTimerRef.current = null;
+      const clearInvocation = () => {
+        if (invokingPresetTriggerRef.current === invocation) invokingPresetTriggerRef.current = null;
+      };
+      if (
+        !mountedRef.current
+        || controlsDisabledRef.current
+        || presetFocusGenerationRef.current !== focusGeneration
+        || !draftRef.current.maps.some((setting) => battleMapIdentity(setting) === invocation.identity)
+      ) {
+        clearInvocation();
+        return;
+      }
+      const liveNode = presetTriggerNodesRef.current.get(invocation.identity) ?? null;
+      const liveHandle = findNodeHandle(liveNode);
+      if (liveHandle != null && liveHandle === invocation.nodeHandle) {
+        AccessibilityInfo.setAccessibilityFocus(liveHandle);
+      }
+      clearInvocation();
+    }, 250);
+  }, []);
+  const openPresetPicker = useCallback((identity: string) => {
+    if (controlsDisabledRef.current) return;
+    presetFocusGenerationRef.current += 1;
+    if (restorePresetFocusTimerRef.current) {
+      clearTimeout(restorePresetFocusTimerRef.current);
+      restorePresetFocusTimerRef.current = null;
+    }
+    const triggerNode = presetTriggerNodesRef.current.get(identity) ?? null;
+    invokingPresetTriggerRef.current = {
+      identity,
+      nodeHandle: findNodeHandle(triggerNode),
+    };
+    setActivePresetIdentity(identity);
+  }, []);
   const listItems = useMemo<EditorListItem[]>(() => [
     { key: 'selected-heading', kind: 'HEADING', title: '선택한 맵 · 실행 순서' },
     ...(draft.maps.length === 0
@@ -275,9 +352,9 @@ export function BattleMapAutomationEditor({
 
   useEffect(() => {
     if (activePresetIdentity != null && (controlsDisabled || activePresetSetting == null)) {
-      setActivePresetIdentity(null);
+      closePresetPicker(false);
     }
-  }, [activePresetIdentity, activePresetSetting, controlsDisabled]);
+  }, [activePresetIdentity, activePresetSetting, closePresetPicker, controlsDisabled]);
 
   function requestBack() {
     if (busy) return;
@@ -348,7 +425,11 @@ export function BattleMapAutomationEditor({
       : null;
     const presetSummary = setting.presetMode === 'PRIMARY'
       ? '대표 프리셋'
-      : selectedPreset?.name ?? `삭제된 프리셋 #${setting.partyPresetId ?? '?'}`;
+      : presetState.loading
+        ? '프리셋 확인 중'
+        : presetState.error
+          ? '프리셋 확인 불가'
+          : selectedPreset?.name ?? `삭제된 프리셋 #${setting.partyPresetId ?? '?'}`;
     return (
       <View style={[styles.card, progress.complete && styles.completeCard]}>
         <View style={styles.rowHeading}>
@@ -377,11 +458,24 @@ export function BattleMapAutomationEditor({
           <Text style={styles.muted}>현재 프리셋</Text>
           <Text style={styles.choiceText}>{presetSummary}</Text>
         </View>
-        {setting.presetMode === 'EXPLICIT' && !selectedPreset ? <Text accessibilityLiveRegion="polite" accessibilityRole="alert" style={styles.problem}>선택한 프리셋이 삭제되었습니다. 다른 프리셋을 선택해 주세요.</Text> : null}
-        <Pressable accessibilityLabel={`${setting.displayName} 프리셋 선택 열기`} accessibilityRole="button" accessibilityState={{ disabled: controlsDisabled }} disabled={controlsDisabled} onPress={() => setActivePresetIdentity(identity)} style={styles.choice}><Text style={styles.choiceText}>프리셋 변경</Text></Pressable>
+        {setting.presetMode === 'EXPLICIT' && presetsVerified && !selectedPreset ? <Text accessibilityLiveRegion="polite" accessibilityRole="alert" style={styles.problem}>선택한 프리셋이 삭제되었습니다. 다른 프리셋을 선택해 주세요.</Text> : null}
+        <Pressable
+          ref={(node) => {
+            if (node) presetTriggerNodesRef.current.set(identity, node);
+            else presetTriggerNodesRef.current.delete(identity);
+          }}
+          accessibilityLabel={`${setting.displayName} 프리셋 선택 열기`}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: controlsDisabled }}
+          disabled={controlsDisabled}
+          onPress={() => openPresetPicker(identity)}
+          style={styles.choice}
+        >
+          <Text style={styles.choiceText}>프리셋 변경</Text>
+        </Pressable>
       </View>
     );
-  }, [controlsDisabled, draft, presets, query, updateDraft]);
+  }, [controlsDisabled, draft, openPresetPicker, presets, presetsVerified, presetState.error, presetState.loading, query, updateDraft]);
 
   return (
     <View style={styles.screen}>
@@ -410,11 +504,11 @@ export function BattleMapAutomationEditor({
       <BattleMapPresetPickerModal
         disabled={controlsDisabled}
         mapName={activePresetSetting?.displayName ?? ''}
-        onClose={() => setActivePresetIdentity(null)}
+        onClose={() => closePresetPicker(true)}
         onSelect={(presetId) => {
           if (activePresetIdentity == null) return;
           updateDraft((current) => updatePreset(current, activePresetIdentity, presetId));
-          setActivePresetIdentity(null);
+          closePresetPicker(true);
         }}
         presets={presets}
         selectedPresetId={activePresetSetting?.partyPresetId ?? null}
