@@ -16,6 +16,7 @@ import {
   adventureMapIdentity,
   buildAdventureMapAutomationDraft,
   buildAdventureMapAutomationRequest,
+  describeAdventureMapConstraints,
   describeAdventureMapState,
   filterAdventureAutomationCategories,
   filterAdventureMapCatalog,
@@ -157,6 +158,10 @@ export function AdventureMapAutomationEditor({
   const loadMaps = useCallback(async () => {
     const generation = ++mapGenerationRef.current;
     const mountedGeneration = mountedGenerationRef.current;
+    if (!adventureCategory && (!areBattleCategoriesLoaded || isBattleCategoriesLoading)) {
+      setMapState({ loading: true, error: null });
+      return;
+    }
     if (!adventureCategory) {
       setMapState({ loading: false, error: battleCategoriesError ?? '모험맵 카테고리를 찾을 수 없습니다.' });
       return;
@@ -174,14 +179,20 @@ export function AdventureMapAutomationEditor({
         maps: current.maps.map((setting) => {
           const observed = resolved.find((map) => map.mapCode != null
             && adventureMapIdentity({ categoryId: map.categoryId, mapCode: map.mapCode }) === adventureMapIdentity(setting)) ?? null;
-          return observed ? {
-            ...setting,
-            displayName: observed.name || setting.displayName,
-            groupName: observed.groupName,
-            recommendedLevel: observed.recommendedLevel,
-            resolved: true,
-            observed,
-          } : setting;
+          return observed
+            ? {
+              ...setting,
+              displayName: observed.name || setting.displayName,
+              groupName: observed.groupName,
+              recommendedLevel: observed.recommendedLevel,
+              resolved: true,
+              observed,
+            }
+            : {
+              ...setting,
+              resolved: false,
+              observed: null,
+            };
         }),
       }));
       setMapState({ loading: false, error: null });
@@ -192,7 +203,14 @@ export function AdventureMapAutomationEditor({
         setMapState({ loading: false, error: toUserFacingErrorMessage(error) });
       }
     }
-  }, [adventureCategory, battleCategoriesError, onLoadBattleMaps, updateDraft]);
+  }, [
+    adventureCategory,
+    areBattleCategoriesLoaded,
+    battleCategoriesError,
+    isBattleCategoriesLoading,
+    onLoadBattleMaps,
+    updateDraft,
+  ]);
 
   useEffect(() => {
     void loadMaps();
@@ -288,6 +306,7 @@ export function AdventureMapAutomationEditor({
         setting.categoryId === map.categoryId && setting.mapCode === map.mapCode
       ));
       const state = describeAdventureMapState(map);
+      const constraints = describeAdventureMapConstraints(map);
       return (
         <Pressable
           accessibilityLabel={`${map.name} 모험맵 선택`}
@@ -302,6 +321,11 @@ export function AdventureMapAutomationEditor({
             <Text style={state.kind === 'RUNNABLE' || state.kind === 'UNLIMITED' ? styles.runnable : styles.state}>{state.label}</Text>
           </View>
           <Text style={styles.muted}>{[map.groupName, map.recommendedLevel, state.detail].filter(Boolean).join(' · ')}</Text>
+          <View style={styles.constraintList}>
+            {constraints.map((constraint) => (
+              <Text key={constraint.key} style={styles.constraintChip}>{constraint.label}</Text>
+            ))}
+          </View>
         </Pressable>
       );
     }
@@ -310,6 +334,7 @@ export function AdventureMapAutomationEditor({
       ? { label: '현재 상태 확인 불가', detail: '저장된 설정은 유지되며 목록 갱신 후 다시 확인합니다.' }
       : describeAdventureMapState(setting.observed);
     const presetLabel = formatAutomationPresetSelection(setting, presets);
+    const constraints = describeAdventureMapConstraints(setting.observed);
     return (
       <View style={styles.card}>
         <View style={styles.rowHeading}>
@@ -322,6 +347,11 @@ export function AdventureMapAutomationEditor({
           <Pressable accessibilityLabel={`${setting.displayName} 제거`} disabled={controlsDisabled} onPress={() => updateDraft((current) => removeAdventureMapSetting(current, index))} style={styles.iconButton}><Trash2 color={theme.colors.danger} size={16} /></Pressable>
         </View>
         {state.detail ? <Text style={styles.muted}>{state.detail}</Text> : null}
+        <View style={styles.constraintList}>
+          {constraints.map((constraint) => (
+            <Text key={constraint.key} style={styles.constraintChip}>{constraint.label}</Text>
+          ))}
+        </View>
         <View accessibilityLabel={`${setting.displayName} 현재 프리셋: ${presetLabel}`} style={styles.presetSummary}>
           <Text style={styles.muted}>현재 프리셋</Text>
           <Text style={styles.choiceText}>{presetLabel}</Text>
@@ -405,6 +435,8 @@ const styles = StyleSheet.create({
   mapName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
   state: { color: theme.colors.accentAmber, fontSize: 11, fontWeight: '800' },
   runnable: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '800' },
+  constraintList: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs },
+  constraintChip: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.sm, color: theme.colors.textMuted, fontSize: 10, fontWeight: '700', paddingHorizontal: theme.spacing.sm, paddingVertical: 4 },
   muted: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
   problem: { color: theme.colors.accentAmber, fontSize: 11, lineHeight: 16 },
   iconButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },

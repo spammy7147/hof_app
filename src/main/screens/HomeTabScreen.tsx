@@ -80,9 +80,28 @@ export function HomeTabScreen({
   );
 
   useEffect(() => {
-    if (authenticated) void automationController.load();
-    else automationController.reset();
+    if (!authenticated) automationController.reset();
   }, [authenticated, automationController]);
+
+  useEffect(() => {
+    if (!authenticated || route !== 'dashboard') return undefined;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const refresh = async () => {
+      try {
+        await automationController.load();
+      } finally {
+        if (!cancelled) {
+          timer = setTimeout(() => { void refresh(); }, 3_000);
+        }
+      }
+    };
+    void refresh();
+    return () => {
+      cancelled = true;
+      if (timer != null) clearTimeout(timer);
+    };
+  }, [authenticated, automationController, route]);
 
   function startEdit(module: UnifiedAutomationModuleResponse) {
     if (automationController.isModuleBusy(module.id)) {

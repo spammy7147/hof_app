@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import {
   buildAdventureMapAutomationDraft,
   buildAdventureMapAutomationRequest,
+  describeAdventureMapConstraints,
   describeAdventureMapState,
   formatAdventureDailyRefresh,
   formatAutomationPresetSelection,
@@ -67,6 +68,33 @@ describe('adventure map automation domain', () => {
     }), '오늘 초기화 완료 · 오전 12:03');
     assert.equal(formatAdventureDailyRefresh({ status: 'PENDING', refreshDate: null, refreshedAt: null }), '오늘 초기화 대기');
     assert.equal(formatAdventureDailyRefresh(undefined), '오늘 초기화 대기');
+  });
+
+  it('describes every observed constraint independently even when several apply together', () => {
+    assert.deepEqual(describeAdventureMapConstraints(map('combined', {
+      availableCount: 4,
+      attemptCount: 2,
+      winCount: 1,
+      cooldownRemainingSeconds: 90,
+      cooldownRemainingText: '1분 30초',
+      keyCount: 0,
+    })).map(({ label }) => label), [
+      '쿨다운 · 1분 30초',
+      '열쇠 · 0개',
+      '가능 횟수 · 4회',
+      '도전 잔여 · 2회',
+      '승리 잔여 · 1회',
+    ]);
+  });
+
+  it('marks each constraint unknown when a stored map has no successful observation', () => {
+    assert.deepEqual(describeAdventureMapConstraints(null).map(({ label }) => label), [
+      '쿨다운 · 미확인',
+      '열쇠 · 미확인',
+      '가능 횟수 · 미확인',
+      '도전 잔여 · 미확인',
+      '승리 잔여 · 미확인',
+    ]);
   });
 });
 

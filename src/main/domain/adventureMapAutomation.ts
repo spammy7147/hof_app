@@ -34,6 +34,11 @@ export type AdventureMapStateDescription = {
   detail: string | null;
 };
 
+export type AdventureMapConstraintDescription = {
+  key: 'COOLDOWN' | 'KEY' | 'AVAILABLE' | 'ATTEMPT' | 'WIN';
+  label: string;
+};
+
 export function adventureMapIdentity(value: { categoryId: string; mapCode: string }): string {
   return `${value.categoryId}\u0000${value.mapCode}`;
 }
@@ -213,6 +218,30 @@ export function describeAdventureMapState(map: BattleMapResponse): AdventureMapS
   return { kind: 'RUNNABLE', label: '실행 가능', detail: remaining.length > 0 ? `관측 잔여 ${Math.min(...remaining)}회` : null };
 }
 
+export function describeAdventureMapConstraints(
+  map: BattleMapResponse | null,
+): AdventureMapConstraintDescription[] {
+  if (map == null) {
+    return [
+      { key: 'COOLDOWN', label: '쿨다운 · 미확인' },
+      { key: 'KEY', label: '열쇠 · 미확인' },
+      { key: 'AVAILABLE', label: '가능 횟수 · 미확인' },
+      { key: 'ATTEMPT', label: '도전 잔여 · 미확인' },
+      { key: 'WIN', label: '승리 잔여 · 미확인' },
+    ];
+  }
+  const cooldown = (map.cooldownRemainingSeconds ?? 0) > 0 || map.cooldownRemainingText?.trim()
+    ? map.cooldownRemainingText?.trim() || formatDuration(map.cooldownRemainingSeconds ?? 0)
+    : '없음';
+  return [
+    { key: 'COOLDOWN', label: `쿨다운 · ${cooldown}` },
+    { key: 'KEY', label: `열쇠 · ${formatConstraintCount(map.keyCount, '개')}` },
+    { key: 'AVAILABLE', label: `가능 횟수 · ${formatConstraintCount(map.availableCount, '회')}` },
+    { key: 'ATTEMPT', label: `도전 잔여 · ${formatConstraintCount(map.attemptCount, '회')}` },
+    { key: 'WIN', label: `승리 잔여 · ${formatConstraintCount(map.winCount, '회')}` },
+  ];
+}
+
 export function formatAutomationPresetSelection(
   selection: { presetMode: 'PRIMARY' | 'EXPLICIT'; partyPresetId: number | null },
   presets: Parameters<typeof formatPresetSelection>[1],
@@ -241,4 +270,7 @@ function formatDuration(seconds: number): string {
   if (seconds < 60) return `${seconds}초`;
   const minutes = Math.ceil(seconds / 60);
   return minutes < 60 ? `${minutes}분` : `${Math.ceil(minutes / 60)}시간`;
+}
+function formatConstraintCount(value: number | null, unit: string): string {
+  return value == null ? '제한 없음' : `${value.toLocaleString('ko-KR')}${unit}`;
 }

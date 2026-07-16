@@ -155,6 +155,131 @@ describe('AdventureMapAutomationEditor', () => {
     assert.equal(hasText(renderer.root, '대표 · 최신 대표'), true);
     assert.equal(hasText(renderer.root, '대표 · 이전 대표'), false);
   });
+
+  it('clears stale observations only after a newer successful map refresh omits the selected map', async () => {
+    const first = deferred<BattleMapResponse[]>();
+    const second = deferred<BattleMapResponse[]>();
+    const base = editorProps({
+      entry: entry([setting('stored', 0, 'PRIMARY', null)]),
+      onLoadBattleMaps: () => first.promise,
+    });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(AdventureMapAutomationEditor, base)); });
+    await act(async () => {
+      first.resolve([map('stored', '저장된 맵', {
+        cooldownRemainingSeconds: 60,
+        cooldownRemainingText: '1분',
+        keyCount: 2,
+        attemptCount: 3,
+      })]);
+      await first.promise;
+    });
+    assert.equal(hasText(renderer.root, '쿨다운 1분'), true);
+    assert.equal(hasText(renderer.root, '열쇠 · 2개'), true);
+
+    await act(async () => {
+      renderer.update(React.createElement(AdventureMapAutomationEditor, {
+        ...base,
+        onLoadBattleMaps: () => second.promise,
+      }));
+    });
+    assert.equal(hasText(renderer.root, '쿨다운 1분'), true);
+    await act(async () => {
+      second.resolve([]);
+      await second.promise;
+    });
+
+    assert.equal(hasText(renderer.root, '현재 상태 확인 불가'), true);
+    assert.equal(hasText(renderer.root, '쿨다운 · 미확인'), true);
+    assert.equal(hasText(renderer.root, '열쇠 · 미확인'), true);
+    assert.equal(hasText(renderer.root, '쿨다운 1분'), false);
+  });
+
+  it('preserves the last successful observation when a refresh fails', async () => {
+    const second = deferred<BattleMapResponse[]>();
+    const base = editorProps({
+      entry: entry([setting('stored', 0, 'PRIMARY', null)]),
+      onLoadBattleMaps: async () => [map('stored', '저장된 맵', {
+        cooldownRemainingSeconds: 60,
+        cooldownRemainingText: '1분',
+        availableCount: 2,
+      })],
+    });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(AdventureMapAutomationEditor, base)); });
+    assert.equal(hasText(renderer.root, '쿨다운 1분'), true);
+
+    await act(async () => {
+      renderer.update(React.createElement(AdventureMapAutomationEditor, {
+        ...base,
+        onLoadBattleMaps: () => second.promise,
+      }));
+    });
+    await act(async () => {
+      second.reject(new Error('offline'));
+      try { await second.promise; } catch {}
+    });
+
+    assert.equal(hasText(renderer.root, '쿨다운 1분'), true);
+    assert.equal(hasText(renderer.root, '가능 횟수 · 2회'), true);
+  });
+
+  it('keeps mutations disabled while categories are still loading and does not finalize a missing category', async () => {
+    const maps = deferred<BattleMapResponse[]>();
+    let requested = 0;
+    const base = editorProps({
+      entry: entry([setting('stored', 0, 'PRIMARY', null)]),
+      battleCategories: [],
+      areBattleCategoriesLoaded: false,
+      isBattleCategoriesLoading: true,
+      onLoadBattleCategories: () => { requested += 1; },
+      onLoadBattleMaps: () => maps.promise,
+    });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(AdventureMapAutomationEditor, base)); });
+
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'stored 제거' }).props.disabled, true);
+    assert.equal(hasText(renderer.root, '모험맵을 불러오지 못했어요.'), false);
+    assert.equal(requested, 0);
+
+    await act(async () => {
+      renderer.update(React.createElement(AdventureMapAutomationEditor, {
+        ...base,
+        battleCategories: [{ id: 'adventure_map', label: '모험맵', description: '', order: 0, enabled: true }],
+        areBattleCategoriesLoaded: true,
+        isBattleCategoriesLoading: false,
+      }));
+    });
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'stored 제거' }).props.disabled, true);
+    await act(async () => {
+      maps.resolve([map('stored', '저장된 맵')]);
+      await maps.promise;
+    });
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '저장된 맵 제거' }).props.disabled, false);
+  });
+
+  it('renders cooldown, key, and each daily constraint separately for the same map', async () => {
+    const renderer = await renderEditor({
+      maps: [map('combined', '복합 제한 맵', {
+        cooldownRemainingSeconds: 90,
+        cooldownRemainingText: '1분 30초',
+        keyCount: 0,
+        availableCount: 4,
+        attemptCount: 2,
+        winCount: 1,
+      })],
+    });
+
+    for (const label of [
+      '쿨다운 · 1분 30초',
+      '열쇠 · 0개',
+      '가능 횟수 · 4회',
+      '도전 잔여 · 2회',
+      '승리 잔여 · 1회',
+    ]) {
+      assert.equal(hasText(renderer.root, label), true);
+    }
+  });
 });
 
 async function renderEditor(overrides: { maps?: BattleMapResponse[]; onSave?: (request: UpdateAdventureMapAutomationRequest) => Promise<boolean> } = {}): Promise<ReactTestRenderer> {
