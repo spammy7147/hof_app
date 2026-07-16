@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, Plus, Save, Trash2 } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Plus, Save, Star, Trash2 } from 'lucide-react-native';
 import type { ReactNode } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -31,6 +31,7 @@ type PartyPresetListProps = {
     presetId: number,
     request: UpdatePartyPresetRequest,
   ) => Promise<PartyPresetResponse>;
+  onMakePartyPresetPrimary: (presetId: number) => Promise<PartyPresetResponse>;
   onDeletePartyPreset: (presetId: number) => Promise<null>;
 };
 
@@ -47,6 +48,7 @@ export function PartyPresetList({
   onListPartyPresets,
   onCreatePartyPreset,
   onUpdatePartyPreset,
+  onMakePartyPresetPrimary,
   onDeletePartyPreset,
 }: PartyPresetListProps) {
   const [presets, setPresets] = useState<PartyPresetResponse[]>([]);
@@ -174,6 +176,26 @@ export function PartyPresetList({
     }
   }
 
+  async function makePrimary(presetId: number) {
+    if (!authenticated || isSaving) return;
+    const target = presets.find(({ id }) => id === presetId);
+    if (target?.isPrimary) return;
+    setIsSaving(true);
+    setErrorMessage(null);
+    try {
+      const updated = await onMakePartyPresetPrimary(presetId);
+      setPresets((current) => current.map((preset) => (
+        preset.id === updated.id
+          ? { ...updated, isPrimary: true }
+          : { ...preset, isPrimary: false }
+      )));
+    } catch (error) {
+      setErrorMessage(toUserFacingErrorMessage(error));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   return (
     <View style={styles.root}>
       <View style={styles.toolbar}>
@@ -216,6 +238,7 @@ export function PartyPresetList({
           {expandedPresetId === 'new' ? (
             <PresetCard
               expanded
+              isPrimary={false}
               name={draftName || '새 프리셋'}
               summary={formatDraftPartySummary(draftParty)}
               onPress={openNewPreset}
@@ -226,10 +249,12 @@ export function PartyPresetList({
                 draftName,
                 draftParty,
                 isSaving,
+                isPrimary: false,
                 onActiveSlotChange: setActiveSlotIndex,
                 onDelete: deletePreset,
                 onNameChange: setDraftName,
                 onPartyChange: setDraftParty,
+                onMakePrimary: null,
                 onSave: savePreset,
               })}
             </PresetCard>
@@ -242,6 +267,7 @@ export function PartyPresetList({
               <PresetCard
                 key={preset.id}
                 expanded={expanded}
+                isPrimary={preset.isPrimary}
                 name={preset.name}
                 summary={formatPartyPresetSummary(preset)}
                 onPress={() => openPreset(preset)}
@@ -252,10 +278,12 @@ export function PartyPresetList({
                   draftName,
                   draftParty,
                   isSaving,
+                  isPrimary: preset.isPrimary,
                   onActiveSlotChange: setActiveSlotIndex,
                   onDelete: deletePreset,
                   onNameChange: setDraftName,
                   onPartyChange: setDraftParty,
+                  onMakePrimary: () => makePrimary(preset.id),
                   onSave: savePreset,
                 }) : null}
               </PresetCard>
@@ -270,6 +298,7 @@ export function PartyPresetList({
 type PresetCardProps = {
   children: ReactNode;
   expanded: boolean;
+  isPrimary: boolean;
   name: string;
   summary: string;
   onPress: () => void;
@@ -283,6 +312,7 @@ type PresetCardProps = {
 function PresetCard({
   children,
   expanded,
+  isPrimary,
   name,
   summary,
   onPress,
@@ -295,7 +325,15 @@ function PresetCard({
         onPress={onPress}
         style={({ pressed }) => [styles.cardHeader, pressed && styles.pressed]}
       >
-        <Text style={styles.cardTitle} numberOfLines={1}>{name}</Text>
+        <View style={styles.cardTitleRow}>
+          <Text style={styles.cardTitle} numberOfLines={1}>{name}</Text>
+          {isPrimary ? (
+            <View accessibilityLabel={`${name} 대표 프리셋`} style={styles.primaryBadge}>
+              <Star color={theme.colors.accentAmber} fill={theme.colors.accentAmber} size={13} />
+              <Text style={styles.primaryBadgeText}>대표</Text>
+            </View>
+          ) : null}
+        </View>
         <View style={styles.cardSide}>
           <Text style={styles.cardSummary}>{summary}</Text>
           {expanded ? (
@@ -319,10 +357,12 @@ function renderEditor({
   draftName,
   draftParty,
   isSaving,
+  isPrimary,
   onActiveSlotChange,
   onDelete,
   onNameChange,
   onPartyChange,
+  onMakePrimary,
   onSave,
 }: {
   activeSlotIndex: number;
@@ -330,10 +370,12 @@ function renderEditor({
   draftName: string;
   draftParty: BattlePartyMember[];
   isSaving: boolean;
+  isPrimary: boolean;
   onActiveSlotChange: (slotIndex: number) => void;
   onDelete: () => void;
   onNameChange: (name: string) => void;
   onPartyChange: (party: BattlePartyMember[]) => void;
+  onMakePrimary: (() => void) | null;
   onSave: () => void;
 }) {
   return (
@@ -355,6 +397,24 @@ function renderEditor({
         onPartyChange={onPartyChange}
         party={draftParty}
       />
+      {onMakePrimary ? (
+        <Pressable
+          accessibilityLabel={`${draftName} 대표로 지정`}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: isSaving || isPrimary }}
+          disabled={isSaving || isPrimary}
+          onPress={onMakePrimary}
+          style={({ pressed }) => [
+            styles.primaryPresetButton,
+            isPrimary && styles.primaryPresetButtonActive,
+            (isSaving || isPrimary) && styles.disabledButton,
+            pressed && !isSaving && !isPrimary && styles.pressed,
+          ]}
+        >
+          <Star color={isPrimary ? theme.colors.accentAmber : theme.colors.text} fill={isPrimary ? theme.colors.accentAmber : 'transparent'} size={16} />
+          <Text style={styles.primaryPresetButtonText}>{isPrimary ? '대표 프리셋' : '대표로 지정'}</Text>
+        </Pressable>
+      ) : null}
       <View style={styles.editorActions}>
         <Pressable
           accessibilityRole="button"
@@ -484,6 +544,27 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '900',
   },
+  cardTitleRow: {
+    minWidth: 0,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  primaryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    borderRadius: 999,
+    backgroundColor: theme.colors.surfaceAlt,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  primaryBadgeText: {
+    color: theme.colors.accentAmber,
+    fontSize: 11,
+    fontWeight: '900',
+  },
   cardSide: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -522,6 +603,25 @@ const styles = StyleSheet.create({
   editorActions: {
     flexDirection: 'row',
     gap: theme.spacing.sm,
+  },
+  primaryPresetButton: {
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.xs,
+    borderWidth: 1,
+    borderColor: theme.colors.borderStrong,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceAlt,
+  },
+  primaryPresetButtonActive: {
+    borderColor: theme.colors.accentAmber,
+  },
+  primaryPresetButtonText: {
+    color: theme.colors.text,
+    fontSize: 13,
+    fontWeight: '900',
   },
   primaryActionButton: {
     minHeight: 36,

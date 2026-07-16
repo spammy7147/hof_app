@@ -39,6 +39,10 @@ const battleEditorSource = readFileSync(
   resolve(process.cwd(), 'src/main/features/automation/components/BattleMapAutomationEditor.tsx'),
   'utf8',
 );
+const adventureEditorSource = readFileSync(
+  resolve(process.cwd(), 'src/main/features/automation/components/AdventureMapAutomationEditor.tsx'),
+  'utf8',
+);
 
 describe('통합 자동화 홈 화면', () => {
   it('한 계정의 자동화를 상태 대시보드와 설정 화면으로 나눈다', () => {
@@ -143,7 +147,7 @@ describe('통합 자동화 홈 화면', () => {
     assert.match(homeSource, /createEntry/);
   });
 
-  it('QUEST와 BATTLE_MAP 상세는 typed editor를 쓰고 ADVENTURE_MAP만 임시 편집기를 유지한다', () => {
+  it('QUEST, BATTLE_MAP, ADVENTURE_MAP 상세는 모두 typed editor를 쓴다', () => {
     assert.match(homeSource, /entry\.type === 'QUEST'/);
     assert.match(homeSource, /<QuestAutomationEditor/);
     assert.match(homeSource, /automationController\.fetchQuests/);
@@ -151,10 +155,14 @@ describe('통합 자동화 홈 화면', () => {
     assert.match(homeSource, /entry\.type === 'BATTLE_MAP'/);
     assert.match(homeSource, /<BattleMapAutomationEditor/);
     assert.match(homeSource, /automationController\.saveBattleMapSettings/);
+    assert.match(homeSource, /entry\.type === 'ADVENTURE_MAP'/);
+    assert.match(homeSource, /<AdventureMapAutomationEditor/);
+    assert.match(homeSource, /automationController\.saveAdventureMapSettings/);
     assert.match(homeSource, /function openModule[\s\S]*aggregate\?\.entries[\s\S]*openEntryDetail/);
     assert.match(homeSource, /<UnifiedAutomationModuleEditor/);
     assert.doesNotMatch(questEditorSource, /updateModule|buildUpdateUnifiedModuleRequest/);
     assert.doesNotMatch(battleEditorSource, /updateModule|buildUpdateUnifiedModuleRequest/);
+    assert.doesNotMatch(adventureEditorSource, /updateModule|buildUpdateUnifiedModuleRequest/);
   });
 
   it('변경 사항은 현재 작업을 끊지 않고 다음 판단부터 적용된다고 안내한다', () => {

@@ -1331,7 +1331,15 @@ function aggregate(
 ): TypedAutomationAggregateResponse {
   return {
     entries,
-    runtime: { lifecycle, stopReason: null, nextAttemptAt: null, warnings: [], lastError: null },
+    runtime: {
+      lifecycle,
+      stopReason: null,
+      nextAttemptAt: null,
+      warnings: [],
+      lastError: null,
+      currentAction: null,
+      dailyRefresh: { status: 'PENDING', refreshDate: null, refreshedAt: null },
+    },
   };
 }
 

@@ -67,6 +67,7 @@ type MainScreenProps = {
     presetId: number,
     request: UpdatePartyPresetRequest,
   ) => Promise<PartyPresetResponse>;
+  onMakePartyPresetPrimary: (presetId: number) => Promise<PartyPresetResponse>;
   onDeletePartyPreset: (presetId: number) => Promise<null>;
   onLoadCharacterDetail: (hofCharacterId: string) => Promise<HofCharacterDetail>;
   onLoadPattern: (hofCharacterId: string, slot: number) => Promise<LoadPatternResponse>;
@@ -101,6 +102,7 @@ export function MainScreen({
   onListPartyPresets,
   onCreatePartyPreset,
   onUpdatePartyPreset,
+  onMakePartyPresetPrimary,
   onDeletePartyPreset,
   onLoadCharacterDetail,
   onLoadPattern,
@@ -215,6 +217,7 @@ export function MainScreen({
           onListPartyPresets,
           onCreatePartyPreset,
           onUpdatePartyPreset,
+          onMakePartyPresetPrimary,
           onDeletePartyPreset,
           onLoadPattern,
           onSyncCharacters: handleSyncCharacters,
@@ -271,6 +274,7 @@ type RenderActiveTabArgs = {
     presetId: number,
     request: UpdatePartyPresetRequest,
   ) => Promise<PartyPresetResponse>;
+  onMakePartyPresetPrimary: (presetId: number) => Promise<PartyPresetResponse>;
   onDeletePartyPreset: (presetId: number) => Promise<null>;
   onLoadPattern: (hofCharacterId: string, slot: number) => Promise<LoadPatternResponse>;
   onSyncCharacters: () => void;
@@ -311,6 +315,7 @@ function renderActiveTab({
   onListPartyPresets,
   onCreatePartyPreset,
   onUpdatePartyPreset,
+  onMakePartyPresetPrimary,
   onDeletePartyPreset,
   onLoadPattern,
   onSyncCharacters,
@@ -410,6 +415,7 @@ function renderActiveTab({
               onListPartyPresets={onListPartyPresets}
               onCreatePartyPreset={onCreatePartyPreset}
               onUpdatePartyPreset={onUpdatePartyPreset}
+              onMakePartyPresetPrimary={onMakePartyPresetPrimary}
               onDeletePartyPreset={onDeletePartyPreset}
             />
           )}

@@ -10,6 +10,7 @@ import {
 } from '../domain/unifiedAutomation';
 import type { UnifiedAutomationController } from '../domain/unifiedAutomationController';
 import { UnifiedAutomationDashboard } from '../features/automation/components/UnifiedAutomationDashboard';
+import { AdventureMapAutomationEditor } from '../features/automation/components/AdventureMapAutomationEditor';
 import { BattleMapAutomationEditor } from '../features/automation/components/BattleMapAutomationEditor';
 import { QuestAutomationEditor } from '../features/automation/components/QuestAutomationEditor';
 import { UnifiedAutomationModuleEditor } from '../features/automation/components/UnifiedAutomationModuleEditor';
@@ -121,7 +122,7 @@ export function HomeTabScreen({
   }
 
   function openEntryDetail(entry: TypedAutomationEntryResponse) {
-    if (entry.type === 'QUEST' || entry.type === 'BATTLE_MAP') {
+    if (entry.type === 'QUEST' || entry.type === 'BATTLE_MAP' || entry.type === 'ADVENTURE_MAP') {
       if (savingEntryIds.includes(entry.id) || savingTypes.includes(entry.type)) {
         automationController.showMessage('이 자동화를 저장하고 있어요. 완료된 뒤 다시 열어 주세요.');
         return;
@@ -218,6 +219,34 @@ export function HomeTabScreen({
     );
   }
 
+  if (aggregate && route === 'editor' && typedEditorEntry?.type === 'ADVENTURE_MAP') {
+    const currentEntry = aggregate.entries.find(({ id }) => id === typedEditorEntry.id);
+    const entry = currentEntry?.type === 'ADVENTURE_MAP' ? currentEntry : typedEditorEntry;
+    return (
+      <AdventureMapAutomationEditor
+        battleCategories={battleCategories}
+        areBattleCategoriesLoaded={areBattleCategoriesLoaded}
+        isBattleCategoriesLoading={isBattleCategoriesLoading}
+        battleCategoriesError={battleCategoriesError}
+        dailyRefresh={aggregate.runtime.dailyRefresh}
+        entry={entry}
+        mutationMessage={message ?? error}
+        saving={savingEntryIds.includes(entry.id) || savingTypes.includes('ADVENTURE_MAP')}
+        onBack={closeEditor}
+        onDelete={() => automationController.deleteEntry(entry.id)}
+        onListPartyPresets={onListPartyPresets}
+        onClearMutationMessage={() => automationController.clearMessage()}
+        onLoadBattleCategories={onLoadBattleCategories}
+        onLoadBattleMaps={onLoadBattleMaps}
+        onSave={async (request) => {
+          const saved = await automationController.saveAdventureMapSettings(request);
+          if (saved) closeEditor();
+          return saved;
+        }}
+      />
+    );
+  }
+
   const showPageHeader = route !== 'editor';
   return (
     <NestableScrollContainer
@@ -267,9 +296,9 @@ export function HomeTabScreen({
       ) : null}
       {!authenticated ? <Text style={styles.message}>로그인 후 통합 자동화를 설정할 수 있어요.</Text> : null}
 
-      {automation && route === 'dashboard' ? (
+      {aggregate && route === 'dashboard' ? (
         <UnifiedAutomationDashboard
-          automation={automation}
+          aggregate={aggregate}
           busy={actionSaving}
           onChangeState={(action) => { void automationController.changeState(action); }}
           onOpenCaptcha={onOpenCaptcha}

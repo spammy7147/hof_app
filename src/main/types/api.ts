@@ -307,6 +307,22 @@ export type TypedAutomationRuntimeResponse = {
   nextAttemptAt: string | null;
   warnings: string[];
   lastError: string | null;
+  currentAction: TypedAutomationCurrentActionResponse | null;
+  dailyRefresh: AdventureDailyRefreshResponse;
+};
+
+export type TypedAutomationCurrentActionResponse = {
+  source: AutomationType;
+  kind: string;
+  title: string;
+  battleCurrent: number | null;
+  battleTotal: number | null;
+};
+
+export type AdventureDailyRefreshResponse = {
+  status: 'PENDING' | 'COMPLETE';
+  refreshDate: string | null;
+  refreshedAt: string | null;
 };
 
 export type TypedAutomationAggregateResponse = {
@@ -431,6 +447,7 @@ export type PartyPresetResponse = {
   id: number;
   accountId: number;
   name: string;
+  isPrimary: boolean;
   members: PartyPresetMember[];
   createdAt: string;
   updatedAt: string;

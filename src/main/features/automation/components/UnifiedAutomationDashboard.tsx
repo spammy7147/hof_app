@@ -1,95 +1,151 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ChevronRight, Pause, Play, RotateCcw, Settings, Square } from 'lucide-react-native';
 
-import { buildUnifiedModuleSummaries, formatUnifiedAutomationStatus } from '../../../domain/unifiedAutomation';
+import { formatAdventureDailyRefresh } from '../../../domain/adventureMapAutomation';
+import { AUTOMATION_TYPE_METADATA } from '../../../domain/typedAutomation';
 import { theme } from '../../../styles/theme';
-import type { UnifiedAutomationAction, UnifiedAutomationStatusResponse } from '../../../types/api';
+import type {
+  TypedAutomationAggregateResponse,
+  AutomationType,
+  TypedAutomationEntryResponse,
+  UnifiedAutomationAction,
+} from '../../../types/api';
 
 type Props = {
-  automation: UnifiedAutomationStatusResponse;
+  aggregate: TypedAutomationAggregateResponse;
   busy: boolean;
   onChangeState: (action: UnifiedAutomationAction) => void;
   onOpenSettings: () => void;
-  onOpenModule: (moduleId: number) => void;
+  onOpenModule: (entryId: number) => void;
   onOpenCaptcha: () => void;
 };
 
-/** 통합 자동화의 현재 작업과 모듈 요약만 보여주는 컴팩트 홈 대시보드다. */
+/** Typed automation aggregate만 사용해 실행/중지/설정 상태를 한 화면에 분리해 표시한다. */
 export function UnifiedAutomationDashboard({
-  automation,
+  aggregate,
   busy,
   onChangeState,
   onOpenSettings,
   onOpenModule,
   onOpenCaptcha,
 }: Props) {
-  const status = automation.job?.status ?? null;
-  const statusLabel = formatUnifiedAutomationStatus(status);
-  const running = status === 'RUNNING' || status === 'PENDING';
-  const paused = status === 'PAUSED';
-  const waitingCaptcha = status === 'WAITING_CAPTCHA';
-  const summaries = buildUnifiedModuleSummaries(automation.modules);
+  const { runtime } = aggregate;
+  const running = runtime.lifecycle === 'RUNNING';
+  const paused = runtime.lifecycle === 'PAUSED';
+  const stoppedWithReason = runtime.lifecycle === 'STOPPED' && runtime.stopReason != null;
+  const networkStopped = stoppedWithReason && (runtime.stopReason === 'NETWORK' || runtime.stopReason === 'FATAL');
+  const waitingCaptcha = stoppedWithReason && runtime.stopReason === 'CAPTCHA';
+  const waitingLogin = stoppedWithReason && runtime.stopReason === 'AUTHENTICATION';
+  const current = runtime.currentAction;
+  const warningCount = new Set(runtime.warnings).size;
 
   return (
     <View style={styles.stack}>
-      <View style={[styles.hero, waitingCaptcha && styles.warningHero]}>
+      <View style={[styles.hero, (networkStopped || waitingCaptcha || waitingLogin) && styles.warningHero]}>
         <View style={styles.heroHeader}>
-          <View style={styles.statusDot} />
-          <Text style={styles.statusLabel}>{statusLabel}</Text>
+          <View style={[styles.statusDot, networkStopped && styles.dangerDot, (waitingCaptcha || waitingLogin) && styles.warningDot]} />
+          <Text style={[styles.statusLabel, networkStopped && styles.dangerText, (waitingCaptcha || waitingLogin) && styles.warningText]}>
+            {statusLabel(aggregate)}
+          </Text>
         </View>
-        <Text style={styles.currentLabel}>현재 작업</Text>
-        <Text style={styles.currentTitle}>{automation.currentTitle ?? '실행할 작업을 확인하고 있어요'}</Text>
-        {automation.nextRunAt ? <Text style={styles.nextRun}>다음 확인 {formatNextRun(automation.nextRunAt)}</Text> : null}
-        {waitingCaptcha ? (
-          <Pressable onPress={onOpenCaptcha} style={styles.captchaButton}>
-            <Text style={styles.captchaButtonText}>지금 인증하기</Text>
-          </Pressable>
-        ) : null}
+
+        {networkStopped ? (
+          <>
+            <Text style={styles.stopTitle}>
+              {runtime.stopReason === 'NETWORK'
+                ? '네트워크 오류로 자동화가 중지되었습니다.'
+                : '자동화를 안전하게 계속할 수 없어 중지되었습니다.'}
+            </Text>
+            {runtime.lastError ? <Text style={styles.stopReason}>{runtime.lastError}</Text> : null}
+            {current ? <Text style={styles.currentTitle}>{automationTypeLabel(current.source)} · {current.title}</Text> : null}
+            {current?.battleTotal != null ? <Text style={styles.battleDetail}>전투 {current.battleCurrent ?? 1}/{current.battleTotal}</Text> : null}
+          </>
+        ) : waitingCaptcha ? (
+          <>
+            <Text style={styles.stopTitle}>캡차 인증이 필요합니다.</Text>
+            <Pressable accessibilityLabel="캡차 인증 열기" accessibilityRole="button" onPress={onOpenCaptcha} style={styles.captchaButton}>
+              <Text style={styles.captchaButtonText}>지금 인증하기</Text>
+            </Pressable>
+          </>
+        ) : waitingLogin ? (
+          <Text style={styles.stopTitle}>HOF 로그인이 필요합니다. 저장된 로그인 정보로 재로그인을 확인하고 있어요.</Text>
+        ) : (
+          <>
+            <Text style={styles.currentLabel}>현재 작업</Text>
+            <Text style={styles.currentTitle}>
+              {current ? `${automationTypeLabel(current.source)} · ${current.title}` : '다음 실행 작업을 확인하고 있어요'}
+            </Text>
+            {current?.battleTotal != null ? (
+              <Text style={styles.battleDetail}>전투 {current.battleCurrent ?? 1}/{current.battleTotal}</Text>
+            ) : null}
+          </>
+        )}
+
+        <View style={styles.runtimeMeta}>
+          <Text style={styles.metaText}>오늘 모험맵 {formatAdventureDailyRefresh(runtime.dailyRefresh).replace(/^오늘 /, '')}</Text>
+          <Text style={warningCount > 0 ? styles.warningText : styles.metaText}>설정 경고 {warningCount}개</Text>
+        </View>
+        {running ? <Text style={styles.reevaluate}>현재 행동이 끝나면 전체 우선순위를 다시 확인합니다.</Text> : null}
       </View>
 
       <View style={styles.actionRow}>
-        {!running && !paused ? (
+        {runtime.lifecycle === 'STOPPED' && !stoppedWithReason ? (
           <ActionButton disabled={busy} icon={Play} label="시작" onPress={() => onChangeState('start')} />
         ) : null}
-        {running ? (
-          <ActionButton disabled={busy} icon={Pause} label="일시정지" onPress={() => onChangeState('pause')} />
+        {running ? <ActionButton disabled={busy} icon={Pause} label="일시정지" onPress={() => onChangeState('pause')} /> : null}
+        {paused ? <ActionButton disabled={busy} icon={RotateCcw} label="계속" onPress={() => onChangeState('resume')} /> : null}
+        {stoppedWithReason && !waitingCaptcha && !waitingLogin ? (
+          <ActionButton
+            accessibilityLabel="중지된 자동화 재개"
+            disabled={busy || waitingCaptcha || waitingLogin}
+            icon={RotateCcw}
+            label="재개"
+            onPress={() => onChangeState('resume')}
+          />
         ) : null}
-        {paused ? (
-          <ActionButton disabled={busy} icon={RotateCcw} label="계속" onPress={() => onChangeState('resume')} />
-        ) : null}
-        {automation.job ? (
-          <ActionButton disabled={busy} icon={Square} label="종료" onPress={() => onChangeState('stop')} secondary />
-        ) : null}
+        {running || paused ? <ActionButton disabled={busy} icon={Square} label="종료" onPress={() => onChangeState('stop')} secondary /> : null}
         <ActionButton disabled={busy} icon={Settings} label="설정" onPress={onOpenSettings} secondary />
       </View>
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>자동화 구성</Text>
-        {summaries.length === 0 ? (
-          <Text style={styles.emptyText}>자동화 구성을 추가해 주세요.</Text>
-        ) : null}
-        {summaries.map((summary) => (
-          <Pressable
-            key={summary.id}
-            accessibilityLabel={`${summary.title} 설정 열기`}
-            accessibilityRole="button"
-            onPress={() => onOpenModule(summary.id)}
-            style={({ pressed }) => [styles.summaryRow, pressed && styles.pressed]}
-          >
-            <View style={[styles.moduleDot, !summary.enabled && styles.moduleDotOff]} />
-            <View style={styles.summaryCopy}>
-              <Text style={styles.summaryTitle}>{summary.title}</Text>
-              <Text style={styles.summaryDetail}>{summary.detail}</Text>
-            </View>
-            <ChevronRight color={theme.colors.textMuted} size={16} />
-          </Pressable>
+        {aggregate.entries.length === 0 ? <Text style={styles.emptyText}>자동화 구성을 추가해 주세요.</Text> : null}
+        {aggregate.entries.map((entry) => (
+          <EntryRow key={entry.id} entry={entry} onPress={() => onOpenModule(entry.id)} />
         ))}
       </View>
     </View>
   );
 }
 
+function automationTypeLabel(type: AutomationType): string {
+  if (type === 'BATTLE_MAP') return '전투맵';
+  if (type === 'ADVENTURE_MAP') return '모험맵';
+  return AUTOMATION_TYPE_METADATA[type].label;
+}
+
+function EntryRow({ entry, onPress }: { entry: TypedAutomationEntryResponse; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityLabel={`${automationTypeLabel(entry.type)} 설정 열기`}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.summaryRow, pressed && styles.pressed]}
+    >
+      <View style={[styles.moduleDot, !entry.enabled && styles.moduleDotOff]} />
+      <View style={styles.summaryCopy}>
+        <Text style={styles.summaryTitle}>{automationTypeLabel(entry.type)}</Text>
+        <Text style={entry.ready ? styles.summaryDetail : styles.warningText}>
+          {entrySummary(entry)}
+        </Text>
+      </View>
+      <ChevronRight color={theme.colors.textMuted} size={16} />
+    </Pressable>
+  );
+}
+
 type ActionButtonProps = {
+  accessibilityLabel?: string;
   disabled: boolean;
   icon: typeof Play;
   label: string;
@@ -97,10 +153,19 @@ type ActionButtonProps = {
   secondary?: boolean;
 };
 
-function ActionButton({ disabled, icon: Icon, label, onPress, secondary = false }: ActionButtonProps) {
+function ActionButton({
+  accessibilityLabel,
+  disabled,
+  icon: Icon,
+  label,
+  onPress,
+  secondary = false,
+}: ActionButtonProps) {
   return (
     <Pressable
+      accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
+      accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
@@ -116,23 +181,44 @@ function ActionButton({ disabled, icon: Icon, label, onPress, secondary = false 
   );
 }
 
-function formatNextRun(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? value
-    : date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+function statusLabel(aggregate: TypedAutomationAggregateResponse): string {
+  const { runtime } = aggregate;
+  if (runtime.lifecycle === 'RUNNING') return '실행 중';
+  if (runtime.lifecycle === 'PAUSED') return '일시정지';
+  if (runtime.stopReason === 'NETWORK' || runtime.stopReason === 'FATAL') return '완전 중지';
+  if (runtime.stopReason === 'CAPTCHA') return '캡차 대기';
+  if (runtime.stopReason === 'AUTHENTICATION') return '로그인 대기';
+  if (runtime.stopReason != null) return '중지됨';
+  return '시작 전';
+}
+
+function entrySummary(entry: TypedAutomationEntryResponse): string {
+  if (!entry.enabled) return '사용 안 함';
+  if (entry.warnings.length > 0) return entry.warnings[0] ?? '설정 확인 필요';
+  if (entry.type === 'QUEST') return `퀘스트 ${entry.quests.filter(({ enabled }) => enabled).length}개`;
+  if (entry.type === 'BATTLE_MAP') return `전투맵 ${entry.battleMaps.length}개`;
+  return `모험맵 ${entry.adventureMaps.length}개`;
 }
 
 const styles = StyleSheet.create({
   stack: { gap: theme.spacing.md },
-  hero: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: 6, padding: theme.spacing.lg },
+  hero: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: 7, padding: theme.spacing.lg },
   warningHero: { borderColor: theme.colors.accentAmber },
   heroHeader: { alignItems: 'center', flexDirection: 'row', gap: 7 },
   statusDot: { backgroundColor: theme.colors.accentGreen, borderRadius: 4, height: 8, width: 8 },
-  statusLabel: { color: theme.colors.accentGreen, fontSize: 13, fontWeight: '700' },
-  currentLabel: { color: theme.colors.textMuted, fontSize: 12, marginTop: 6 },
-  currentTitle: { color: theme.colors.text, fontSize: 19, fontWeight: '800', lineHeight: 27 },
-  nextRun: { color: theme.colors.textMuted, fontSize: 13 },
+  dangerDot: { backgroundColor: theme.colors.danger },
+  warningDot: { backgroundColor: theme.colors.accentAmber },
+  statusLabel: { color: theme.colors.accentGreen, fontSize: 13, fontWeight: '800' },
+  dangerText: { color: theme.colors.danger },
+  warningText: { color: theme.colors.accentAmber, fontSize: 12, fontWeight: '700' },
+  currentLabel: { color: theme.colors.textMuted, fontSize: 12, marginTop: 5 },
+  currentTitle: { color: theme.colors.text, fontSize: 19, fontWeight: '900', lineHeight: 27 },
+  battleDetail: { color: theme.colors.accentBlue, fontSize: 13, fontWeight: '800' },
+  stopTitle: { color: theme.colors.text, fontSize: 17, fontWeight: '900', lineHeight: 24, marginTop: 5 },
+  stopReason: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18 },
+  runtimeMeta: { borderTopColor: theme.colors.border, borderTopWidth: StyleSheet.hairlineWidth, gap: 4, marginTop: 5, paddingTop: 9 },
+  metaText: { color: theme.colors.textMuted, fontSize: 12 },
+  reevaluate: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
   captchaButton: { alignItems: 'center', backgroundColor: theme.colors.accentAmber, borderRadius: theme.radius.sm, marginTop: 8, padding: 11 },
   captchaButtonText: { color: theme.colors.buttonText, fontWeight: '800' },
   actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },

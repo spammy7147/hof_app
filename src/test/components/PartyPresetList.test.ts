@@ -24,4 +24,12 @@ describe('party preset list component', () => {
     assert.match(source, /setExpandedPresetId\(null\);/);
     assert.doesNotMatch(source, /setExpandedPresetId\(created\.id\);/);
   });
+
+  it('shows a single primary badge and explicit make-primary action without replacement-on-delete logic', () => {
+    assert.match(source, /isPrimary/);
+    assert.match(source, /대표 프리셋/);
+    assert.match(source, /대표로 지정/);
+    assert.match(source, /onMakePartyPresetPrimary/);
+    assert.doesNotMatch(source, /findReplacementPrimary|auto.*primary/i);
+  });
 });

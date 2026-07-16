@@ -183,6 +183,10 @@ export default function App() {
     request: UpdatePartyPresetRequest,
   ): Promise<PartyPresetResponse> => api.updatePartyPreset(presetId, request), [api]);
 
+  const makePartyPresetPrimary = useCallback((
+    presetId: number,
+  ): Promise<PartyPresetResponse> => api.makePartyPresetPrimary(presetId), [api]);
+
   const deletePartyPreset = useCallback((
     presetId: number,
   ): Promise<null> => api.deletePartyPreset(presetId), [api]);
@@ -338,6 +342,7 @@ export default function App() {
         onListPartyPresets={listPartyPresets}
         onCreatePartyPreset={createPartyPreset}
         onUpdatePartyPreset={updatePartyPreset}
+        onMakePartyPresetPrimary={makePartyPresetPrimary}
         onDeletePartyPreset={deletePartyPreset}
         onLoadCharacterDetail={loadCharacterDetail}
         onLoadPattern={loadCharacterPattern}

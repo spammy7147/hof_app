@@ -369,6 +369,13 @@ export class BackendApiClient {
     });
   }
 
+  /** 소유한 프리셋 하나를 현재 계정의 대표 프리셋으로 지정한다. */
+  makePartyPresetPrimary(presetId: number): Promise<PartyPresetResponse> {
+    return this.request(`/api/party-presets/${presetId}/primary`, {
+      method: 'POST',
+    });
+  }
+
   /**
    * 파티 프리셋을 삭제한다.
    */

@@ -114,7 +114,10 @@ export function BattleMapPresetPickerModal({
               const checked = primary
                 ? selectedPresetMode === 'PRIMARY'
                 : selectedPresetMode === 'EXPLICIT' && selectedPresetId === item.preset.id;
-              const label = primary ? '대표 프리셋' : item.preset.name;
+              const currentPrimary = presets.find(({ isPrimary }) => isPrimary);
+              const label = primary
+                ? currentPrimary ? `대표 · ${currentPrimary.name}` : '대표 프리셋 없음'
+                : item.preset.name;
               const accessibilityLabel = primary ? '대표 프리셋 선택' : `${item.preset.name} 프리셋 선택`;
               return (
                 <Pressable

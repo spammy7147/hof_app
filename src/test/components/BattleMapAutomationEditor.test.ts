@@ -548,7 +548,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '대표 프리셋 선택' }).props.onPress(); });
-    assert.equal(hasText(renderer.root, '대표 프리셋'), true);
+    assert.equal(hasText(renderer.root, '대표 프리셋 없음'), true);
   });
 
   it('closes the shared picker when its row is removed or the editor becomes busy', async () => {
@@ -677,7 +677,7 @@ function setting(mapCode: string, dailyTargetCount: number, executionOrder: numb
 function catalogMap(mapCode: string, name: string, overrides: Partial<BattleMapResponse> = {}): BattleMapResponse {
   return { categoryId: 'battle', mapCode, name, groupName: null, groupOrder: 0, mapOrder: 0, recommendedLevel: null, availableCount: null, attemptCount: null, winCount: null, cooldownRemainingText: null, cooldownRemainingSeconds: null, keyCount: null, requiredTime: null, enabled: true, resolved: true, iconUrl: null, rawHref: '', ...overrides, supportsThreeBattles: overrides.supportsThreeBattles ?? false };
 }
-function preset(id: number, name: string) { return { id, accountId: 1, name, members: [], createdAt: '', updatedAt: '' }; }
+function preset(id: number, name: string) { return { id, accountId: 1, name, isPrimary: false, members: [], createdAt: '', updatedAt: '' }; }
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;

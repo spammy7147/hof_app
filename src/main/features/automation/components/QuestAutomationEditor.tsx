@@ -30,6 +30,7 @@ import {
   type QuestMissionDraft,
 } from '../../../domain/questAutomation';
 import { filterAutomationProfileCategories } from '../../../domain/automationProfiles';
+import { formatAutomationPresetSelection } from '../../../domain/partyPresets';
 import { toUserFacingErrorMessage } from '../../../domain/userFacingErrors';
 import { theme } from '../../../styles/theme';
 import type {
@@ -769,7 +770,7 @@ function CombatMissionEditor({ mission, catalog, presets, presetIds, mapQuery, d
           </View>
           {map.mapCode ? (
             <View style={styles.presetRow}>
-              <Pressable accessibilityLabel={`${questContext} · ${mission.key} ${index + 1}번째 맵 대표 프리셋`} accessibilityRole="radio" accessibilityState={{ checked: map.presetMode === 'PRIMARY', disabled }} disabled={disabled} onPress={() => updatePreset(index, null)} style={[styles.choice, map.presetMode === 'PRIMARY' && styles.choiceActive]}><Text style={styles.choiceText}>대표 프리셋</Text></Pressable>
+              <Pressable accessibilityLabel={`${questContext} · ${mission.key} ${index + 1}번째 맵 대표 프리셋`} accessibilityRole="radio" accessibilityState={{ checked: map.presetMode === 'PRIMARY', disabled }} disabled={disabled} onPress={() => updatePreset(index, null)} style={[styles.choice, map.presetMode === 'PRIMARY' && styles.choiceActive]}><Text style={styles.choiceText}>{formatAutomationPresetSelection({ presetMode: 'PRIMARY', partyPresetId: null }, presets)}</Text></Pressable>
               {presets.map((preset) => <Pressable key={preset.id} accessibilityLabel={`${questContext} · ${mission.key} ${index + 1}번째 맵 ${preset.name} 프리셋`} accessibilityRole="radio" accessibilityState={{ checked: map.partyPresetId === preset.id, disabled }} disabled={disabled} onPress={() => updatePreset(index, preset.id)} style={[styles.choice, map.partyPresetId === preset.id && styles.choiceActive]}><Text style={styles.choiceText}>{preset.name}</Text></Pressable>)}
             </View>
           ) : null}

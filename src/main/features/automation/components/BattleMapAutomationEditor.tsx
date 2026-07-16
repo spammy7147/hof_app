@@ -30,6 +30,7 @@ import {
   type BattleMapAutomationDraft,
 } from '../../../domain/battleMapAutomation';
 import { toUserFacingErrorMessage } from '../../../domain/userFacingErrors';
+import { formatAutomationPresetSelection } from '../../../domain/partyPresets';
 import { theme } from '../../../styles/theme';
 import type {
   BattleCategoryResponse,
@@ -423,13 +424,11 @@ export function BattleMapAutomationEditor({
     const selectedPreset = setting.presetMode === 'EXPLICIT'
       ? presets.find(({ id }) => id === setting.partyPresetId)
       : null;
-    const presetSummary = setting.presetMode === 'PRIMARY'
-      ? '대표 프리셋'
-      : presetState.loading
+    const presetSummary = presetState.loading
         ? '프리셋 확인 중'
         : presetState.error
           ? '프리셋 확인 불가'
-          : selectedPreset?.name ?? `삭제된 프리셋 #${setting.partyPresetId ?? '?'}`;
+          : formatAutomationPresetSelection(setting, presets);
     return (
       <View style={[styles.card, progress.complete && styles.completeCard]}>
         <View style={styles.rowHeading}>
