@@ -151,6 +151,14 @@ describe('quest automation domain', () => {
       catalogMap('battle_map', 'a', 'Target'),
       catalogMap('adventure_map', 'b', 'Target'),
     ]), draft);
+
+    const removed = structuredClone(draft);
+    removed.quests[0]!.missions[0]!.maps = [];
+    assert.equal(hydrateAutoMatchedMapClearMissions(
+      removed,
+      [catalogMap('battle_map', 'target', 'Target')],
+      (questCode, missionKey) => questCode === 'q-clear' && missionKey === 'clear-key',
+    ), removed);
   });
 
   it('supports ordered monster maps with reorder and remove', () => {

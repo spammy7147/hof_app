@@ -275,6 +275,27 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(hasText(renderer.root, '자동 매칭됨'), true);
   });
 
+  it('disables live quest editing while the initial map catalog is unsettled and enables it afterward', async () => {
+    const maps = deferred<BattleMapResponse[]>();
+    const quest = snapshot('live', 'Live Quest', 'ACTIVE', [mission('now', 'IMMEDIATE', null)]);
+    const renderer = await renderEditor({
+      quests: [quest],
+      onLoadBattleMaps: async () => maps.promise,
+    });
+    const unsettled = renderer.root.findByProps({ accessibilityLabel: 'Live Quest 선택' });
+    assert.equal(unsettled.props.disabled, true);
+    assert.deepEqual(unsettled.props.accessibilityState, { checked: false, disabled: true });
+    assert.equal(hasText(renderer.root, '맵 설정 준비 중'), true);
+    await act(async () => { unsettled.props.onPress(); });
+
+    await act(async () => { maps.resolve([]); await maps.promise; });
+    const settled = renderer.root.findByProps({ accessibilityLabel: 'Live Quest 선택' });
+    assert.equal(settled.props.disabled, false);
+    assert.deepEqual(settled.props.accessibilityState, { checked: false, disabled: false });
+    await act(async () => { settled.props.onPress(); });
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Live Quest 선택' }).props.accessibilityState.checked, true);
+  });
+
   it('hydrates an automatic map after a targeted map retry while preserving edits', async () => {
     let attempts = 0;
     const quest = snapshot('clear', 'Clear Quest', 'ACTIVE', [mission('clear-key', 'MAP_CLEAR', 'Target')]);
@@ -295,6 +316,44 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(hasText(renderer.root, 'Target'), true);
     assert.equal(hasText(renderer.root, '자동 매칭됨'), true);
     assert.equal(hasText(renderer.root, '맵을 선택해 주세요'), false);
+  });
+
+  it('preserves explicit removal of an automatic map across catalog reload and clears intent on manual replacement', async () => {
+    let attempts = 0;
+    const quest = snapshot('clear', 'Clear Quest', 'ACTIVE', [mission('clear-key', 'MAP_CLEAR', 'Target')]);
+    const automatic = { ...mapSetting('clear-key', 'target', 0), manuallyOverridden: false };
+    const enabled = [{ id: 'battle_map', label: '전투맵', description: '', order: 0, enabled: true }];
+    const base = editorProps({
+      entry: questEntry([{ questCode: 'clear', enabled: true, sourceOrder: 0, maps: [automatic] }]),
+      quests: [quest],
+      battleCategories: enabled,
+      onLoadBattleMaps: async () => {
+        attempts += 1;
+        return [catalogMap('battle_map', 'target', 'Target')];
+      },
+    });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(QuestAutomationEditor, base)); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Clear Quest · clear-key 1번째 맵 제거' }).props.onPress(); });
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.disabled, true);
+
+    await act(async () => {
+      renderer.update(React.createElement(QuestAutomationEditor, {
+        ...base,
+        battleCategories: [{ ...enabled[0]!, enabled: false }],
+      }));
+    });
+    await act(async () => {
+      renderer.update(React.createElement(QuestAutomationEditor, { ...base, battleCategories: enabled }));
+    });
+    assert.equal(attempts, 2);
+    assert.equal(hasText(renderer.root, '자동 매칭됨'), false);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.disabled, true);
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Clear Quest · clear-key 맵 추가' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Clear Quest · clear-key · Target 맵 선택' }).props.onPress(); });
+    assert.equal(hasText(renderer.root, '사용자 변경'), true);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.disabled, false);
   });
 
   it('prunes disabled category picker state, fences stale responses, and reloads on re-enable', async () => {

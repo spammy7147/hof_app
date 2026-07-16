@@ -149,12 +149,13 @@ export function applyManualMapOverride(
 export function hydrateAutoMatchedMapClearMissions(
   draft: QuestAutomationDraft,
   catalog: readonly QuestMapCatalogItem[],
+  isBlocked: (questCode: string, missionKey: string) => boolean = () => false,
 ): QuestAutomationDraft {
   let changed = false;
   const quests = draft.quests.map((quest) => {
     let questChanged = false;
     const missions = quest.missions.map((mission) => {
-      if (mission.type !== 'MAP_CLEAR' || mission.maps.some(({ manuallyOverridden }) => manuallyOverridden)) return mission;
+      if (mission.type !== 'MAP_CLEAR' || isBlocked(quest.questCode, mission.key) || mission.maps.some(({ manuallyOverridden }) => manuallyOverridden)) return mission;
       const match = matchMapClearMission(mission, catalog);
       if (!match) return mission;
       const unresolvedIndex = mission.maps.findIndex(({ categoryId, mapCode }) => !categoryId.trim() || !mapCode.trim());
