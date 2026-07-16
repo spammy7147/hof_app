@@ -3,17 +3,11 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { ArrowLeft, Info } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
 
-import {
-  buildEditUnifiedModuleDraft,
-  buildUpdateUnifiedModuleRequest,
-  type UnifiedAutomationModuleDraft,
-} from '../domain/unifiedAutomation';
 import type { UnifiedAutomationController } from '../domain/unifiedAutomationController';
 import { UnifiedAutomationDashboard } from '../features/automation/components/UnifiedAutomationDashboard';
 import { AdventureMapAutomationEditor } from '../features/automation/components/AdventureMapAutomationEditor';
 import { BattleMapAutomationEditor } from '../features/automation/components/BattleMapAutomationEditor';
 import { QuestAutomationEditor } from '../features/automation/components/QuestAutomationEditor';
-import { UnifiedAutomationModuleEditor } from '../features/automation/components/UnifiedAutomationModuleEditor';
 import { UnifiedAutomationSettings } from '../features/automation/components/UnifiedAutomationSettings';
 import { theme } from '../styles/theme';
 import type {
@@ -22,7 +16,6 @@ import type {
   AutomationType,
   PartyPresetResponse,
   TypedAutomationEntryResponse,
-  UnifiedAutomationModuleResponse,
 } from '../types/api';
 
 type HomeTabScreenProps = {
@@ -43,8 +36,8 @@ type HomeRoute = 'dashboard' | 'settings' | 'editor';
 /**
  * 공유 자동화 store를 구독하고 대시보드·설정·편집 화면을 전환하는 홈 화면이다.
  *
- * 모듈 요청과 큐는 App이 소유한 `UnifiedAutomationController`에 남으므로 탭 전환으로 이 컴포넌트가
- * unmount돼도 중단되지 않는다. 화면에는 저장 전 편집 초안과 현재 하위 경로만 로컬 state로 둔다.
+ * 설정 요청과 큐는 App이 소유한 `UnifiedAutomationController`에 남으므로 탭 전환으로 이 컴포넌트가
+ * unmount돼도 중단되지 않는다. 화면에는 현재 전용 편집 항목과 하위 경로만 로컬 state로 둔다.
  */
 export function HomeTabScreen({
   authenticated,
@@ -59,15 +52,12 @@ export function HomeTabScreen({
   onOpenCaptcha,
 }: HomeTabScreenProps) {
   const [route, setRoute] = useState<HomeRoute>('dashboard');
-  const [editorDraft, setEditorDraft] = useState<UnifiedAutomationModuleDraft | null>(null);
   const [typedEditorEntry, setTypedEditorEntry] = useState<TypedAutomationEntryResponse | null>(null);
   const [rulesOpen, setRulesOpen] = useState(false);
   const {
-    automation,
     aggregate,
     loading,
     actionSaving,
-    editorSaving,
     savingEntryIds,
     savingTypes,
     reordering,
@@ -103,41 +93,9 @@ export function HomeTabScreen({
     };
   }, [authenticated, automationController, route]);
 
-  function startEdit(module: UnifiedAutomationModuleResponse) {
-    if (automationController.isModuleBusy(module.id)) {
-      automationController.showMessage('이 자동화를 저장하고 있어요. 완료된 뒤 다시 열어 주세요.');
-      return;
-    }
-    setEditorDraft(buildEditUnifiedModuleDraft(module));
-    automationController.clearMessage();
-    setRoute('editor');
-  }
-
-  function openModule(moduleId: number) {
-    const entry = aggregate?.entries.find(({ id }) => id === moduleId);
-    if (entry) {
-      openEntryDetail(entry);
-      return;
-    }
-    const module = automation?.modules.find((candidate) => candidate.id === moduleId);
-    if (module) startEdit(module);
-  }
-
-  async function saveModule(draft: UnifiedAutomationModuleDraft) {
-    if (draft.moduleId == null) return;
-    const saved = await automationController.updateModule(
-      draft.moduleId,
-      buildUpdateUnifiedModuleRequest(draft),
-    );
-    if (!saved) return;
-    setEditorDraft(null);
-    setRoute('settings');
-  }
-
-  async function deleteEditorEntry(entryId: number) {
-    if (!await automationController.deleteEntry(entryId)) return;
-    setEditorDraft(null);
-    setRoute('settings');
+  function openModule(entryId: number) {
+    const entry = aggregate?.entries.find(({ id }) => id === entryId);
+    if (entry) openEntryDetail(entry);
   }
 
   function openEntryDetail(entry: TypedAutomationEntryResponse) {
@@ -146,14 +104,11 @@ export function HomeTabScreen({
         automationController.showMessage('이 자동화를 저장하고 있어요. 완료된 뒤 다시 열어 주세요.');
         return;
       }
-      setEditorDraft(null);
       setTypedEditorEntry(entry);
       automationController.clearMessage();
       setRoute('editor');
       return;
     }
-    const module = automation?.modules.find(({ id }) => id === entry.id);
-    if (module) startEdit(module);
   }
 
   function toggleEntry(entry: TypedAutomationEntryResponse) {
@@ -166,13 +121,7 @@ export function HomeTabScreen({
     return automationController.saveAdventureMapSettings({ enabled: !entry.enabled, maps: entry.adventureMaps });
   }
 
-  function deleteEditedModule() {
-    const moduleId = editorDraft?.moduleId;
-    return moduleId == null ? null : () => deleteEditorEntry(moduleId);
-  }
-
   const closeEditor = useCallback(() => {
-    setEditorDraft(null);
     setTypedEditorEntry(null);
     automationController.clearMessage();
     setRoute('settings');
@@ -307,7 +256,7 @@ export function HomeTabScreen({
       ) : null}
 
       {message ? <Text style={styles.message}>{message}</Text> : null}
-      {loading && !automation ? (
+      {loading && !aggregate ? (
         <View style={styles.loadingBox}>
           <ActivityIndicator color={theme.colors.accentGreen} />
           <Text style={styles.muted}>자동화 상태 확인 중</Text>
@@ -341,22 +290,6 @@ export function HomeTabScreen({
         />
       ) : null}
 
-      {automation && route === 'editor' && editorDraft ? (
-        <UnifiedAutomationModuleEditor
-          key={`${editorDraft.moduleId ?? 'new'}:${editorDraft.moduleType}`}
-          battleCategories={battleCategories}
-          initialDraft={editorDraft}
-          saving={editorSaving}
-          onBack={() => {
-            closeEditor();
-          }}
-          onDelete={deleteEditedModule()}
-          onListPartyPresets={onListPartyPresets}
-          onLoadBattleCategories={onLoadBattleCategories}
-          onLoadBattleMaps={onLoadBattleMaps}
-          onSave={saveModule}
-        />
-      ) : null}
     </NestableScrollContainer>
   );
 }

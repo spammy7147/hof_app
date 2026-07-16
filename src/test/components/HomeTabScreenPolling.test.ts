@@ -34,7 +34,6 @@ moduleWithLoader._load = (request, parent, isMain) => {
   if (request.endsWith('/QuestAutomationEditor')) return { QuestAutomationEditor: host('QuestAutomationEditor') };
   if (request.endsWith('/BattleMapAutomationEditor')) return { BattleMapAutomationEditor: host('BattleMapAutomationEditor') };
   if (request.endsWith('/AdventureMapAutomationEditor')) return { AdventureMapAutomationEditor: host('AdventureMapAutomationEditor') };
-  if (request.endsWith('/UnifiedAutomationModuleEditor')) return { UnifiedAutomationModuleEditor: host('UnifiedAutomationModuleEditor') };
   return originalLoad(request, parent, isMain);
 };
 const { HomeTabScreen } = require('../../main/screens/HomeTabScreen') as typeof import('../../main/screens/HomeTabScreen');
@@ -122,12 +121,9 @@ function controllerStub(load: () => Promise<void>, reset = () => undefined) {
   };
   const snapshot = {
     aggregate,
-    automation: null,
     loading: false,
     actionSaving: false,
-    editorSaving: false,
     savingEntryIds: [],
-    savingModuleIds: [],
     savingTypes: [],
     reordering: false,
     error: null,
@@ -140,7 +136,7 @@ function controllerStub(load: () => Promise<void>, reset = () => undefined) {
     reset,
     clearMessage: () => undefined,
     showMessage: () => undefined,
-    isModuleBusy: () => false,
+    isEntryBusy: () => false,
     changeState: async () => undefined,
   } as never;
 }

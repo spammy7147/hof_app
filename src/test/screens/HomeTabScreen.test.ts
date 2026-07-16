@@ -8,10 +8,6 @@ const controllerSource = readFileSync(
   resolve(process.cwd(), 'src/main/domain/unifiedAutomationController.ts'),
   'utf8',
 );
-const domainSource = readFileSync(
-  resolve(process.cwd(), 'src/main/domain/unifiedAutomation.ts'),
-  'utf8',
-);
 const settingsSource = readFileSync(
   resolve(process.cwd(), 'src/main/features/automation/components/UnifiedAutomationSettings.tsx'),
   'utf8',
@@ -25,10 +21,6 @@ const appProvidersSource = readFileSync(resolve(process.cwd(), 'src/main/compone
 const entrySource = readFileSync(resolve(process.cwd(), 'index.ts'), 'utf8');
 const dashboardSource = readFileSync(
   resolve(process.cwd(), 'src/main/features/automation/components/UnifiedAutomationDashboard.tsx'),
-  'utf8',
-);
-const editorSource = readFileSync(
-  resolve(process.cwd(), 'src/main/features/automation/components/UnifiedAutomationModuleEditor.tsx'),
   'utf8',
 );
 const questEditorSource = readFileSync(
@@ -100,7 +92,8 @@ describe('통합 자동화 홈 화면', () => {
     assert.match(settingsSource, /accessibilityState=\{\{ disabled: allTypesAdded \}\}/);
     assert.match(addSheetSource, /AUTOMATION_TYPE_ORDER\.map/);
     assert.doesNotMatch(settingsSource, /typeGrid|typeOption|CANONICAL_UNIFIED_MODULE_TYPES/);
-    assert.match(domainSource, /'OTHER_QUEST',[\s\S]*'TIME_BURN',[\s\S]*'DAILY_ADVENTURE'/);
+    assert.doesNotMatch(homeSource, /moduleType|legacyTypeToTyped/);
+    assert.doesNotMatch(controllerSource, /moduleType|legacyTypeToTyped/);
   });
 
   it('overflow 메뉴에서 상세 설정과 typed 삭제를 제공한다', () => {
@@ -124,7 +117,8 @@ describe('통합 자동화 홈 화면', () => {
     assert.match(controllerSource, /typeTails/);
     assert.match(controllerSource, /structuralTail/);
     assert.match(controllerSource, /runTypedMutation/);
-    assert.match(homeSource, /automationController\.isModuleBusy/);
+    assert.match(homeSource, /savingEntryIds\.includes\(entry\.id\)/);
+    assert.doesNotMatch(homeSource, /isModuleBusy/);
     assert.match(settingsSource, /savingEntryIds\.includes\(params\.item\.id\)/);
     assert.match(settingsSource, /accessibilityState=\{\{ disabled: saving \}\}/);
     assert.match(settingsSource, /disabled=\{saving\}/);
@@ -134,17 +128,6 @@ describe('통합 자동화 홈 화면', () => {
     assert.match(settingsSource, /item\.ready/);
     assert.match(settingsSource, /item\.warnings\[0\]/);
     assert.match(settingsSource, />경고</);
-  });
-
-  it('모듈 편집기에서 이름, 사용 여부, 유형별 맵·프리셋·퀘스트를 저장한다', () => {
-    assert.match(editorSource, /AutomationMapSettings/);
-    assert.match(editorSource, /파티 프리셋/);
-    assert.match(editorSource, /퀘스트 코드/);
-    assert.match(editorSource, /Time 기준/);
-    assert.match(editorSource, /정말 삭제할까요/);
-    assert.match(editorSource, /프리셋 없이도 저장할 수 있지만/);
-    assert.match(homeSource, /buildUpdateUnifiedModuleRequest/);
-    assert.match(homeSource, /createEntry/);
   });
 
   it('QUEST, BATTLE_MAP, ADVENTURE_MAP 상세는 모두 typed editor를 쓴다', () => {
@@ -159,7 +142,7 @@ describe('통합 자동화 홈 화면', () => {
     assert.match(homeSource, /<AdventureMapAutomationEditor/);
     assert.match(homeSource, /automationController\.saveAdventureMapSettings/);
     assert.match(homeSource, /function openModule[\s\S]*aggregate\?\.entries[\s\S]*openEntryDetail/);
-    assert.match(homeSource, /<UnifiedAutomationModuleEditor/);
+    assert.doesNotMatch(homeSource, /UnifiedAutomationModuleEditor|buildEditUnifiedModuleDraft|buildUpdateUnifiedModuleRequest/);
     assert.doesNotMatch(questEditorSource, /updateModule|buildUpdateUnifiedModuleRequest/);
     assert.doesNotMatch(battleEditorSource, /updateModule|buildUpdateUnifiedModuleRequest/);
     assert.doesNotMatch(adventureEditorSource, /updateModule|buildUpdateUnifiedModuleRequest/);
@@ -167,6 +150,5 @@ describe('통합 자동화 홈 화면', () => {
 
   it('변경 사항은 현재 작업을 끊지 않고 다음 판단부터 적용된다고 안내한다', () => {
     assert.match(settingsSource, /다음 작업부터 적용/);
-    assert.match(editorSource, /다음 작업부터 적용/);
   });
 });

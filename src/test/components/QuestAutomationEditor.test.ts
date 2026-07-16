@@ -544,7 +544,6 @@ describe('HomeTabScreen mounted typed editor routing', () => {
     const questEditorMock = (props: Record<string, unknown>) => React.createElement('QuestAutomationEditor', props);
     const battleEditorMock = (props: Record<string, unknown>) => React.createElement('BattleMapAutomationEditor', props);
     const adventureEditorMock = (props: Record<string, unknown>) => React.createElement('AdventureMapAutomationEditor', props);
-    const legacyEditorMock = (props: Record<string, unknown>) => React.createElement('UnifiedAutomationModuleEditor', props);
     moduleWithLoader._load = (request, parent, isMain) => {
       if (request === 'react-native') return reactNativeMock;
       if (request === 'lucide-react-native') return iconsMock;
@@ -554,7 +553,6 @@ describe('HomeTabScreen mounted typed editor routing', () => {
       if (request.endsWith('/QuestAutomationEditor')) return { QuestAutomationEditor: questEditorMock };
       if (request.endsWith('/BattleMapAutomationEditor')) return { BattleMapAutomationEditor: battleEditorMock };
       if (request.endsWith('/AdventureMapAutomationEditor')) return { AdventureMapAutomationEditor: adventureEditorMock };
-      if (request.endsWith('/UnifiedAutomationModuleEditor')) return { UnifiedAutomationModuleEditor: legacyEditorMock };
       return originalLoad(request, parent, isMain);
     };
     const { HomeTabScreen } = require('../../main/screens/HomeTabScreen') as typeof import('../../main/screens/HomeTabScreen');
@@ -576,14 +574,12 @@ describe('HomeTabScreen mounted typed editor routing', () => {
           dailyRefresh: { status: 'PENDING', refreshDate: null, refreshedAt: null },
         },
       },
-      automation: { profileId: 1, job: null, currentTitle: null, nextRunAt: null, modules: [legacyModule(1, 'OTHER_QUEST'), legacyModule(2, 'TIME_BURN'), legacyModule(3, 'TIME_BURN')] },
-      loading: false, actionSaving: false, editorSaving: false, savingEntryIds: [], savingModuleIds: [], savingTypes: [], reordering: false, error: 'mutation failed', message: 'mutation failed',
+      loading: false, actionSaving: false, savingEntryIds: [], savingTypes: [], reordering: false, error: 'mutation failed', message: 'mutation failed',
     };
     const saves: UpdateQuestAutomationRequest[] = [];
     const battleSaves: UpdateBattleMapAutomationRequest[] = [];
     const adventureSaves: UpdateAdventureMapAutomationRequest[] = [];
     let battleSaveResult = true;
-    let updateModuleCalls = 0;
     const controller = {
       subscribe: () => () => undefined,
       getSnapshot: () => snapshot,
@@ -591,7 +587,7 @@ describe('HomeTabScreen mounted typed editor routing', () => {
       reset: () => undefined,
       clearMessage: () => undefined,
       showMessage: () => undefined,
-      isModuleBusy: () => false,
+      isEntryBusy: () => false,
       fetchQuests: async () => [],
       saveQuestSettings: async (request: UpdateQuestAutomationRequest) => { saves.push(request); return true; },
       saveBattleMapSettings: async (battleRequest: UpdateBattleMapAutomationRequest) => { battleSaves.push(battleRequest); return battleSaveResult; },
@@ -602,7 +598,6 @@ describe('HomeTabScreen mounted typed editor routing', () => {
       deleteEntry: async () => true,
       createEntry: async () => true,
       reorderEntries: () => undefined,
-      updateModule: async () => { updateModuleCalls += 1; return true; },
       changeState: async () => undefined,
     };
     const props = {
@@ -637,7 +632,6 @@ describe('HomeTabScreen mounted typed editor routing', () => {
     const battleRequest: UpdateBattleMapAutomationRequest = { enabled: true, maps: [] };
     await act(async () => { await battleEditor.props.onSave(battleRequest); });
     assert.deepEqual(battleSaves, [battleRequest]);
-    assert.equal(updateModuleCalls, 0);
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'BattleMapAutomationEditor').length, 0);
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'UnifiedAutomationSettings').length, 1);
 
@@ -658,7 +652,6 @@ describe('HomeTabScreen mounted typed editor routing', () => {
     const adventureRequest: UpdateAdventureMapAutomationRequest = { enabled: true, maps: [] };
     await act(async () => { await adventureEditor.props.onSave(adventureRequest); });
     assert.deepEqual(adventureSaves, [adventureRequest]);
-    assert.equal(updateModuleCalls, 0);
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'AdventureMapAutomationEditor').length, 0);
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'UnifiedAutomationSettings').length, 1);
   });
@@ -725,4 +718,3 @@ function mapSetting(missionKey: string, mapCode: string, executionOrder: number)
 function catalogMap(categoryId: string, mapCode: string, name: string): BattleMapResponse { return { categoryId, mapCode, name, groupName: null, groupOrder: 0, mapOrder: 0, recommendedLevel: null, availableCount: null, attemptCount: null, winCount: null, cooldownRemainingText: null, cooldownRemainingSeconds: null, keyCount: null, requiredTime: null, supportsThreeBattles: false, enabled: true, resolved: true, iconUrl: null, rawHref: '' }; }
 function preset(id: number, name: string) { return { id, accountId: 1, name, isPrimary: false, members: [], createdAt: '', updatedAt: '' }; }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; }
-function legacyModule(id: number, moduleType: 'OTHER_QUEST' | 'TIME_BURN') { return { id, displayName: 'Module', moduleType, enabled: true, priority: id - 1, thresholdPercent: moduleType === 'TIME_BURN' ? 90 : null, maps: [], quests: [], ready: true, summary: '' }; }
