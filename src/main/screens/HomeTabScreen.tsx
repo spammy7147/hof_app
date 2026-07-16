@@ -10,6 +10,7 @@ import {
 } from '../domain/unifiedAutomation';
 import type { UnifiedAutomationController } from '../domain/unifiedAutomationController';
 import { UnifiedAutomationDashboard } from '../features/automation/components/UnifiedAutomationDashboard';
+import { BattleMapAutomationEditor } from '../features/automation/components/BattleMapAutomationEditor';
 import { QuestAutomationEditor } from '../features/automation/components/QuestAutomationEditor';
 import { UnifiedAutomationModuleEditor } from '../features/automation/components/UnifiedAutomationModuleEditor';
 import { UnifiedAutomationSettings } from '../features/automation/components/UnifiedAutomationSettings';
@@ -58,7 +59,7 @@ export function HomeTabScreen({
 }: HomeTabScreenProps) {
   const [route, setRoute] = useState<HomeRoute>('dashboard');
   const [editorDraft, setEditorDraft] = useState<UnifiedAutomationModuleDraft | null>(null);
-  const [questEditorEntry, setQuestEditorEntry] = useState<TypedAutomationEntryResponse | null>(null);
+  const [typedEditorEntry, setTypedEditorEntry] = useState<TypedAutomationEntryResponse | null>(null);
   const [rulesOpen, setRulesOpen] = useState(false);
   const {
     automation,
@@ -120,13 +121,13 @@ export function HomeTabScreen({
   }
 
   function openEntryDetail(entry: TypedAutomationEntryResponse) {
-    if (entry.type === 'QUEST') {
-      if (savingEntryIds.includes(entry.id) || savingTypes.includes('QUEST')) {
+    if (entry.type === 'QUEST' || entry.type === 'BATTLE_MAP') {
+      if (savingEntryIds.includes(entry.id) || savingTypes.includes(entry.type)) {
         automationController.showMessage('이 자동화를 저장하고 있어요. 완료된 뒤 다시 열어 주세요.');
         return;
       }
       setEditorDraft(null);
-      setQuestEditorEntry(entry);
+      setTypedEditorEntry(entry);
       automationController.clearMessage();
       setRoute('editor');
       return;
@@ -152,7 +153,7 @@ export function HomeTabScreen({
 
   const closeEditor = useCallback(() => {
     setEditorDraft(null);
-    setQuestEditorEntry(null);
+    setTypedEditorEntry(null);
     automationController.clearMessage();
     setRoute('settings');
   }, [automationController]);
@@ -162,9 +163,9 @@ export function HomeTabScreen({
     [automationController],
   );
 
-  if (aggregate && route === 'editor' && questEditorEntry?.type === 'QUEST') {
-    const currentEntry = aggregate.entries.find(({ id }) => id === questEditorEntry.id);
-    const entry = currentEntry?.type === 'QUEST' ? currentEntry : questEditorEntry;
+  if (aggregate && route === 'editor' && typedEditorEntry?.type === 'QUEST') {
+    const currentEntry = aggregate.entries.find(({ id }) => id === typedEditorEntry.id);
+    const entry = currentEntry?.type === 'QUEST' ? currentEntry : typedEditorEntry;
     return (
       <QuestAutomationEditor
         battleCategories={battleCategories}
@@ -183,6 +184,33 @@ export function HomeTabScreen({
         onLoadBattleMaps={onLoadBattleMaps}
         onSave={async (request) => {
           const saved = await automationController.saveQuestSettings(request);
+          if (saved) closeEditor();
+          return saved;
+        }}
+      />
+    );
+  }
+
+  if (aggregate && route === 'editor' && typedEditorEntry?.type === 'BATTLE_MAP') {
+    const currentEntry = aggregate.entries.find(({ id }) => id === typedEditorEntry.id);
+    const entry = currentEntry?.type === 'BATTLE_MAP' ? currentEntry : typedEditorEntry;
+    return (
+      <BattleMapAutomationEditor
+        battleCategories={battleCategories}
+        areBattleCategoriesLoaded={areBattleCategoriesLoaded}
+        isBattleCategoriesLoading={isBattleCategoriesLoading}
+        battleCategoriesError={battleCategoriesError}
+        entry={entry}
+        mutationMessage={message ?? error}
+        saving={savingEntryIds.includes(entry.id) || savingTypes.includes('BATTLE_MAP')}
+        onBack={closeEditor}
+        onDelete={() => automationController.deleteEntry(entry.id)}
+        onListPartyPresets={onListPartyPresets}
+        onClearMutationMessage={() => automationController.clearMessage()}
+        onLoadBattleCategories={onLoadBattleCategories}
+        onLoadBattleMaps={onLoadBattleMaps}
+        onSave={async (request) => {
+          const saved = await automationController.saveBattleMapSettings(request);
           if (saved) closeEditor();
           return saved;
         }}

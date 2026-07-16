@@ -149,6 +149,7 @@ describe('automationProfiles', () => {
       cooldownRemainingSeconds: null,
       keyCount: null,
       requiredTime: null,
+      supportsThreeBattles: false,
       resolved: true,
       enabled: false,
       iconUrl: null,
@@ -246,5 +247,6 @@ function battleMap(overrides: Partial<BattleMapResponse>): BattleMapResponse {
     iconUrl: null,
     rawHref: '',
     ...overrides,
+    supportsThreeBattles: overrides.supportsThreeBattles ?? false,
   };
 }

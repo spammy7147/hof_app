@@ -955,6 +955,7 @@ function entry(
     id, type, priority, enabled: true, ready: true, warnings: [],
     quests: [], battleMaps: [], adventureMaps: [],
     ...overrides,
+    battleMapProgress: overrides.battleMapProgress ?? [],
   };
 }
 

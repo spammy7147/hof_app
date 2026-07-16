@@ -632,6 +632,7 @@ function entry(
     battleMaps: [],
     adventureMaps: [],
     ...overrides,
+    battleMapProgress: overrides.battleMapProgress ?? [],
   };
 }
 

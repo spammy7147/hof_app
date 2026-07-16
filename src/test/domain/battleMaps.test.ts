@@ -31,6 +31,7 @@ describe('battle map utilities', () => {
         cooldownRemainingSeconds: null,
         keyCount: null,
         requiredTime: null,
+        supportsThreeBattles: false,
         resolved: true,
         enabled: false,
         iconUrl: null,
@@ -51,6 +52,7 @@ describe('battle map utilities', () => {
         cooldownRemainingSeconds: null,
         keyCount: 9,
         requiredTime: 100,
+        supportsThreeBattles: false,
         resolved: true,
         enabled: true,
         iconUrl: null,
@@ -71,6 +73,7 @@ describe('battle map utilities', () => {
         cooldownRemainingSeconds: null,
         keyCount: null,
         requiredTime: 50,
+        supportsThreeBattles: false,
         resolved: true,
         enabled: true,
         iconUrl: null,
@@ -302,5 +305,6 @@ function battleMapFixture(overrides: Partial<BattleMapResponse>): BattleMapRespo
     iconUrl: null,
     rawHref: '?common=map',
     ...overrides,
+    supportsThreeBattles: overrides.supportsThreeBattles ?? false,
   };
 }

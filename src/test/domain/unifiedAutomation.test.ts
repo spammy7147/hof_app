@@ -198,6 +198,7 @@ function makeMap(categoryId: string, mapCode: string): BattleMapResponse {
     cooldownRemainingSeconds: null,
     keyCount: null,
     requiredTime: null,
+    supportsThreeBattles: false,
     enabled: true,
     resolved: true,
     iconUrl: null,

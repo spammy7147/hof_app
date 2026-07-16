@@ -101,6 +101,6 @@ function entry(
 ): TypedAutomationEntryResponse {
   return {
     id, type, priority, enabled: true, ready: true, warnings: [],
-    quests: [], battleMaps: [], adventureMaps: [],
+    quests: [], battleMaps: [], battleMapProgress: [], adventureMaps: [],
   };
 }

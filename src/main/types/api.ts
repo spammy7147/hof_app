@@ -53,6 +53,8 @@ export type BattleMapResponse = {
   cooldownRemainingSeconds: number | null;
   keyCount: number | null;
   requiredTime: number | null;
+  /** 서버가 해당 맵의 실제 전투 폼에서 관측한 3회 전투 지원 여부다. */
+  supportsThreeBattles: boolean;
   enabled: boolean;
   resolved: boolean;
   iconUrl: string | null;
@@ -269,6 +271,11 @@ export type UpdateAdventureMapAutomationRequest = {
 export type QuestMapSettingResponse = QuestMapSettingRequest;
 export type QuestSelectionResponse = QuestSelectionRequest;
 export type BattleMapSettingResponse = BattleMapSettingRequest;
+export type BattleMapDailyProgressResponse = {
+  categoryId: string;
+  mapCode: string;
+  successfulRuns: number;
+};
 export type AdventureMapSettingResponse = AdventureMapSettingRequest;
 
 export type TypedAutomationEntryResponse = {
@@ -280,6 +287,8 @@ export type TypedAutomationEntryResponse = {
   warnings: string[];
   quests: QuestSelectionResponse[];
   battleMaps: BattleMapSettingResponse[];
+  /** 설정과 별도로 서버가 소유하는 한국 날짜 기준 전투맵 성공 횟수다. */
+  battleMapProgress: BattleMapDailyProgressResponse[];
   adventureMaps: AdventureMapSettingResponse[];
 };
 
