@@ -51,6 +51,23 @@ describe('character sync app flow', () => {
     assert.doesNotMatch(backendApi, /characters\/sync-if-needed[`'"]/);
   });
 
+  it('does not expose the retired legacy automation job client or settings panel', () => {
+    const app = readFileSync(resolve(process.cwd(), 'src/main/App.tsx'), 'utf8');
+    const mainScreen = readFileSync(resolve(process.cwd(), 'src/main/screens/MainScreen.tsx'), 'utf8');
+    const settings = readFileSync(resolve(process.cwd(), 'src/main/screens/SettingsTabScreen.tsx'), 'utf8');
+    const backendApi = readFileSync(resolve(process.cwd(), 'src/main/services/backendApi.ts'), 'utf8');
+    const apiTypes = readFileSync(resolve(process.cwd(), 'src/main/types/api.ts'), 'utf8');
+
+    for (const source of [app, mainScreen, settings, backendApi, apiTypes]) {
+      assert.doesNotMatch(source, /AutomationJobResponse/);
+      assert.doesNotMatch(source, /CreateAutomationJobRequest/);
+      assert.doesNotMatch(source, /onLoadCurrentAutomationJob/);
+      assert.doesNotMatch(source, /fetchCurrentAutomationJob/);
+      assert.doesNotMatch(source, /createAutomationJob/);
+    }
+    assert.doesNotMatch(settings, /자동전투 프로필|진행 중인 자동화 job|자동화 job 상태/);
+  });
+
   it('uses the same SSE sync flow for manual character resync', () => {
     const manualSyncCharacters = syncSection(
       'const manualSyncCharacters = useCallback',

@@ -14,7 +14,6 @@ import { isCaptchaRequiredError } from './domain/captchaGate';
 import { UnifiedAutomationController } from './domain/unifiedAutomationController';
 import { toUserFacingErrorMessage } from './domain/userFacingErrors';
 import type {
-  AutomationJobResponse,
   BattleCategoryResponse,
   BattleLogResponse,
   BattleMapResponse,
@@ -167,10 +166,6 @@ export default function App() {
   ), [api]);
 
   const loadBattleStats = useCallback((): Promise<BattleStatsResponse> => api.fetchBattleStats(), [api]);
-
-  const loadCurrentAutomationJob = useCallback((): Promise<AutomationJobResponse | null> => (
-    api.fetchCurrentAutomationJob()
-  ), [api]);
 
   const listPartyPresets = useCallback((): Promise<PartyPresetResponse[]> => api.listPartyPresets(), [api]);
 
@@ -337,7 +332,6 @@ export default function App() {
         onLoadBattleLogs={loadBattleLogs}
         onLoadBattleStats={loadBattleStats}
         onOpenCaptcha={handleOpenCaptchaModal}
-        onLoadCurrentAutomationJob={loadCurrentAutomationJob}
         automationController={automationController}
         onListPartyPresets={listPartyPresets}
         onCreatePartyPreset={createPartyPreset}

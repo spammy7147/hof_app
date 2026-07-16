@@ -14,7 +14,6 @@ import type { UnifiedAutomationController } from '../domain/unifiedAutomationCon
 import { toUserFacingErrorMessage } from '../domain/userFacingErrors';
 import { theme } from '../styles/theme';
 import type {
-  AutomationJobResponse,
   BattleCategoryResponse,
   BattleLogResponse,
   BattleMapResponse,
@@ -57,7 +56,6 @@ type MainScreenProps = {
   onLoadBattleLogs: (limit?: number) => Promise<BattleLogResponse[]>;
   onLoadBattleStats: () => Promise<BattleStatsResponse>;
   onOpenCaptcha: () => void;
-  onLoadCurrentAutomationJob: () => Promise<AutomationJobResponse | null>;
   automationController: UnifiedAutomationController;
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
   onCreatePartyPreset: (
@@ -97,7 +95,6 @@ export function MainScreen({
   onLoadBattleLogs,
   onLoadBattleStats,
   onOpenCaptcha,
-  onLoadCurrentAutomationJob,
   automationController,
   onListPartyPresets,
   onCreatePartyPreset,
@@ -212,7 +209,6 @@ export function MainScreen({
           onLoadBattleLogs,
           onLoadBattleStats,
           onOpenCaptcha,
-          onLoadCurrentAutomationJob,
           automationController,
           onListPartyPresets,
           onCreatePartyPreset,
@@ -264,7 +260,6 @@ type RenderActiveTabArgs = {
   onLoadBattleLogs: (limit?: number) => Promise<BattleLogResponse[]>;
   onLoadBattleStats: () => Promise<BattleStatsResponse>;
   onOpenCaptcha: () => void;
-  onLoadCurrentAutomationJob: () => Promise<AutomationJobResponse | null>;
   automationController: UnifiedAutomationController;
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
   onCreatePartyPreset: (
@@ -310,7 +305,6 @@ function renderActiveTab({
   onLoadBattleLogs,
   onLoadBattleStats,
   onOpenCaptcha,
-  onLoadCurrentAutomationJob,
   automationController,
   onListPartyPresets,
   onCreatePartyPreset,
@@ -442,7 +436,6 @@ function renderActiveTab({
             authenticated={authenticated}
             onLogout={onLogout}
             onOpenCaptcha={onOpenCaptcha}
-            onLoadCurrentAutomationJob={onLoadCurrentAutomationJob}
           />
         </TabScrollContainer>
       );

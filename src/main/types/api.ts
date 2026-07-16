@@ -164,23 +164,6 @@ export type SubmitCaptchaAnswerRequest = {
   answer: string;
 };
 
-export type CreateAutomationJobRequest = {
-  profileId: number;
-};
-
-export type AutomationJobResponse = {
-  id: number;
-  accountId: number;
-  profileId: number;
-  status: string;
-  currentStepIndex: number;
-  message: string | null;
-  createdAt: string;
-  startedAt: string | null;
-  updatedAt: string;
-  finishedAt: string | null;
-};
-
 export type AutomationProfileMode = 'TIME_BURN' | 'BASIC_ADVENTURE' | 'LIMITED_DUNGEON';
 
 export type AutomationProfileMap = {

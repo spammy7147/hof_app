@@ -2,7 +2,6 @@ import { Platform } from 'react-native';
 
 import { normalizeHofAssetUrl } from '../domain/hofAssets';
 import type {
-  AutomationJobResponse,
   AutomationProfileResponse,
   BattleCategoryResponse,
   BattleLogResponse,
@@ -14,7 +13,6 @@ import type {
   CharacterSyncEventType,
   CharacterSyncJobResponse,
   CreateAutomationEntryRequest,
-  CreateAutomationJobRequest,
   CreateAutomationProfileRequest,
   CreatePartyPresetRequest,
   HofCharacter,
@@ -204,25 +202,6 @@ export class BackendApiClient {
       },
     );
     return normalizeCaptchaChallenge(captcha, this.baseUrl);
-  }
-
-  /**
-   * 자동화 job을 생성한다. 현재는 자동전투 실행 루프의 뼈대 API다.
-   */
-  createAutomationJob(
-    request: CreateAutomationJobRequest,
-  ): Promise<AutomationJobResponse> {
-    return this.request('/api/automation/jobs', {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
-  }
-
-  /**
-   * 현재 실행/대기 중인 자동화 job을 조회한다.
-   */
-  fetchCurrentAutomationJob(): Promise<AutomationJobResponse | null> {
-    return this.request('/api/automation/jobs/current');
   }
 
   /** 계정별 통합 자동화의 현재 상태와 저장 설정을 조회한다. */

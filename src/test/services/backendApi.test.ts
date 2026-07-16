@@ -385,31 +385,6 @@ describe('BackendApiClient', () => {
     );
   });
 
-  it('creates automation jobs from a profile id only', async () => {
-    const { BackendApiClient } = await loadBackendApi();
-    const requests: CapturedRequest[] = [];
-    mockFetchWithCapture({
-      id: 9,
-      accountId: 1,
-      profileId: 4,
-      status: 'pending',
-      currentStepIndex: 0,
-      message: null,
-      createdAt: '2026-07-10T00:00:00Z',
-      startedAt: null,
-      updatedAt: '2026-07-10T00:00:00Z',
-      finishedAt: null,
-    }, requests);
-    const client = new BackendApiClient('http://backend.test');
-
-    const job = await client.createAutomationJob({ profileId: 4 });
-
-    assert.equal(job.profileId, 4);
-    assert.equal(requests[0]?.url, 'http://backend.test/api/automation/jobs');
-    assert.equal(requests[0]?.init.method, 'POST');
-    assert.equal(requests[0]?.init.body, '{"profileId":4}');
-  });
-
   it('uses the exact typed automation aggregate, settings, lifecycle, and quest endpoints', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const requests: CapturedRequest[] = [];
