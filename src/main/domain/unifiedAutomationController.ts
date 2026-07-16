@@ -570,20 +570,20 @@ export class UnifiedAutomationController {
   ): TypedAutomationEntryResponse[] {
     const currentIndex = entries.findIndex(({ type }) => type === 'BATTLE_MAP');
     const currentBattle = entries[currentIndex];
+    const serverBattle = response.entries.find(({ type }) => type === 'BATTLE_MAP');
+    if (!serverBattle || currentIndex < 0 || !currentBattle) return entries;
     if (sequence < this.battleProgressRevision) {
-      if (currentIndex < 0 || !currentBattle) return entries;
       const publishedBattle = this.snapshot.aggregate?.entries.find(({ type }) => type === 'BATTLE_MAP');
+      if (!publishedBattle) return entries;
       const next = [...entries];
       next[currentIndex] = {
         ...currentBattle,
-        battleMapProgress: publishedBattle?.battleMapProgress ?? [],
+        battleMapProgress: publishedBattle.battleMapProgress,
       };
       return next;
     }
 
     this.battleProgressRevision = sequence;
-    const serverBattle = response.entries.find(({ type }) => type === 'BATTLE_MAP');
-    if (!serverBattle || currentIndex < 0 || !currentBattle) return entries;
     const next = [...entries];
     next[currentIndex] = {
       ...currentBattle,

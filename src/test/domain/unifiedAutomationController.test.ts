@@ -177,7 +177,7 @@ describe('typed unified automation controller', () => {
     assert.equal(controller.getSnapshot().aggregate?.runtime.lifecycle, 'RUNNING');
   });
 
-  it('advances the progress fence when an accepted aggregate omits battle', async () => {
+  it('does not let a no-battle aggregate claim the progress clock', async () => {
     const staleLoad = deferred<TypedAutomationAggregateResponse>();
     let fetches = 0;
     const controller = new UnifiedAutomationController(apiStub({
@@ -198,10 +198,76 @@ describe('typed unified automation controller', () => {
     ]));
     await loading;
 
-    assert.deepEqual(currentBattleProgress(controller), battleProgress(1));
+    assert.deepEqual(currentBattleProgress(controller), battleProgress(4));
     assert.deepEqual(
       controller.getSnapshot().aggregate?.entries.find(({ type }) => type === 'QUEST')?.warnings,
       ['quest-saved'],
+    );
+    assert.deepEqual(
+      controller.getSnapshot().aggregate?.entries.map(({ type, priority }) => ({ type, priority })),
+      [
+        { type: 'QUEST', priority: 0 },
+        { type: 'BATTLE_MAP', priority: 1 },
+      ],
+    );
+  });
+
+  it('preserves initial battle progress when an older create completes after a later no-battle save', async () => {
+    const create = deferred<TypedAutomationAggregateResponse>();
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([entry(1, 'QUEST', 0)]),
+      create: () => create.promise,
+      updateQuest: async () => aggregate([
+        entry(1, 'QUEST', 0, { warnings: ['quest-saved'] }),
+      ]),
+    }));
+    await controller.load();
+
+    const creating = controller.createEntry('BATTLE_MAP');
+    await controller.saveQuestSettings({ enabled: true, quests: [] });
+    create.resolve(aggregate([
+      entry(1, 'QUEST', 0),
+      battleEntryWithProgress(6),
+    ]));
+    await creating;
+
+    assert.deepEqual(currentBattleProgress(controller), battleProgress(6));
+    assert.deepEqual(
+      controller.getSnapshot().aggregate?.entries.map(({ type, priority, warnings }) => (
+        { type, priority, warnings }
+      )),
+      [
+        { type: 'QUEST', priority: 0, warnings: ['quest-saved'] },
+        { type: 'BATTLE_MAP', priority: 1, warnings: [] },
+      ],
+    );
+  });
+
+  it('does not let an older cross-type response resurrect a deleted battle entry', async () => {
+    const questSave = deferred<TypedAutomationAggregateResponse>();
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([
+        entry(1, 'QUEST', 0),
+        battleEntryWithProgress(1),
+      ]),
+      updateQuest: () => questSave.promise,
+      delete: async () => aggregate([entry(1, 'QUEST', 0)]),
+    }));
+    await controller.load();
+
+    const savingQuest = controller.saveQuestSettings({ enabled: true, quests: [] });
+    await controller.deleteEntry(2);
+    questSave.resolve(aggregate([
+      entry(1, 'QUEST', 0, { warnings: ['quest-saved'] }),
+      battleEntryWithProgress(9),
+    ]));
+    await savingQuest;
+
+    assert.deepEqual(
+      controller.getSnapshot().aggregate?.entries.map(({ type, priority, warnings }) => (
+        { type, priority, warnings }
+      )),
+      [{ type: 'QUEST', priority: 0, warnings: ['quest-saved'] }],
     );
   });
 
