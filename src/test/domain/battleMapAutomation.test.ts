@@ -78,6 +78,18 @@ describe('battle map automation domain', () => {
     assert.equal(unresolvedCatalog.maps[0]?.resolved, false);
   });
 
+  it('accepts only trimmed ASCII decimal digits and normalizes leading zeros in the request', () => {
+    const draft = buildBattleMapAutomationDraft(entry(), []);
+    for (const invalid of ['0x10', '1e3', '+2', '-2', '1.5', '', '9007199254740992', '2147483648']) {
+      draft.maps[0]!.dailyTargetCount = invalid;
+      assert.notDeepEqual(validateBattleMapAutomationDraft(draft, [4]), [], invalid);
+    }
+
+    draft.maps[0]!.dailyTargetCount = ' 00042 ';
+    assert.deepEqual(validateBattleMapAutomationDraft(draft, [4]), []);
+    assert.equal(buildBattleMapAutomationRequest(draft, [4]).maps[0]?.dailyTargetCount, 42);
+  });
+
   it('searches resolved catalog in stable group/map order and selects, deselects, readds, and reorders contiguously', () => {
     const catalog = [
       map('battle', 'b', 'Beta', { groupName: 'Forest', groupOrder: 1, mapOrder: 2, recommendedLevel: 'Lv 20' }),

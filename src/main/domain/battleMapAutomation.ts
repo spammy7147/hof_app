@@ -156,11 +156,11 @@ export function validateBattleMapAutomationDraft(
   const identities = new Set<string>();
   const orders = new Set<number>();
   for (const map of draft.maps) {
-    const dailyTargetCount = parseDailyTarget(map.dailyTargetCount);
-    if (dailyTargetCount <= 0) {
-      errors.push('일일 목표는 1회 이상이어야 합니다.');
-    } else if (!Number.isSafeInteger(dailyTargetCount)) {
+    const dailyTargetCount = parseBattleDailyTarget(map.dailyTargetCount);
+    if (dailyTargetCount == null) {
       errors.push('일일 목표는 정수로 입력해 주세요.');
+    } else if (dailyTargetCount <= 0) {
+      errors.push('일일 목표는 1회 이상이어야 합니다.');
     } else if (dailyTargetCount > MAX_BATTLE_DAILY_TARGET) {
       errors.push('일일 목표는 2,147,483,647회 이하여야 합니다.');
     }
@@ -195,8 +195,8 @@ export function buildBattleMapAutomationRequest(
     enabled: draft.enabled,
     maps: draft.maps.map(({ categoryId, mapCode, dailyTargetCount, presetMode, partyPresetId, executionOrder }) => (
       presetMode === 'PRIMARY'
-        ? { categoryId, mapCode, dailyTargetCount: Number(dailyTargetCount), presetMode, partyPresetId: null, executionOrder }
-        : { categoryId, mapCode, dailyTargetCount: Number(dailyTargetCount), presetMode, partyPresetId: partyPresetId!, executionOrder }
+        ? { categoryId, mapCode, dailyTargetCount: parseBattleDailyTarget(dailyTargetCount)!, presetMode, partyPresetId: null, executionOrder }
+        : { categoryId, mapCode, dailyTargetCount: parseBattleDailyTarget(dailyTargetCount)!, presetMode, partyPresetId: partyPresetId!, executionOrder }
     )),
   };
 }
@@ -213,7 +213,11 @@ function normalizeSearch(value: string): string {
   return value.trim().toLocaleLowerCase('ko-KR').replace(/\s+/g, ' ');
 }
 
-function parseDailyTarget(value: number | string): number {
-  if (typeof value === 'string' && value.trim() === '') return 0;
-  return Number(value);
+export function parseBattleDailyTarget(value: number | string): number | null {
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
+  const normalized = value.trim();
+  if (normalized === '') return 0;
+  if (!/^[0-9]+$/.test(normalized)) return null;
+  const parsed = Number(normalized);
+  return Number.isSafeInteger(parsed) ? parsed : null;
 }

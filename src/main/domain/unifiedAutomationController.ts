@@ -76,6 +76,7 @@ export class UnifiedAutomationController {
   private entriesRevision = 0;
   private runtimeRevision = 0;
   private orderRevision = 0;
+  private battleProgressRevision = 0;
   private queuedReorderSequence = 0;
   private readonly typeRevisions = new Map<AutomationType, number>();
   private readonly typeTails = new Map<AutomationType, Promise<void>>();
@@ -105,6 +106,7 @@ export class UnifiedAutomationController {
     this.entriesRevision = 0;
     this.runtimeRevision = 0;
     this.orderRevision = 0;
+    this.battleProgressRevision = 0;
     this.queuedReorderSequence = 0;
     this.typeRevisions.clear();
     this.typeTails.clear();
@@ -142,6 +144,7 @@ export class UnifiedAutomationController {
   async load(): Promise<void> {
     const generation = this.generation;
     const sequence = ++this.loadSequence;
+    const aggregateSequence = ++this.operationSequence;
     const entriesAtStart = this.entriesRevision;
     const runtimeAtStart = this.runtimeRevision;
     this.loadingCount += 1;
@@ -155,7 +158,10 @@ export class UnifiedAutomationController {
         runtime: this.runtimeRevision === runtimeAtStart || !current ? loaded.runtime : current.runtime,
       };
       if (this.entriesRevision === entriesAtStart) this.confirmedOrder = loaded.entries.map(({ id }) => id);
-      this.applyAggregate(next);
+      this.applyAggregate({
+        ...next,
+        entries: this.mergeBattleProgress(loaded, aggregateSequence, next.entries),
+      });
     } catch (error) {
       if (this.isLatestLoad(generation, sequence)) this.setError(error);
     } finally {
@@ -226,7 +232,12 @@ export class UnifiedAutomationController {
       if (this.generation !== generation) return;
       const current = this.snapshot.aggregate;
       this.runtimeRevision = Math.max(this.runtimeRevision, sequence);
-      this.applyAggregate(current ? { entries: current.entries, runtime: response.runtime } : response);
+      const entries = this.mergeBattleProgress(
+        response,
+        sequence,
+        current?.entries ?? response.entries,
+      );
+      this.applyAggregate({ entries, runtime: response.runtime });
     } catch (error) {
       if (this.generation === generation) this.setError(error);
     } finally {
@@ -324,22 +335,30 @@ export class UnifiedAutomationController {
     targetType: AutomationType,
   ): void {
     const current = this.snapshot.aggregate;
-    if (!current || (this.typeRevisions.get(targetType) ?? 0) > sequence) return;
-    const serverEntry = response.entries.find((entry) => entry.type === targetType);
-    const currentIndex = current.entries.findIndex((entry) => entry.type === targetType);
-    if (!serverEntry || currentIndex < 0) return;
-    const entries = [...current.entries];
-    const currentEntry = entries[currentIndex];
-    if (!currentEntry) return;
-    entries[currentIndex] = {
-      ...serverEntry,
-      id: currentEntry.id,
-      type: currentEntry.type,
-      priority: currentEntry.priority,
-    };
-    this.entriesRevision = Math.max(this.entriesRevision, sequence);
-    this.typeRevisions.set(targetType, sequence);
-    this.applyAggregate({ entries, runtime: current.runtime });
+    if (!current) return;
+    let entries = current.entries;
+    let settingsMerged = false;
+    if ((this.typeRevisions.get(targetType) ?? 0) <= sequence) {
+      const serverEntry = response.entries.find((entry) => entry.type === targetType);
+      const currentIndex = current.entries.findIndex((entry) => entry.type === targetType);
+      const currentEntry = current.entries[currentIndex];
+      if (serverEntry && currentIndex >= 0 && currentEntry) {
+        entries = [...current.entries];
+        entries[currentIndex] = {
+          ...serverEntry,
+          id: currentEntry.id,
+          type: currentEntry.type,
+          priority: currentEntry.priority,
+        };
+        this.entriesRevision = Math.max(this.entriesRevision, sequence);
+        this.typeRevisions.set(targetType, sequence);
+        settingsMerged = true;
+      }
+    }
+    const withProgress = this.mergeBattleProgress(response, sequence, entries);
+    if (settingsMerged || withProgress !== entries) {
+      this.applyAggregate({ entries: withProgress, runtime: current.runtime });
+    }
   }
 
   private mergeStructuralResponse(
@@ -352,33 +371,41 @@ export class UnifiedAutomationController {
       this.entriesRevision = Math.max(this.entriesRevision, sequence);
       if (targetType) this.typeRevisions.set(targetType, sequence);
       this.confirmedOrder = response.entries.map(({ id }) => id);
-      this.applyAggregate(response);
+      this.applyAggregate({
+        ...response,
+        entries: this.mergeBattleProgress(response, sequence, response.entries),
+      });
       return;
     }
-    if (targetType && (this.typeRevisions.get(targetType) ?? 0) > sequence) return;
+    let entries = current.entries;
+    let structureMerged = false;
+    if (!targetType || (this.typeRevisions.get(targetType) ?? 0) <= sequence) {
+      const serverTarget = targetType
+        ? response.entries.find((entry) => entry.type === targetType)
+        : undefined;
+      const currentTargetIndex = targetType
+        ? current.entries.findIndex((entry) => entry.type === targetType)
+        : -1;
+      entries = targetType
+        ? current.entries.filter((entry) => entry.type !== targetType)
+        : [...current.entries];
+      if (serverTarget) {
+        const insertionIndex = currentTargetIndex < 0
+          ? entries.length
+          : Math.min(currentTargetIndex, entries.length);
+        entries.splice(insertionIndex, 0, serverTarget);
+      }
 
-    const serverTarget = targetType
-      ? response.entries.find((entry) => entry.type === targetType)
-      : undefined;
-    const currentTargetIndex = targetType
-      ? current.entries.findIndex((entry) => entry.type === targetType)
-      : -1;
-    let entries = targetType
-      ? current.entries.filter((entry) => entry.type !== targetType)
-      : [...current.entries];
-    if (serverTarget) {
-      const insertionIndex = currentTargetIndex < 0
-        ? entries.length
-        : Math.min(currentTargetIndex, entries.length);
-      entries.splice(insertionIndex, 0, serverTarget);
+      entries = entries.map((entry, priority) => ({ ...entry, priority }));
+      this.entriesRevision = Math.max(this.entriesRevision, sequence);
+      if (targetType) this.typeRevisions.set(targetType, sequence);
+      this.recordConfirmedMembership(entries);
+      structureMerged = true;
     }
-
-    entries = entries.map((entry, priority) => ({ ...entry, priority }));
-
-    this.entriesRevision = Math.max(this.entriesRevision, sequence);
-    if (targetType) this.typeRevisions.set(targetType, sequence);
-    this.recordConfirmedMembership(entries);
-    this.applyAggregate({ entries, runtime: current.runtime });
+    const withProgress = this.mergeBattleProgress(response, sequence, entries);
+    if (structureMerged || withProgress !== entries) {
+      this.applyAggregate({ entries: withProgress, runtime: current.runtime });
+    }
   }
 
   private createReorderQueue(generation: number): UnifiedAutomationReorderQueue<ReorderResult> {
@@ -414,8 +441,17 @@ export class UnifiedAutomationController {
 
   private applyReorderResponse(response: TypedAutomationAggregateResponse, sequence: number): void {
     const current = this.snapshot.aggregate;
-    if (!current) return this.applyAggregate(response);
-    if (sequence < this.orderRevision) return;
+    if (!current) {
+      return this.applyAggregate({
+        ...response,
+        entries: this.mergeBattleProgress(response, sequence, response.entries),
+      });
+    }
+    const withProgress = this.mergeBattleProgress(response, sequence, current.entries);
+    if (sequence < this.orderRevision) {
+      if (withProgress !== current.entries) this.applyAggregate({ ...current, entries: withProgress });
+      return;
+    }
     const currentById = new Map(current.entries.map((entry) => [entry.id, entry]));
     const serverIds = new Set(response.entries.map(({ id }) => id));
     const result = [
@@ -426,7 +462,11 @@ export class UnifiedAutomationController {
       ...current.entries.filter(({ id }) => !serverIds.has(id)),
     ];
     this.applyAggregate({
-      entries: result.map((entry, priority) => ({ ...entry, priority })),
+      entries: this.mergeBattleProgress(
+        response,
+        sequence,
+        result.map((entry, priority) => ({ ...entry, priority })),
+      ),
       runtime: current.runtime,
     });
   }
@@ -452,14 +492,16 @@ export class UnifiedAutomationController {
   }
 
   private async reloadAfterReorderFailure(generation: number): Promise<void> {
+    const sequence = ++this.operationSequence;
     const entriesAtStart = this.entriesRevision;
     const runtimeAtStart = this.runtimeRevision;
     try {
       const loaded = await this.api.fetch();
       if (this.generation !== generation) return;
       const current = this.snapshot.aggregate;
+      const entries = this.entriesRevision === entriesAtStart || !current ? loaded.entries : current.entries;
       this.applyAggregate({
-        entries: this.entriesRevision === entriesAtStart || !current ? loaded.entries : current.entries,
+        entries: this.mergeBattleProgress(loaded, sequence, entries),
         runtime: this.runtimeRevision === runtimeAtStart || !current ? loaded.runtime : current.runtime,
       });
       if (this.entriesRevision === entriesAtStart) this.confirmedOrder = loaded.entries.map(({ id }) => id);
@@ -519,6 +561,25 @@ export class UnifiedAutomationController {
 
   private isLatestLoad(generation: number, sequence: number): boolean {
     return this.generation === generation && this.loadSequence === sequence;
+  }
+
+  private mergeBattleProgress(
+    response: TypedAutomationAggregateResponse,
+    sequence: number,
+    entries: TypedAutomationEntryResponse[],
+  ): TypedAutomationEntryResponse[] {
+    if (sequence < this.battleProgressRevision) return entries;
+    const serverBattle = response.entries.find(({ type }) => type === 'BATTLE_MAP');
+    const currentIndex = entries.findIndex(({ type }) => type === 'BATTLE_MAP');
+    const currentBattle = entries[currentIndex];
+    if (!serverBattle || currentIndex < 0 || !currentBattle) return entries;
+    const next = [...entries];
+    next[currentIndex] = {
+      ...currentBattle,
+      battleMapProgress: serverBattle.battleMapProgress,
+    };
+    this.battleProgressRevision = sequence;
+    return next;
   }
 
   private applyAggregate(aggregate: TypedAutomationAggregateResponse): void {

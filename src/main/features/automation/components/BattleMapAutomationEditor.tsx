@@ -21,6 +21,7 @@ import {
   filterBattleAutomationCategories,
   filterBattleMapCatalog,
   moveBattleMapSetting,
+  parseBattleDailyTarget,
   removeBattleMapSetting,
   selectBattleMap,
   validateBattleMapAutomationDraft,
@@ -35,6 +36,7 @@ import type {
   TypedAutomationEntryResponse,
   UpdateBattleMapAutomationRequest,
 } from '../../../types/api';
+import { BattleMapPresetPickerModal } from './BattleMapPresetPickerModal';
 
 type Props = {
   entry: TypedAutomationEntryResponse;
@@ -81,7 +83,7 @@ export function BattleMapAutomationEditor({
   const [draft, setDraft] = useState<BattleMapAutomationDraft>(() => buildBattleMapAutomationDraft(entry, []));
   const [catalog, setCatalog] = useState<BattleMapResponse[]>([]);
   const [query, setQuery] = useState('');
-  const [presetQueries, setPresetQueries] = useState<Record<string, string>>({});
+  const [activePresetIdentity, setActivePresetIdentity] = useState<string | null>(null);
   const [presets, setPresets] = useState<PartyPresetResponse[]>([]);
   const [presetState, setPresetState] = useState<ResourceState>({ loading: true, error: null });
   const [mapStates, setMapStates] = useState<Record<string, ResourceState>>({});
@@ -246,6 +248,9 @@ export function BattleMapAutomationEditor({
   const visibleCatalog = useMemo(() => filterBattleMapCatalog(catalog, query), [catalog, query]);
   const categoryLoading = isBattleCategoriesLoading
     || (!areBattleCategoriesLoaded && battleCategories.length === 0 && !battleCategoriesError);
+  const activePresetSetting = activePresetIdentity == null
+    ? null
+    : draft.maps.find((setting) => battleMapIdentity(setting) === activePresetIdentity) ?? null;
   const listItems = useMemo<EditorListItem[]>(() => [
     { key: 'selected-heading', kind: 'HEADING', title: '선택한 맵 · 실행 순서' },
     ...(draft.maps.length === 0
@@ -267,6 +272,12 @@ export function BattleMapAutomationEditor({
       ? [{ key: 'catalog-empty', kind: 'CATALOG_EMPTY' } as const]
       : []),
   ], [draft.maps, mapStates, visibleCatalog]);
+
+  useEffect(() => {
+    if (activePresetIdentity != null && (controlsDisabled || activePresetSetting == null)) {
+      setActivePresetIdentity(null);
+    }
+  }, [activePresetIdentity, activePresetSetting, controlsDisabled]);
 
   function requestBack() {
     if (busy) return;
@@ -331,14 +342,13 @@ export function BattleMapAutomationEditor({
     const { setting, index } = item;
     const identity = battleMapIdentity(setting);
     const successes = draft.dailyProgress[identity]?.successfulRuns ?? 0;
-    const progress = buildBattleProgress({ target: Number(setting.dailyTargetCount), successes });
-    const presetNeedle = (presetQueries[identity] ?? '').trim().toLocaleLowerCase('ko-KR');
-    const visiblePresets = presets.filter(({ name }) => (
-      !presetNeedle || name.toLocaleLowerCase('ko-KR').includes(presetNeedle)
-    ));
+    const progress = buildBattleProgress({ target: parseBattleDailyTarget(setting.dailyTargetCount) ?? 0, successes });
     const selectedPreset = setting.presetMode === 'EXPLICIT'
       ? presets.find(({ id }) => id === setting.partyPresetId)
       : null;
+    const presetSummary = setting.presetMode === 'PRIMARY'
+      ? '대표 프리셋'
+      : selectedPreset?.name ?? `삭제된 프리셋 #${setting.partyPresetId ?? '?'}`;
     return (
       <View style={[styles.card, progress.complete && styles.completeCard]}>
         <View style={styles.rowHeading}>
@@ -363,15 +373,15 @@ export function BattleMapAutomationEditor({
           <Text style={setting.supportsThreeBattles === true ? styles.capability : styles.muted}>{setting.supportsThreeBattles === true ? '3회 전투 지원' : setting.supportsThreeBattles === false ? '1회 전투 지원' : '전투 횟수 지원 상태 확인 전'}</Text>
           <Text style={progress.complete ? styles.complete : styles.batch}>{describeBattleBatch({ supportsThreeBattles: setting.supportsThreeBattles, remaining: progress.remaining })}</Text>
         </View>
-        <Pressable accessibilityLabel={`${setting.displayName} 대표 프리셋 사용`} accessibilityRole="radio" accessibilityState={{ checked: setting.presetMode === 'PRIMARY', disabled: controlsDisabled }} disabled={controlsDisabled} onPress={() => updateDraft((current) => updatePreset(current, identity, null))} style={[styles.choice, setting.presetMode === 'PRIMARY' && styles.choiceActive]}><Text style={styles.choiceText}>대표 프리셋 사용</Text></Pressable>
-        {setting.presetMode === 'EXPLICIT' && !selectedPreset ? <Text style={styles.problem}>선택한 프리셋이 삭제되었습니다. 다른 프리셋을 선택해 주세요.</Text> : null}
-        <TextInput accessibilityLabel={`${setting.displayName} 프리셋 검색`} editable={!controlsDisabled} onChangeText={(value) => setPresetQueries((current) => ({ ...current, [identity]: value }))} placeholder="프리셋 이름 검색" placeholderTextColor={theme.colors.textMuted} style={styles.presetSearch} value={presetQueries[identity] ?? ''} />
-        <View style={styles.presetChoices}>
-          {visiblePresets.map((preset) => <Pressable key={preset.id} accessibilityLabel={`${setting.displayName} ${preset.name} 프리셋`} accessibilityRole="radio" accessibilityState={{ checked: setting.partyPresetId === preset.id, disabled: controlsDisabled }} disabled={controlsDisabled} onPress={() => updateDraft((current) => updatePreset(current, identity, preset.id))} style={[styles.choice, setting.partyPresetId === preset.id && styles.choiceActive]}><Text style={styles.choiceText}>{preset.name}</Text></Pressable>)}
+        <View accessibilityLabel={`${setting.displayName} 현재 프리셋: ${presetSummary}`} style={styles.presetSummary}>
+          <Text style={styles.muted}>현재 프리셋</Text>
+          <Text style={styles.choiceText}>{presetSummary}</Text>
         </View>
+        {setting.presetMode === 'EXPLICIT' && !selectedPreset ? <Text accessibilityLiveRegion="polite" accessibilityRole="alert" style={styles.problem}>선택한 프리셋이 삭제되었습니다. 다른 프리셋을 선택해 주세요.</Text> : null}
+        <Pressable accessibilityLabel={`${setting.displayName} 프리셋 선택 열기`} accessibilityRole="button" accessibilityState={{ disabled: controlsDisabled }} disabled={controlsDisabled} onPress={() => setActivePresetIdentity(identity)} style={styles.choice}><Text style={styles.choiceText}>프리셋 변경</Text></Pressable>
       </View>
     );
-  }, [controlsDisabled, draft, presetQueries, presets, query, updateDraft]);
+  }, [controlsDisabled, draft, presets, query, updateDraft]);
 
   return (
     <View style={styles.screen}>
@@ -387,7 +397,7 @@ export function BattleMapAutomationEditor({
       </View>
 
       {mutationMessage ? <Text accessibilityLabel="전투 맵 자동화 작업 오류" accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.problem}>{mutationMessage}</Text> : null}
-      {serverRefreshWarning ? <Text style={styles.problem}>새 서버 설정이 있지만 편집 중인 변경은 유지했습니다.</Text> : null}
+      {serverRefreshWarning ? <Text accessibilityLabel="전투 맵 자동화 서버 갱신 알림" accessibilityLiveRegion="polite" accessibilityRole="alert" style={styles.problem}>새 서버 설정이 있지만 편집 중인 변경은 유지했습니다.</Text> : null}
       {categoryLoading ? <Text style={styles.muted}>맵 카테고리 불러오는 중</Text> : null}
       {battleCategoriesError ? <ResourceWarning label="맵 카테고리" retryLabel="맵 카테고리 다시 불러오기" onRetry={onLoadBattleCategories} /> : null}
       {presetState.error ? <ResourceWarning label="프리셋" retryLabel="프리셋 다시 불러오기" onRetry={loadPresets} /> : presetState.loading ? <Text style={styles.muted}>프리셋 불러오는 중</Text> : null}
@@ -397,7 +407,22 @@ export function BattleMapAutomationEditor({
 
       <FlatList contentContainerStyle={styles.content} data={listItems} initialNumToRender={12} keyboardShouldPersistTaps="handled" keyExtractor={editorListKey} renderItem={renderListItem} windowSize={7} />
 
-      {validationErrors.length > 0 ? <Text style={styles.problem}>{validationErrors[0]}</Text> : null}
+      <BattleMapPresetPickerModal
+        disabled={controlsDisabled}
+        mapName={activePresetSetting?.displayName ?? ''}
+        onClose={() => setActivePresetIdentity(null)}
+        onSelect={(presetId) => {
+          if (activePresetIdentity == null) return;
+          updateDraft((current) => updatePreset(current, activePresetIdentity, presetId));
+          setActivePresetIdentity(null);
+        }}
+        presets={presets}
+        selectedPresetId={activePresetSetting?.partyPresetId ?? null}
+        selectedPresetMode={activePresetSetting?.presetMode ?? 'PRIMARY'}
+        visible={activePresetSetting != null && !controlsDisabled}
+      />
+
+      {validationErrors.length > 0 ? <Text accessibilityLabel="전투 맵 자동화 입력 오류" accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.problem}>{validationErrors[0]}</Text> : null}
       <View style={styles.footer}>
         <Pressable accessibilityLabel="전투 맵 자동화 삭제" accessibilityRole="button" accessibilityState={{ disabled: controlsDisabled }} disabled={controlsDisabled} onPress={confirmDelete} style={[styles.deleteButton, controlsDisabled && styles.disabled]}><Trash2 color={theme.colors.danger} size={17} /><Text style={styles.deleteText}>삭제</Text></Pressable>
         <Pressable accessibilityLabel="전투 맵 자동화 저장" accessibilityRole="button" accessibilityState={{ busy, disabled: saveDisabled }} disabled={saveDisabled} onPress={() => save()} style={[styles.saveButton, saveDisabled && styles.disabled]}>{busy ? <ActivityIndicator color={theme.colors.buttonText} size="small" /> : <Save color={theme.colors.buttonText} size={17} />}<Text style={styles.saveText}>저장</Text></Pressable>
@@ -457,8 +482,7 @@ const styles = StyleSheet.create({
   capability: { color: theme.colors.accentBlue, fontSize: 11, fontWeight: '800' },
   batch: { color: theme.colors.text, fontSize: 11, fontWeight: '800' },
   complete: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '900' },
-  presetSearch: { borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.sm },
-  presetChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs },
+  presetSummary: { gap: 2 },
   choice: { borderColor: theme.colors.borderStrong, borderRadius: 14, borderWidth: 1, minHeight: 44, justifyContent: 'center', paddingHorizontal: theme.spacing.sm },
   choiceActive: { borderColor: theme.colors.accentGreen },
   choiceText: { color: theme.colors.text, fontSize: 11, fontWeight: '700' },

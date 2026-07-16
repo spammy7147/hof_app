@@ -23,10 +23,13 @@ const flatList = React.forwardRef<unknown, Record<string, unknown>>((props, ref)
     (props.renderItem as (value: { item: unknown; index: number }) => React.ReactNode)({ item, index }),
   )),
 ));
+const modal = React.forwardRef<unknown, Record<string, unknown>>((props, ref) => (
+  props.visible ? React.createElement('Modal', { ...props, ref }, props.children as React.ReactNode) : null
+));
 const reactNativeMock = {
   ActivityIndicator: host('ActivityIndicator'),
   Alert: { alert: (...args: unknown[]) => { alertArguments = args; } },
-  FlatList: flatList, Pressable: host('Pressable'), ScrollView: host('ScrollView'), StyleSheet: { create: <T,>(styles: T) => styles },
+  FlatList: flatList, Modal: modal, Pressable: host('Pressable'), ScrollView: host('ScrollView'), StyleSheet: { create: <T,>(styles: T) => styles },
   Switch: host('Switch'), Text: host('Text'), TextInput: host('TextInput'), View: host('View'),
 };
 const iconsMock = new Proxy({}, { get: (_target, property) => host(String(property)) });
@@ -68,8 +71,9 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투 맵 검색' }).props.onChangeText('forest'); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 맵 선택' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 일일 목표' }).props.onChangeText('4'); });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 프리셋 검색' }).props.onChangeText('raid'); });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta Raid Team 프리셋' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 프리셋 선택 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }).props.onChangeText('raid'); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Raid Team 프리셋 선택' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 맵 위로' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'missing 맵 제거' }).props.onPress(); });
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.onPress(); });
@@ -132,7 +136,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     }
     assert.equal(busy.root.findByProps({ accessibilityLabel: '전투 맵 자동화 사용' }).props.disabled, true);
     assert.equal(busy.root.findByProps({ accessibilityLabel: '전투 맵 검색' }).props.editable, false);
-    assert.equal(busy.root.findByProps({ accessibilityLabel: 'Alpha 대표 프리셋 사용' }).props.disabled, true);
+    assert.equal(busy.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' }).props.disabled, true);
     assert.equal(busy.root.findByProps({ accessibilityLabel: 'Alpha 맵 선택' }).props.disabled, true);
   });
 
@@ -155,6 +159,26 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.onPress(); });
 
     assert.deepEqual(saves, [{ enabled: true, maps: [setting('a', 4, 0)] }]);
+  });
+
+  it('rejects pasted non-decimal target formats and saves trimmed leading-zero decimal input as an integer', async () => {
+    const saves: UpdateBattleMapAutomationRequest[] = [];
+    const renderer = await renderEditor({
+      entry: battleEntry([setting('a', 3, 0)]), maps: [catalogMap('a', 'Alpha')],
+      onSave: async (request) => { saves.push(request); return true; },
+    });
+    const input = () => renderer.root.findByProps({ accessibilityLabel: 'Alpha 일일 목표' });
+    const save = () => renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' });
+
+    for (const invalid of ['0x10', '1e3', '+2', '-2', '1.5', '', '9007199254740992', '2147483648']) {
+      await act(async () => { input().props.onChangeText(invalid); });
+      assert.equal(save().props.disabled, true, invalid);
+    }
+    await act(async () => { input().props.onChangeText(' 00042 '); });
+    assert.equal(save().props.disabled, false);
+    await act(async () => { await save().props.onPress(); });
+
+    assert.equal(saves[0]?.maps[0]?.dailyTargetCount, 42);
   });
 
   it('accepts fresh server progress during a dirty settings edit without overwriting the edit', async () => {
@@ -274,7 +298,8 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(hasText(renderer.root, '현재 맵 목록에 없음 · 저장된 설정'), true);
     assert.equal(hasText(renderer.root, '선택한 프리셋이 삭제되었습니다. 다른 프리셋을 선택해 주세요.'), true);
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.disabled, true);
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'missing Existing 프리셋' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'missing 프리셋 선택 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Existing 프리셋 선택' }).props.onPress(); });
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.disabled, false);
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'missing 맵 제거' }).props.onPress(); });
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'missing 맵 제거' }).length, 0);
@@ -297,7 +322,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
       presets: [preset(7, 'Existing')],
     });
     assert.equal(renderer.root.findByProps({ accessibilityLabel: 'stored 일일 목표' }).props.editable, true);
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'stored Existing 프리셋' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'stored 프리셋 선택 열기' }));
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '맵 카테고리 다시 불러오기' }).props.onPress(); });
     assert.equal(categoryRetries, 1);
   });
@@ -337,6 +362,92 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(supported.props.disabled, false);
     await act(async () => { supported.props.onPress(); });
     assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Limited Supported 맵 선택' }).props.accessibilityState.checked, true);
+  });
+
+  it('keeps preset options out of every row and renders one shared searchable picker only after opening', async () => {
+    const renderer = await renderEditor({
+      entry: battleEntry([setting('a', 3, 0), setting('b', 3, 1)]),
+      maps: [catalogMap('a', 'Alpha'), catalogMap('b', 'Beta')],
+      presets: Array.from({ length: 100 }, (_, index) => preset(index + 1, `Preset ${index + 1}`)),
+    });
+
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Preset 100 프리셋 선택' }).length, 0);
+    assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'Modal').length, 0);
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' }).props.onPress(); });
+    assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'Modal').length, 1);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '대표 프리셋 선택' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Preset 100 프리셋 선택' }));
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }).props.onChangeText('100'); });
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Preset 1 프리셋 선택' }).length, 0);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Preset 100 프리셋 선택' }));
+
+    await act(async () => {
+      renderer.root.find((node) => (node.type as unknown) === 'Modal').props.onRequestClose();
+    });
+    assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'Modal').length, 0);
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 프리셋 선택 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 배경 닫기' }).props.onPress(); });
+    assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'Modal').length, 0);
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 프리셋 선택 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
+    assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'Modal').length, 0);
+  });
+
+  it('repairs a deleted preset through the shared picker and supports explicit and primary selections', async () => {
+    const broken = { ...setting('a', 3, 0), presetMode: 'EXPLICIT' as const, partyPresetId: 99 };
+    const renderer = await renderEditor({
+      entry: battleEntry([broken]), maps: [catalogMap('a', 'Alpha')],
+      presets: [preset(7, 'Raid Team'), preset(8, 'Support Team')],
+    });
+
+    assert.equal(hasText(renderer.root, '삭제된 프리셋 #99'), true);
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }).props.onChangeText('support'); });
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Raid Team 프리셋 선택' }).length, 0);
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Support Team 프리셋 선택' }).props.onPress(); });
+    assert.equal(hasText(renderer.root, 'Support Team'), true);
+    assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'Modal').length, 0);
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '대표 프리셋 선택' }).props.onPress(); });
+    assert.equal(hasText(renderer.root, '대표 프리셋'), true);
+  });
+
+  it('closes the shared picker when its row is removed or the editor becomes busy', async () => {
+    const base = editorProps({
+      entry: battleEntry([setting('a', 3, 0), setting('b', 3, 1)]),
+      maps: [catalogMap('a', 'Alpha'), catalogMap('b', 'Beta')], presets: [preset(7, 'Existing')],
+    });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(BattleMapAutomationEditor, base)); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Alpha 맵 제거' }).props.onPress(); });
+    assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'Modal').length, 0);
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 프리셋 선택 열기' }).props.onPress(); });
+    await act(async () => { renderer.update(React.createElement(BattleMapAutomationEditor, { ...base, saving: true })); });
+    assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'Modal').length, 0);
+    await act(async () => { renderer.unmount(); });
+  });
+
+  it('announces validation errors assertively and server-refresh warnings politely as alerts', async () => {
+    const base = editorProps({ entry: battleEntry([setting('a', 3, 0)]), maps: [catalogMap('a', 'Alpha')] });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(BattleMapAutomationEditor, base)); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Alpha 일일 목표' }).props.onChangeText('0x10'); });
+    const validation = renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 입력 오류' });
+    assert.equal(validation.props.accessibilityRole, 'alert');
+    assert.equal(validation.props.accessibilityLiveRegion, 'assertive');
+
+    await act(async () => {
+      renderer.update(React.createElement(BattleMapAutomationEditor, {
+        ...base,
+        entry: battleEntry([setting('a', 9, 0)]),
+      }));
+    });
+    const refresh = renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 서버 갱신 알림' });
+    assert.equal(refresh.props.accessibilityRole, 'alert');
+    assert.equal(refresh.props.accessibilityLiveRegion, 'polite');
   });
 
   it('stays mounted after failed save/delete and ignores late resource responses after unmount', async () => {
