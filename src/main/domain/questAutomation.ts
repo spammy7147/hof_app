@@ -146,6 +146,31 @@ export function applyManualMapOverride(
   };
 }
 
+export function hydrateAutoMatchedMapClearMissions(
+  draft: QuestAutomationDraft,
+  catalog: readonly QuestMapCatalogItem[],
+): QuestAutomationDraft {
+  let changed = false;
+  const quests = draft.quests.map((quest) => {
+    let questChanged = false;
+    const missions = quest.missions.map((mission) => {
+      if (mission.type !== 'MAP_CLEAR' || mission.maps.some(({ manuallyOverridden }) => manuallyOverridden)) return mission;
+      const match = matchMapClearMission(mission, catalog);
+      if (!match) return mission;
+      const unresolvedIndex = mission.maps.findIndex(({ categoryId, mapCode }) => !categoryId.trim() || !mapCode.trim());
+      if (unresolvedIndex < 0 && mission.maps.length > 0) return mission;
+      const maps = mission.maps.length === 0
+        ? [applyAutoMatchedMap(emptyMapSetting(mission.key), match)]
+        : mission.maps.map((map, index) => index === unresolvedIndex ? applyAutoMatchedMap(map, match) : map);
+      changed = true;
+      questChanged = true;
+      return { ...mission, maps };
+    });
+    return questChanged ? { ...quest, missions } : quest;
+  });
+  return changed ? { ...draft, quests } : draft;
+}
+
 export function moveMissionMap(
   maps: readonly QuestMapSettingRequest[],
   from: number,

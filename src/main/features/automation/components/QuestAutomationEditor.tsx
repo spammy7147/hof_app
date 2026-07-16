@@ -20,6 +20,7 @@ import {
   buildQuestAutomationRequest,
   filterQuests,
   getMissionReadiness,
+  hydrateAutoMatchedMapClearMissions,
   isCombatMission,
   moveMissionMap,
   removeMissionMap,
@@ -102,11 +103,16 @@ export function QuestAutomationEditor({
   const [localBusy, setLocalBusy] = useState(false);
   const [mapQueries, setMapQueries] = useState<Record<string, string>>({});
   const baselineRef = useRef('');
+  const baselineDraftRef = useRef<QuestAutomationDraft | null>(null);
+  const draftRef = useRef<QuestAutomationDraft | null>(null);
+  const draftSourceRef = useRef('');
   const mountedGenerationRef = useRef(0);
   const questGenerationRef = useRef(0);
   const presetGenerationRef = useRef(0);
   const mapGenerationRef = useRef<Record<string, number>>({});
+  const mapRequestSequenceRef = useRef(0);
   const mapResourceRef = useRef(mapResources);
+  const eligibleCategoryIdsRef = useRef(new Set<string>());
   const requestedCategoriesRef = useRef(false);
 
   const loadQuests = useCallback(async () => {
@@ -153,7 +159,7 @@ export function QuestAutomationEditor({
   }, [onListPartyPresets]);
 
   const loadCategoryMaps = useCallback(async (category: BattleCategoryResponse) => {
-    const generation = (mapGenerationRef.current[category.id] ?? 0) + 1;
+    const generation = ++mapRequestSequenceRef.current;
     mapGenerationRef.current[category.id] = generation;
     const mountedGeneration = mountedGenerationRef.current;
     const loadingState = { loading: true, error: null };
@@ -161,7 +167,7 @@ export function QuestAutomationEditor({
     setMapResources(mapResourceRef.current);
     try {
       const maps = await onLoadBattleMaps(category.id);
-      if (mountedGeneration !== mountedGenerationRef.current || mapGenerationRef.current[category.id] !== generation) return;
+      if (mountedGeneration !== mountedGenerationRef.current || mapGenerationRef.current[category.id] !== generation || !eligibleCategoryIdsRef.current.has(category.id)) return;
       setCatalog((current) => [
         ...current.filter(({ categoryId }) => categoryId !== category.id),
         ...maps.filter((map): map is BattleMapResponse & { mapCode: string } => map.resolved && map.mapCode != null),
@@ -170,7 +176,7 @@ export function QuestAutomationEditor({
       mapResourceRef.current = { ...mapResourceRef.current, [category.id]: successState };
       setMapResources(mapResourceRef.current);
     } catch (error: unknown) {
-      if (mountedGeneration !== mountedGenerationRef.current || mapGenerationRef.current[category.id] !== generation) return;
+      if (mountedGeneration !== mountedGenerationRef.current || mapGenerationRef.current[category.id] !== generation || !eligibleCategoryIdsRef.current.has(category.id)) return;
       const errorState = { loading: false, error: toUserFacingErrorMessage(error) };
       mapResourceRef.current = { ...mapResourceRef.current, [category.id]: errorState };
       setMapResources(mapResourceRef.current);
@@ -210,24 +216,79 @@ export function QuestAutomationEditor({
   const categoryKey = eligibleCategories.map(({ id }) => id).join('|');
 
   useEffect(() => {
+    const eligibleIds = new Set(eligibleCategories.map(({ id }) => id));
+    eligibleCategoryIdsRef.current = eligibleIds;
+    const nextResources = Object.fromEntries(
+      Object.entries(mapResourceRef.current).filter(([id]) => eligibleIds.has(id)),
+    );
+    for (const id of Object.keys(mapGenerationRef.current)) {
+      if (!eligibleIds.has(id)) delete mapGenerationRef.current[id];
+    }
+    mapResourceRef.current = nextResources;
+    setMapResources(nextResources);
+    setCatalog((current) => current.filter(({ categoryId }) => eligibleIds.has(categoryId)));
+  }, [categoryKey, eligibleCategories]);
+
+  useEffect(() => {
     for (const category of eligibleCategories) {
       if (!mapResourceRef.current[category.id]) void loadCategoryMaps(category);
     }
   }, [categoryKey, eligibleCategories, loadCategoryMaps]);
 
   useEffect(() => {
-    if (!questLoaded) return;
+    const categorySettled = !isBattleCategoriesLoading && (
+      areBattleCategoriesLoaded || battleCategories.length > 0 || battleCategoriesError != null
+    );
+    const mapsSettled = eligibleCategories.every(({ id }) => {
+      const resource = mapResourceRef.current[id];
+      return resource != null && !resource.loading;
+    });
+    if (!questLoaded || !categorySettled || !mapsSettled) return;
+    const source = serializeDraftSource(entry, snapshots);
     const nextDraft = buildQuestAutomationDraft(entry, snapshots, catalog);
-    setDraft((current) => {
-      if (current == null || serializeDraft(current) === baselineRef.current) {
+    const current = draftRef.current;
+    if (current == null) {
+      draftSourceRef.current = source;
+      baselineDraftRef.current = nextDraft;
+      baselineRef.current = serializeDraft(nextDraft);
+      draftRef.current = nextDraft;
+      setDraft(nextDraft);
+      setRefreshWarning(false);
+      return;
+    }
+    if (draftSourceRef.current !== source) {
+      draftSourceRef.current = source;
+      if (serializeDraft(current) === baselineRef.current) {
+        baselineDraftRef.current = nextDraft;
         baselineRef.current = serializeDraft(nextDraft);
+        draftRef.current = nextDraft;
+        setDraft(nextDraft);
         setRefreshWarning(false);
-        return nextDraft;
+        return;
+      }
+      const hydrated = hydrateAutoMatchedMapClearMissions(current, catalog);
+      baselineDraftRef.current = nextDraft;
+      baselineRef.current = serializeDraft(nextDraft);
+      if (hydrated !== current) {
+        draftRef.current = hydrated;
+        setDraft(hydrated);
       }
       setRefreshWarning(true);
-      return current;
-    });
-  }, [catalog, entry, questLoaded, snapshots]);
+      return;
+    }
+    const hydrated = hydrateAutoMatchedMapClearMissions(current, catalog);
+    const baseline = baselineDraftRef.current == null
+      ? null
+      : hydrateAutoMatchedMapClearMissions(baselineDraftRef.current, catalog);
+    if (baseline) {
+      baselineDraftRef.current = baseline;
+      baselineRef.current = serializeDraft(baseline);
+    }
+    if (hydrated !== current) {
+      draftRef.current = hydrated;
+      setDraft(hydrated);
+    }
+  }, [areBattleCategoriesLoaded, battleCategories.length, battleCategoriesError, catalog, eligibleCategories, entry, isBattleCategoriesLoading, questLoaded, mapResources, snapshots]);
 
   const visibleQuests = useMemo(
     () => filterQuests(snapshots, section, query),
@@ -260,7 +321,11 @@ export function QuestAutomationEditor({
   const saveDisabled = busy || questLoading || draft == null || validationErrors.length > 0 || supportingResourcesBlockSave;
 
   const updateDraft = useCallback((updater: (current: QuestAutomationDraft) => QuestAutomationDraft) => {
-    setDraft((current) => current ? updater(current) : current);
+    const current = draftRef.current;
+    if (!current) return;
+    const next = updater(current);
+    draftRef.current = next;
+    setDraft(next);
   }, []);
 
   const renderQuest = useCallback(({ item }: { item: QuestSnapshot }) => {
@@ -322,7 +387,10 @@ export function QuestAutomationEditor({
     setLocalBusy(true);
     try {
       const request = buildQuestAutomationRequest(draft, presetIds);
-      if (await onSave(request)) baselineRef.current = serializeDraft(draft);
+      if (await onSave(request)) {
+        baselineDraftRef.current = draft;
+        baselineRef.current = serializeDraft(draft);
+      }
     } finally {
       setLocalBusy(false);
     }
@@ -411,7 +479,10 @@ export function QuestAutomationEditor({
             disabled={busy}
             onPress={() => {
               const nextDraft = buildQuestAutomationDraft(entry, snapshots, catalog);
+              draftSourceRef.current = serializeDraftSource(entry, snapshots);
+              baselineDraftRef.current = nextDraft;
               baselineRef.current = serializeDraft(nextDraft);
+              draftRef.current = nextDraft;
               setDraft(nextDraft);
               setRefreshWarning(false);
             }}
@@ -542,6 +613,7 @@ function MissingSelectionCard({ selection, catalog, presets, mapQueries, disable
             mission={mission}
             presetIds={presetIds}
             presets={presets}
+            questContext={selection.questCode}
             onMapQuery={(value) => onMapQuery(mission.key, value)}
             onUpdate={(maps) => onUpdateMission(mission.key, maps)}
           />
@@ -601,6 +673,7 @@ function QuestRow({ snapshot, selected, catalog, presets, mapQueries, disabled, 
                   mission={configured}
                   presetIds={presetIds}
                   presets={presets}
+                  questContext={snapshot.name || snapshot.questId}
                   onMapQuery={(value) => onMapQuery(configured.key, value)}
                   onUpdate={(maps) => onUpdateMission(configured.key, maps)}
                 />
@@ -620,11 +693,12 @@ type CombatMissionEditorProps = {
   presetIds: number[];
   mapQuery: string;
   disabled: boolean;
+  questContext: string;
   onMapQuery: (value: string) => void;
   onUpdate: (maps: QuestMapSettingRequest[]) => void;
 };
 
-function CombatMissionEditor({ mission, catalog, presets, presetIds, mapQuery, disabled, onMapQuery, onUpdate }: CombatMissionEditorProps) {
+function CombatMissionEditor({ mission, catalog, presets, presetIds, mapQuery, disabled, questContext, onMapQuery, onUpdate }: CombatMissionEditorProps) {
   const readiness = getMissionReadiness(mission, presetIds);
   const needle = mapQuery.trim().toLocaleLowerCase();
   const options = catalog.filter((map) => !needle || `${map.name} ${map.groupName ?? ''}`.toLocaleLowerCase().includes(needle)).slice(0, 20);
@@ -668,27 +742,27 @@ function CombatMissionEditor({ mission, catalog, presets, presetIds, mapQuery, d
         <View key={`${mission.key}:${index}`} style={styles.mapCard}>
           <View style={styles.mapHeading}>
             <Text style={styles.mapName}>{map.mapCode ? catalog.find((candidate) => candidate.categoryId === map.categoryId && candidate.mapCode === map.mapCode)?.name ?? map.mapCode : '맵을 선택해 주세요'}</Text>
-            <Pressable accessibilityLabel={`${mission.key} ${index + 1}번째 맵 위로`} accessibilityRole="button" accessibilityState={{ disabled: disabled || index === 0 }} disabled={disabled || index === 0} onPress={() => { if (!disabled && index > 0) onUpdate(moveMissionMap(mission.maps, index, index - 1)); }} style={styles.smallIcon}><ArrowUp color={theme.colors.textMuted} size={15} /></Pressable>
-            <Pressable accessibilityLabel={`${mission.key} ${index + 1}번째 맵 아래로`} accessibilityRole="button" accessibilityState={{ disabled: disabled || index === mission.maps.length - 1 }} disabled={disabled || index === mission.maps.length - 1} onPress={() => { if (!disabled && index < mission.maps.length - 1) onUpdate(moveMissionMap(mission.maps, index, index + 1)); }} style={styles.smallIcon}><ArrowDown color={theme.colors.textMuted} size={15} /></Pressable>
-            <Pressable accessibilityLabel={`${mission.key} ${index + 1}번째 맵 제거`} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={() => { if (!disabled) onUpdate(removeMissionMap(mission.maps, index)); }} style={styles.smallIcon}><X color={theme.colors.danger} size={15} /></Pressable>
+            <Pressable accessibilityLabel={`${questContext} · ${mission.key} ${index + 1}번째 맵 위로`} accessibilityRole="button" accessibilityState={{ disabled: disabled || index === 0 }} disabled={disabled || index === 0} onPress={() => { if (!disabled && index > 0) onUpdate(moveMissionMap(mission.maps, index, index - 1)); }} style={styles.smallIcon}><ArrowUp color={theme.colors.textMuted} size={15} /></Pressable>
+            <Pressable accessibilityLabel={`${questContext} · ${mission.key} ${index + 1}번째 맵 아래로`} accessibilityRole="button" accessibilityState={{ disabled: disabled || index === mission.maps.length - 1 }} disabled={disabled || index === mission.maps.length - 1} onPress={() => { if (!disabled && index < mission.maps.length - 1) onUpdate(moveMissionMap(mission.maps, index, index + 1)); }} style={styles.smallIcon}><ArrowDown color={theme.colors.textMuted} size={15} /></Pressable>
+            <Pressable accessibilityLabel={`${questContext} · ${mission.key} ${index + 1}번째 맵 제거`} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={() => { if (!disabled) onUpdate(removeMissionMap(mission.maps, index)); }} style={styles.smallIcon}><X color={theme.colors.danger} size={15} /></Pressable>
           </View>
           {map.mapCode ? (
             <View style={styles.presetRow}>
-              <Pressable accessibilityLabel={`${mission.key} ${index + 1}번째 맵 대표 프리셋`} accessibilityRole="radio" accessibilityState={{ checked: map.presetMode === 'PRIMARY', disabled }} disabled={disabled} onPress={() => updatePreset(index, null)} style={[styles.choice, map.presetMode === 'PRIMARY' && styles.choiceActive]}><Text style={styles.choiceText}>대표 프리셋</Text></Pressable>
-              {presets.map((preset) => <Pressable key={preset.id} accessibilityLabel={`${mission.key} ${index + 1}번째 맵 ${preset.name} 프리셋`} accessibilityRole="radio" accessibilityState={{ checked: map.partyPresetId === preset.id, disabled }} disabled={disabled} onPress={() => updatePreset(index, preset.id)} style={[styles.choice, map.partyPresetId === preset.id && styles.choiceActive]}><Text style={styles.choiceText}>{preset.name}</Text></Pressable>)}
+              <Pressable accessibilityLabel={`${questContext} · ${mission.key} ${index + 1}번째 맵 대표 프리셋`} accessibilityRole="radio" accessibilityState={{ checked: map.presetMode === 'PRIMARY', disabled }} disabled={disabled} onPress={() => updatePreset(index, null)} style={[styles.choice, map.presetMode === 'PRIMARY' && styles.choiceActive]}><Text style={styles.choiceText}>대표 프리셋</Text></Pressable>
+              {presets.map((preset) => <Pressable key={preset.id} accessibilityLabel={`${questContext} · ${mission.key} ${index + 1}번째 맵 ${preset.name} 프리셋`} accessibilityRole="radio" accessibilityState={{ checked: map.partyPresetId === preset.id, disabled }} disabled={disabled} onPress={() => updatePreset(index, preset.id)} style={[styles.choice, map.partyPresetId === preset.id && styles.choiceActive]}><Text style={styles.choiceText}>{preset.name}</Text></Pressable>)}
             </View>
           ) : null}
         </View>
       ))}
       {pendingIndex >= 0 ? (
         <View style={styles.picker}>
-          <TextInput accessibilityLabel={`${mission.key} 맵 검색`} editable={!disabled} onChangeText={onMapQuery} placeholder="맵 이름 검색" placeholderTextColor={theme.colors.textMuted} style={styles.mapSearch} value={mapQuery} />
-          {options.map((map) => <Pressable key={`${map.categoryId}:${map.mapCode}`} accessibilityLabel={`${map.name} 맵 선택`} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={() => chooseMap(map)} style={styles.mapOption}><Text style={styles.mapOptionText}>{map.name}</Text><Text style={styles.muted}>{map.groupName}</Text></Pressable>)}
+          <TextInput accessibilityLabel={`${questContext} · ${mission.key} 맵 검색`} editable={!disabled} onChangeText={onMapQuery} placeholder="맵 이름 검색" placeholderTextColor={theme.colors.textMuted} style={styles.mapSearch} value={mapQuery} />
+          {options.map((map) => <Pressable key={`${map.categoryId}:${map.mapCode}`} accessibilityLabel={`${questContext} · ${mission.key} · ${map.name} 맵 선택`} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={() => chooseMap(map)} style={styles.mapOption}><Text style={styles.mapOptionText}>{map.name}</Text><Text style={styles.muted}>{map.groupName}</Text></Pressable>)}
           {options.length === 0 ? <Text style={styles.muted}>검색 결과가 없습니다.</Text> : null}
         </View>
       ) : null}
       {canAdd && pendingIndex < 0 ? (
-        <Pressable accessibilityLabel={`${mission.key} 맵 추가`} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={addMap} style={styles.addMapButton}>
+        <Pressable accessibilityLabel={`${questContext} · ${mission.key} 맵 추가`} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={addMap} style={styles.addMapButton}>
           <Plus color={theme.colors.accentGreen} size={16} /><Text style={styles.addMapText}>맵 추가</Text>
         </Pressable>
       ) : null}
@@ -708,6 +782,7 @@ function updateMissionMaps(draft: QuestAutomationDraft, questCode: string, missi
 
 function buildMapQueryKey(questCode: string, missionKey: string): string { return `${questCode}\u0000${missionKey}`; }
 function serializeDraft(draft: QuestAutomationDraft): string { return JSON.stringify(draft); }
+function serializeDraftSource(entry: TypedAutomationEntryResponse, snapshots: readonly QuestSnapshot[]): string { return JSON.stringify([entry, snapshots]); }
 function sectionLabel(section: QuestSection): string { return TABS.find((tab) => tab.section === section)?.label ?? '완료'; }
 
 const styles = StyleSheet.create({

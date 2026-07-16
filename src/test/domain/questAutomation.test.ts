@@ -10,6 +10,7 @@ import {
   buildQuestAutomationRequest,
   filterQuests,
   getMissionReadiness,
+  hydrateAutoMatchedMapClearMissions,
   matchMapClearMission,
   moveMissionMap,
   removeMissionMap,
@@ -114,6 +115,42 @@ describe('quest automation domain', () => {
 
     assert.deepEqual(draft.quests[0]?.missions[0]?.maps, [manual]);
     assert.equal(getMissionReadiness(draft.quests[0]!.missions[0]!, []), '사용자 변경');
+  });
+
+  it('hydrates only unresolved automatic map-clear rows while preserving user-owned draft fields', () => {
+    const clearQuest = snapshot('q-clear', 'Clear', 'ACTIVE', 0, [mission('clear-key', 'MAP_CLEAR', 'Target')]);
+    const automatic = {
+      ...mapSetting('clear-key', '', 0),
+      categoryId: '',
+      presetMode: 'EXPLICIT' as const,
+      partyPresetId: 7,
+    };
+    const draft = buildQuestAutomationDraft(
+      questEntry([{ questCode: 'q-clear', enabled: true, sourceOrder: 0, maps: [automatic] }]),
+      [clearQuest],
+      [],
+    );
+    draft.enabled = false;
+    draft.quests[0]!.enabled = false;
+
+    const hydrated = hydrateAutoMatchedMapClearMissions(draft, [catalogMap('battle_map', 'target', 'Target')]);
+
+    assert.notEqual(hydrated, draft);
+    assert.equal(hydrated.enabled, false);
+    assert.equal(hydrated.quests[0]!.enabled, false);
+    assert.deepEqual(hydrated.quests[0]!.missions[0]!.maps, [{
+      ...automatic,
+      categoryId: 'battle_map',
+      mapCode: 'target',
+    }]);
+
+    const manual = structuredClone(draft);
+    manual.quests[0]!.missions[0]!.maps[0]!.manuallyOverridden = true;
+    assert.equal(hydrateAutoMatchedMapClearMissions(manual, [catalogMap('battle_map', 'target', 'Target')]), manual);
+    assert.equal(hydrateAutoMatchedMapClearMissions(draft, [
+      catalogMap('battle_map', 'a', 'Target'),
+      catalogMap('adventure_map', 'b', 'Target'),
+    ]), draft);
   });
 
   it('supports ordered monster maps with reorder and remove', () => {
