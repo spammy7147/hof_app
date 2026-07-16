@@ -243,6 +243,40 @@ describe('typed unified automation controller', () => {
     );
   });
 
+  it('retains later battle progress until an older create publishes the same membership', async () => {
+    const create = deferred<TypedAutomationAggregateResponse>();
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([entry(1, 'QUEST', 0)]),
+      create: () => create.promise,
+      updateQuest: async () => aggregate([
+        entry(1, 'QUEST', 0, { warnings: ['quest-saved'] }),
+        battleEntryWithProgress(9),
+      ]),
+    }));
+    await controller.load();
+
+    const creating = controller.createEntry('BATTLE_MAP');
+    await controller.saveQuestSettings({ enabled: true, quests: [] });
+    assert.equal(
+      controller.getSnapshot().aggregate?.entries.some(({ type }) => type === 'BATTLE_MAP'),
+      false,
+    );
+
+    create.resolve(aggregate([
+      entry(1, 'QUEST', 0),
+      battleEntryWithProgress(6),
+    ]));
+    await creating;
+
+    const battle = controller.getSnapshot().aggregate?.entries.find(({ type }) => type === 'BATTLE_MAP');
+    assert.equal(battle?.id, 2);
+    assert.deepEqual(battle?.battleMapProgress, battleProgress(9));
+    assert.deepEqual(
+      controller.getSnapshot().aggregate?.entries.find(({ type }) => type === 'QUEST')?.warnings,
+      ['quest-saved'],
+    );
+  });
+
   it('does not let an older cross-type response resurrect a deleted battle entry', async () => {
     const questSave = deferred<TypedAutomationAggregateResponse>();
     const controller = new UnifiedAutomationController(apiStub({
@@ -268,6 +302,40 @@ describe('typed unified automation controller', () => {
         { type, priority, warnings }
       )),
       [{ type: 'QUEST', priority: 0, warnings: ['quest-saved'] }],
+    );
+  });
+
+  it('does not apply a deleted membership progress snapshot to a different-id recreate', async () => {
+    const create = deferred<TypedAutomationAggregateResponse>();
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([
+        entry(1, 'QUEST', 0),
+        battleEntryWithProgress(1),
+      ]),
+      delete: async () => aggregate([entry(1, 'QUEST', 0)]),
+      create: () => create.promise,
+      updateQuest: async () => aggregate([
+        entry(1, 'QUEST', 0, { warnings: ['quest-saved'] }),
+        battleEntryWithProgress(9),
+      ]),
+    }));
+    await controller.load();
+    await controller.deleteEntry(2);
+
+    const creating = controller.createEntry('BATTLE_MAP');
+    await controller.saveQuestSettings({ enabled: true, quests: [] });
+    create.resolve(aggregate([
+      entry(1, 'QUEST', 0),
+      battleEntryWithProgress(6, { id: 3 }),
+    ]));
+    await creating;
+
+    const battle = controller.getSnapshot().aggregate?.entries.find(({ type }) => type === 'BATTLE_MAP');
+    assert.equal(battle?.id, 3);
+    assert.deepEqual(battle?.battleMapProgress, battleProgress(6));
+    assert.deepEqual(
+      controller.getSnapshot().aggregate?.entries.find(({ type }) => type === 'QUEST')?.warnings,
+      ['quest-saved'],
     );
   });
 

@@ -77,6 +77,10 @@ export class UnifiedAutomationController {
   private runtimeRevision = 0;
   private orderRevision = 0;
   private battleProgressRevision = 0;
+  private battleProgressSnapshot: {
+    entryId: number;
+    progress: TypedAutomationEntryResponse['battleMapProgress'];
+  } | null = null;
   private queuedReorderSequence = 0;
   private readonly typeRevisions = new Map<AutomationType, number>();
   private readonly typeTails = new Map<AutomationType, Promise<void>>();
@@ -107,6 +111,7 @@ export class UnifiedAutomationController {
     this.runtimeRevision = 0;
     this.orderRevision = 0;
     this.battleProgressRevision = 0;
+    this.battleProgressSnapshot = null;
     this.queuedReorderSequence = 0;
     this.typeRevisions.clear();
     this.typeTails.clear();
@@ -568,26 +573,31 @@ export class UnifiedAutomationController {
     sequence: number,
     entries: TypedAutomationEntryResponse[],
   ): TypedAutomationEntryResponse[] {
-    const currentIndex = entries.findIndex(({ type }) => type === 'BATTLE_MAP');
-    const currentBattle = entries[currentIndex];
     const serverBattle = response.entries.find(({ type }) => type === 'BATTLE_MAP');
-    if (!serverBattle || currentIndex < 0 || !currentBattle) return entries;
-    if (sequence < this.battleProgressRevision) {
-      const publishedBattle = this.snapshot.aggregate?.entries.find(({ type }) => type === 'BATTLE_MAP');
-      if (!publishedBattle) return entries;
-      const next = [...entries];
-      next[currentIndex] = {
-        ...currentBattle,
-        battleMapProgress: publishedBattle.battleMapProgress,
+    if (serverBattle && sequence >= this.battleProgressRevision) {
+      this.battleProgressRevision = sequence;
+      this.battleProgressSnapshot = {
+        entryId: serverBattle.id,
+        progress: serverBattle.battleMapProgress,
       };
-      return next;
     }
 
-    this.battleProgressRevision = sequence;
+    const currentIndex = entries.findIndex(({ type }) => type === 'BATTLE_MAP');
+    const currentBattle = entries[currentIndex];
+    const progressSnapshot = this.battleProgressSnapshot;
+    if (
+      currentIndex < 0
+      || !currentBattle
+      || !progressSnapshot
+      || progressSnapshot.entryId !== currentBattle.id
+    ) {
+      return entries;
+    }
+
     const next = [...entries];
     next[currentIndex] = {
       ...currentBattle,
-      battleMapProgress: serverBattle.battleMapProgress,
+      battleMapProgress: progressSnapshot.progress,
     };
     return next;
   }
