@@ -1,31 +1,29 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ArrowLeft, Info } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
 
-import {
-  buildCreateUnifiedModuleDraft,
-  buildEditUnifiedModuleDraft,
-  buildUnifiedModuleRequest,
-  buildUpdateUnifiedModuleRequest,
-  type UnifiedAutomationModuleDraft,
-} from '../domain/unifiedAutomation';
 import type { UnifiedAutomationController } from '../domain/unifiedAutomationController';
 import { UnifiedAutomationDashboard } from '../features/automation/components/UnifiedAutomationDashboard';
-import { UnifiedAutomationModuleEditor } from '../features/automation/components/UnifiedAutomationModuleEditor';
+import { AdventureMapAutomationEditor } from '../features/automation/components/AdventureMapAutomationEditor';
+import { BattleMapAutomationEditor } from '../features/automation/components/BattleMapAutomationEditor';
+import { QuestAutomationEditor } from '../features/automation/components/QuestAutomationEditor';
 import { UnifiedAutomationSettings } from '../features/automation/components/UnifiedAutomationSettings';
 import { theme } from '../styles/theme';
 import type {
   BattleCategoryResponse,
   BattleMapResponse,
+  AutomationType,
   PartyPresetResponse,
-  UnifiedAutomationModuleResponse,
-  UnifiedAutomationModuleType,
+  TypedAutomationEntryResponse,
 } from '../types/api';
 
 type HomeTabScreenProps = {
   authenticated: boolean;
   battleCategories: BattleCategoryResponse[];
+  areBattleCategoriesLoaded: boolean;
+  isBattleCategoriesLoading: boolean;
+  battleCategoriesError: string | null;
   onLoadBattleCategories: () => void;
   onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
@@ -38,12 +36,15 @@ type HomeRoute = 'dashboard' | 'settings' | 'editor';
 /**
  * 공유 자동화 store를 구독하고 대시보드·설정·편집 화면을 전환하는 홈 화면이다.
  *
- * 모듈 요청과 큐는 App이 소유한 `UnifiedAutomationController`에 남으므로 탭 전환으로 이 컴포넌트가
- * unmount돼도 중단되지 않는다. 화면에는 저장 전 편집 초안과 현재 하위 경로만 로컬 state로 둔다.
+ * 설정 요청과 큐는 App이 소유한 `UnifiedAutomationController`에 남으므로 탭 전환으로 이 컴포넌트가
+ * unmount돼도 중단되지 않는다. 화면에는 현재 전용 편집 항목과 하위 경로만 로컬 state로 둔다.
  */
 export function HomeTabScreen({
   authenticated,
   battleCategories,
+  areBattleCategoriesLoaded,
+  isBattleCategoriesLoading,
+  battleCategoriesError,
   onLoadBattleCategories,
   onLoadBattleMaps,
   onListPartyPresets,
@@ -51,15 +52,16 @@ export function HomeTabScreen({
   onOpenCaptcha,
 }: HomeTabScreenProps) {
   const [route, setRoute] = useState<HomeRoute>('dashboard');
-  const [editorDraft, setEditorDraft] = useState<UnifiedAutomationModuleDraft | null>(null);
+  const [typedEditorEntry, setTypedEditorEntry] = useState<TypedAutomationEntryResponse | null>(null);
   const [rulesOpen, setRulesOpen] = useState(false);
   const {
-    automation,
+    aggregate,
     loading,
     actionSaving,
-    editorSaving,
-    savingModuleIds,
+    savingEntryIds,
+    savingTypes,
     reordering,
+    error,
     message,
   } = useSyncExternalStore(
     automationController.subscribe,
@@ -68,57 +70,149 @@ export function HomeTabScreen({
   );
 
   useEffect(() => {
-    if (authenticated) void automationController.load();
-    else automationController.reset();
+    if (!authenticated) automationController.reset();
   }, [authenticated, automationController]);
 
-  function startCreate(type: UnifiedAutomationModuleType) {
-    if (!automation) return;
-    setEditorDraft(buildCreateUnifiedModuleDraft(type, automation.modules));
-    automationController.clearMessage();
-    setRoute('editor');
+  useEffect(() => {
+    if (!authenticated || route !== 'dashboard') return undefined;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const refresh = async () => {
+      try {
+        await automationController.load();
+      } finally {
+        if (!cancelled) {
+          timer = setTimeout(() => { void refresh(); }, 3_000);
+        }
+      }
+    };
+    void refresh();
+    return () => {
+      cancelled = true;
+      if (timer != null) clearTimeout(timer);
+    };
+  }, [authenticated, automationController, route]);
+
+  function openModule(entryId: number) {
+    const entry = aggregate?.entries.find(({ id }) => id === entryId);
+    if (entry) openEntryDetail(entry);
   }
 
-  function startEdit(module: UnifiedAutomationModuleResponse) {
-    if (automationController.isModuleBusy(module.id)) {
-      automationController.showMessage('이 자동화를 저장하고 있어요. 완료된 뒤 다시 열어 주세요.');
+  function openEntryDetail(entry: TypedAutomationEntryResponse) {
+    if (entry.type === 'QUEST' || entry.type === 'BATTLE_MAP' || entry.type === 'ADVENTURE_MAP') {
+      if (savingEntryIds.includes(entry.id) || savingTypes.includes(entry.type)) {
+        automationController.showMessage('이 자동화를 저장하고 있어요. 완료된 뒤 다시 열어 주세요.');
+        return;
+      }
+      setTypedEditorEntry(entry);
+      automationController.clearMessage();
+      setRoute('editor');
       return;
     }
-    setEditorDraft(buildEditUnifiedModuleDraft(module));
+  }
+
+  function toggleEntry(entry: TypedAutomationEntryResponse) {
+    if (entry.type === 'QUEST') {
+      return automationController.saveQuestSettings({ enabled: !entry.enabled, quests: entry.quests });
+    }
+    if (entry.type === 'BATTLE_MAP') {
+      return automationController.saveBattleMapSettings({ enabled: !entry.enabled, maps: entry.battleMaps });
+    }
+    return automationController.saveAdventureMapSettings({ enabled: !entry.enabled, maps: entry.adventureMaps });
+  }
+
+  const closeEditor = useCallback(() => {
+    setTypedEditorEntry(null);
     automationController.clearMessage();
-    setRoute('editor');
-  }
-
-  function openModule(moduleId: number) {
-    const module = automation?.modules.find((candidate) => candidate.id === moduleId);
-    if (module) startEdit(module);
-  }
-
-  async function saveModule(draft: UnifiedAutomationModuleDraft) {
-    const saved = draft.moduleId == null
-      ? await automationController.createModule(buildUnifiedModuleRequest(draft))
-      : await automationController.updateModule(
-        draft.moduleId,
-        buildUpdateUnifiedModuleRequest(draft),
-      );
-    if (!saved) return;
-    setEditorDraft(null);
     setRoute('settings');
+  }, [automationController]);
+
+  const fetchQuestSnapshots = useCallback(
+    () => automationController.fetchQuests(),
+    [automationController],
+  );
+
+  if (aggregate && route === 'editor' && typedEditorEntry?.type === 'QUEST') {
+    const currentEntry = aggregate.entries.find(({ id }) => id === typedEditorEntry.id);
+    const entry = currentEntry?.type === 'QUEST' ? currentEntry : typedEditorEntry;
+    return (
+      <QuestAutomationEditor
+        battleCategories={battleCategories}
+        areBattleCategoriesLoaded={areBattleCategoriesLoaded}
+        isBattleCategoriesLoading={isBattleCategoriesLoading}
+        battleCategoriesError={battleCategoriesError}
+        entry={entry}
+        fetchQuests={fetchQuestSnapshots}
+        mutationMessage={message ?? error}
+        saving={savingEntryIds.includes(entry.id) || savingTypes.includes('QUEST')}
+        onBack={closeEditor}
+        onDelete={() => automationController.deleteEntry(entry.id)}
+        onListPartyPresets={onListPartyPresets}
+        onClearMutationMessage={() => automationController.clearMessage()}
+        onLoadBattleCategories={onLoadBattleCategories}
+        onLoadBattleMaps={onLoadBattleMaps}
+        onSave={async (request) => {
+          const saved = await automationController.saveQuestSettings(request);
+          if (saved) closeEditor();
+          return saved;
+        }}
+      />
+    );
   }
 
-  async function deleteModule(moduleId: number) {
-    if (!await automationController.deleteModule(moduleId)) return;
-    setEditorDraft(null);
-    setRoute('settings');
+  if (aggregate && route === 'editor' && typedEditorEntry?.type === 'BATTLE_MAP') {
+    const currentEntry = aggregate.entries.find(({ id }) => id === typedEditorEntry.id);
+    const entry = currentEntry?.type === 'BATTLE_MAP' ? currentEntry : typedEditorEntry;
+    return (
+      <BattleMapAutomationEditor
+        battleCategories={battleCategories}
+        areBattleCategoriesLoaded={areBattleCategoriesLoaded}
+        isBattleCategoriesLoading={isBattleCategoriesLoading}
+        battleCategoriesError={battleCategoriesError}
+        entry={entry}
+        mutationMessage={message ?? error}
+        saving={savingEntryIds.includes(entry.id) || savingTypes.includes('BATTLE_MAP')}
+        onBack={closeEditor}
+        onDelete={() => automationController.deleteEntry(entry.id)}
+        onListPartyPresets={onListPartyPresets}
+        onClearMutationMessage={() => automationController.clearMessage()}
+        onLoadBattleCategories={onLoadBattleCategories}
+        onLoadBattleMaps={onLoadBattleMaps}
+        onSave={async (request) => {
+          const saved = await automationController.saveBattleMapSettings(request);
+          if (saved) closeEditor();
+          return saved;
+        }}
+      />
+    );
   }
 
-  function reorderModules(modules: UnifiedAutomationModuleResponse[]) {
-    automationController.reorderModules(modules);
-  }
-
-  function deleteEditedModule() {
-    const moduleId = editorDraft?.moduleId;
-    return moduleId == null ? null : () => deleteModule(moduleId);
+  if (aggregate && route === 'editor' && typedEditorEntry?.type === 'ADVENTURE_MAP') {
+    const currentEntry = aggregate.entries.find(({ id }) => id === typedEditorEntry.id);
+    const entry = currentEntry?.type === 'ADVENTURE_MAP' ? currentEntry : typedEditorEntry;
+    return (
+      <AdventureMapAutomationEditor
+        battleCategories={battleCategories}
+        areBattleCategoriesLoaded={areBattleCategoriesLoaded}
+        isBattleCategoriesLoading={isBattleCategoriesLoading}
+        battleCategoriesError={battleCategoriesError}
+        dailyRefresh={aggregate.runtime.dailyRefresh}
+        entry={entry}
+        mutationMessage={message ?? error}
+        saving={savingEntryIds.includes(entry.id) || savingTypes.includes('ADVENTURE_MAP')}
+        onBack={closeEditor}
+        onDelete={() => automationController.deleteEntry(entry.id)}
+        onListPartyPresets={onListPartyPresets}
+        onClearMutationMessage={() => automationController.clearMessage()}
+        onLoadBattleCategories={onLoadBattleCategories}
+        onLoadBattleMaps={onLoadBattleMaps}
+        onSave={async (request) => {
+          const saved = await automationController.saveAdventureMapSettings(request);
+          if (saved) closeEditor();
+          return saved;
+        }}
+      />
+    );
   }
 
   const showPageHeader = route !== 'editor';
@@ -162,7 +256,7 @@ export function HomeTabScreen({
       ) : null}
 
       {message ? <Text style={styles.message}>{message}</Text> : null}
-      {loading && !automation ? (
+      {loading && !aggregate ? (
         <View style={styles.loadingBox}>
           <ActivityIndicator color={theme.colors.accentGreen} />
           <Text style={styles.muted}>자동화 상태 확인 중</Text>
@@ -170,9 +264,9 @@ export function HomeTabScreen({
       ) : null}
       {!authenticated ? <Text style={styles.message}>로그인 후 통합 자동화를 설정할 수 있어요.</Text> : null}
 
-      {automation && route === 'dashboard' ? (
+      {aggregate && route === 'dashboard' ? (
         <UnifiedAutomationDashboard
-          automation={automation}
+          aggregate={aggregate}
           busy={actionSaving}
           onChangeState={(action) => { void automationController.changeState(action); }}
           onOpenCaptcha={onOpenCaptcha}
@@ -181,36 +275,21 @@ export function HomeTabScreen({
         />
       ) : null}
 
-      {automation && route === 'settings' ? (
+      {aggregate && route === 'settings' ? (
         <UnifiedAutomationSettings
-          modules={automation.modules}
+          entries={aggregate.entries}
+          error={message}
           reordering={reordering}
-          savingModuleIds={savingModuleIds}
-          onAdd={startCreate}
-          onEdit={startEdit}
-          onReorder={reorderModules}
-          onToggle={(module) => { void automationController.toggleModule(module); }}
+          savingEntryIds={savingEntryIds}
+          savingTypes={savingTypes}
+          onAdd={(type: AutomationType) => automationController.createEntry(type)}
+          onDelete={(entryId) => automationController.deleteEntry(entryId)}
+          onDetail={openEntryDetail}
+          onReorder={(entries) => automationController.reorderEntries(entries)}
+          onToggle={(entry) => { void toggleEntry(entry); }}
         />
       ) : null}
 
-      {automation && route === 'editor' && editorDraft ? (
-        <UnifiedAutomationModuleEditor
-          key={`${editorDraft.moduleId ?? 'new'}:${editorDraft.moduleType}`}
-          battleCategories={battleCategories}
-          initialDraft={editorDraft}
-          saving={editorSaving}
-          onBack={() => {
-            setEditorDraft(null);
-            automationController.clearMessage();
-            setRoute('settings');
-          }}
-          onDelete={deleteEditedModule()}
-          onListPartyPresets={onListPartyPresets}
-          onLoadBattleCategories={onLoadBattleCategories}
-          onLoadBattleMaps={onLoadBattleMaps}
-          onSave={saveModule}
-        />
-      ) : null}
     </NestableScrollContainer>
   );
 }

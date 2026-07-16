@@ -3,7 +3,11 @@ import {
   sanitizeBattlePartyForCharacters,
   type BattlePartyMember,
 } from './battleParty';
-import type { CreatePartyPresetRequest, HofCharacter, PartyPresetResponse } from '../types/api';
+import type {
+  CreatePartyPresetRequest,
+  HofCharacter,
+  PartyPresetResponse,
+} from '../types/api';
 
 /**
  * 새 파티 프리셋을 만들 때 사용할 기본 요청값을 생성한다.
@@ -129,6 +133,19 @@ export function formatPartyPresetSummary(preset: PartyPresetResponse): string {
     .length;
 
   return `${memberCount.toLocaleString('en-US')}명 설정`;
+}
+
+/** PRIMARY는 현재 대표 이름을 동적으로 표시하고 EXPLICIT은 저장된 ID의 이름을 고정해 표시한다. */
+export function formatAutomationPresetSelection(
+  selection: { presetMode: 'PRIMARY' | 'EXPLICIT'; partyPresetId: number | null },
+  presets: readonly PartyPresetResponse[],
+): string {
+  if (selection.presetMode === 'PRIMARY') {
+    const primary = presets.find(({ isPrimary }) => isPrimary);
+    return primary ? `대표 · ${primary.name}` : '대표 프리셋 없음';
+  }
+  return presets.find(({ id }) => id === selection.partyPresetId)?.name
+    ?? `삭제된 프리셋 #${selection.partyPresetId}`;
 }
 
 /**

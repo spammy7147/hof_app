@@ -14,7 +14,6 @@ import type { UnifiedAutomationController } from '../domain/unifiedAutomationCon
 import { toUserFacingErrorMessage } from '../domain/userFacingErrors';
 import { theme } from '../styles/theme';
 import type {
-  AutomationJobResponse,
   BattleCategoryResponse,
   BattleLogResponse,
   BattleMapResponse,
@@ -45,6 +44,7 @@ type MainScreenProps = {
   session: MainSession | null;
   status: HofStatusResponse | null;
   battleCategories: BattleCategoryResponse[];
+  areBattleCategoriesLoaded: boolean;
   isBattleCategoriesLoading: boolean;
   battleCategoriesError: string | null;
   characters: HofCharacter[];
@@ -56,7 +56,6 @@ type MainScreenProps = {
   onLoadBattleLogs: (limit?: number) => Promise<BattleLogResponse[]>;
   onLoadBattleStats: () => Promise<BattleStatsResponse>;
   onOpenCaptcha: () => void;
-  onLoadCurrentAutomationJob: () => Promise<AutomationJobResponse | null>;
   automationController: UnifiedAutomationController;
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
   onCreatePartyPreset: (
@@ -66,6 +65,7 @@ type MainScreenProps = {
     presetId: number,
     request: UpdatePartyPresetRequest,
   ) => Promise<PartyPresetResponse>;
+  onMakePartyPresetPrimary: (presetId: number) => Promise<PartyPresetResponse>;
   onDeletePartyPreset: (presetId: number) => Promise<null>;
   onLoadCharacterDetail: (hofCharacterId: string) => Promise<HofCharacterDetail>;
   onLoadPattern: (hofCharacterId: string, slot: number) => Promise<LoadPatternResponse>;
@@ -83,6 +83,7 @@ export function MainScreen({
   session,
   status,
   battleCategories,
+  areBattleCategoriesLoaded,
   isBattleCategoriesLoading,
   battleCategoriesError,
   characters,
@@ -94,11 +95,11 @@ export function MainScreen({
   onLoadBattleLogs,
   onLoadBattleStats,
   onOpenCaptcha,
-  onLoadCurrentAutomationJob,
   automationController,
   onListPartyPresets,
   onCreatePartyPreset,
   onUpdatePartyPreset,
+  onMakePartyPresetPrimary,
   onDeletePartyPreset,
   onLoadCharacterDetail,
   onLoadPattern,
@@ -195,6 +196,7 @@ export function MainScreen({
           activeTabId,
           authenticated: session?.loggedIn === true,
           battleCategories,
+          areBattleCategoriesLoaded,
           isBattleCategoriesLoading,
           battleCategoriesError,
           characters,
@@ -207,11 +209,11 @@ export function MainScreen({
           onLoadBattleLogs,
           onLoadBattleStats,
           onOpenCaptcha,
-          onLoadCurrentAutomationJob,
           automationController,
           onListPartyPresets,
           onCreatePartyPreset,
           onUpdatePartyPreset,
+          onMakePartyPresetPrimary,
           onDeletePartyPreset,
           onLoadPattern,
           onSyncCharacters: handleSyncCharacters,
@@ -245,6 +247,7 @@ type RenderActiveTabArgs = {
   activeTabId: MainTabId;
   authenticated: boolean;
   battleCategories: BattleCategoryResponse[];
+  areBattleCategoriesLoaded: boolean;
   isBattleCategoriesLoading: boolean;
   battleCategoriesError: string | null;
   characters: HofCharacter[];
@@ -257,7 +260,6 @@ type RenderActiveTabArgs = {
   onLoadBattleLogs: (limit?: number) => Promise<BattleLogResponse[]>;
   onLoadBattleStats: () => Promise<BattleStatsResponse>;
   onOpenCaptcha: () => void;
-  onLoadCurrentAutomationJob: () => Promise<AutomationJobResponse | null>;
   automationController: UnifiedAutomationController;
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
   onCreatePartyPreset: (
@@ -267,6 +269,7 @@ type RenderActiveTabArgs = {
     presetId: number,
     request: UpdatePartyPresetRequest,
   ) => Promise<PartyPresetResponse>;
+  onMakePartyPresetPrimary: (presetId: number) => Promise<PartyPresetResponse>;
   onDeletePartyPreset: (presetId: number) => Promise<null>;
   onLoadPattern: (hofCharacterId: string, slot: number) => Promise<LoadPatternResponse>;
   onSyncCharacters: () => void;
@@ -289,6 +292,7 @@ function renderActiveTab({
   activeTabId,
   authenticated,
   battleCategories,
+  areBattleCategoriesLoaded,
   isBattleCategoriesLoading,
   battleCategoriesError,
   characters,
@@ -301,11 +305,11 @@ function renderActiveTab({
   onLoadBattleLogs,
   onLoadBattleStats,
   onOpenCaptcha,
-  onLoadCurrentAutomationJob,
   automationController,
   onListPartyPresets,
   onCreatePartyPreset,
   onUpdatePartyPreset,
+  onMakePartyPresetPrimary,
   onDeletePartyPreset,
   onLoadPattern,
   onSyncCharacters,
@@ -324,6 +328,9 @@ function renderActiveTab({
         <HomeTabScreen
           authenticated={authenticated}
           battleCategories={battleCategories}
+          areBattleCategoriesLoaded={areBattleCategoriesLoaded}
+          isBattleCategoriesLoading={isBattleCategoriesLoading}
+          battleCategoriesError={battleCategoriesError}
           onLoadBattleCategories={onLoadBattleCategories}
           onLoadBattleMaps={onLoadBattleMaps}
           onListPartyPresets={onListPartyPresets}
@@ -402,6 +409,7 @@ function renderActiveTab({
               onListPartyPresets={onListPartyPresets}
               onCreatePartyPreset={onCreatePartyPreset}
               onUpdatePartyPreset={onUpdatePartyPreset}
+              onMakePartyPresetPrimary={onMakePartyPresetPrimary}
               onDeletePartyPreset={onDeletePartyPreset}
             />
           )}
@@ -428,7 +436,6 @@ function renderActiveTab({
             authenticated={authenticated}
             onLogout={onLogout}
             onOpenCaptcha={onOpenCaptcha}
-            onLoadCurrentAutomationJob={onLoadCurrentAutomationJob}
           />
         </TabScrollContainer>
       );

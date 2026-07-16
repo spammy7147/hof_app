@@ -1,361 +1,590 @@
-import { buildToggleUnifiedModuleRequest } from './unifiedAutomation';
-import {
-  appendUnifiedAutomationModule,
-  mergeUnifiedAutomationExecutionState,
-  mergeUnifiedAutomationModuleState,
-  normalizeUnifiedAutomationPriorities,
-  removeUnifiedAutomationModule,
-  replaceUnifiedAutomationModule,
-} from './unifiedAutomationCollection';
-import {
-  UnifiedAutomationListCoordinator,
-  UnifiedAutomationModuleMutationCoordinator,
-} from './unifiedAutomationOperations';
 import { UnifiedAutomationReorderQueue } from './unifiedAutomationReorder';
 import { toUserFacingErrorMessage } from './userFacingErrors';
 import type {
-  CreateUnifiedAutomationModuleRequest,
+  AutomationType,
+  CreateAutomationEntryRequest,
+  QuestSnapshot,
+  TypedAutomationAggregateResponse,
+  TypedAutomationEntryResponse,
   UnifiedAutomationAction,
-  UnifiedAutomationModuleResponse,
-  UnifiedAutomationStatusResponse,
-  UpdateUnifiedAutomationModuleRequest,
+  UpdateAdventureMapAutomationRequest,
+  UpdateBattleMapAutomationRequest,
+  UpdateQuestAutomationRequest,
 } from '../types/api';
 
-/** 앱 수명주기 컨트롤러가 사용하는 백엔드 연산의 최소 계약이다. */
 export type UnifiedAutomationControllerApi = {
-  fetch: () => Promise<UnifiedAutomationStatusResponse>;
-  create: (request: CreateUnifiedAutomationModuleRequest) => Promise<UnifiedAutomationModuleResponse>;
-  update: (
-    moduleId: number,
-    request: UpdateUnifiedAutomationModuleRequest,
-  ) => Promise<UnifiedAutomationModuleResponse>;
-  delete: (moduleId: number) => Promise<void>;
-  reorder: (moduleIds: number[]) => Promise<UnifiedAutomationStatusResponse>;
-  changeState: (action: UnifiedAutomationAction) => Promise<UnifiedAutomationStatusResponse>;
+  fetch: () => Promise<TypedAutomationAggregateResponse>;
+  create: (request: CreateAutomationEntryRequest) => Promise<TypedAutomationAggregateResponse>;
+  delete: (entryId: number) => Promise<TypedAutomationAggregateResponse>;
+  reorder: (entryIds: number[]) => Promise<TypedAutomationAggregateResponse>;
+  updateQuest: (request: UpdateQuestAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
+  updateBattle: (request: UpdateBattleMapAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
+  updateAdventure: (request: UpdateAdventureMapAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
+  fetchQuests: () => Promise<QuestSnapshot[]>;
+  changeState: (action: UnifiedAutomationAction) => Promise<TypedAutomationAggregateResponse>;
 };
 
-/** Home 탭이 구독해 그리는 자동화 상태와 개별 저장 진행 상태다. */
 export type UnifiedAutomationControllerSnapshot = {
-  automation: UnifiedAutomationStatusResponse | null;
+  aggregate: TypedAutomationAggregateResponse | null;
   loading: boolean;
   actionSaving: boolean;
-  editorSaving: boolean;
-  savingModuleIds: number[];
+  savingEntryIds: number[];
+  savingTypes: AutomationType[];
   reordering: boolean;
+  error: string | null;
   message: string | null;
 };
 
-const NEW_MODULE_OPERATION_ID = -1;
+type ReorderResult = { aggregate: TypedAutomationAggregateResponse; sequence: number };
 
 function initialSnapshot(): UnifiedAutomationControllerSnapshot {
   return {
-    automation: null,
+    aggregate: null,
     loading: false,
     actionSaving: false,
-    editorSaving: false,
-    savingModuleIds: [],
+    savingEntryIds: [],
+    savingTypes: [],
     reordering: false,
+    error: null,
     message: null,
   };
 }
 
-/**
- * 자동화 상태와 진행 중인 요청을 앱 수명주기 동안 유지하는 외부 store다.
- *
- * Home 탭은 다른 탭으로 이동하면 unmount되므로 화면 내부 state가 요청 완료를 소유하면 안 된다.
- * 이 컨트롤러는 App에서 한 번 생성되고 모든 비동기 완료를 현재 snapshot에 반영한 뒤 구독자에게
- * 알린다. 따라서 저장 중 탭을 나갔다 돌아와도 새 Home 인스턴스가 동일한 최신 상태를 받는다.
- */
+/** App-owned typed automation store. Async completions are fenced by account generation and revision. */
 export class UnifiedAutomationController {
-  private snapshot: UnifiedAutomationControllerSnapshot = initialSnapshot();
+  private snapshot = initialSnapshot();
   private readonly listeners = new Set<() => void>();
-  private listCoordinator = new UnifiedAutomationListCoordinator();
-  private mutationCoordinator = new UnifiedAutomationModuleMutationCoordinator();
-  private reorderQueue: UnifiedAutomationReorderQueue<UnifiedAutomationStatusResponse>;
   private generation = 0;
-  private moduleRevision = 0;
-  private executionRevision = 0;
   private loadSequence = 0;
-  private loadingRequestCount = 0;
-  private editorSavingCount = 0;
-  private readonly savingModuleIds = new Set<number>();
+  private loadingCount = 0;
+  private operationSequence = 0;
+  private entriesRevision = 0;
+  private runtimeRevision = 0;
+  private orderRevision = 0;
+  private battleProgressRevision = 0;
+  private battleProgressSnapshot: {
+    entryId: number;
+    progress: TypedAutomationEntryResponse['battleMapProgress'];
+  } | null = null;
+  private queuedReorderSequence = 0;
+  private readonly typeRevisions = new Map<AutomationType, number>();
+  private readonly typeTails = new Map<AutomationType, Promise<void>>();
+  private structuralTail: Promise<void> | null = null;
+  private readonly savingEntryIds = new Set<number>();
+  private readonly pendingTypeCounts = new Map<AutomationType, number>();
+  private reorderQueue: UnifiedAutomationReorderQueue<ReorderResult>;
+  private confirmedOrder: number[] = [];
 
   constructor(private readonly api: UnifiedAutomationControllerApi) {
     this.reorderQueue = this.createReorderQueue(this.generation);
   }
 
-  /** React의 `useSyncExternalStore`가 사용할 안정적인 현재 snapshot getter다. */
   getSnapshot = (): UnifiedAutomationControllerSnapshot => this.snapshot;
 
-  /** 화면 구독을 등록하며, 탭 unmount 시 반환 함수로 해당 구독만 해제한다. */
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   };
 
-  /** 로그아웃 시 이전 계정의 상태와 늦게 끝나는 요청을 새 세션에서 무시한다. */
   reset(): void {
     this.reorderQueue.dispose();
     this.generation += 1;
-    this.moduleRevision = 0;
-    this.executionRevision = 0;
     this.loadSequence = 0;
-    this.loadingRequestCount = 0;
-    this.editorSavingCount = 0;
-    this.savingModuleIds.clear();
-    this.listCoordinator = new UnifiedAutomationListCoordinator();
-    this.mutationCoordinator = new UnifiedAutomationModuleMutationCoordinator();
+    this.loadingCount = 0;
+    this.operationSequence = 0;
+    this.entriesRevision = 0;
+    this.runtimeRevision = 0;
+    this.orderRevision = 0;
+    this.battleProgressRevision = 0;
+    this.battleProgressSnapshot = null;
+    this.queuedReorderSequence = 0;
+    this.typeRevisions.clear();
+    this.typeTails.clear();
+    this.structuralTail = null;
+    this.savingEntryIds.clear();
+    this.pendingTypeCounts.clear();
+    this.confirmedOrder = [];
     this.reorderQueue = this.createReorderQueue(this.generation);
     this.replaceSnapshot(initialSnapshot());
   }
 
   clearMessage(): void {
-    if (this.snapshot.message) this.patchSnapshot({ message: null });
+    if (this.snapshot.message || this.snapshot.error) this.patchSnapshot({ message: null, error: null });
   }
 
   showMessage(message: string): void {
-    this.patchSnapshot({ message });
+    this.patchSnapshot({ message, error: message });
   }
 
-  isModuleBusy(moduleId: number): boolean {
-    return this.mutationCoordinator.isBusy(moduleId);
+  isEntryBusy(entryId: number): boolean {
+    if (this.savingEntryIds.has(entryId)) return true;
+    const type = this.snapshot.aggregate?.entries.find((entry) => entry.id === entryId)?.type;
+    return type != null && (this.pendingTypeCounts.get(type) ?? 0) > 0;
   }
 
-  /** 테스트와 화면 전환 코드가 마지막 재정렬 저장 완료를 기다릴 때 사용한다. */
   whenReorderIdle(): Promise<void> {
     return this.reorderQueue.whenIdle();
   }
 
-  /**
-   * 서버 상태를 조회한다. 조회 중 모듈 mutation이 완료됐다면 늦은 GET에서는 실행 상태만 취한다.
-   * 반대로 GET이 먼저 끝나면 이후 mutation 완료가 같은 store를 갱신하므로 새 화면도 결과를 받는다.
-   */
   async load(): Promise<void> {
-    const requestGeneration = this.generation;
-    const requestSequence = ++this.loadSequence;
-    const moduleRevisionAtStart = this.moduleRevision;
-    const executionRevisionAtStart = this.executionRevision;
-    this.loadingRequestCount += 1;
-    this.patchSnapshot({ loading: true, message: null });
+    const generation = this.generation;
+    const sequence = ++this.loadSequence;
+    const aggregateSequence = ++this.operationSequence;
+    const entriesAtStart = this.entriesRevision;
+    const runtimeAtStart = this.runtimeRevision;
+    this.loadingCount += 1;
+    this.patchSnapshot({ loading: true, error: null, message: null });
     try {
       const loaded = await this.api.fetch();
-      if (!this.isLatestLoad(requestGeneration, requestSequence)) return;
-
-      const current = this.snapshot.automation;
-      const moduleChanged = this.moduleRevision !== moduleRevisionAtStart;
-      const executionChanged = this.executionRevision !== executionRevisionAtStart;
-      let next = loaded;
-      if (moduleChanged) next = mergeUnifiedAutomationExecutionState(current, next);
-      if (executionChanged) next = mergeUnifiedAutomationModuleState(current, next);
-
-      if (!moduleChanged) {
-        this.listCoordinator.recordAuthoritativeState(loaded);
-      }
-      this.applyAutomation(next);
+      if (!this.isLatestLoad(generation, sequence)) return;
+      const current = this.snapshot.aggregate;
+      const next: TypedAutomationAggregateResponse = {
+        entries: this.entriesRevision === entriesAtStart || !current ? loaded.entries : current.entries,
+        runtime: this.runtimeRevision === runtimeAtStart || !current ? loaded.runtime : current.runtime,
+      };
+      if (this.entriesRevision === entriesAtStart) this.confirmedOrder = loaded.entries.map(({ id }) => id);
+      this.applyAggregate({
+        ...next,
+        entries: this.mergeBattleProgress(loaded, aggregateSequence, next.entries),
+      });
     } catch (error) {
-      if (this.isLatestLoad(requestGeneration, requestSequence)) {
-        this.patchSnapshot({ message: toUserFacingErrorMessage(error) });
-      }
+      if (this.isLatestLoad(generation, sequence)) this.setError(error);
     } finally {
-      if (this.isCurrentGeneration(requestGeneration)) {
-        this.loadingRequestCount = Math.max(0, this.loadingRequestCount - 1);
-        this.patchSnapshot({ loading: this.loadingRequestCount > 0 });
+      if (this.generation === generation) {
+        this.loadingCount = Math.max(0, this.loadingCount - 1);
+        this.patchSnapshot({ loading: this.loadingCount > 0 });
       }
     }
   }
 
-  /** 실행 제어는 모듈 목록과 독립적이며 동시에 한 요청만 보낸다. */
-  async changeState(action: UnifiedAutomationAction): Promise<void> {
-    if (this.snapshot.actionSaving) return;
-    const requestGeneration = this.generation;
-    this.patchSnapshot({ actionSaving: true, message: null });
-    try {
-      const updated = await this.api.changeState(action);
-      if (!this.isCurrentGeneration(requestGeneration)) return;
-      this.executionRevision += 1;
-      this.applyAutomation(mergeUnifiedAutomationExecutionState(this.snapshot.automation, updated));
-    } catch (error) {
-      if (this.isCurrentGeneration(requestGeneration)) {
-        this.patchSnapshot({ message: toUserFacingErrorMessage(error) });
-      }
-    } finally {
-      if (this.isCurrentGeneration(requestGeneration)) {
-        this.patchSnapshot({ actionSaving: false });
-      }
-    }
-  }
-
-  async toggleModule(module: UnifiedAutomationModuleResponse): Promise<boolean> {
-    return this.runModuleMutation(module.id, false, async (requestGeneration) => {
-      const updated = await this.api.update(module.id, buildToggleUnifiedModuleRequest(module));
-      if (!this.isCurrentGeneration(requestGeneration)) return;
-      this.recordModuleMutation();
-      this.updateAutomation((current) => replaceUnifiedAutomationModule(current, updated));
+  createEntry(type: AutomationType): Promise<boolean> {
+    return this.runStructuralMutation(type, null, async (sequence, generation) => {
+      const response = await this.api.create({ type });
+      if (this.generation === generation) this.mergeStructuralResponse(response, sequence, type);
     });
   }
 
-  async createModule(request: CreateUnifiedAutomationModuleRequest): Promise<boolean> {
-    return this.runModuleMutation(NEW_MODULE_OPERATION_ID, true, async (requestGeneration) => {
-      const created = await this.api.create(request);
-      if (!this.isCurrentGeneration(requestGeneration)) return;
-      this.listCoordinator.recordCreated(created.id);
-      this.recordModuleMutation();
-      this.updateAutomation((current) => appendUnifiedAutomationModule(current, created));
-    });
-  }
-
-  async updateModule(
-    moduleId: number,
-    request: UpdateUnifiedAutomationModuleRequest,
-  ): Promise<boolean> {
-    return this.runModuleMutation(moduleId, true, async (requestGeneration) => {
-      const updated = await this.api.update(moduleId, request);
-      if (!this.isCurrentGeneration(requestGeneration)) return;
-      this.recordModuleMutation();
-      this.updateAutomation((current) => replaceUnifiedAutomationModule(current, updated));
-    });
-  }
-
-  async deleteModule(moduleId: number): Promise<boolean> {
-    return this.runModuleMutation(moduleId, true, async (requestGeneration) => {
-      await this.api.delete(moduleId);
-      if (!this.isCurrentGeneration(requestGeneration)) return;
-      this.listCoordinator.recordDeleted(moduleId);
-      this.recordModuleMutation();
-      this.updateAutomation((current) => removeUnifiedAutomationModule(current, moduleId));
-    });
-  }
-
-  /** 드롭 결과를 즉시 publish하고 실제 저장은 하나씩, 마지막 대기 순서만 보존해 실행한다. */
-  reorderModules(modules: UnifiedAutomationModuleResponse[]): void {
-    const normalized = normalizeUnifiedAutomationPriorities(modules);
-    this.updateAutomation((current) => current ? { ...current, modules: normalized } : current);
-    this.patchSnapshot({ reordering: true, message: null });
-    this.reorderQueue.enqueue(normalized.map((module) => module.id));
-  }
-
-  /** 같은 모듈의 토글과 전체 PUT을 직렬화하고 진행 상태를 모든 Home 인스턴스에 공유한다. */
-  private async runModuleMutation(
-    moduleId: number,
-    editorOperation: boolean,
-    operation: (requestGeneration: number) => Promise<void>,
-  ): Promise<boolean> {
-    const requestGeneration = this.generation;
-    const task = this.mutationCoordinator.runExclusive(moduleId, async () => {
-      this.beginModuleSaving(moduleId, editorOperation);
-      try {
-        await operation(requestGeneration);
-        return this.isCurrentGeneration(requestGeneration);
-      } catch (error) {
-        if (this.isCurrentGeneration(requestGeneration)) {
-          this.patchSnapshot({ message: toUserFacingErrorMessage(error) });
+  deleteEntry(entryId: number): Promise<boolean> {
+    const type = this.snapshot.aggregate?.entries.find(({ id }) => id === entryId)?.type;
+    return this.runStructuralMutation(
+      type ?? null,
+      entryId,
+      async (sequence, generation) => {
+        const response = await this.api.delete(entryId);
+        if (this.generation === generation) {
+          this.mergeStructuralResponse(response, sequence, type ?? null);
         }
-        return false;
-      } finally {
-        if (this.isCurrentGeneration(requestGeneration)) {
-          this.endModuleSaving(moduleId, editorOperation);
-        }
-      }
-    });
-
-    if (!task) {
-      this.patchSnapshot({ message: '이 자동화를 저장하고 있어요. 잠시만 기다려 주세요.' });
-      return false;
-    }
-    return task;
-  }
-
-  private beginModuleSaving(moduleId: number, editorOperation: boolean): void {
-    if (moduleId !== NEW_MODULE_OPERATION_ID) this.savingModuleIds.add(moduleId);
-    if (editorOperation) this.editorSavingCount += 1;
-    this.patchSnapshot({
-      editorSaving: this.editorSavingCount > 0,
-      savingModuleIds: [...this.savingModuleIds],
-      message: null,
-    });
-  }
-
-  private endModuleSaving(moduleId: number, editorOperation: boolean): void {
-    if (moduleId !== NEW_MODULE_OPERATION_ID) this.savingModuleIds.delete(moduleId);
-    if (editorOperation) this.editorSavingCount = Math.max(0, this.editorSavingCount - 1);
-    this.patchSnapshot({
-      editorSaving: this.editorSavingCount > 0,
-      savingModuleIds: [...this.savingModuleIds],
-    });
-  }
-
-  private createReorderQueue(
-    queueGeneration: number,
-  ): UnifiedAutomationReorderQueue<UnifiedAutomationStatusResponse> {
-    return new UnifiedAutomationReorderQueue(
-      (moduleIds) => this.api.reorder(moduleIds),
-      (serverState) => {
-        if (!this.isCurrentGeneration(queueGeneration)) return;
-        const current = this.snapshot.automation;
-        const merged = this.listCoordinator.mergeReorderSuccess(
-          current,
-          serverState,
-        );
-        this.applyAutomation(mergeUnifiedAutomationModuleState(current, merged));
-        this.patchSnapshot({ reordering: false });
-      },
-      async () => {
-        if (!this.isCurrentGeneration(queueGeneration)) return;
-        this.patchSnapshot({
-          reordering: false,
-          message: '순서를 저장하지 못해 이전 순서로 되돌렸어요. 저장된 상태를 다시 확인하고 있어요.',
-        });
-        const current = this.snapshot.automation;
-        if (!current) return;
-        const executionRevisionAtReloadStart = this.executionRevision;
-        const refreshed = await this.listCoordinator.rollbackAndReload(
-          current,
-          (next) => {
-            if (!this.isCurrentGeneration(queueGeneration)) return;
-            const safeNext = this.executionRevision === executionRevisionAtReloadStart
-              ? next
-              : mergeUnifiedAutomationModuleState(this.snapshot.automation, next);
-            this.applyAutomation(safeNext);
-          },
-          () => this.api.fetch(),
-          () => this.snapshot.automation ?? current,
-        );
-        if (!refreshed && this.isCurrentGeneration(queueGeneration)) {
-          this.patchSnapshot({
-            message: '순서를 저장하지 못해 이전 순서로 되돌렸어요. 잠시 후 다시 시도해 주세요.',
-          });
-        }
-      },
-      (_serverState, moduleIds) => {
-        if (!this.isCurrentGeneration(queueGeneration)) return;
-        this.listCoordinator.recordConfirmedOrder(moduleIds);
-        this.recordModuleMutation();
       },
     );
   }
 
-  private recordModuleMutation(): void {
-    this.moduleRevision += 1;
+  saveQuestSettings(request: UpdateQuestAutomationRequest): Promise<boolean> {
+    return this.saveSettings('QUEST', request, (body) => this.api.updateQuest(body));
   }
 
-  private isCurrentGeneration(generation: number): boolean {
-    return this.generation === generation;
+  fetchQuests(): Promise<QuestSnapshot[]> {
+    return this.api.fetchQuests();
+  }
+
+  saveBattleMapSettings(request: UpdateBattleMapAutomationRequest): Promise<boolean> {
+    return this.saveSettings('BATTLE_MAP', request, (body) => this.api.updateBattle(body));
+  }
+
+  saveAdventureMapSettings(request: UpdateAdventureMapAutomationRequest): Promise<boolean> {
+    return this.saveSettings('ADVENTURE_MAP', request, (body) => this.api.updateAdventure(body));
+  }
+
+  reorderEntries(entries: readonly TypedAutomationEntryResponse[]): void {
+    const normalized = entries.map((entry, priority) => ({ ...entry, priority }));
+    const current = this.snapshot.aggregate;
+    if (!current) return;
+    const sequence = ++this.operationSequence;
+    this.queuedReorderSequence = sequence;
+    this.orderRevision = sequence;
+    this.entriesRevision = Math.max(this.entriesRevision, sequence);
+    this.applyAggregate({ ...current, entries: normalized });
+    this.patchSnapshot({ reordering: true, error: null, message: null });
+    this.reorderQueue.enqueue(normalized.map(({ id }) => id));
+  }
+
+  async changeState(action: UnifiedAutomationAction): Promise<void> {
+    if (this.snapshot.actionSaving) return;
+    const generation = this.generation;
+    const sequence = ++this.operationSequence;
+    this.patchSnapshot({ actionSaving: true, error: null, message: null });
+    try {
+      const response = await this.api.changeState(action);
+      if (this.generation !== generation) return;
+      const current = this.snapshot.aggregate;
+      this.runtimeRevision = Math.max(this.runtimeRevision, sequence);
+      const entries = this.mergeBattleProgress(
+        response,
+        sequence,
+        current?.entries ?? response.entries,
+      );
+      this.applyAggregate({ entries, runtime: response.runtime });
+    } catch (error) {
+      if (this.generation === generation) this.setError(error);
+    } finally {
+      if (this.generation === generation) this.patchSnapshot({ actionSaving: false });
+    }
+  }
+
+  private saveSettings<T>(
+    type: AutomationType,
+    request: T,
+    persist: (request: T) => Promise<TypedAutomationAggregateResponse>,
+  ): Promise<boolean> {
+    const entryId = this.snapshot.aggregate?.entries.find((entry) => entry.type === type)?.id ?? null;
+    return this.runTypedMutation(type, entryId, async (sequence, generation) => {
+      const response = await persist(request);
+      if (this.generation === generation) this.mergeSettingsResponse(response, sequence, type);
+    });
+  }
+
+  private runTypedMutation(
+    type: AutomationType,
+    entryId: number | null,
+    operation: (sequence: number, generation: number) => Promise<void>,
+  ): Promise<boolean> {
+    const generation = this.generation;
+    const sequence = ++this.operationSequence;
+    this.incrementTypePending(type);
+    const previous = this.typeTails.get(type);
+    const execute = () => this.executeMutation(generation, sequence, entryId, operation);
+    const result = previous ? previous.catch(() => undefined).then(execute) : execute();
+    const completed = result.then((value) => {
+      if (this.generation === generation) this.decrementTypePending(type);
+      return value;
+    });
+    const tail = completed.then(() => undefined);
+    this.typeTails.set(type, tail);
+    void tail.finally(() => {
+      if (this.typeTails.get(type) === tail) this.typeTails.delete(type);
+    });
+    return completed;
+  }
+
+  private runStructuralMutation(
+    type: AutomationType | null,
+    entryId: number | null,
+    operation: (sequence: number, generation: number) => Promise<void>,
+  ): Promise<boolean> {
+    const generation = this.generation;
+    const sequence = ++this.operationSequence;
+    if (type) this.incrementTypePending(type);
+    const predecessors = new Set<Promise<void>>();
+    if (this.structuralTail) predecessors.add(this.structuralTail);
+    const previousType = type ? this.typeTails.get(type) : null;
+    if (previousType) predecessors.add(previousType);
+    const execute = () => this.executeMutation(generation, sequence, entryId, operation);
+    const result = predecessors.size === 0
+      ? execute()
+      : Promise.all([...predecessors].map((tail) => tail.catch(() => undefined))).then(execute);
+    const completed = result.then((value) => {
+      if (type && this.generation === generation) this.decrementTypePending(type);
+      return value;
+    });
+    const tail = completed.then(() => undefined);
+    this.structuralTail = tail;
+    if (type) this.typeTails.set(type, tail);
+    void tail.finally(() => {
+      if (this.structuralTail === tail) this.structuralTail = null;
+      if (type && this.typeTails.get(type) === tail) this.typeTails.delete(type);
+    });
+    return completed;
+  }
+
+  private async executeMutation(
+    generation: number,
+    sequence: number,
+    entryId: number | null,
+    operation: (sequence: number, generation: number) => Promise<void>,
+  ): Promise<boolean> {
+    if (this.generation !== generation) return false;
+    this.beginSaving(entryId);
+    try {
+      await operation(sequence, generation);
+      return this.generation === generation;
+    } catch (error) {
+      if (this.generation === generation) this.setError(error);
+      return false;
+    } finally {
+      if (this.generation === generation) this.endSaving(entryId);
+    }
+  }
+
+  private mergeSettingsResponse(
+    response: TypedAutomationAggregateResponse,
+    sequence: number,
+    targetType: AutomationType,
+  ): void {
+    const current = this.snapshot.aggregate;
+    if (!current) return;
+    let entries = current.entries;
+    let settingsMerged = false;
+    if ((this.typeRevisions.get(targetType) ?? 0) <= sequence) {
+      const serverEntry = response.entries.find((entry) => entry.type === targetType);
+      const currentIndex = current.entries.findIndex((entry) => entry.type === targetType);
+      const currentEntry = current.entries[currentIndex];
+      if (serverEntry && currentIndex >= 0 && currentEntry) {
+        entries = [...current.entries];
+        entries[currentIndex] = {
+          ...serverEntry,
+          id: currentEntry.id,
+          type: currentEntry.type,
+          priority: currentEntry.priority,
+        };
+        this.entriesRevision = Math.max(this.entriesRevision, sequence);
+        this.typeRevisions.set(targetType, sequence);
+        settingsMerged = true;
+      }
+    }
+    const withProgress = this.mergeBattleProgress(response, sequence, entries);
+    if (settingsMerged || withProgress !== entries) {
+      this.applyAggregate({ entries: withProgress, runtime: current.runtime });
+    }
+  }
+
+  private mergeStructuralResponse(
+    response: TypedAutomationAggregateResponse,
+    sequence: number,
+    targetType: AutomationType | null,
+  ): void {
+    const current = this.snapshot.aggregate;
+    if (!current) {
+      this.entriesRevision = Math.max(this.entriesRevision, sequence);
+      if (targetType) this.typeRevisions.set(targetType, sequence);
+      this.confirmedOrder = response.entries.map(({ id }) => id);
+      this.applyAggregate({
+        ...response,
+        entries: this.mergeBattleProgress(response, sequence, response.entries),
+      });
+      return;
+    }
+    let entries = current.entries;
+    let structureMerged = false;
+    if (!targetType || (this.typeRevisions.get(targetType) ?? 0) <= sequence) {
+      const serverTarget = targetType
+        ? response.entries.find((entry) => entry.type === targetType)
+        : undefined;
+      const currentTargetIndex = targetType
+        ? current.entries.findIndex((entry) => entry.type === targetType)
+        : -1;
+      entries = targetType
+        ? current.entries.filter((entry) => entry.type !== targetType)
+        : [...current.entries];
+      if (serverTarget) {
+        const insertionIndex = currentTargetIndex < 0
+          ? entries.length
+          : Math.min(currentTargetIndex, entries.length);
+        entries.splice(insertionIndex, 0, serverTarget);
+      }
+
+      entries = entries.map((entry, priority) => ({ ...entry, priority }));
+      this.entriesRevision = Math.max(this.entriesRevision, sequence);
+      if (targetType) this.typeRevisions.set(targetType, sequence);
+      this.recordConfirmedMembership(entries);
+      structureMerged = true;
+    }
+    const withProgress = this.mergeBattleProgress(response, sequence, entries);
+    if (structureMerged || withProgress !== entries) {
+      this.applyAggregate({ entries: withProgress, runtime: current.runtime });
+    }
+  }
+
+  private createReorderQueue(generation: number): UnifiedAutomationReorderQueue<ReorderResult> {
+    return new UnifiedAutomationReorderQueue(
+      async (entryIds) => {
+        const sequence = this.queuedReorderSequence || ++this.operationSequence;
+        this.queuedReorderSequence = 0;
+        return { aggregate: await this.api.reorder(entryIds), sequence };
+      },
+      ({ aggregate, sequence }) => {
+        if (this.generation !== generation) return;
+        this.applyReorderResponse(aggregate, sequence);
+        this.patchSnapshot({ reordering: false });
+      },
+      async (error) => {
+        if (this.generation !== generation) return;
+        this.rollbackOrder();
+        this.patchSnapshot({
+          reordering: false,
+          error: toUserFacingErrorMessage(error),
+          message: '순서를 저장하지 못해 저장된 순서로 되돌렸어요.',
+        });
+        await this.reloadAfterReorderFailure(generation);
+      },
+      ({ sequence }, entryIds) => {
+        if (this.generation !== generation) return;
+        this.confirmedOrder = [...entryIds];
+        this.entriesRevision = Math.max(this.entriesRevision, sequence);
+        this.orderRevision = Math.max(this.orderRevision, sequence);
+      },
+    );
+  }
+
+  private applyReorderResponse(response: TypedAutomationAggregateResponse, sequence: number): void {
+    const current = this.snapshot.aggregate;
+    if (!current) {
+      return this.applyAggregate({
+        ...response,
+        entries: this.mergeBattleProgress(response, sequence, response.entries),
+      });
+    }
+    const withProgress = this.mergeBattleProgress(response, sequence, current.entries);
+    if (sequence < this.orderRevision) {
+      if (withProgress !== current.entries) this.applyAggregate({ ...current, entries: withProgress });
+      return;
+    }
+    const currentById = new Map(current.entries.map((entry) => [entry.id, entry]));
+    const serverIds = new Set(response.entries.map(({ id }) => id));
+    const result = [
+      ...response.entries.flatMap(({ id }) => {
+        const currentEntry = currentById.get(id);
+        return currentEntry ? [currentEntry] : [];
+      }),
+      ...current.entries.filter(({ id }) => !serverIds.has(id)),
+    ];
+    this.applyAggregate({
+      entries: this.mergeBattleProgress(
+        response,
+        sequence,
+        result.map((entry, priority) => ({ ...entry, priority })),
+      ),
+      runtime: current.runtime,
+    });
+  }
+
+  private recordConfirmedMembership(
+    entries: readonly TypedAutomationEntryResponse[],
+  ): void {
+    const ids = entries.map(({ id }) => id);
+    const liveIds = new Set(ids);
+    const next = this.confirmedOrder.filter((id) => liveIds.has(id));
+    for (const id of ids) if (!next.includes(id)) next.push(id);
+    this.confirmedOrder = next;
+  }
+
+  private rollbackOrder(): void {
+    const current = this.snapshot.aggregate;
+    if (!current) return;
+    const rank = new Map(this.confirmedOrder.map((id, index) => [id, index]));
+    const entries = [...current.entries].sort((a, b) => (
+      (rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.id) ?? Number.MAX_SAFE_INTEGER)
+    )).map((entry, priority) => ({ ...entry, priority }));
+    this.applyAggregate({ ...current, entries });
+  }
+
+  private async reloadAfterReorderFailure(generation: number): Promise<void> {
+    const sequence = ++this.operationSequence;
+    const entriesAtStart = this.entriesRevision;
+    const runtimeAtStart = this.runtimeRevision;
+    try {
+      const loaded = await this.api.fetch();
+      if (this.generation !== generation) return;
+      const current = this.snapshot.aggregate;
+      const entries = this.entriesRevision === entriesAtStart || !current ? loaded.entries : current.entries;
+      this.applyAggregate({
+        entries: this.mergeBattleProgress(loaded, sequence, entries),
+        runtime: this.runtimeRevision === runtimeAtStart || !current ? loaded.runtime : current.runtime,
+      });
+      if (this.entriesRevision === entriesAtStart) this.confirmedOrder = loaded.entries.map(({ id }) => id);
+    } catch {
+      // The confirmed local rollback remains visible; the next normal load can retry.
+    }
+  }
+
+  private beginSaving(entryId: number | null): void {
+    if (entryId != null) this.savingEntryIds.add(entryId);
+    this.publishSavingState();
+    this.patchSnapshot({ error: null, message: null });
+  }
+
+  private endSaving(entryId: number | null): void {
+    if (entryId != null) this.savingEntryIds.delete(entryId);
+    this.publishSavingState();
+  }
+
+  private incrementTypePending(type: AutomationType): void {
+    this.pendingTypeCounts.set(type, (this.pendingTypeCounts.get(type) ?? 0) + 1);
+    this.publishSavingState();
+  }
+
+  private decrementTypePending(type: AutomationType): void {
+    const next = (this.pendingTypeCounts.get(type) ?? 0) - 1;
+    if (next > 0) this.pendingTypeCounts.set(type, next);
+    else this.pendingTypeCounts.delete(type);
+    this.publishSavingState();
+  }
+
+  private publishSavingState(): void {
+    this.patchSnapshot(this.buildSavingState(this.snapshot.aggregate));
+  }
+
+  private buildSavingState(
+    aggregate: TypedAutomationAggregateResponse | null,
+  ): Pick<UnifiedAutomationControllerSnapshot, 'savingEntryIds' | 'savingTypes'> {
+    const busyEntryIds = new Set(this.savingEntryIds);
+    for (const entry of aggregate?.entries ?? []) {
+      if ((this.pendingTypeCounts.get(entry.type) ?? 0) > 0) busyEntryIds.add(entry.id);
+    }
+    const savingEntryIds = [...busyEntryIds];
+    const savingTypes = [...this.pendingTypeCounts.keys()];
+    return {
+      savingEntryIds,
+      savingTypes,
+    };
+  }
+
+  private setError(error: unknown): void {
+    const message = toUserFacingErrorMessage(error);
+    this.patchSnapshot({ error: message, message });
   }
 
   private isLatestLoad(generation: number, sequence: number): boolean {
-    return this.isCurrentGeneration(generation) && this.loadSequence === sequence;
+    return this.generation === generation && this.loadSequence === sequence;
   }
 
-  private applyAutomation(automation: UnifiedAutomationStatusResponse | null): void {
-    this.patchSnapshot({ automation });
+  private mergeBattleProgress(
+    response: TypedAutomationAggregateResponse,
+    sequence: number,
+    entries: TypedAutomationEntryResponse[],
+  ): TypedAutomationEntryResponse[] {
+    const serverBattle = response.entries.find(({ type }) => type === 'BATTLE_MAP');
+    if (serverBattle && sequence >= this.battleProgressRevision) {
+      this.battleProgressRevision = sequence;
+      this.battleProgressSnapshot = {
+        entryId: serverBattle.id,
+        progress: serverBattle.battleMapProgress,
+      };
+    }
+
+    const currentIndex = entries.findIndex(({ type }) => type === 'BATTLE_MAP');
+    const currentBattle = entries[currentIndex];
+    const progressSnapshot = this.battleProgressSnapshot;
+    if (
+      currentIndex < 0
+      || !currentBattle
+      || !progressSnapshot
+      || progressSnapshot.entryId !== currentBattle.id
+    ) {
+      return entries;
+    }
+
+    const next = [...entries];
+    next[currentIndex] = {
+      ...currentBattle,
+      battleMapProgress: progressSnapshot.progress,
+    };
+    return next;
   }
 
-  private updateAutomation(
-    transform: (
-      current: UnifiedAutomationStatusResponse | null,
-    ) => UnifiedAutomationStatusResponse | null,
-  ): void {
-    this.applyAutomation(transform(this.snapshot.automation));
+  private applyAggregate(aggregate: TypedAutomationAggregateResponse): void {
+    this.patchSnapshot({
+      aggregate,
+      ...this.buildSavingState(aggregate),
+    });
   }
 
   private patchSnapshot(patch: Partial<UnifiedAutomationControllerSnapshot>): void {

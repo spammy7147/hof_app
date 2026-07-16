@@ -168,6 +168,7 @@ function buildStoredAutomationMapFallback(profileMap: AutomationProfileMap): Bat
     cooldownRemainingSeconds: null,
     keyCount: null,
     requiredTime: null,
+    supportsThreeBattles: false,
     enabled: false,
     resolved: true,
     iconUrl: null,

@@ -1,10 +1,10 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { LoginScreen } from './screens/LoginScreen';
 import { MainScreen } from './screens/MainScreen';
+import { AppProviders } from './components/AppProviders';
 import { CaptchaChallengeModal } from './components/CaptchaChallengeModal';
 import { BackendApiClient } from './services/backendApi';
 import { useCharacterSync } from './features/characters/useCharacterSync';
@@ -14,7 +14,6 @@ import { isCaptchaRequiredError } from './domain/captchaGate';
 import { UnifiedAutomationController } from './domain/unifiedAutomationController';
 import { toUserFacingErrorMessage } from './domain/userFacingErrors';
 import type {
-  AutomationJobResponse,
   BattleCategoryResponse,
   BattleLogResponse,
   BattleMapResponse,
@@ -46,15 +45,19 @@ export default function App() {
   const api = useMemo(() => new BackendApiClient(), []);
   const automationController = useMemo(() => new UnifiedAutomationController({
     fetch: () => api.fetchUnifiedAutomation(),
-    create: (request) => api.createUnifiedAutomationModule(request),
-    update: (moduleId, request) => api.updateUnifiedAutomationModule(moduleId, request),
-    delete: (moduleId) => api.deleteUnifiedAutomationModule(moduleId),
-    reorder: (moduleIds) => api.reorderUnifiedAutomationModules(moduleIds),
+    create: (request) => api.createAutomationEntry(request),
+    delete: (entryId) => api.deleteAutomationEntry(entryId),
+    reorder: (entryIds) => api.reorderAutomationEntries(entryIds),
+    updateQuest: (request) => api.updateQuestAutomation(request),
+    updateBattle: (request) => api.updateBattleMapAutomation(request),
+    updateAdventure: (request) => api.updateAdventureMapAutomation(request),
+    fetchQuests: () => api.fetchQuests(),
     changeState: (action) => api.changeUnifiedAutomationState(action),
   }), [api]);
   const [mode, setMode] = useState<ScreenMode>('boot');
   const [session, setSession] = useState<AppSession | null>(null);
   const [battleCategories, setBattleCategories] = useState<BattleCategoryResponse[]>([]);
+  const [areBattleCategoriesLoaded, setAreBattleCategoriesLoaded] = useState(false);
   const [isBattleCategoriesLoading, setIsBattleCategoriesLoading] = useState(false);
   const [battleCategoriesError, setBattleCategoriesError] = useState<string | null>(null);
   const [status, setStatus] = useState<HofStatusResponse | null>(null);
@@ -113,6 +116,7 @@ export default function App() {
 
     try {
       setBattleCategories(await api.fetchBattleCategories());
+      setAreBattleCategoriesLoaded(true);
     } catch (error) {
       setBattleCategoriesError(describeError(error));
     } finally {
@@ -163,10 +167,6 @@ export default function App() {
 
   const loadBattleStats = useCallback((): Promise<BattleStatsResponse> => api.fetchBattleStats(), [api]);
 
-  const loadCurrentAutomationJob = useCallback((): Promise<AutomationJobResponse | null> => (
-    api.fetchCurrentAutomationJob()
-  ), [api]);
-
   const listPartyPresets = useCallback((): Promise<PartyPresetResponse[]> => api.listPartyPresets(), [api]);
 
   const createPartyPreset = useCallback((
@@ -177,6 +177,10 @@ export default function App() {
     presetId: number,
     request: UpdatePartyPresetRequest,
   ): Promise<PartyPresetResponse> => api.updatePartyPreset(presetId, request), [api]);
+
+  const makePartyPresetPrimary = useCallback((
+    presetId: number,
+  ): Promise<PartyPresetResponse> => api.makePartyPresetPrimary(presetId), [api]);
 
   const deletePartyPreset = useCallback((
     presetId: number,
@@ -286,6 +290,7 @@ export default function App() {
     setSession(null);
     resetCharacterSync();
     setBattleCategories([]);
+    setAreBattleCategoriesLoaded(false);
     setBattleCategoriesError(null);
     setStatus(null);
     setNotice(null);
@@ -315,6 +320,7 @@ export default function App() {
         session={session}
         status={status}
         battleCategories={battleCategories}
+        areBattleCategoriesLoaded={areBattleCategoriesLoaded}
         isBattleCategoriesLoading={isBattleCategoriesLoading}
         battleCategoriesError={battleCategoriesError}
         characters={characters}
@@ -326,11 +332,11 @@ export default function App() {
         onLoadBattleLogs={loadBattleLogs}
         onLoadBattleStats={loadBattleStats}
         onOpenCaptcha={handleOpenCaptchaModal}
-        onLoadCurrentAutomationJob={loadCurrentAutomationJob}
         automationController={automationController}
         onListPartyPresets={listPartyPresets}
         onCreatePartyPreset={createPartyPreset}
         onUpdatePartyPreset={updatePartyPreset}
+        onMakePartyPresetPrimary={makePartyPresetPrimary}
         onDeletePartyPreset={deletePartyPreset}
         onLoadCharacterDetail={loadCharacterDetail}
         onLoadPattern={loadCharacterPattern}
@@ -342,7 +348,7 @@ export default function App() {
   }
 
   return (
-    <GestureHandlerRootView style={styles.container}>
+    <AppProviders style={styles.container}>
       <View style={styles.container}>
         {content}
         <CaptchaChallengeModal
@@ -362,7 +368,7 @@ export default function App() {
         />
         <StatusBar style="light" />
       </View>
-    </GestureHandlerRootView>
+    </AppProviders>
   );
 }
 

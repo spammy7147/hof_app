@@ -53,6 +53,8 @@ export type BattleMapResponse = {
   cooldownRemainingSeconds: number | null;
   keyCount: number | null;
   requiredTime: number | null;
+  /** 서버가 해당 맵의 실제 전투 폼에서 관측한 3회 전투 지원 여부다. */
+  supportsThreeBattles: boolean;
   enabled: boolean;
   resolved: boolean;
   iconUrl: string | null;
@@ -162,23 +164,6 @@ export type SubmitCaptchaAnswerRequest = {
   answer: string;
 };
 
-export type CreateAutomationJobRequest = {
-  profileId: number;
-};
-
-export type AutomationJobResponse = {
-  id: number;
-  accountId: number;
-  profileId: number;
-  status: string;
-  currentStepIndex: number;
-  message: string | null;
-  createdAt: string;
-  startedAt: string | null;
-  updatedAt: string;
-  finishedAt: string | null;
-};
-
 export type AutomationProfileMode = 'TIME_BURN' | 'BASIC_ADVENTURE' | 'LIMITED_DUNGEON';
 
 export type AutomationProfileMap = {
@@ -212,65 +197,141 @@ export type AutomationProfileResponse = {
   updatedAt: string;
 };
 
-/** 자동화 모듈이 실행할 맵과 그 맵에서 사용할 파티 프리셋을 나타낸다. */
-export type UnifiedAutomationMap = {
+/** 저장 가능한 자동화는 백엔드가 소유하는 세 가지 singleton 유형으로 제한된다. */
+export type AutomationType = 'QUEST' | 'BATTLE_MAP' | 'ADVENTURE_MAP';
+
+/** PRIMARY는 ID를 보내지 않고 EXPLICIT은 유효한 preset ID를 반드시 보낸다. */
+export type PresetSelection =
+  | { presetMode: 'PRIMARY'; partyPresetId: null }
+  | { presetMode: 'EXPLICIT'; partyPresetId: number };
+
+export type CreateAutomationEntryRequest = { type: AutomationType };
+export type ReorderAutomationEntriesRequest = { entryIds: number[] };
+
+export type QuestMapSettingRequest = PresetSelection & {
+  missionKey: string;
   categoryId: string;
   mapCode: string;
-  partyPresetId: number | null;
   executionOrder: number;
+  manuallyOverridden: boolean;
 };
 
-/** 퀘스트 모듈 안에서 실행할 퀘스트와 퀘스트별 맵 순서를 나타낸다. */
-export type UnifiedAutomationQuest = {
+export type QuestSelectionRequest = {
   questCode: string;
-  executionOrder: number;
-  maps: UnifiedAutomationMap[];
-};
-
-/** 백엔드가 사용자에게 허용하는 통합 자동화 모듈 유형이다. */
-export type UnifiedAutomationModuleType =
-  | 'KEY_QUEST'
-  | 'TIME_BURN'
-  | 'COOLDOWN_ADVENTURE'
-  | 'DAILY_ADVENTURE'
-  | 'OTHER_QUEST';
-
-/** 새 모듈 생성 요청이다. 유형은 생성한 뒤에는 변경할 수 없다. */
-export type CreateUnifiedAutomationModuleRequest = {
-  displayName: string;
-  moduleType: UnifiedAutomationModuleType;
   enabled: boolean;
-  thresholdPercent: number | null;
-  maps: UnifiedAutomationMap[];
-  quests: UnifiedAutomationQuest[];
+  sourceOrder: number;
+  maps: QuestMapSettingRequest[];
 };
 
-/** 기존 모듈 수정 요청이다. ID, 유형, 우선순위는 URL과 기존 서버 상태를 따른다. */
-export type UpdateUnifiedAutomationModuleRequest = Omit<
-  CreateUnifiedAutomationModuleRequest,
-  'moduleType'
->;
+export type UpdateQuestAutomationRequest = {
+  enabled: boolean;
+  quests: QuestSelectionRequest[];
+};
 
-/** 서버가 저장한 모듈 인스턴스 한 개와 현재 실행 준비 상태다. */
-export type UnifiedAutomationModuleResponse = {
+export type BattleMapSettingRequest = PresetSelection & {
+  categoryId: string;
+  mapCode: string;
+  dailyTargetCount: number;
+  executionOrder: number;
+};
+
+export type UpdateBattleMapAutomationRequest = {
+  enabled: boolean;
+  maps: BattleMapSettingRequest[];
+};
+
+export type AdventureMapSettingRequest = PresetSelection & {
+  categoryId: string;
+  mapCode: string;
+  executionOrder: number;
+};
+
+export type UpdateAdventureMapAutomationRequest = {
+  enabled: boolean;
+  maps: AdventureMapSettingRequest[];
+};
+
+export type QuestMapSettingResponse = QuestMapSettingRequest;
+export type QuestSelectionResponse = QuestSelectionRequest;
+export type BattleMapSettingResponse = BattleMapSettingRequest;
+export type BattleMapDailyProgressResponse = {
+  categoryId: string;
+  mapCode: string;
+  successfulRuns: number;
+};
+export type AdventureMapSettingResponse = AdventureMapSettingRequest;
+
+export type TypedAutomationEntryResponse = {
   id: number;
-  displayName: string;
-  moduleType: UnifiedAutomationModuleType;
+  type: AutomationType;
   enabled: boolean;
   priority: number;
-  thresholdPercent: number | null;
-  maps: UnifiedAutomationMap[];
-  quests: UnifiedAutomationQuest[];
   ready: boolean;
-  summary: string;
+  warnings: string[];
+  quests: QuestSelectionResponse[];
+  battleMaps: BattleMapSettingResponse[];
+  /** 설정과 별도로 서버가 소유하는 한국 날짜 기준 전투맵 성공 횟수다. */
+  battleMapProgress: BattleMapDailyProgressResponse[];
+  adventureMaps: AdventureMapSettingResponse[];
 };
 
-export type UnifiedAutomationStatusResponse = {
-  profileId: number;
-  job: AutomationJobResponse | null;
-  modules: UnifiedAutomationModuleResponse[];
-  currentTitle: string | null;
-  nextRunAt: string | null;
+export type TypedAutomationLifecycle = 'RUNNING' | 'PAUSED' | 'STOPPED';
+export type AutomationStopReason =
+  | 'AUTHENTICATION'
+  | 'CAPTCHA'
+  | 'MANUAL_STOP'
+  | 'NETWORK'
+  | 'FATAL'
+  | 'UNKNOWN';
+
+export type TypedAutomationRuntimeResponse = {
+  lifecycle: TypedAutomationLifecycle;
+  stopReason: AutomationStopReason | null;
+  nextAttemptAt: string | null;
+  warnings: string[];
+  lastError: string | null;
+  currentAction: TypedAutomationCurrentActionResponse | null;
+  dailyRefresh: AdventureDailyRefreshResponse;
+};
+
+export type TypedAutomationCurrentActionResponse = {
+  source: AutomationType;
+  kind: string;
+  title: string;
+  battleCurrent: number | null;
+  battleTotal: number | null;
+};
+
+export type AdventureDailyRefreshResponse = {
+  status: 'PENDING' | 'COMPLETE';
+  refreshDate: string | null;
+  refreshedAt: string | null;
+};
+
+export type TypedAutomationAggregateResponse = {
+  entries: TypedAutomationEntryResponse[];
+  runtime: TypedAutomationRuntimeResponse;
+};
+
+export type QuestState = 'AVAILABLE' | 'ACTIVE' | 'CLAIMABLE' | 'COMPLETED' | 'UNAVAILABLE';
+export type QuestSection = 'ACTIVE' | 'AVAILABLE' | 'WAITING' | 'COMPLETED';
+export type QuestMissionType = 'IMMEDIATE' | 'ITEM_TURN_IN' | 'MONSTER_KILL' | 'MAP_CLEAR' | 'OTHER';
+export type QuestProgress = { current: number; required: number };
+export type QuestMission = {
+  key: string;
+  type: QuestMissionType;
+  target: string | null;
+  progress: QuestProgress | null;
+  completable: boolean;
+};
+export type QuestSnapshot = {
+  questId: string;
+  name: string;
+  state: QuestState;
+  section: QuestSection;
+  sourceOrder: number;
+  missions: QuestMission[];
+  actionNo: string | null;
 };
 
 export type UnifiedAutomationAction = 'start' | 'pause' | 'resume' | 'stop';
@@ -308,6 +369,7 @@ export type PartyPresetResponse = {
   id: number;
   accountId: number;
   name: string;
+  isPrimary: boolean;
   members: PartyPresetMember[];
   createdAt: string;
   updatedAt: string;
