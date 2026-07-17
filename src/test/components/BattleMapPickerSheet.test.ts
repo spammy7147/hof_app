@@ -11,6 +11,7 @@ import {
 
 import type { BattleMapResponse } from '../../main/types/api';
 
+const focusCalls: unknown[] = [];
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => (
   React.createElement(name, { ...props, ref }, props.children as React.ReactNode)
 ));
@@ -32,10 +33,14 @@ const flatList = (props: Record<string, unknown>) => {
 };
 
 const reactNativeMock = {
+  AccessibilityInfo: { setAccessibilityFocus: (node: unknown) => { focusCalls.push(node); } },
   ActivityIndicator: host('ActivityIndicator'),
   Dimensions: { get: () => ({ height: 800, width: 390 }) },
   FlatList: flatList,
+  findNodeHandle: (node: unknown) => node,
+  KeyboardAvoidingView: host('KeyboardAvoidingView'),
   Modal: modal,
+  Platform: { OS: 'ios' },
   Pressable: host('Pressable'),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: host('Text'),
@@ -95,6 +100,26 @@ describe('BattleMapPickerSheet', () => {
     renderer.root.findByProps({ accessibilityLabel: '전투맵 선택 배경 닫기' }).props.onPress();
     renderer.root.findByProps({ accessibilityLabel: '전투맵 선택 닫기' }).props.onPress();
     assert.equal(closes, 3);
+  });
+
+  it('moves focus to the title when the modal opens', async () => {
+    focusCalls.length = 0;
+    const renderer = await renderSheet();
+    const nativeModal = findHost(renderer.root, 'Modal');
+
+    await act(async () => { nativeModal.props.onShow(); });
+    assert.equal(focusLabel(focusCalls.at(-1)), '전투맵 추가');
+  });
+
+  it('uses an iOS keyboard-avoiding wrapper and applies the bottom safe-area inset to the panel', async () => {
+    const renderer = await renderSheet({ maps: [map('battle_map', 'maid-hall', 'Maid Hall')] });
+    const keyboardAvoidingView = findHost(renderer.root, 'KeyboardAvoidingView');
+    const panel = renderer.root.findByProps({ accessibilityLabel: '전투맵 선택' });
+
+    assert.equal(keyboardAvoidingView.props.behavior, 'padding');
+    assert.equal(keyboardAvoidingView.props.keyboardVerticalOffset, 0);
+    assert.equal(flattenStyle(panel.props.style).paddingBottom, 31);
+    assert.equal(renderer.root.findAll(({ type }) => String(type) === 'ScrollView').length, 0);
   });
 
   it('uses the fallback subtitle for a blank target', async () => {
@@ -235,7 +260,12 @@ async function renderElement(element: React.ReactElement): Promise<ReactTestRend
   };
   try {
     await act(async () => {
-      renderer = create(withSafeArea(element));
+      renderer = create(withSafeArea(element), {
+        createNodeMock: (candidate) => ({
+          accessibilityLabel: (candidate.props as Record<string, unknown>).accessibilityLabel,
+          type: candidate.type,
+        }),
+      });
     });
   } finally {
     console.error = originalError;
@@ -254,7 +284,7 @@ function withSafeArea(element: React.ReactElement): React.ReactElement {
 function safeAreaMetrics() {
   return {
     frame: { x: 0, y: 0, width: 390, height: 800 },
-    insets: { bottom: 0, left: 0, right: 0, top: 0 },
+    insets: { bottom: 31, left: 0, right: 0, top: 0 },
   };
 }
 
@@ -292,4 +322,15 @@ function hasText(root: ReactTestInstance, expected: string): boolean {
 
 function findByText(root: ReactTestInstance, expected: string): ReactTestInstance | null {
   return root.findAll(({ type, children }) => String(type) === 'Text' && children.includes(expected))[0] ?? null;
+}
+
+function flattenStyle(style: unknown): Record<string, unknown> {
+  return (Array.isArray(style) ? style : [style]).reduce<Record<string, unknown>>(
+    (result, candidate) => ({ ...result, ...(candidate as Record<string, unknown> | null) }),
+    {},
+  );
+}
+
+function focusLabel(node: unknown): unknown {
+  return (node as { accessibilityLabel?: unknown } | null)?.accessibilityLabel;
 }

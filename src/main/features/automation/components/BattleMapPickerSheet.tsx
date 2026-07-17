@@ -1,8 +1,12 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
+  findNodeHandle,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -51,6 +55,7 @@ export function BattleMapPickerSheet({
   const { bottom } = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<QuestMapFilter>('ALL');
+  const titleRef = useRef<ElementRef<typeof Text>>(null);
   const selected = useMemo(() => new Set(selectedMapIdentities), [selectedMapIdentities]);
   const results = useMemo(() => filterQuestMapOptions(maps, query, filter), [filter, maps, query]);
   const subtitle = target?.trim() ? target : '실행할 맵을 선택해 주세요.';
@@ -60,6 +65,11 @@ export function BattleMapPickerSheet({
     setQuery('');
     setFilter('ALL');
   }, [visible]);
+
+  function handleShow() {
+    const titleNode = findNodeHandle(titleRef.current);
+    if (titleNode != null) AccessibilityInfo.setAccessibilityFocus(titleNode);
+  }
 
   function renderMap({ item }: { item: BattleMapResponse }) {
     const identity = buildQuestMapIdentity(item);
@@ -98,7 +108,7 @@ export function BattleMapPickerSheet({
   }
 
   return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
+    <Modal animationType="slide" onRequestClose={onClose} onShow={handleShow} transparent visible={visible}>
       <View style={styles.modalRoot}>
         <Pressable
           accessibilityHint="전투맵 선택 창을 닫습니다"
@@ -107,86 +117,92 @@ export function BattleMapPickerSheet({
           onPress={onClose}
           style={styles.backdrop}
         />
-        <View accessibilityLabel="전투맵 선택" accessibilityViewIsModal style={styles.panel}>
-          <View style={styles.dragHandle} />
-          <View style={styles.header}>
-            <View style={styles.headerCopy}>
-              <Text accessibilityRole="header" style={styles.title}>전투맵 추가</Text>
-              <Text style={styles.subtitle}>{subtitle}</Text>
-            </View>
-            <Pressable
-              accessibilityHint="전투맵 선택 창을 닫습니다"
-              accessibilityLabel="전투맵 선택 닫기"
-              accessibilityRole="button"
-              onPress={onClose}
-              style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
-            >
-              <Text style={styles.closeText}>×</Text>
-            </Pressable>
-          </View>
-
-          <TextInput
-            accessibilityLabel="전투맵 검색"
-            onChangeText={setQuery}
-            placeholder="맵 이름 또는 지역 검색"
-            placeholderTextColor={theme.colors.textMuted}
-            style={styles.search}
-            value={query}
-          />
-
-          <View accessibilityRole="radiogroup" style={styles.filterRow}>
-            {FILTERS.map(({ value, label }) => {
-              const checked = filter === value;
-              return (
-                <Pressable
-                  key={value}
-                  accessibilityLabel={`전투맵 필터 ${label}`}
-                  accessibilityRole="radio"
-                  accessibilityState={{ checked }}
-                  accessibilityValue={{ text: value }}
-                  onPress={() => setFilter(value)}
-                  style={({ pressed }) => [
-                    styles.filterChip,
-                    checked && styles.filterChipSelected,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Text style={[styles.filterText, checked && styles.filterTextSelected]}>{label}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          {loading ? (
-            <View accessibilityLiveRegion="polite" style={styles.state}>
-              <ActivityIndicator color={theme.colors.accentGreen} />
-              <Text style={styles.stateText}>전투맵을 불러오는 중입니다.</Text>
-            </View>
-          ) : error ? (
-            <View accessibilityLiveRegion="polite" style={styles.state}>
-              <Text style={styles.errorText}>전투맵을 불러오지 못했어요.</Text>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={0}
+          style={styles.keyboardAvoiding}
+        >
+          <View accessibilityLabel="전투맵 선택" accessibilityViewIsModal style={[styles.panel, { paddingBottom: bottom }]}>
+            <View style={styles.dragHandle} />
+            <View style={styles.header}>
+              <View style={styles.headerCopy}>
+                <Text ref={titleRef} accessibilityLabel="전투맵 추가" accessibilityRole="header" style={styles.title}>전투맵 추가</Text>
+                <Text style={styles.subtitle}>{subtitle}</Text>
+              </View>
               <Pressable
-                accessibilityLabel="전투맵 다시 불러오기"
+                accessibilityHint="전투맵 선택 창을 닫습니다"
+                accessibilityLabel="전투맵 선택 닫기"
                 accessibilityRole="button"
-                onPress={onRetry}
-                style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
+                onPress={onClose}
+                style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
               >
-                <Text style={styles.retryText}>다시 불러오기</Text>
+                <Text style={styles.closeText}>×</Text>
               </Pressable>
             </View>
-          ) : (
-            <FlatList
-              contentContainerStyle={[styles.listContent, { paddingBottom: theme.spacing.xl + bottom }]}
-              data={results}
-              extraData={`${selectedMapIdentities.join('\u0001')}\u0000${loading}`}
-              keyExtractor={buildQuestMapIdentity}
-              keyboardShouldPersistTaps="handled"
-              ListEmptyComponent={<Text style={styles.emptyText}>검색 결과가 없습니다.</Text>}
-              renderItem={renderMap}
-              style={styles.list}
+
+            <TextInput
+              accessibilityLabel="전투맵 검색"
+              onChangeText={setQuery}
+              placeholder="맵 이름 또는 지역 검색"
+              placeholderTextColor={theme.colors.textMuted}
+              style={styles.search}
+              value={query}
             />
-          )}
-        </View>
+
+            <View accessibilityRole="radiogroup" style={styles.filterRow}>
+              {FILTERS.map(({ value, label }) => {
+                const checked = filter === value;
+                return (
+                  <Pressable
+                    key={value}
+                    accessibilityLabel={`전투맵 필터 ${label}`}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked }}
+                    accessibilityValue={{ text: value }}
+                    onPress={() => setFilter(value)}
+                    style={({ pressed }) => [
+                      styles.filterChip,
+                      checked && styles.filterChipSelected,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text style={[styles.filterText, checked && styles.filterTextSelected]}>{label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {loading ? (
+              <View accessibilityLiveRegion="polite" style={styles.state}>
+                <ActivityIndicator color={theme.colors.accentGreen} />
+                <Text style={styles.stateText}>전투맵을 불러오는 중입니다.</Text>
+              </View>
+            ) : error ? (
+              <View accessibilityLiveRegion="polite" style={styles.state}>
+                <Text style={styles.errorText}>전투맵을 불러오지 못했어요.</Text>
+                <Pressable
+                  accessibilityLabel="전투맵 다시 불러오기"
+                  accessibilityRole="button"
+                  onPress={onRetry}
+                  style={({ pressed }) => [styles.retryButton, pressed && styles.pressed]}
+                >
+                  <Text style={styles.retryText}>다시 불러오기</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <FlatList
+                contentContainerStyle={[styles.listContent, { paddingBottom: theme.spacing.xl }]}
+                data={results}
+                extraData={`${selectedMapIdentities.join('\u0001')}\u0000${loading}`}
+                keyExtractor={buildQuestMapIdentity}
+                keyboardShouldPersistTaps="handled"
+                ListEmptyComponent={<Text style={styles.emptyText}>검색 결과가 없습니다.</Text>}
+                renderItem={renderMap}
+                style={styles.list}
+              />
+            )}
+          </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
@@ -195,6 +211,7 @@ export function BattleMapPickerSheet({
 const styles = StyleSheet.create({
   modalRoot: { flex: 1, justifyContent: 'flex-end' },
   backdrop: { backgroundColor: theme.colors.overlay, bottom: 0, left: 0, position: 'absolute', right: 0, top: 0 },
+  keyboardAvoiding: { flex: 1, justifyContent: 'flex-end' },
   panel: { backgroundColor: theme.colors.header, borderColor: theme.colors.borderStrong, borderTopLeftRadius: theme.radius.md * 3, borderTopRightRadius: theme.radius.md * 3, borderTopWidth: 1, maxHeight: '84%', paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.sm },
   dragHandle: { alignSelf: 'center', backgroundColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, height: 4, marginBottom: theme.spacing.md, width: 42 },
   header: { alignItems: 'flex-start', flexDirection: 'row', gap: theme.spacing.md, marginBottom: theme.spacing.md },
