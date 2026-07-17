@@ -221,7 +221,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(hasText(renderer.root, '선택 해제됨'), false);
   });
 
-  it('reinstates a middle quest at its cached draft index for direct reselect and undo', async () => {
+  it('reinstates a middle quest at its stable selection rank for direct reselect and undo', async () => {
     const saves: UpdateQuestAutomationRequest[] = [];
     let backs = 0;
     alertArguments = null;
@@ -261,6 +261,38 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(alertArguments, null);
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
     assert.deepEqual(saves[1], expected);
+  });
+
+  it('uses stable selection order when multiple cached quests restore non-LIFO', async () => {
+    const saves: UpdateQuestAutomationRequest[] = [];
+    let backs = 0;
+    alertArguments = null;
+    const quests = [
+      snapshot('a', 'A', 'ACTIVE', [mission('now-a', 'IMMEDIATE', null)]),
+      snapshot('b', 'B', 'ACTIVE', [mission('now-b', 'IMMEDIATE', null)]),
+      snapshot('c', 'C', 'ACTIVE', [mission('now-c', 'IMMEDIATE', null)]),
+    ];
+    const renderer = await renderEditor({
+      entry: questEntry([
+        { questCode: 'a', enabled: true, sourceOrder: 0, maps: [] },
+        { questCode: 'b', enabled: true, sourceOrder: 1, maps: [] },
+        { questCode: 'c', enabled: true, sourceOrder: 2, maps: [] },
+      ]),
+      quests,
+      onBack: () => { backs += 1; },
+      onSave: async (request) => { saves.push(request); return true; },
+    });
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'B 선택' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'A 선택' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'B 선택' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '선택 해제 되돌리기' }).props.onPress(); });
+
+    renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 뒤로' }).props.onPress();
+    assert.equal(backs, 1);
+    assert.equal(alertArguments, null);
+    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
+    assert.deepEqual(saves[0]?.quests.map(({ questCode }) => questCode), ['a', 'b', 'c']);
   });
 
   it('discards deselection cache after a successful save', async () => {
