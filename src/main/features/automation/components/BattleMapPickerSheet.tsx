@@ -120,6 +120,7 @@ export function BattleMapPickerSheet({
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={0}
+          pointerEvents="box-none"
           style={styles.keyboardAvoiding}
         >
           <View accessibilityLabel="전투맵 선택" accessibilityViewIsModal style={[styles.panel, { paddingBottom: bottom }]}>

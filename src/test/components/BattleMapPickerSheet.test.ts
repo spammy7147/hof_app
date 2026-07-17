@@ -118,6 +118,7 @@ describe('BattleMapPickerSheet', () => {
 
     assert.equal(keyboardAvoidingView.props.behavior, 'padding');
     assert.equal(keyboardAvoidingView.props.keyboardVerticalOffset, 0);
+    assert.equal(keyboardAvoidingView.props.pointerEvents, 'box-none');
     assert.equal(flattenStyle(panel.props.style).paddingBottom, 31);
     assert.equal(renderer.root.findAll(({ type }) => String(type) === 'ScrollView').length, 0);
   });
