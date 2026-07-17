@@ -209,7 +209,7 @@ function mission(key: string, type: QuestMission['type'], target: string | null)
 }
 
 function snapshot(questId: string, name: string, section: QuestSnapshot['section'], sourceOrder: number, missions: QuestMission[]): QuestSnapshot {
-  return { questId, name, state: section === 'ACTIVE' ? 'ACTIVE' : section === 'AVAILABLE' ? 'AVAILABLE' : 'UNAVAILABLE', section, sourceOrder, missions, actionNo: null };
+  return { questId, name, state: section === 'ACTIVE' ? 'ACTIVE' : section === 'AVAILABLE' ? 'AVAILABLE' : 'UNAVAILABLE', section, sourceOrder, missions, actionNo: null, rewards: [] };
 }
 
 function mapSetting(missionKey: string, mapCode: string, executionOrder: number) {

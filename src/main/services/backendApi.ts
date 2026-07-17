@@ -58,6 +58,19 @@ export class BackendApiError extends Error {
   }
 }
 
+function normalizeQuestSnapshot(
+  snapshot: Omit<QuestSnapshot, 'rewards'> & { rewards?: unknown },
+): QuestSnapshot {
+  return {
+    ...snapshot,
+    rewards: Array.isArray(snapshot.rewards)
+      ? snapshot.rewards.filter(
+        (reward): reward is string => typeof reward === 'string' && reward.trim().length > 0,
+      )
+      : [],
+  };
+}
+
 /**
  * React Native/Expo 앱에서 Spring 백엔드 API를 호출하는 단일 client다.
  *
@@ -254,8 +267,9 @@ export class BackendApiClient {
     });
   }
 
-  fetchQuests(): Promise<QuestSnapshot[]> {
-    return this.request('/api/quests');
+  async fetchQuests(): Promise<QuestSnapshot[]> {
+    const snapshots = await this.request<Array<Omit<QuestSnapshot, 'rewards'> & { rewards?: unknown }>>('/api/quests');
+    return snapshots.map(normalizeQuestSnapshot);
   }
 
   /** 통합 자동화를 시작, 일시정지, 재개 또는 종료한다. */

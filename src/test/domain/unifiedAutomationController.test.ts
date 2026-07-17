@@ -1098,5 +1098,6 @@ function questSnapshot(questId: string, missions: QuestSnapshot['missions']): Qu
     sourceOrder: 0,
     missions,
     actionNo: null,
+    rewards: [],
   };
 }
