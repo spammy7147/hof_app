@@ -53,13 +53,15 @@ export function QuestSummaryCard({
         >
           <Text style={styles.checkboxText}>{selected ? '✓' : ''}</Text>
         </Pressable>
-        <View style={styles.titleRow}>
-          <Text numberOfLines={1} style={styles.name}>{snapshot.name}</Text>
-          <Text style={styles.section}>{sectionLabel}</Text>
+        <View style={styles.copy}>
+          <View style={styles.titleRow}>
+            <Text numberOfLines={1} style={styles.name}>{snapshot.name}</Text>
+            <Text style={styles.section}>{sectionLabel}</Text>
+          </View>
+          <Text numberOfLines={1} style={styles.summary}>{buildQuestMissionSummary(snapshot.missions)}</Text>
+          <Text numberOfLines={1} style={styles.reward}>{buildQuestRewardSummary(snapshot.rewards)}</Text>
         </View>
       </View>
-      <Text numberOfLines={1} style={styles.summary}>{buildQuestMissionSummary(snapshot.missions)}</Text>
-      <Text numberOfLines={1} style={styles.reward}>{buildQuestRewardSummary(snapshot.rewards)}</Text>
       {combatMissions.map((mission) => (
         <View key={mission.key} style={styles.missionBlock}>
           <CombatMissionEditor
@@ -87,7 +89,8 @@ const styles = StyleSheet.create({
   checkbox: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: 5, borderWidth: 1, height: 44, justifyContent: 'center', width: 44 },
   checkboxSelected: { backgroundColor: theme.colors.accentGreen, borderColor: theme.colors.accentGreen },
   checkboxText: { color: theme.colors.buttonText, fontSize: 18, fontWeight: '900' },
-  titleRow: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: theme.spacing.sm, minWidth: 0 },
+  copy: { flex: 1, minWidth: 0 },
+  titleRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
   name: { color: theme.colors.text, flex: 1, fontSize: 14, fontWeight: '900' },
   section: { color: theme.colors.textMuted, fontSize: 10, fontWeight: '700' },
   summary: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
