@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState, type ElementRef } from 'react';
+import { AccessibilityInfo, findNodeHandle, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ArrowDown, ArrowUp, Plus, X } from 'lucide-react-native';
 
 import {
@@ -44,12 +44,78 @@ export function CombatMissionEditor({
   onUpdate,
 }: CombatMissionEditorProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerTriggerRef = useRef<ElementRef<typeof Pressable>>(null);
+  const mountedRef = useRef(false);
+  const disabledRef = useRef(disabled);
+  const pickerOpenRef = useRef(false);
+  const invokingTriggerHandleRef = useRef<ReturnType<typeof findNodeHandle>>(null);
+  const focusGenerationRef = useRef(0);
+  const restoreFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const readiness = getMissionReadiness(mission, presetIds);
   const progress = buildMissionProgressLabel(mission);
 
+  disabledRef.current = disabled;
+
   useEffect(() => {
-    if (disabled) setPickerOpen(false);
-  }, [disabled]);
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      focusGenerationRef.current += 1;
+      invokingTriggerHandleRef.current = null;
+      if (restoreFocusTimerRef.current) {
+        clearTimeout(restoreFocusTimerRef.current);
+        restoreFocusTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const closePicker = useCallback((restoreFocus: boolean) => {
+    const focusGeneration = ++focusGenerationRef.current;
+    const invocationHandle = invokingTriggerHandleRef.current;
+    pickerOpenRef.current = false;
+    setPickerOpen(false);
+    if (restoreFocusTimerRef.current) {
+      clearTimeout(restoreFocusTimerRef.current);
+      restoreFocusTimerRef.current = null;
+    }
+    if (!restoreFocus || invocationHandle == null) {
+      invokingTriggerHandleRef.current = null;
+      return;
+    }
+    restoreFocusTimerRef.current = setTimeout(() => {
+      restoreFocusTimerRef.current = null;
+      if (
+        !mountedRef.current
+        || disabledRef.current
+        || pickerOpenRef.current
+        || focusGenerationRef.current !== focusGeneration
+      ) {
+        if (invokingTriggerHandleRef.current === invocationHandle) invokingTriggerHandleRef.current = null;
+        return;
+      }
+      const liveHandle = findNodeHandle(pickerTriggerRef.current);
+      if (liveHandle != null && liveHandle === invocationHandle) {
+        AccessibilityInfo.setAccessibilityFocus(liveHandle);
+      }
+      if (invokingTriggerHandleRef.current === invocationHandle) invokingTriggerHandleRef.current = null;
+    }, 250);
+  }, []);
+
+  const openPicker = useCallback(() => {
+    if (disabledRef.current) return;
+    focusGenerationRef.current += 1;
+    if (restoreFocusTimerRef.current) {
+      clearTimeout(restoreFocusTimerRef.current);
+      restoreFocusTimerRef.current = null;
+    }
+    invokingTriggerHandleRef.current = findNodeHandle(pickerTriggerRef.current);
+    pickerOpenRef.current = true;
+    setPickerOpen(true);
+  }, []);
+
+  useEffect(() => {
+    if (disabled) closePicker(false);
+  }, [closePicker, disabled]);
 
   function updatePreset(index: number, partyPresetId: number | null) {
     if (disabled) return;
@@ -63,7 +129,7 @@ export function CombatMissionEditor({
     onUpdate(mission.type === 'MAP_CLEAR'
       ? replaceMissionMap(mission.maps, mission.key, selected)
       : appendMissionMap(mission.maps, mission.key, selected));
-    setPickerOpen(false);
+    closePicker(true);
   }
 
   const pickerLabel = mission.type === 'MAP_CLEAR' ? '전투맵 변경' : '전투맵 추가';
@@ -90,9 +156,12 @@ export function CombatMissionEditor({
               <Pressable accessibilityLabel={`${questContext} · ${mission.key} ${index + 1}번째 맵 제거`} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={() => { if (!disabled) onUpdate(removeMissionMap(mission.maps, index)); }} style={styles.smallIcon}><X color={theme.colors.danger} size={15} /></Pressable>
             </View>
             {map.mapCode ? (
-              <View style={styles.presetRow}>
+              <View accessibilityLabel={`${questContext} · ${mission.key} ${index + 1}번째 맵 프리셋 선택`} accessibilityRole="radiogroup" style={styles.presetRow}>
                 <Pressable accessibilityLabel={`${questContext} · ${mission.key} ${index + 1}번째 맵 대표 프리셋`} accessibilityRole="radio" accessibilityState={{ checked: map.presetMode === 'PRIMARY', disabled }} disabled={disabled} onPress={() => updatePreset(index, null)} style={[styles.choice, map.presetMode === 'PRIMARY' && styles.choiceActive]}><Text style={styles.choiceText}>{formatAutomationPresetSelection({ presetMode: 'PRIMARY', partyPresetId: null }, presets)}</Text></Pressable>
-                {presets.map((preset) => <Pressable key={preset.id} accessibilityLabel={`${questContext} · ${mission.key} ${index + 1}번째 맵 ${preset.name} 프리셋`} accessibilityRole="radio" accessibilityState={{ checked: map.partyPresetId === preset.id, disabled }} disabled={disabled} onPress={() => updatePreset(index, preset.id)} style={[styles.choice, map.partyPresetId === preset.id && styles.choiceActive]}><Text style={styles.choiceText}>{preset.name}</Text></Pressable>)}
+                {presets.map((preset) => {
+                  const checked = map.presetMode === 'EXPLICIT' && map.partyPresetId === preset.id;
+                  return <Pressable key={preset.id} accessibilityLabel={`${questContext} · ${mission.key} ${index + 1}번째 맵 ${preset.name} 프리셋`} accessibilityRole="radio" accessibilityState={{ checked, disabled }} disabled={disabled} onPress={() => updatePreset(index, preset.id)} style={[styles.choice, checked && styles.choiceActive]}><Text style={styles.choiceText}>{preset.name}</Text></Pressable>;
+                })}
               </View>
             ) : null}
           </View>
@@ -100,11 +169,12 @@ export function CombatMissionEditor({
       })}
       {mission.type === 'MONSTER_KILL' && mission.maps.length >= 2 ? <Text style={styles.hint}>여러 맵을 실행 가능한 순서대로 확인하고 전투 횟수를 고르게 분배해요</Text> : null}
       <Pressable
+        ref={pickerTriggerRef}
         accessibilityLabel={`${questContext} · ${mission.key} ${pickerLabel}`}
         accessibilityRole="button"
         accessibilityState={{ disabled }}
         disabled={disabled}
-        onPress={() => { if (!disabled) setPickerOpen(true); }}
+        onPress={openPicker}
         style={styles.pickerButton}
       >
         <Plus color={theme.colors.accentGreen} size={16} />
@@ -117,7 +187,7 @@ export function CombatMissionEditor({
         selectedMapIdentities={mission.maps.map(buildQuestMapIdentity)}
         target={mission.target}
         visible={pickerOpen}
-        onClose={() => setPickerOpen(false)}
+        onClose={() => closePicker(true)}
         onRetry={onRetryCatalog}
         onSelect={selectMap}
       />
