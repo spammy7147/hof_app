@@ -10,27 +10,19 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { ArrowDown, ArrowLeft, ArrowUp, Plus, Save, Trash2, X } from 'lucide-react-native';
+import { ArrowLeft, Save, Trash2 } from 'lucide-react-native';
 
 import {
-  applyManualMapOverride,
-  buildMissionLabel,
-  buildMissionProgressLabel,
   buildQuestAutomationDraft,
   buildQuestAutomationRequest,
   filterQuests,
-  getMissionReadiness,
   hydrateAutoMatchedMapClearMissions,
   isCombatMission,
-  moveMissionMap,
-  removeMissionMap,
   selectQuest,
   validateQuestAutomationDraft,
   type QuestAutomationDraft,
-  type QuestMissionDraft,
 } from '../../../domain/questAutomation';
 import { filterAutomationProfileCategories } from '../../../domain/automationProfiles';
-import { formatAutomationPresetSelection } from '../../../domain/partyPresets';
 import { toUserFacingErrorMessage } from '../../../domain/userFacingErrors';
 import { theme } from '../../../styles/theme';
 import type {
@@ -43,6 +35,8 @@ import type {
   TypedAutomationEntryResponse,
   UpdateQuestAutomationRequest,
 } from '../../../types/api';
+import { CombatMissionEditor } from './CombatMissionEditor';
+import { QuestSummaryCard } from './QuestSummaryCard';
 
 type VisibleSection = Extract<QuestSection, 'ACTIVE' | 'AVAILABLE' | 'WAITING'>;
 
@@ -102,7 +96,6 @@ export function QuestAutomationEditor({
   const [mapResources, setMapResources] = useState<Record<string, { loading: boolean; error: string | null }>>({});
   const [refreshWarning, setRefreshWarning] = useState(false);
   const [localBusy, setLocalBusy] = useState(false);
-  const [mapQueries, setMapQueries] = useState<Record<string, string>>({});
   const baselineRef = useRef('');
   const baselineDraftRef = useRef<QuestAutomationDraft | null>(null);
   const draftRef = useRef<QuestAutomationDraft | null>(null);
@@ -318,6 +311,8 @@ export function QuestAutomationEditor({
     mission.type === 'MAP_CLEAR' && mission.maps.every(({ manuallyOverridden }) => !manuallyOverridden)
   ));
   const categoryLoading = isBattleCategoriesLoading || (!areBattleCategoriesLoaded && battleCategories.length === 0 && !battleCategoriesError && categoryRequested);
+  const catalogLoading = categoryLoading || eligibleCategories.some(({ id }) => mapResources[id]?.loading);
+  const catalogError = mapErrors.length > 0 || battleCategoriesError ? '전투맵을 불러오지 못했어요.' : null;
   const supportingResourcesBlockSave = combatMissions.length > 0 && (
     (needsFullCatalog && (
       categoryLoading ||
@@ -348,25 +343,34 @@ export function QuestAutomationEditor({
     updateDraft((current) => updateMissionMaps(current, questCode, missionKey, maps));
   }, [updateDraft]);
 
+  const retryCatalog = useCallback(() => {
+    if (battleCategoriesError) {
+      onLoadBattleCategories();
+      return;
+    }
+    const failed = eligibleCategories.filter(({ id }) => mapResourceRef.current[id]?.error != null);
+    const categories = failed.length > 0 ? failed : catalog.length === 0 ? eligibleCategories : [];
+    for (const category of categories) void loadCategoryMaps(category);
+  }, [battleCategoriesError, catalog.length, eligibleCategories, loadCategoryMaps, onLoadBattleCategories]);
+
   const renderQuest = useCallback(({ item }: { item: QuestSnapshot }) => {
     const selection = draft?.quests.find(({ questCode }) => questCode === item.questId);
     return (
-      <QuestRow
+      <QuestSummaryCard
         catalog={catalog}
+        catalogError={catalogError}
+        catalogLoading={catalogLoading}
         disabled={editingDisabled}
-        mapQueries={mapQueries}
         presets={presets}
         selected={selection ?? null}
+        sectionLabel={sectionLabel(item.section)}
         snapshot={item}
-        onMapQuery={(missionKey, value) => setMapQueries((current) => ({
-          ...current,
-          [buildMapQueryKey(item.questId, missionKey)]: value,
-        }))}
+        onRetryCatalog={retryCatalog}
         onToggle={() => updateDraft((current) => selectQuest(current, item, !selection, catalog))}
         onUpdateMission={(missionKey, maps) => updateUserMissionMaps(item.questId, missionKey, maps)}
       />
     );
-  }, [catalog, draft, editingDisabled, mapQueries, presets, updateDraft, updateUserMissionMaps]);
+  }, [catalog, catalogError, catalogLoading, draft, editingDisabled, presets, retryCatalog, updateDraft, updateUserMissionMaps]);
 
   const missingSelections = draft?.quests.filter(({ missing }) => missing) ?? [];
 
@@ -541,18 +545,16 @@ export function QuestAutomationEditor({
                 <MissingSelectionCard
                   key={selection.questCode}
                   catalog={catalog}
+                  catalogError={catalogError}
+                  catalogLoading={catalogLoading}
                   disabled={editingDisabled}
-                  mapQueries={mapQueries}
                   presets={presets}
                   selection={selection}
-                  onMapQuery={(missionKey, value) => setMapQueries((current) => ({
-                    ...current,
-                    [buildMapQueryKey(selection.questCode, missionKey)]: value,
-                  }))}
                   onRemove={() => updateDraft((current) => ({
                     ...current,
                     quests: current.quests.filter(({ questCode }) => questCode !== selection.questCode),
                   }))}
+                  onRetryCatalog={retryCatalog}
                   onUpdateMission={(missionKey, maps) => updateUserMissionMaps(selection.questCode, missionKey, maps)}
                 />
               ))}
@@ -598,14 +600,15 @@ type MissingSelectionCardProps = {
   selection: QuestAutomationDraft['quests'][number];
   catalog: BattleMapResponse[];
   presets: PartyPresetResponse[];
-  mapQueries: Record<string, string>;
   disabled: boolean;
+  catalogLoading: boolean;
+  catalogError: string | null;
   onRemove: () => void;
-  onMapQuery: (missionKey: string, value: string) => void;
+  onRetryCatalog: () => void;
   onUpdateMission: (missionKey: string, maps: QuestMapSettingRequest[]) => void;
 };
 
-function MissingSelectionCard({ selection, catalog, presets, mapQueries, disabled, onRemove, onMapQuery, onUpdateMission }: MissingSelectionCardProps) {
+function MissingSelectionCard({ selection, catalog, presets, disabled, catalogLoading, catalogError, onRemove, onRetryCatalog, onUpdateMission }: MissingSelectionCardProps) {
   const presetIds = presets.map(({ id }) => id);
   return (
     <View style={[styles.questCard, styles.missingCard]}>
@@ -630,164 +633,18 @@ function MissingSelectionCard({ selection, catalog, presets, mapQueries, disable
           <Text style={styles.missionBadge}>저장된 전투 설정 · {mission.key}</Text>
           <CombatMissionEditor
             catalog={catalog}
+            catalogError={catalogError}
+            catalogLoading={catalogLoading}
             disabled={disabled}
-            mapQuery={mapQueries[buildMapQueryKey(selection.questCode, mission.key)] ?? ''}
             mission={mission}
             presetIds={presetIds}
             presets={presets}
             questContext={selection.questCode}
-            onMapQuery={(value) => onMapQuery(mission.key, value)}
+            onRetryCatalog={onRetryCatalog}
             onUpdate={(maps) => onUpdateMission(mission.key, maps)}
           />
         </View>
       ))}
-    </View>
-  );
-}
-
-type QuestRowProps = {
-  snapshot: QuestSnapshot;
-  selected: QuestAutomationDraft['quests'][number] | null;
-  catalog: BattleMapResponse[];
-  presets: PartyPresetResponse[];
-  mapQueries: Record<string, string>;
-  disabled: boolean;
-  onToggle: () => void;
-  onMapQuery: (missionKey: string, value: string) => void;
-  onUpdateMission: (missionKey: string, maps: QuestMapSettingRequest[]) => void;
-};
-
-function QuestRow({ snapshot, selected, catalog, presets, mapQueries, disabled, onToggle, onMapQuery, onUpdateMission }: QuestRowProps) {
-  const presetIds = presets.map(({ id }) => id);
-  return (
-    <View style={[styles.questCard, selected && styles.questCardSelected]}>
-      <View style={styles.questHeading}>
-        <Pressable
-          accessibilityLabel={`${snapshot.name} 선택`}
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: selected != null, disabled }}
-          disabled={disabled}
-          onPress={onToggle}
-          style={[styles.checkbox, selected && styles.checkboxSelected]}
-        >
-          <Text style={styles.checkboxText}>{selected ? '✓' : ''}</Text>
-        </Pressable>
-        <View style={styles.questCopy}>
-          <Text style={styles.questName}>{snapshot.name}</Text>
-          <Text style={styles.muted}>{sectionLabel(snapshot.section)} · 원본 순서 {snapshot.sourceOrder + 1}</Text>
-        </View>
-      </View>
-      {snapshot.missions.map((mission) => {
-        const configured = selected?.missions.find(({ key }) => key === mission.key);
-        const progress = buildMissionProgressLabel(mission);
-        return (
-          <View key={mission.key} style={styles.missionBlock}>
-            <View style={styles.missionTitleLine}>
-              <Text style={styles.missionBadge}>{buildMissionLabel(mission)}</Text>
-              {progress ? <Text style={styles.progress}>{progress}</Text> : null}
-            </View>
-            {selected && configured ? (
-              isCombatMission(configured) ? (
-                <CombatMissionEditor
-                  catalog={catalog}
-                  disabled={disabled}
-                  mapQuery={mapQueries[buildMapQueryKey(snapshot.questId, configured.key)] ?? ''}
-                  mission={configured}
-                  presetIds={presetIds}
-                  presets={presets}
-                  questContext={snapshot.name || snapshot.questId}
-                  onMapQuery={(value) => onMapQuery(configured.key, value)}
-                  onUpdate={(maps) => onUpdateMission(configured.key, maps)}
-                />
-              ) : <Text style={styles.muted}>맵 설정이 필요 없는 미션입니다.</Text>
-            ) : null}
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
-type CombatMissionEditorProps = {
-  mission: QuestMissionDraft;
-  catalog: BattleMapResponse[];
-  presets: PartyPresetResponse[];
-  presetIds: number[];
-  mapQuery: string;
-  disabled: boolean;
-  questContext: string;
-  onMapQuery: (value: string) => void;
-  onUpdate: (maps: QuestMapSettingRequest[]) => void;
-};
-
-function CombatMissionEditor({ mission, catalog, presets, presetIds, mapQuery, disabled, questContext, onMapQuery, onUpdate }: CombatMissionEditorProps) {
-  const readiness = getMissionReadiness(mission, presetIds);
-  const needle = mapQuery.trim().toLocaleLowerCase();
-  const options = catalog.filter((map) => !needle || `${map.name} ${map.groupName ?? ''}`.toLocaleLowerCase().includes(needle)).slice(0, 20);
-  const pendingIndex = mission.maps.findIndex(({ mapCode }) => !mapCode);
-  const canAdd = mission.type === 'MONSTER_KILL' || mission.maps.length === 0;
-
-  function addMap() {
-    if (disabled || !canAdd) return;
-    onMapQuery('');
-    onUpdate([...mission.maps, {
-      missionKey: mission.key,
-      categoryId: '',
-      mapCode: '',
-      executionOrder: mission.maps.length,
-      manuallyOverridden: true,
-      presetMode: 'PRIMARY',
-      partyPresetId: null,
-    }]);
-  }
-
-  function chooseMap(selected: BattleMapResponse) {
-    if (disabled) return;
-    const index = pendingIndex >= 0 ? pendingIndex : 0;
-    const current = mission.maps[index];
-    if (!current) return;
-    onUpdate(mission.maps.map((map, currentIndex) => currentIndex === index ? applyManualMapOverride(map, selected) : map));
-    onMapQuery('');
-  }
-
-  function updatePreset(index: number, partyPresetId: number | null) {
-    if (disabled) return;
-    onUpdate(mission.maps.map((map, currentIndex) => currentIndex !== index ? map : partyPresetId == null
-      ? { ...map, presetMode: 'PRIMARY', partyPresetId: null }
-      : { ...map, presetMode: 'EXPLICIT', partyPresetId }));
-  }
-
-  return (
-    <View style={styles.combatEditor}>
-      <Text style={[styles.readiness, readiness === '맵 설정 필요' || readiness === '프리셋 설정 필요' ? styles.problem : null]}>{readiness}</Text>
-      {mission.maps.map((map, index) => (
-        <View key={`${mission.key}:${index}`} style={styles.mapCard}>
-          <View style={styles.mapHeading}>
-            <Text style={styles.mapName}>{map.mapCode ? catalog.find((candidate) => candidate.categoryId === map.categoryId && candidate.mapCode === map.mapCode)?.name ?? map.mapCode : '맵을 선택해 주세요'}</Text>
-            <Pressable accessibilityLabel={`${questContext} · ${mission.key} ${index + 1}번째 맵 위로`} accessibilityRole="button" accessibilityState={{ disabled: disabled || index === 0 }} disabled={disabled || index === 0} onPress={() => { if (!disabled && index > 0) onUpdate(moveMissionMap(mission.maps, index, index - 1)); }} style={styles.smallIcon}><ArrowUp color={theme.colors.textMuted} size={15} /></Pressable>
-            <Pressable accessibilityLabel={`${questContext} · ${mission.key} ${index + 1}번째 맵 아래로`} accessibilityRole="button" accessibilityState={{ disabled: disabled || index === mission.maps.length - 1 }} disabled={disabled || index === mission.maps.length - 1} onPress={() => { if (!disabled && index < mission.maps.length - 1) onUpdate(moveMissionMap(mission.maps, index, index + 1)); }} style={styles.smallIcon}><ArrowDown color={theme.colors.textMuted} size={15} /></Pressable>
-            <Pressable accessibilityLabel={`${questContext} · ${mission.key} ${index + 1}번째 맵 제거`} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={() => { if (!disabled) onUpdate(removeMissionMap(mission.maps, index)); }} style={styles.smallIcon}><X color={theme.colors.danger} size={15} /></Pressable>
-          </View>
-          {map.mapCode ? (
-            <View style={styles.presetRow}>
-              <Pressable accessibilityLabel={`${questContext} · ${mission.key} ${index + 1}번째 맵 대표 프리셋`} accessibilityRole="radio" accessibilityState={{ checked: map.presetMode === 'PRIMARY', disabled }} disabled={disabled} onPress={() => updatePreset(index, null)} style={[styles.choice, map.presetMode === 'PRIMARY' && styles.choiceActive]}><Text style={styles.choiceText}>{formatAutomationPresetSelection({ presetMode: 'PRIMARY', partyPresetId: null }, presets)}</Text></Pressable>
-              {presets.map((preset) => <Pressable key={preset.id} accessibilityLabel={`${questContext} · ${mission.key} ${index + 1}번째 맵 ${preset.name} 프리셋`} accessibilityRole="radio" accessibilityState={{ checked: map.partyPresetId === preset.id, disabled }} disabled={disabled} onPress={() => updatePreset(index, preset.id)} style={[styles.choice, map.partyPresetId === preset.id && styles.choiceActive]}><Text style={styles.choiceText}>{preset.name}</Text></Pressable>)}
-            </View>
-          ) : null}
-        </View>
-      ))}
-      {pendingIndex >= 0 ? (
-        <View style={styles.picker}>
-          <TextInput accessibilityLabel={`${questContext} · ${mission.key} 맵 검색`} editable={!disabled} onChangeText={onMapQuery} placeholder="맵 이름 검색" placeholderTextColor={theme.colors.textMuted} style={styles.mapSearch} value={mapQuery} />
-          {options.map((map) => <Pressable key={`${map.categoryId}:${map.mapCode}`} accessibilityLabel={`${questContext} · ${mission.key} · ${map.name} 맵 선택`} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={() => chooseMap(map)} style={styles.mapOption}><Text style={styles.mapOptionText}>{map.name}</Text><Text style={styles.muted}>{map.groupName}</Text></Pressable>)}
-          {options.length === 0 ? <Text style={styles.muted}>검색 결과가 없습니다.</Text> : null}
-        </View>
-      ) : null}
-      {canAdd && pendingIndex < 0 ? (
-        <Pressable accessibilityLabel={`${questContext} · ${mission.key} 맵 추가`} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={addMap} style={styles.addMapButton}>
-          <Plus color={theme.colors.accentGreen} size={16} /><Text style={styles.addMapText}>맵 추가</Text>
-        </Pressable>
-      ) : null}
     </View>
   );
 }
@@ -802,7 +659,6 @@ function updateMissionMaps(draft: QuestAutomationDraft, questCode: string, missi
   };
 }
 
-function buildMapQueryKey(questCode: string, missionKey: string): string { return `${questCode}\u0000${missionKey}`; }
 function buildMissionIdentity(questCode: string, missionKey: string): string { return `${questCode}\u0000${missionKey}`; }
 function serializeDraft(draft: QuestAutomationDraft): string { return JSON.stringify(draft); }
 function serializeDraftSource(entry: TypedAutomationEntryResponse, snapshots: readonly QuestSnapshot[]): string { return JSON.stringify([entry, snapshots]); }
@@ -833,33 +689,11 @@ const styles = StyleSheet.create({
   secondaryButton: { borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, minHeight: 44, justifyContent: 'center', paddingHorizontal: theme.spacing.lg },
   secondaryButtonText: { color: theme.colors.text, fontWeight: '800' },
   questCard: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md + 4, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md },
-  questCardSelected: { borderColor: theme.colors.accentGreen },
   questHeading: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
-  checkbox: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: 5, borderWidth: 1, height: 44, justifyContent: 'center', width: 44 },
-  checkboxSelected: { backgroundColor: theme.colors.accentGreen, borderColor: theme.colors.accentGreen },
-  checkboxText: { color: theme.colors.buttonText, fontSize: 18, fontWeight: '900' },
   questCopy: { flex: 1 },
   questName: { color: theme.colors.text, fontSize: 14, fontWeight: '900' },
   missionBlock: { borderTopColor: theme.colors.border, borderTopWidth: 1, gap: theme.spacing.sm, paddingTop: theme.spacing.sm },
-  missionTitleLine: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
   missionBadge: { color: theme.colors.text, flex: 1, fontSize: 12, fontWeight: '700' },
-  progress: { color: theme.colors.accentBlue, fontSize: 11, fontWeight: '800' },
-  combatEditor: { gap: theme.spacing.sm },
-  readiness: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '800' },
-  mapCard: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md, gap: theme.spacing.sm, padding: theme.spacing.sm },
-  mapHeading: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },
-  mapName: { color: theme.colors.text, flex: 1, fontSize: 12, fontWeight: '800' },
-  smallIcon: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
-  presetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs },
-  choice: { borderColor: theme.colors.borderStrong, borderRadius: 14, borderWidth: 1, minHeight: 44, justifyContent: 'center', paddingHorizontal: theme.spacing.sm },
-  choiceActive: { borderColor: theme.colors.accentGreen },
-  choiceText: { color: theme.colors.text, fontSize: 10, fontWeight: '700' },
-  picker: { gap: theme.spacing.xs },
-  mapSearch: { borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.sm },
-  mapOption: { minHeight: 44, justifyContent: 'center', paddingHorizontal: theme.spacing.sm },
-  mapOptionText: { color: theme.colors.text, fontSize: 12, fontWeight: '800' },
-  addMapButton: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderStyle: 'dashed', borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, minHeight: 44, justifyContent: 'center' },
-  addMapText: { color: theme.colors.accentGreen, fontSize: 12, fontWeight: '800' },
   footer: { flexDirection: 'row', gap: theme.spacing.sm },
   deleteButton: { alignItems: 'center', borderColor: theme.colors.danger, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, minHeight: 48, justifyContent: 'center', paddingHorizontal: theme.spacing.lg },
   deleteText: { color: theme.colors.danger, fontWeight: '800' },
