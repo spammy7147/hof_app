@@ -4,16 +4,23 @@ import { describe, it } from 'node:test';
 import {
   applyAutoMatchedMap,
   applyManualMapOverride,
+  appendMissionMap,
   buildMissionLabel,
   buildMissionProgressLabel,
   buildQuestAutomationDraft,
   buildQuestAutomationRequest,
+  buildQuestMapIdentity,
+  buildQuestMissionSummary,
+  buildQuestRewardSummary,
   filterQuests,
+  filterQuestMapOptions,
   getMissionReadiness,
   hydrateAutoMatchedMapClearMissions,
   matchMapClearMission,
   moveMissionMap,
   removeMissionMap,
+  replaceMissionMap,
+  restoreQuestSelection,
   selectQuest,
   validateQuestAutomationDraft,
 } from '../../main/domain/questAutomation';
@@ -42,6 +49,89 @@ describe('quest automation domain', () => {
     assert.equal(buildMissionLabel(mission('now', 'IMMEDIATE', null)), '즉시 완료');
     assert.equal(buildMissionLabel(mission('other', 'OTHER', '대화')), '기타 · 대화');
     assert.equal(buildMissionProgressLabel({ ...mission('kill', 'MONSTER_KILL', 'Killer Maid'), progress: { current: 2, required: 5 } }), '2 / 5');
+  });
+
+  it('builds compact quest mission summaries for empty, single, and multiple missions', () => {
+    assert.equal(buildQuestMissionSummary([]), '미션 · 없음');
+    assert.equal(buildQuestMissionSummary([mission('kill', 'MONSTER_KILL', 'Killer Maid')]), '미션 · 몬스터 처치 · Killer Maid');
+    assert.equal(buildQuestMissionSummary([
+      mission('kill', 'MONSTER_KILL', 'Killer Maid'),
+      mission('item', 'ITEM_TURN_IN', 'Silver Key'),
+    ]), '미션 · 몬스터 처치 · Killer Maid 외 1개');
+  });
+
+  it('builds compact reward summaries for empty, single, and multiple rewards', () => {
+    assert.equal(buildQuestRewardSummary([]), '보상 · 없음');
+    assert.equal(buildQuestRewardSummary(['  Red Potion ×2  ']), '보상 · Red Potion ×2');
+    assert.equal(buildQuestRewardSummary([' Red Potion ×2 ', 'Silver Key']), '보상 · Red Potion ×2 외 1개');
+  });
+
+  it('builds map identities only from complete category and map codes', () => {
+    assert.equal(buildQuestMapIdentity(catalogMap('battle_map', 'maid', 'Maid')), 'battle_map\u0000maid');
+    assert.equal(buildQuestMapIdentity(catalogMap('battle_map', null, 'Unresolved')), '');
+  });
+
+  it('filters resolved battle and adventure maps by category and normalized text in input order', () => {
+    const battle = catalogMap('battle_map', 'battle', 'Killer Field');
+    battle.groupName = 'Maid Group';
+    const adventure = catalogMap('adventure_map', 'adventure', 'Silver Cave');
+    adventure.groupName = 'Key Group';
+    const unresolved = catalogMap('battle_map', 'unresolved', 'Killer Unresolved');
+    unresolved.resolved = false;
+    const noCode = catalogMap('adventure_map', null, 'Killer No Code');
+    const union = catalogMap('union_map', 'union', 'Killer Union');
+    const maps = [adventure, unresolved, noCode, union, battle];
+
+    assert.deepEqual(filterQuestMapOptions(maps, '  MAID group ', 'ALL').map(({ mapCode }) => mapCode), ['battle']);
+    assert.deepEqual(filterQuestMapOptions(maps, '', 'BATTLE').map(({ mapCode }) => mapCode), ['battle']);
+    assert.deepEqual(filterQuestMapOptions(maps, 'key', 'ADVENTURE').map(({ mapCode }) => mapCode), ['adventure']);
+    assert.deepEqual(filterQuestMapOptions(maps, '', 'ALL').map(({ mapCode }) => mapCode), ['adventure', 'battle']);
+  });
+
+  it('appends only a unique resolved map with contiguous manual primary defaults', () => {
+    const initial = [{ ...mapSetting('old', 'a', 7), executionOrder: 7 }];
+    const selected = catalogMap('adventure_map', 'b', 'B');
+    const appended = appendMissionMap(initial, 'kill', selected);
+    assert.deepEqual(appended, [
+      { ...initial[0]!, executionOrder: 0 },
+      { missionKey: 'kill', categoryId: 'adventure_map', mapCode: 'b', executionOrder: 1, manuallyOverridden: true, presetMode: 'PRIMARY', partyPresetId: null },
+    ]);
+    assert.deepEqual(appendMissionMap(initial, 'kill', catalogMap('battle_map', null, 'None')), initial);
+    assert.deepEqual(appendMissionMap(appended, 'kill', selected), appended);
+  });
+
+  it('replaces maps with one resolved manual primary map and clears an unresolved choice', () => {
+    const previous = [mapSetting('old', 'a', 0), mapSetting('old', 'b', 1)];
+    assert.deepEqual(replaceMissionMap(previous, 'clear', catalogMap('battle_map', 'new', 'New')), [
+      { missionKey: 'clear', categoryId: 'battle_map', mapCode: 'new', executionOrder: 0, manuallyOverridden: true, presetMode: 'PRIMARY', partyPresetId: null },
+    ]);
+    assert.deepEqual(replaceMissionMap(previous, 'clear', catalogMap('battle_map', null, 'None')), []);
+  });
+
+  it('restores cached settings only to live combat missions with the same semantic key', () => {
+    const current = snapshot('q1', 'Current', 'AVAILABLE', 12, [
+      mission('same', 'MONSTER_KILL', 'Maid'),
+      mission('new', 'MAP_CLEAR', 'Cave'),
+      mission('item', 'ITEM_TURN_IN', 'Horn'),
+    ]);
+    const cached = {
+      questCode: 'q1', name: 'Old', section: 'ACTIVE' as const, sourceOrder: 1, enabled: false, missing: true,
+      missions: [
+        { ...mission('same', 'MONSTER_KILL', 'Maid'), maps: [{ ...mapSetting('same', 'a', 9), executionOrder: 9 }] },
+        { ...mission('gone', 'MONSTER_KILL', 'Gone'), maps: [mapSetting('gone', 'gone', 0)] },
+        { ...mission('item', 'ITEM_TURN_IN', 'Horn'), maps: [mapSetting('item', 'wrong', 0)] },
+      ],
+    };
+    const restored = restoreQuestSelection(current, cached);
+
+    assert.deepEqual(restored, {
+      questCode: 'q1', name: 'Current', section: 'AVAILABLE', sourceOrder: 12, enabled: false, missing: false,
+      missions: [
+        { ...current.missions[0]!, maps: [{ ...mapSetting('same', 'a', 0), executionOrder: 0 }] },
+        { ...current.missions[1]!, maps: [] },
+        { ...current.missions[2]!, maps: [] },
+      ],
+    });
   });
 
   it('keeps a selected repeated quest and its config when the latest snapshot disappears', () => {
@@ -220,6 +310,6 @@ function questEntry(quests: TypedAutomationEntryResponse['quests']): TypedAutoma
   return { id: 1, type: 'QUEST', enabled: true, priority: 0, ready: true, warnings: [], quests, battleMaps: [], battleMapProgress: [], adventureMaps: [] };
 }
 
-function catalogMap(categoryId: string, mapCode: string, name: string): BattleMapResponse {
+function catalogMap(categoryId: string, mapCode: string | null, name: string): BattleMapResponse {
   return { categoryId, mapCode, name, groupName: null, groupOrder: 0, mapOrder: 0, recommendedLevel: null, availableCount: null, attemptCount: null, winCount: null, cooldownRemainingText: null, cooldownRemainingSeconds: null, keyCount: null, requiredTime: null, supportsThreeBattles: false, enabled: true, resolved: true, iconUrl: null, rawHref: '' };
 }
