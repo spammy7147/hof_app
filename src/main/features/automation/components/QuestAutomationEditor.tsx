@@ -407,8 +407,11 @@ export function QuestAutomationEditor({
     }
 
     const cached = deselectedCacheRef.current[snapshot.questId];
-    if (!cached && !selectionOrderRef.current.includes(snapshot.questId)) {
-      selectionOrderRef.current.push(snapshot.questId);
+    if (!cached) {
+      selectionOrderRef.current = [
+        ...selectionOrderRef.current.filter((questCode) => questCode !== snapshot.questId),
+        snapshot.questId,
+      ];
     }
     const next = cached
       ? reinsertCachedQuestSelection(current, snapshot, cached, catalogRef.current, selectionOrderRef.current)
@@ -659,10 +662,15 @@ export function QuestAutomationEditor({
                   disabled={editingDisabled}
                   presets={presets}
                   selection={selection}
-                  onRemove={() => updateDraft((current) => ({
-                    ...current,
-                    quests: current.quests.filter(({ questCode }) => questCode !== selection.questCode),
-                  }))}
+                  onRemove={() => {
+                    delete deselectedCacheRef.current[selection.questCode];
+                    selectionOrderRef.current = selectionOrderRef.current.filter((questCode) => questCode !== selection.questCode);
+                    clearUndoForQuest(selection.questCode);
+                    updateDraft((current) => ({
+                      ...current,
+                      quests: current.quests.filter(({ questCode }) => questCode !== selection.questCode),
+                    }));
+                  }}
                   onRetryCatalog={retryCatalog}
                   onUpdateMission={(missionKey, maps) => updateUserMissionMaps(selection.questCode, missionKey, maps)}
                 />

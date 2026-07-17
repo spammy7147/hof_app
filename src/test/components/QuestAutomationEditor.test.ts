@@ -1021,6 +1021,38 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'missing 저장된 선택' }).length, 0);
   });
 
+  it('forgets a removed missing quest rank before fresh reappearance and unrelated cache restore', async () => {
+    const saves: UpdateQuestAutomationRequest[] = [];
+    const missing = snapshot('m', 'M', 'ACTIVE', [mission('now-m', 'IMMEDIATE', null)]);
+    const alpha = snapshot('a', 'A', 'ACTIVE', [mission('now-a', 'IMMEDIATE', null)]);
+    const beta = snapshot('b', 'B', 'ACTIVE', [mission('now-b', 'IMMEDIATE', null)]);
+    const base = editorProps({
+      entry: questEntry([
+        { questCode: 'm', enabled: true, sourceOrder: 0, maps: [] },
+        { questCode: 'a', enabled: true, sourceOrder: 1, maps: [] },
+        { questCode: 'b', enabled: true, sourceOrder: 2, maps: [] },
+      ]),
+      fetchQuests: async () => [alpha, beta],
+      onSave: async (request) => { saves.push(request); return true; },
+    });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(QuestAutomationEditor, base)); });
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'm 저장된 선택 제거' }).props.onPress(); });
+    await act(async () => {
+      renderer.update(React.createElement(QuestAutomationEditor, {
+        ...base,
+        fetchQuests: async () => [alpha, beta, missing],
+      }));
+    });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'M 선택' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'A 선택' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'A 선택' }).props.onPress(); });
+    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
+
+    assert.deepEqual(saves[0]?.quests.map(({ questCode }) => questCode), ['a', 'b', 'm']);
+  });
+
   it('repairs a deleted preset on a missing saved selection', async () => {
     const broken = { ...mapSetting('stored-key', 'a', 0), presetMode: 'EXPLICIT' as const, partyPresetId: 99 };
     const entry = questEntry([{ questCode: 'missing', enabled: true, sourceOrder: 0, maps: [broken] }]);
