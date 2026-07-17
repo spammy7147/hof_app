@@ -41,6 +41,7 @@ import { CombatMissionEditor } from './CombatMissionEditor';
 import { QuestSummaryCard } from './QuestSummaryCard';
 
 type VisibleSection = Extract<QuestSection, 'ACTIVE' | 'AVAILABLE' | 'WAITING'>;
+type DeselectedQuestCacheEntry = { selection: QuestSelectionDraft; index: number };
 
 type Props = {
   entry: TypedAutomationEntryResponse;
@@ -112,9 +113,10 @@ export function QuestAutomationEditor({
   const mapResourceRef = useRef(mapResources);
   const eligibleCategoryIdsRef = useRef(new Set<string>());
   const requestedCategoriesRef = useRef(false);
-  const deselectedCacheRef = useRef<Record<string, QuestSelectionDraft>>({});
+  const deselectedCacheRef = useRef<Record<string, DeselectedQuestCacheEntry>>({});
   const undoQuestIdRef = useRef<string | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const undoGenerationRef = useRef(0);
   const snapshotsRef = useRef(snapshots);
   const catalogRef = useRef(catalog);
   const isMountedRef = useRef(true);
@@ -129,6 +131,7 @@ export function QuestAutomationEditor({
   }, []);
 
   const clearUndo = useCallback(() => {
+    undoGenerationRef.current += 1;
     cancelUndoTimer();
     undoQuestIdRef.current = null;
     if (isMountedRef.current) setUndoQuestId(null);
@@ -140,11 +143,13 @@ export function QuestAutomationEditor({
 
   const offerUndo = useCallback((questId: string) => {
     cancelUndoTimer();
+    const generation = ++undoGenerationRef.current;
     undoQuestIdRef.current = questId;
     if (isMountedRef.current) setUndoQuestId(questId);
     undoTimerRef.current = setTimeout(() => {
+      if (!isMountedRef.current || undoGenerationRef.current !== generation || undoQuestIdRef.current !== questId) return;
+      undoGenerationRef.current += 1;
       undoTimerRef.current = null;
-      if (!isMountedRef.current || undoQuestIdRef.current !== questId) return;
       undoQuestIdRef.current = null;
       setUndoQuestId(null);
     }, 4000);
@@ -232,6 +237,7 @@ export function QuestAutomationEditor({
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      undoGenerationRef.current += 1;
       cancelUndoTimer();
     };
   }, [cancelUndoTimer]);
@@ -385,9 +391,12 @@ export function QuestAutomationEditor({
   const toggleQuestSelection = useCallback((snapshot: QuestSnapshot) => {
     const current = draftRef.current;
     if (!current) return;
-    const existing = current.quests.find(({ questCode }) => questCode === snapshot.questId);
-    if (existing) {
-      deselectedCacheRef.current[snapshot.questId] = existing;
+    const existingIndex = current.quests.findIndex(({ questCode }) => questCode === snapshot.questId);
+    if (existingIndex >= 0) {
+      deselectedCacheRef.current[snapshot.questId] = {
+        selection: current.quests[existingIndex]!,
+        index: existingIndex,
+      };
       const next = selectQuest(current, snapshot, false, catalogRef.current);
       draftRef.current = next;
       setDraft(next);
@@ -397,13 +406,7 @@ export function QuestAutomationEditor({
 
     const cached = deselectedCacheRef.current[snapshot.questId];
     const next = cached
-      ? {
-        ...current,
-        quests: [
-          ...current.quests.filter(({ questCode }) => questCode !== snapshot.questId),
-          restoreQuestSelection(snapshot, cached, catalogRef.current),
-        ],
-      }
+      ? reinsertCachedQuestSelection(current, snapshot, cached, catalogRef.current)
       : selectQuest(current, snapshot, true, catalogRef.current);
     draftRef.current = next;
     setDraft(next);
@@ -420,13 +423,7 @@ export function QuestAutomationEditor({
       clearUndo();
       return;
     }
-    const next = {
-      ...current,
-      quests: [
-        ...current.quests.filter(({ questCode }) => questCode !== questId),
-        restoreQuestSelection(snapshot, cached, catalogRef.current),
-      ],
-    };
+    const next = reinsertCachedQuestSelection(current, snapshot, cached, catalogRef.current);
     draftRef.current = next;
     setDraft(next);
     clearUndo();
@@ -768,6 +765,18 @@ function MissingSelectionCard({ selection, catalog, presets, disabled, catalogLo
       ))}
     </View>
   );
+}
+
+function reinsertCachedQuestSelection(
+  draft: QuestAutomationDraft,
+  snapshot: QuestSnapshot,
+  cached: DeselectedQuestCacheEntry,
+  catalog: readonly BattleMapResponse[],
+): QuestAutomationDraft {
+  const quests = draft.quests.filter(({ questCode }) => questCode !== snapshot.questId);
+  const index = Math.max(0, Math.min(cached.index, quests.length));
+  quests.splice(index, 0, restoreQuestSelection(snapshot, cached.selection, catalog));
+  return { ...draft, quests };
 }
 
 function updateMissionMaps(draft: QuestAutomationDraft, questCode: string, missionKey: string, maps: QuestMapSettingRequest[]): QuestAutomationDraft {
