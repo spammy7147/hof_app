@@ -18,9 +18,11 @@ import {
   filterQuests,
   hydrateAutoMatchedMapClearMissions,
   isCombatMission,
+  restoreQuestSelection,
   selectQuest,
   validateQuestAutomationDraft,
   type QuestAutomationDraft,
+  type QuestSelectionDraft,
 } from '../../../domain/questAutomation';
 import { filterAutomationProfileCategories } from '../../../domain/automationProfiles';
 import { toUserFacingErrorMessage } from '../../../domain/userFacingErrors';
@@ -96,6 +98,7 @@ export function QuestAutomationEditor({
   const [mapResources, setMapResources] = useState<Record<string, { loading: boolean; error: string | null }>>({});
   const [refreshWarning, setRefreshWarning] = useState(false);
   const [localBusy, setLocalBusy] = useState(false);
+  const [undoQuestId, setUndoQuestId] = useState<string | null>(null);
   const baselineRef = useRef('');
   const baselineDraftRef = useRef<QuestAutomationDraft | null>(null);
   const draftRef = useRef<QuestAutomationDraft | null>(null);
@@ -109,6 +112,43 @@ export function QuestAutomationEditor({
   const mapResourceRef = useRef(mapResources);
   const eligibleCategoryIdsRef = useRef(new Set<string>());
   const requestedCategoriesRef = useRef(false);
+  const deselectedCacheRef = useRef<Record<string, QuestSelectionDraft>>({});
+  const undoQuestIdRef = useRef<string | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const snapshotsRef = useRef(snapshots);
+  const catalogRef = useRef(catalog);
+  const isMountedRef = useRef(true);
+
+  snapshotsRef.current = snapshots;
+  catalogRef.current = catalog;
+
+  const cancelUndoTimer = useCallback(() => {
+    if (undoTimerRef.current == null) return;
+    clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = null;
+  }, []);
+
+  const clearUndo = useCallback(() => {
+    cancelUndoTimer();
+    undoQuestIdRef.current = null;
+    if (isMountedRef.current) setUndoQuestId(null);
+  }, [cancelUndoTimer]);
+
+  const clearUndoForQuest = useCallback((questId: string) => {
+    if (undoQuestIdRef.current === questId) clearUndo();
+  }, [clearUndo]);
+
+  const offerUndo = useCallback((questId: string) => {
+    cancelUndoTimer();
+    undoQuestIdRef.current = questId;
+    if (isMountedRef.current) setUndoQuestId(questId);
+    undoTimerRef.current = setTimeout(() => {
+      undoTimerRef.current = null;
+      if (!isMountedRef.current || undoQuestIdRef.current !== questId) return;
+      undoQuestIdRef.current = null;
+      setUndoQuestId(null);
+    }, 4000);
+  }, [cancelUndoTimer]);
 
   const loadQuests = useCallback(async () => {
     const generation = ++questGenerationRef.current;
@@ -189,6 +229,14 @@ export function QuestAutomationEditor({
   }, [loadPresets, loadQuests]);
 
   useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      cancelUndoTimer();
+    };
+  }, [cancelUndoTimer]);
+
+  useEffect(() => {
     mapResourceRef.current = mapResources;
   }, [mapResources]);
 
@@ -255,6 +303,8 @@ export function QuestAutomationEditor({
     if (draftSourceRef.current !== source) {
       draftSourceRef.current = source;
       if (serializeDraft(current) === baselineRef.current) {
+        deselectedCacheRef.current = {};
+        clearUndo();
         removedAutoMissionsRef.current.clear();
         baselineDraftRef.current = nextDraft;
         baselineRef.current = serializeDraft(nextDraft);
@@ -289,7 +339,7 @@ export function QuestAutomationEditor({
       draftRef.current = hydrated;
       setDraft(hydrated);
     }
-  }, [areBattleCategoriesLoaded, battleCategories.length, battleCategoriesError, catalog, eligibleCategories, entry, isBattleCategoriesLoading, questLoaded, mapResources, snapshots]);
+  }, [areBattleCategoriesLoaded, battleCategories.length, battleCategoriesError, catalog, clearUndo, eligibleCategories, entry, isBattleCategoriesLoading, questLoaded, mapResources, snapshots]);
 
   const visibleQuests = useMemo(
     () => filterQuests(snapshots, section, query),
@@ -332,6 +382,56 @@ export function QuestAutomationEditor({
     setDraft(next);
   }, []);
 
+  const toggleQuestSelection = useCallback((snapshot: QuestSnapshot) => {
+    const current = draftRef.current;
+    if (!current) return;
+    const existing = current.quests.find(({ questCode }) => questCode === snapshot.questId);
+    if (existing) {
+      deselectedCacheRef.current[snapshot.questId] = existing;
+      const next = selectQuest(current, snapshot, false, catalogRef.current);
+      draftRef.current = next;
+      setDraft(next);
+      offerUndo(snapshot.questId);
+      return;
+    }
+
+    const cached = deselectedCacheRef.current[snapshot.questId];
+    const next = cached
+      ? {
+        ...current,
+        quests: [
+          ...current.quests.filter(({ questCode }) => questCode !== snapshot.questId),
+          restoreQuestSelection(snapshot, cached, catalogRef.current),
+        ],
+      }
+      : selectQuest(current, snapshot, true, catalogRef.current);
+    draftRef.current = next;
+    setDraft(next);
+    clearUndoForQuest(snapshot.questId);
+  }, [clearUndoForQuest, offerUndo]);
+
+  const undoDeselection = useCallback(() => {
+    const questId = undoQuestIdRef.current;
+    if (!questId) return;
+    const current = draftRef.current;
+    const snapshot = snapshotsRef.current.find(({ questId: candidate }) => candidate === questId);
+    const cached = deselectedCacheRef.current[questId];
+    if (!current || current.quests.some(({ questCode }) => questCode === questId) || !snapshot || !cached) {
+      clearUndo();
+      return;
+    }
+    const next = {
+      ...current,
+      quests: [
+        ...current.quests.filter(({ questCode }) => questCode !== questId),
+        restoreQuestSelection(snapshot, cached, catalogRef.current),
+      ],
+    };
+    draftRef.current = next;
+    setDraft(next);
+    clearUndo();
+  }, [clearUndo]);
+
   const updateUserMissionMaps = useCallback((questCode: string, missionKey: string, maps: QuestMapSettingRequest[]) => {
     const previous = draftRef.current?.quests
       .find((quest) => quest.questCode === questCode)?.missions
@@ -366,11 +466,11 @@ export function QuestAutomationEditor({
         sectionLabel={sectionLabel(item.section)}
         snapshot={item}
         onRetryCatalog={retryCatalog}
-        onToggle={() => updateDraft((current) => selectQuest(current, item, !selection, catalog))}
+        onToggle={() => toggleQuestSelection(item)}
         onUpdateMission={(missionKey, maps) => updateUserMissionMaps(item.questId, missionKey, maps)}
       />
     );
-  }, [catalog, catalogError, catalogLoading, draft, editingDisabled, presets, retryCatalog, updateDraft, updateUserMissionMaps]);
+  }, [catalog, catalogError, catalogLoading, draft, editingDisabled, presets, retryCatalog, toggleQuestSelection, updateUserMissionMaps]);
 
   const missingSelections = draft?.quests.filter(({ missing }) => missing) ?? [];
 
@@ -406,14 +506,17 @@ export function QuestAutomationEditor({
   }
 
   async function save() {
-    if (!draft || saveDisabled) return;
+    const savedDraft = draftRef.current;
+    if (!savedDraft || saveDisabled) return;
     onClearMutationMessage();
     setLocalBusy(true);
     try {
-      const request = buildQuestAutomationRequest(draft, presetIds);
+      const request = buildQuestAutomationRequest(savedDraft, presetIds);
       if (await onSave(request)) {
-        baselineDraftRef.current = draft;
-        baselineRef.current = serializeDraft(draft);
+        baselineDraftRef.current = savedDraft;
+        baselineRef.current = serializeDraft(savedDraft);
+        deselectedCacheRef.current = {};
+        clearUndo();
       }
     } finally {
       setLocalBusy(false);
@@ -504,6 +607,8 @@ export function QuestAutomationEditor({
             disabled={busy}
             onPress={() => {
               const nextDraft = buildQuestAutomationDraft(entry, snapshots, catalog);
+              deselectedCacheRef.current = {};
+              clearUndo();
               removedAutoMissionsRef.current.clear();
               draftSourceRef.current = serializeDraftSource(entry, snapshots);
               baselineDraftRef.current = nextDraft;
@@ -570,6 +675,22 @@ export function QuestAutomationEditor({
       )}
 
       {validationErrors.length > 0 ? <Text style={styles.problem}>{validationErrors[0]}</Text> : null}
+
+      {undoQuestId ? (
+        <View accessibilityLiveRegion="polite" style={styles.undoSnackbar}>
+          <Text style={styles.undoText}>선택 해제됨</Text>
+          <Pressable
+            accessibilityLabel="선택 해제 되돌리기"
+            accessibilityRole="button"
+            accessibilityState={{ disabled: busy }}
+            disabled={busy}
+            onPress={undoDeselection}
+            style={[styles.undoButton, busy && styles.disabled]}
+          >
+            <Text style={styles.undoButtonText}>선택 해제 되돌리기</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       <View style={styles.footer}>
         <Pressable accessibilityLabel="퀘스트 자동화 삭제" accessibilityRole="button" accessibilityState={{ disabled: busy }} disabled={busy} onPress={confirmDelete} style={[styles.deleteButton, busy && styles.disabled]}>
@@ -694,6 +815,10 @@ const styles = StyleSheet.create({
   questName: { color: theme.colors.text, fontSize: 14, fontWeight: '900' },
   missionBlock: { borderTopColor: theme.colors.border, borderTopWidth: 1, gap: theme.spacing.sm, paddingTop: theme.spacing.sm },
   missionBadge: { color: theme.colors.text, flex: 1, fontSize: 12, fontWeight: '700' },
+  undoSnackbar: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between', minHeight: 52, paddingHorizontal: theme.spacing.md },
+  undoText: { color: theme.colors.text, fontSize: 12, fontWeight: '800' },
+  undoButton: { alignItems: 'center', justifyContent: 'center', minHeight: 44, paddingHorizontal: theme.spacing.sm },
+  undoButtonText: { color: theme.colors.accentGreen, fontSize: 12, fontWeight: '900' },
   footer: { flexDirection: 'row', gap: theme.spacing.sm },
   deleteButton: { alignItems: 'center', borderColor: theme.colors.danger, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, minHeight: 48, justifyContent: 'center', paddingHorizontal: theme.spacing.lg },
   deleteText: { color: theme.colors.danger, fontWeight: '800' },
