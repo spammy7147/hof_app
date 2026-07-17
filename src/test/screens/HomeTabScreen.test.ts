@@ -122,7 +122,9 @@ describe('통합 자동화 홈 화면', () => {
     assert.match(homeSource, /savingEntryIds\.includes\(entry\.id\)/);
     assert.doesNotMatch(homeSource, /isModuleBusy/);
     assert.match(settingsSource, /savingEntryIds\.includes\(params\.item\.id\)/);
-    assert.match(settingsSource, /accessibilityState=\{\{ disabled: saving \}\}/);
+    assert.match(settingsSource, /enabled=\{!saving && !isActive\}/);
+    assert.match(settingsSource, /accessibilityState=\{\{ disabled: saving \|\| isActive \}\}/);
+    assert.match(settingsSource, /accessibilityState=\{\{ busy: saving, disabled: saving \}\}/);
     assert.match(settingsSource, /disabled=\{saving\}/);
   });
 

@@ -319,11 +319,14 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
       onDetail: (candidate) => { detailed = candidate; },
     });
     const renderer = await renderElement(React.createElement(UnifiedAutomationSettings, props));
+    const swipeable = findHost(renderer.root, 'ReanimatedSwipeable');
+    const swipeableMethods = swipeable.props.mockMethods as SwipeableMockMethods;
 
     await act(async () => {
       renderer.root.findByProps({ accessibilityLabel: '퀘스트 상세 설정' }).props.onPress();
     });
     assert.equal(detailed, quest);
+    assert.equal(swipeableMethods.closeCalls, 1);
     assert.equal(
       renderer.root.findAllByProps({ accessibilityLabel: '퀘스트 더 보기' }).length,
       0,
@@ -377,6 +380,17 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
     swipeables[1]?.props.onSwipeableWillOpen();
 
     assert.equal(firstMethods.closeCalls, 1);
+  });
+
+  it('closes an open swipe row when the settings list unmounts', async () => {
+    const renderer = await renderSettings({ entries: [entry(1, 'QUEST')] });
+    const swipeable = findHost(renderer.root, 'ReanimatedSwipeable');
+    const methods = swipeable.props.mockMethods as SwipeableMockMethods;
+    swipeable.props.onSwipeableWillOpen();
+
+    await act(async () => { renderer.unmount(); });
+
+    assert.equal(methods.closeCalls, 1);
   });
 
   it('renders summary independently from warnings', async () => {

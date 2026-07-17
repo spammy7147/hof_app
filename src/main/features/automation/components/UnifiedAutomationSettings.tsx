@@ -3,14 +3,16 @@ import {
   AccessibilityInfo,
   Alert,
   findNodeHandle,
-  Modal,
   Pressable,
   StyleSheet,
   Switch,
   Text,
   View,
 } from 'react-native';
-import { GripVertical, Map, MoreHorizontal, Plus, ScrollText, Swords } from 'lucide-react-native';
+import { GripVertical, Map, Plus, ScrollText, Swords, Trash2 } from 'lucide-react-native';
+import ReanimatedSwipeable, {
+  type SwipeableMethods,
+} from 'react-native-gesture-handler/ReanimatedSwipeable';
 import {
   NestableDraggableFlatList,
   type RenderItemParams,
@@ -50,50 +52,34 @@ export function UnifiedAutomationSettings({
   onToggle,
 }: Props) {
   const [addSheetOpen, setAddSheetOpen] = useState(false);
-  const [menuEntry, setMenuEntry] = useState<TypedAutomationEntryResponse | null>(null);
   const mountedRef = useRef(false);
   const addTriggerRef = useRef<ElementRef<typeof Pressable>>(null);
-  const menuActionRef = useRef<ElementRef<typeof Pressable>>(null);
-  const menuTriggerNodeRef = useRef<ReturnType<typeof findNodeHandle>>(null);
+  const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const addGenerationRef = useRef(0);
-  const menuGenerationRef = useRef(0);
-  const menuFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restoreFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const allTypesAdded = hasAllAutomationTypes(entries);
+  const entryIds = entries.map(({ id }) => id).join(',');
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      menuGenerationRef.current += 1;
-      if (menuFocusTimerRef.current) clearTimeout(menuFocusTimerRef.current);
       if (restoreFocusTimerRef.current) clearTimeout(restoreFocusTimerRef.current);
+      openSwipeableRef.current?.close();
+      openSwipeableRef.current = null;
     };
   }, []);
 
-  useEffect(() => {
-    if (!menuEntry) return undefined;
-    if (menuFocusTimerRef.current) clearTimeout(menuFocusTimerRef.current);
-    menuFocusTimerRef.current = setTimeout(() => focusNode(menuActionRef.current), 250);
-    return () => {
-      if (menuFocusTimerRef.current) clearTimeout(menuFocusTimerRef.current);
-    };
-  }, [menuEntry]);
-
-  const openMenu = useCallback((entry: TypedAutomationEntryResponse, triggerNode: ReturnType<typeof findNodeHandle>) => {
-    menuGenerationRef.current += 1;
-    menuTriggerNodeRef.current = triggerNode;
-    setMenuEntry(entry);
+  const closeOpenSwipeable = useCallback(() => {
+    openSwipeableRef.current?.close();
+    openSwipeableRef.current = null;
   }, []);
 
-  const closeMenu = useCallback(() => {
-    menuGenerationRef.current += 1;
-    setMenuEntry(null);
-    const triggerNode = menuTriggerNodeRef.current;
-    if (restoreFocusTimerRef.current) clearTimeout(restoreFocusTimerRef.current);
-    restoreFocusTimerRef.current = setTimeout(() => {
-      if (mountedRef.current && triggerNode != null) AccessibilityInfo.setAccessibilityFocus(triggerNode);
-    }, 250);
+  const registerOpenSwipeable = useCallback((swipeable: SwipeableMethods | null) => {
+    if (openSwipeableRef.current && openSwipeableRef.current !== swipeable) {
+      openSwipeableRef.current.close();
+    }
+    openSwipeableRef.current = swipeable;
   }, []);
 
   const restoreAddTriggerFocus = useCallback(() => {
@@ -103,12 +89,6 @@ export function UnifiedAutomationSettings({
     }, 250);
   }, []);
 
-  const closeMenuToAddTrigger = useCallback(() => {
-    menuGenerationRef.current += 1;
-    setMenuEntry(null);
-    restoreAddTriggerFocus();
-  }, [restoreAddTriggerFocus]);
-
   const closeAddSheet = useCallback(() => {
     addGenerationRef.current += 1;
     setAddSheetOpen(false);
@@ -116,10 +96,8 @@ export function UnifiedAutomationSettings({
   }, [restoreAddTriggerFocus]);
 
   useEffect(() => {
-    if (menuEntry && !entries.some(({ id }) => id === menuEntry.id)) {
-      closeMenuToAddTrigger();
-    }
-  }, [closeMenuToAddTrigger, entries, menuEntry]);
+    closeOpenSwipeable();
+  }, [closeOpenSwipeable, entryIds]);
 
   const addEntry = useCallback(async (type: AutomationType) => {
     const addGeneration = addGenerationRef.current;
@@ -127,21 +105,9 @@ export function UnifiedAutomationSettings({
     return addGenerationRef.current === addGeneration && added;
   }, [onAdd]);
 
-  const renderItem = useCallback((params: RenderItemParams<TypedAutomationEntryResponse>) => (
-    <AutomationEntryRow
-      {...params}
-      entries={entries}
-      reorderBusy={reordering}
-      saving={savingEntryIds.includes(params.item.id)}
-      onMore={openMenu}
-      onReorder={onReorder}
-      onToggle={onToggle}
-    />
-  ), [entries, onReorder, onToggle, openMenu, reordering, savingEntryIds]);
-  const menuBusy = menuEntry != null && savingEntryIds.includes(menuEntry.id);
-
-  function confirmDelete(entry: TypedAutomationEntryResponse) {
+  const confirmDelete = useCallback((entry: TypedAutomationEntryResponse) => {
     const metadata = AUTOMATION_TYPE_METADATA[entry.type];
+    closeOpenSwipeable();
     Alert.alert(
       `${metadata.label} 자동화를 삭제할까요?`,
       '저장한 세부 설정도 함께 삭제됩니다.',
@@ -151,17 +117,40 @@ export function UnifiedAutomationSettings({
           text: '삭제',
           style: 'destructive',
           onPress: () => {
-            const menuGeneration = menuGenerationRef.current;
             void onDelete(entry.id).then((deleted) => {
-              if (deleted && mountedRef.current && menuGenerationRef.current === menuGeneration) {
-                closeMenuToAddTrigger();
+              if (deleted && mountedRef.current) {
+                closeOpenSwipeable();
+                restoreAddTriggerFocus();
               }
             });
           },
         },
       ],
     );
-  }
+  }, [closeOpenSwipeable, onDelete, restoreAddTriggerFocus]);
+
+  const renderItem = useCallback((params: RenderItemParams<TypedAutomationEntryResponse>) => (
+    <AutomationEntryRow
+      {...params}
+      entries={entries}
+      reorderBusy={reordering}
+      saving={savingEntryIds.includes(params.item.id)}
+      onDeleteRequest={confirmDelete}
+      onDetail={onDetail}
+      onReorder={onReorder}
+      onSwipeableOpen={registerOpenSwipeable}
+      onToggle={onToggle}
+    />
+  ), [
+    confirmDelete,
+    entries,
+    onDetail,
+    onReorder,
+    onToggle,
+    registerOpenSwipeable,
+    reordering,
+    savingEntryIds,
+  ]);
 
   return (
     <View style={styles.stack}>
@@ -199,6 +188,7 @@ export function UnifiedAutomationSettings({
         disabled={allTypesAdded}
         nativeID="automation-add-trigger"
         onPress={() => {
+          closeOpenSwipeable();
           addGenerationRef.current += 1;
           setAddSheetOpen(true);
         }}
@@ -228,54 +218,6 @@ export function UnifiedAutomationSettings({
         pendingTypes={savingTypes}
         visible={addSheetOpen}
       />
-
-      <Modal
-        animationType="fade"
-        onRequestClose={closeMenu}
-        transparent
-        visible={menuEntry != null}
-      >
-        <View style={styles.menuRoot}>
-          <Pressable
-            accessibilityLabel="자동화 메뉴 닫기"
-            accessibilityRole="button"
-            onPress={closeMenu}
-            style={styles.menuBackdrop}
-          />
-          {menuEntry ? (
-            <View accessibilityViewIsModal style={styles.menu}>
-              <Text style={styles.menuTitle}>{AUTOMATION_TYPE_METADATA[menuEntry.type].label}</Text>
-              <Pressable
-                ref={menuActionRef}
-                accessibilityHint="선택한 자동화의 세부 설정 화면을 엽니다"
-                accessibilityLabel={`${AUTOMATION_TYPE_METADATA[menuEntry.type].label} 상세 설정`}
-                accessibilityRole="button"
-                accessibilityState={{ disabled: menuBusy }}
-                disabled={menuBusy}
-                nativeID="automation-menu-first-action"
-                onPress={() => {
-                  closeMenu();
-                  onDetail(menuEntry);
-                }}
-                style={({ pressed }) => [styles.menuAction, pressed && styles.pressed]}
-              >
-                <Text style={styles.menuActionText}>상세 설정</Text>
-              </Pressable>
-              <Pressable
-                accessibilityHint="확인 후 선택한 자동화를 삭제합니다"
-                accessibilityLabel={`${AUTOMATION_TYPE_METADATA[menuEntry.type].label} 삭제`}
-                accessibilityRole="button"
-                accessibilityState={{ busy: menuBusy, disabled: menuBusy }}
-                disabled={menuBusy}
-                onPress={() => confirmDelete(menuEntry)}
-                style={({ pressed }) => [styles.menuAction, pressed && styles.pressed]}
-              >
-                <Text style={styles.deleteText}>삭제</Text>
-              </Pressable>
-            </View>
-          ) : null}
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -284,8 +226,10 @@ type AutomationEntryRowProps = RenderItemParams<TypedAutomationEntryResponse> & 
   entries: readonly TypedAutomationEntryResponse[];
   reorderBusy: boolean;
   saving: boolean;
-  onMore: (entry: TypedAutomationEntryResponse, triggerNode: ReturnType<typeof findNodeHandle>) => void;
+  onDeleteRequest: (entry: TypedAutomationEntryResponse) => void;
+  onDetail: (entry: TypedAutomationEntryResponse) => void;
   onReorder: (entries: TypedAutomationEntryResponse[]) => void;
+  onSwipeableOpen: (swipeable: SwipeableMethods | null) => void;
   onToggle: (entry: TypedAutomationEntryResponse) => void;
 };
 
@@ -297,11 +241,13 @@ function AutomationEntryRow({
   entries,
   reorderBusy,
   saving,
-  onMore,
+  onDeleteRequest,
+  onDetail,
   onReorder,
+  onSwipeableOpen,
   onToggle,
 }: AutomationEntryRowProps) {
-  const moreButtonRef = useRef<ElementRef<typeof Pressable>>(null);
+  const swipeableRef = useRef<SwipeableMethods>(null);
   const metadata = AUTOMATION_TYPE_METADATA[item.type];
   const summary = getEntrySummary(item);
   const warning = item.warnings[0];
@@ -322,68 +268,100 @@ function AutomationEntryRow({
   }
 
   return (
-    <View style={[styles.row, isActive && styles.rowActive]}>
-      <Pressable
-        accessibilityActions={[
-          ...(canMoveUp ? [{ name: 'decrement' as const, label: '위로 이동' }] : []),
-          ...(canMoveDown ? [{ name: 'increment' as const, label: '아래로 이동' }] : []),
-        ]}
-        accessibilityHint="길게 누르거나 접근성 동작으로 위아래로 이동하세요"
-        accessibilityLabel={`${metadata.label} 우선순위 이동`}
-        accessibilityRole="adjustable"
-        accessibilityState={{ disabled: reorderDisabled }}
-        delayLongPress={120}
-        disabled={reorderDisabled}
-        onAccessibilityAction={({ nativeEvent: { actionName } }) => {
-          if (actionName === 'decrement') moveEntry(-1);
-          if (actionName === 'increment') moveEntry(1);
-        }}
-        onLongPress={drag}
-        style={({ pressed }) => [styles.dragHandle, pressed && styles.pressed]}
-      >
-        <GripVertical color={theme.colors.textMuted} size={20} />
-      </Pressable>
-      <View style={styles.typeIcon}><AutomationTypeIcon type={item.type} /></View>
-      <View style={styles.rowCopy}>
-        <View style={styles.rowTitleLine}>
-          <Text numberOfLines={1} style={styles.rowTitle}>{metadata.label}</Text>
-          <Text style={[styles.statusChip, !item.ready && styles.warningChip]}>
-            {item.ready ? '준비됨' : '확인 필요'}
-          </Text>
-          {warning ? <Text style={[styles.statusChip, styles.warningChip]}>경고</Text> : null}
-        </View>
-        <Text numberOfLines={1} style={styles.rowMeta}>{summary}</Text>
-        {warning ? (
-          <Text
-            accessibilityLabel={`경고: ${warning}`}
-            numberOfLines={1}
-            style={styles.warningText}
-          >
-            {warning}
-          </Text>
-        ) : null}
+    <ReanimatedSwipeable
+      ref={swipeableRef}
+      containerStyle={styles.swipeContainer}
+      enabled={!saving && !isActive}
+      friction={2}
+      onSwipeableWillOpen={() => onSwipeableOpen(swipeableRef.current)}
+      overshootRight={false}
+      renderRightActions={(_progress, _translation, _swipeable) => (
+        <Pressable
+          accessibilityHint="확인 후 선택한 자동화를 삭제합니다"
+          accessibilityLabel={`${metadata.label} 삭제`}
+          accessibilityRole="button"
+          accessibilityState={{ busy: saving, disabled: saving }}
+          disabled={saving}
+          onPress={() => onDeleteRequest(item)}
+          style={({ pressed }) => [styles.deleteAction, pressed && !saving && styles.pressed]}
+        >
+          <Trash2 color={theme.colors.buttonText} size={19} />
+          <Text style={styles.deleteActionText}>삭제</Text>
+        </Pressable>
+      )}
+      rightThreshold={42}
+    >
+      <View style={[styles.row, isActive && styles.rowActive]}>
+        <Pressable
+          accessibilityActions={[
+            ...(canMoveUp ? [{ name: 'decrement' as const, label: '위로 이동' }] : []),
+            ...(canMoveDown ? [{ name: 'increment' as const, label: '아래로 이동' }] : []),
+          ]}
+          accessibilityHint="길게 누르거나 접근성 동작으로 위아래로 이동하세요"
+          accessibilityLabel={`${metadata.label} 우선순위 이동`}
+          accessibilityRole="adjustable"
+          accessibilityState={{ disabled: reorderDisabled }}
+          delayLongPress={120}
+          disabled={reorderDisabled}
+          onAccessibilityAction={({ nativeEvent: { actionName } }) => {
+            if (actionName === 'decrement') moveEntry(-1);
+            if (actionName === 'increment') moveEntry(1);
+          }}
+          onLongPress={drag}
+          style={({ pressed }) => [styles.dragHandle, pressed && styles.pressed]}
+        >
+          <GripVertical color={theme.colors.textMuted} size={20} />
+        </Pressable>
+        <Pressable
+          accessibilityActions={[{ name: 'delete', label: '삭제' }]}
+          accessibilityHint="선택한 자동화의 세부 설정 화면을 엽니다"
+          accessibilityLabel={`${metadata.label} 상세 설정`}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: saving || isActive }}
+          disabled={saving || isActive}
+          onAccessibilityAction={({ nativeEvent: { actionName } }) => {
+            if (actionName === 'delete' && !saving && !isActive) onDeleteRequest(item);
+          }}
+          onPress={() => {
+            swipeableRef.current?.close();
+            onDetail(item);
+          }}
+          style={({ pressed }) => [
+            styles.detailButton,
+            pressed && !saving && !isActive && styles.pressed,
+          ]}
+        >
+          <View style={styles.typeIcon}><AutomationTypeIcon type={item.type} /></View>
+          <View style={styles.rowCopy}>
+            <View style={styles.rowTitleLine}>
+              <Text numberOfLines={1} style={styles.rowTitle}>{metadata.label}</Text>
+              <Text style={[styles.statusChip, !item.ready && styles.warningChip]}>
+                {item.ready ? '준비됨' : '확인 필요'}
+              </Text>
+              {warning ? <Text style={[styles.statusChip, styles.warningChip]}>경고</Text> : null}
+            </View>
+            <Text numberOfLines={1} style={styles.rowMeta}>{summary}</Text>
+            {warning ? (
+              <Text
+                accessibilityLabel={`경고: ${warning}`}
+                numberOfLines={1}
+                style={styles.warningText}
+              >
+                {warning}
+              </Text>
+            ) : null}
+          </View>
+        </Pressable>
+        <Switch
+          accessibilityLabel={`${metadata.label} ${item.enabled ? '끄기' : '켜기'}`}
+          disabled={saving}
+          onValueChange={() => onToggle(item)}
+          thumbColor={item.enabled ? theme.colors.buttonText : theme.colors.textMuted}
+          trackColor={{ false: theme.colors.border, true: theme.colors.accentGreen }}
+          value={item.enabled}
+        />
       </View>
-      <Switch
-        accessibilityLabel={`${metadata.label} ${item.enabled ? '끄기' : '켜기'}`}
-        disabled={saving}
-        onValueChange={() => onToggle(item)}
-        thumbColor={item.enabled ? theme.colors.buttonText : theme.colors.textMuted}
-        trackColor={{ false: theme.colors.border, true: theme.colors.accentGreen }}
-        value={item.enabled}
-      />
-      <Pressable
-        ref={moreButtonRef}
-        accessibilityLabel={`${metadata.label} 더 보기`}
-        accessibilityRole="button"
-        accessibilityState={{ disabled: saving }}
-        disabled={saving}
-        nativeID={`automation-more-${item.id}`}
-        onPress={() => onMore(item, findNodeHandle(moreButtonRef.current))}
-        style={({ pressed }) => [styles.moreButton, pressed && styles.pressed]}
-      >
-        <MoreHorizontal color={theme.colors.textMuted} size={21} />
-      </Pressable>
-    </View>
+    </ReanimatedSwipeable>
   );
 }
 
@@ -413,9 +391,11 @@ const styles = StyleSheet.create({
   emptyState: { alignItems: 'center', borderColor: theme.colors.border, borderRadius: theme.radius.md, borderStyle: 'dashed', borderWidth: 1, flexDirection: 'row', gap: theme.spacing.md, minHeight: 84, padding: theme.spacing.md },
   emptyCopy: { flex: 1 },
   emptyTitle: { color: theme.colors.text, fontSize: 14, fontWeight: '800' },
-  row: { alignItems: 'center', backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md + 4, borderWidth: 1, flexDirection: 'row', gap: 5, marginBottom: theme.spacing.sm, minHeight: 70, paddingHorizontal: 5 },
+  swipeContainer: { borderRadius: theme.radius.md + 4, marginBottom: theme.spacing.sm, overflow: 'hidden' },
+  row: { alignItems: 'center', backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md + 4, borderWidth: 1, flexDirection: 'row', gap: 5, minHeight: 70, paddingHorizontal: 5 },
   rowActive: { borderColor: theme.colors.accentGreen, opacity: 0.96 },
   dragHandle: { alignItems: 'center', height: 44, justifyContent: 'center', width: 32 },
+  detailButton: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: 5, minWidth: 0 },
   typeIcon: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md, height: 36, justifyContent: 'center', width: 36 },
   rowCopy: { flex: 1, minWidth: 0, paddingVertical: theme.spacing.sm },
   rowTitleLine: { alignItems: 'center', flexDirection: 'row', gap: 6 },
@@ -424,18 +404,12 @@ const styles = StyleSheet.create({
   warningText: { color: theme.colors.accentAmber, fontSize: 10, marginTop: 3 },
   statusChip: { backgroundColor: theme.colors.surfaceAlt, borderRadius: 10, color: theme.colors.accentGreen, fontSize: 9, fontWeight: '800', overflow: 'hidden', paddingHorizontal: 6, paddingVertical: 3 },
   warningChip: { color: theme.colors.accentAmber },
-  moreButton: { alignItems: 'center', height: 42, justifyContent: 'center', width: 32 },
+  deleteAction: { alignItems: 'center', backgroundColor: theme.colors.danger, gap: 3, justifyContent: 'center', width: 82 },
+  deleteActionText: { color: theme.colors.buttonText, fontSize: 12, fontWeight: '900' },
   addButton: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md + 6, borderStyle: 'dashed', borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'center', minHeight: 54, paddingHorizontal: theme.spacing.md },
   addButtonText: { color: theme.colors.accentGreen, fontSize: 14, fontWeight: '900' },
   addButtonTextDisabled: { color: theme.colors.textMuted },
   savingText: { color: theme.colors.textMuted, fontSize: 11, textAlign: 'right' },
-  menuRoot: { flex: 1, justifyContent: 'center', padding: theme.spacing.xl },
-  menuBackdrop: { backgroundColor: theme.colors.overlay, bottom: 0, left: 0, position: 'absolute', right: 0, top: 0 },
-  menu: { alignSelf: 'center', backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.border, borderRadius: theme.radius.md + 4, borderWidth: 1, maxWidth: 280, padding: theme.spacing.sm, width: '100%' },
-  menuTitle: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '800', paddingHorizontal: theme.spacing.sm, paddingVertical: theme.spacing.sm },
-  menuAction: { borderRadius: theme.radius.sm, minHeight: 44, justifyContent: 'center', paddingHorizontal: theme.spacing.md },
-  menuActionText: { color: theme.colors.text, fontSize: 14, fontWeight: '800' },
-  deleteText: { color: theme.colors.danger, fontSize: 14, fontWeight: '800' },
   pressed: { opacity: 0.72 },
   disabled: { opacity: 0.48 },
 });
