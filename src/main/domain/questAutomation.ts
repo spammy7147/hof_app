@@ -86,7 +86,7 @@ export function buildQuestRewardSummary(rewards: readonly string[]): string {
 }
 
 export function buildQuestMapIdentity(map: Pick<BattleMapResponse, 'categoryId' | 'mapCode'>): string {
-  return map.categoryId && map.mapCode ? `${map.categoryId}\u0000${map.mapCode}` : '';
+  return `${map.categoryId}\u0000${map.mapCode ?? ''}`;
 }
 
 export function filterQuestMapOptions(
@@ -128,14 +128,17 @@ export function restoreQuestSelection(
   cached: QuestSelectionDraft,
   catalog: readonly QuestMapCatalogItem[] = [],
 ): QuestSelectionDraft {
-  const restored = buildSelection(snapshot, {
-    questCode: cached.questCode,
+  const cachedMapsByMission = new Map(cached.missions.map((mission) => [mission.key, mission.maps]));
+  const fresh = buildSelection(snapshot, null, catalog);
+  return {
+    ...fresh,
     enabled: cached.enabled,
-    sourceOrder: cached.sourceOrder,
-    maps: cached.missions.flatMap((mission) => isCombatMission(mission) ? mission.maps : []),
-  }, catalog);
-  const liveMissionKeys = new Set(snapshot.missions.map(({ key }) => key));
-  return { ...restored, missions: restored.missions.filter(({ key }) => liveMissionKeys.has(key)) };
+    missions: fresh.missions.map((mission) => (
+      !isCombatMission(mission) || !cachedMapsByMission.has(mission.key)
+        ? mission
+        : { ...mission, maps: normalizeMapOrder(cachedMapsByMission.get(mission.key)!) }
+    )),
+  };
 }
 
 export function buildQuestAutomationDraft(

@@ -66,9 +66,9 @@ describe('quest automation domain', () => {
     assert.equal(buildQuestRewardSummary([' Red Potion ×2 ', 'Silver Key']), '보상 · Red Potion ×2 외 1개');
   });
 
-  it('builds map identities only from complete category and map codes', () => {
+  it('builds map identities from a category and its map code, including a missing code', () => {
     assert.equal(buildQuestMapIdentity(catalogMap('battle_map', 'maid', 'Maid')), 'battle_map\u0000maid');
-    assert.equal(buildQuestMapIdentity(catalogMap('battle_map', null, 'Unresolved')), '');
+    assert.equal(buildQuestMapIdentity(catalogMap('battle_map', null, 'Unresolved')), 'battle_map\u0000');
   });
 
   it('filters resolved battle and adventure maps by category and normalized text in input order', () => {
@@ -132,6 +132,21 @@ describe('quest automation domain', () => {
         { ...current.missions[2]!, maps: [] },
       ],
     });
+  });
+
+  it('restores cached automatic map-clear settings without re-matching them against the current catalog', () => {
+    const current = snapshot('q1', 'Current', 'AVAILABLE', 12, [mission('clear', 'MAP_CLEAR', 'Target')]);
+    const automatic = { ...mapSetting('clear', 'cached-map', 4), executionOrder: 4, manuallyOverridden: false };
+    const cached = {
+      questCode: 'q1', name: 'Old', section: 'ACTIVE' as const, sourceOrder: 1, enabled: true, missing: false,
+      missions: [{ ...mission('clear', 'MAP_CLEAR', 'Target'), maps: [automatic] }],
+    };
+
+    assert.deepEqual(restoreQuestSelection(current, cached, [
+      catalogMap('battle_map', 'a', 'Target'),
+      catalogMap('adventure_map', 'b', 'Target'),
+    ]).missions[0]?.maps, [{ ...automatic, executionOrder: 0 }]);
+    assert.deepEqual(restoreQuestSelection(current, cached).missions[0]?.maps, [{ ...automatic, executionOrder: 0 }]);
   });
 
   it('keeps a selected repeated quest and its config when the latest snapshot disappears', () => {
