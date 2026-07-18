@@ -80,6 +80,9 @@ export function BattleMapPickerSheet({
     const alreadySelected = selected.has(identity);
     const disabled = alreadySelected || loading;
     const categoryLabel = item.categoryId === 'battle_map' ? '전투맵' : '모험맵';
+    const displayedAction = alreadySelected
+      ? (mode === 'REPLACE' ? '선택됨' : '추가됨')
+      : actionLabel;
 
     return (
       <View style={styles.mapRow}>
@@ -89,9 +92,9 @@ export function BattleMapPickerSheet({
           <Text style={styles.category}>{categoryLabel}</Text>
         </View>
         <Pressable
-          accessibilityLabel={`${item.name} ${actionLabel}`}
+          accessibilityLabel={`${item.name} ${displayedAction}`}
           accessibilityRole="button"
-          accessibilityState={{ disabled }}
+          accessibilityState={{ disabled, selected: alreadySelected }}
           disabled={disabled}
           onPress={() => {
             if (alreadySelected || loading) return;
@@ -104,7 +107,7 @@ export function BattleMapPickerSheet({
           ]}
         >
           <Text style={[styles.addButtonText, disabled && styles.addButtonTextDisabled]}>
-            {alreadySelected ? (mode === 'REPLACE' ? '선택됨' : '추가됨') : actionLabel}
+            {displayedAction}
           </Text>
         </Pressable>
       </View>

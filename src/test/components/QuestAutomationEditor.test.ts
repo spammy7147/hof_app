@@ -1127,8 +1127,9 @@ describe('QuestAutomationEditor mounted behavior', () => {
     const entry = questEntry([{ questCode: 'one', enabled: true, sourceOrder: 0, maps: [mapSetting('shared', 'a', 0)] }]);
     const renderer = await renderEditor({ entry, quests: [quest], maps: [catalogMap('battle_map', 'a', 'Alpha')] });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'One · shared 전투맵 추가' }).props.onPress(); });
-    const selected = renderer.root.findByProps({ accessibilityLabel: 'Alpha 추가' });
+    const selected = renderer.root.findByProps({ accessibilityLabel: 'Alpha 추가됨' });
     assert.equal(selected.props.disabled, true);
+    assert.equal(selected.props.accessibilityState.selected, true);
     assert.equal(hasText(selected, '추가됨'), true);
     await act(async () => { selected.props.onPress(); });
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'One · shared 1번째 맵 제거' }));

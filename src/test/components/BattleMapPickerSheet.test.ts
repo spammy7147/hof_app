@@ -114,6 +114,18 @@ describe('BattleMapPickerSheet', () => {
     assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: 'Maid Hall 변경' }), '변경'), true);
   });
 
+  it('announces an already selected replacement row with its visible selected state', async () => {
+    const renderer = await renderSheet({
+      mode: 'REPLACE',
+      maps: [map('battle_map', 'maid-hall', 'Maid Hall')],
+      selectedMapIdentities: ['battle_map\u0000maid-hall'],
+    });
+    const button = renderer.root.findByProps({ accessibilityLabel: 'Maid Hall 선택됨' });
+
+    assert.deepEqual(button.props.accessibilityState, { disabled: true, selected: true });
+    assert.equal(hasText(button, '선택됨'), true);
+  });
+
   it('moves focus to the title when the modal opens', async () => {
     focusCalls.length = 0;
     const renderer = await renderSheet();
@@ -149,11 +161,11 @@ describe('BattleMapPickerSheet', () => {
       selectedMapIdentities: ['battle_map\u0000maid-hall'],
       onSelect: () => { selections += 1; },
     });
-    const button = renderer.root.findByProps({ accessibilityLabel: 'Maid Hall 추가' });
+    const button = renderer.root.findByProps({ accessibilityLabel: 'Maid Hall 추가됨' });
 
     assert.equal(button.props.disabled, true);
     assert.equal(button.props.accessibilityRole, 'button');
-    assert.equal(button.props.accessibilityState.disabled, true);
+    assert.deepEqual(button.props.accessibilityState, { disabled: true, selected: true });
     assert.equal(hasText(button, '추가됨'), true);
     button.props.onPress();
     assert.equal(selections, 0);
