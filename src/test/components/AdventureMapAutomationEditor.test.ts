@@ -162,8 +162,8 @@ describe('AdventureMapAutomationEditor', () => {
     const saves: UpdateAdventureMapAutomationRequest[] = [];
     const renderer = await renderEditor({
       maps: [
-        map('early', '선순위 맵', { groupName: '앞 그룹', groupOrder: 0, recommendedLevel: 'Lv 10' }),
-        map('late', '후순위 맵', { groupName: '뒤 그룹', groupOrder: 1, recommendedLevel: 'Lv 20' }),
+        map('early', '선순위 맵', { groupName: '앞 그룹', groupOrder: 0, recommendedLevel: '10-20' }),
+        map('late', '후순위 맵', { groupName: '뒤 그룹', groupOrder: 1, recommendedLevel: '40-60' }),
       ],
       onSave: async (request) => { saves.push(request); return true; },
     });
@@ -172,8 +172,8 @@ describe('AdventureMapAutomationEditor', () => {
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '뒤 그룹 그룹 열기' }));
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '선순위 맵 모험맵 선택' }).length, 0);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '후순위 맵 모험맵 선택' }).length, 0);
-    assert.equal(hasText(renderer.root, 'Lv 10 · 1개'), true);
-    assert.equal(hasText(renderer.root, 'Lv 20 · 1개'), true);
+    assert.equal(hasText(renderer.root, 'Lv 10-20 · 1개'), true);
+    assert.equal(hasText(renderer.root, 'Lv 40-60 · 1개'), true);
 
     await openAdventureGroup(renderer, '뒤 그룹');
     await openAdventureGroup(renderer, '앞 그룹');
@@ -186,7 +186,7 @@ describe('AdventureMapAutomationEditor', () => {
     assert.deepEqual(late.props.accessibilityState, { checked: false, disabled: false });
     assert.equal(late.findAll((node) => ['Checkbox', 'Square', 'CheckSquare', 'Image'].includes(String(node.type))).length, 0);
     assert.equal(hasText(late, '횟수 제한 없음 · 반복 실행'), true);
-    assert.equal(hasText(late, 'Lv 20 · 앞 순서에 있으면 계속 반복될 수 있습니다.'), true);
+    assert.equal(hasText(late, '40-60 · 앞 순서에 있으면 계속 반복될 수 있습니다.'), true);
 
     await act(async () => { late.props.onPress(); });
     late = renderer.root.findByProps({ accessibilityLabel: '후순위 맵 모험맵 선택' });

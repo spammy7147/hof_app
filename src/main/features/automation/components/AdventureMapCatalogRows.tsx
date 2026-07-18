@@ -27,7 +27,8 @@ export function AdventureMapCatalogGroupRow({
   const accessibilityLabel = interactionDisabled
     ? `${group.name} 그룹 검색 결과`
     : `${group.name} 그룹 ${expanded ? '닫기' : '열기'}`;
-  const details = [group.recommendedLevel?.trim() || null, `${group.maps.length}개`]
+  const recommendedLevel = group.recommendedLevel?.trim();
+  const details = [recommendedLevel ? `Lv ${recommendedLevel}` : null, `${group.maps.length}개`]
     .filter((detail): detail is string => detail != null)
     .join(' · ');
 
