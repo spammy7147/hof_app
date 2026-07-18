@@ -221,6 +221,39 @@ describe('BackendApiClient', () => {
     assert.equal((await nullImageClient.fetchCurrentCaptcha())?.imageUrl, null);
   });
 
+  it('normalizes missing and malformed quest rewards', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    mockFetch([
+      {
+        questId: 'quest-without-rewards',
+        name: 'Missing rewards',
+        state: 'ACTIVE',
+        section: 'ACTIVE',
+        sourceOrder: 0,
+        missions: [],
+        actionNo: null,
+      },
+      {
+        questId: 'quest-with-malformed-rewards',
+        name: 'Malformed rewards',
+        state: 'AVAILABLE',
+        section: 'AVAILABLE',
+        sourceOrder: 1,
+        missions: [],
+        actionNo: null,
+        rewards: ['Gold ×10', null, 3, '   '],
+      },
+    ]);
+    const client = new BackendApiClient('http://backend.test');
+
+    const quests = await client.fetchQuests();
+
+    assert.deepEqual(quests.map(({ rewards }) => rewards), [
+      [],
+      ['Gold ×10'],
+    ]);
+  });
+
   it('normalizes captcha image URLs returned after submitting an answer', async () => {
     const { BackendApiClient } = await loadBackendApi();
     mockFetch(makeCaptchaChallenge({ imageUrl: '/api/captcha/3/image' }));

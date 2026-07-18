@@ -11,6 +11,7 @@ import type {
 
 export type CombatQuestMissionType = Extract<QuestMissionType, 'MONSTER_KILL' | 'MAP_CLEAR'>;
 export type QuestMissionReadiness = '자동 매칭됨' | '사용자 변경' | '맵 설정 필요' | '프리셋 설정 필요';
+export type QuestMapFilter = 'ALL' | 'BATTLE' | 'ADVENTURE';
 
 export type QuestMissionDraft = QuestMission & {
   maps: QuestMapSettingRequest[];
@@ -72,6 +73,76 @@ export function buildMissionLabel(mission: QuestMission): string {
 
 export function buildMissionProgressLabel(mission: QuestMission): string | null {
   return mission.progress ? `${mission.progress.current} / ${mission.progress.required}` : null;
+}
+
+export function buildQuestMissionSummary(missions: readonly QuestMission[]): string {
+  if (missions.length === 0) return '미션 · 없음';
+  const items = missions.map((mission) => {
+    const progress = buildMissionProgressLabel(mission);
+    return `${buildMissionLabel(mission)}${progress ? ` ${progress.replace(' / ', '/')}` : ''}`;
+  });
+  return `미션 · ${items.join(' · ')}`;
+}
+
+export function buildQuestRewardSummary(rewards: readonly string[]): string {
+  const items = rewards.map((reward) => reward.trim()).filter(Boolean);
+  return items.length === 0 ? '보상 · 없음' : `보상 · ${items.join(' · ')}`;
+}
+
+export function buildQuestMapIdentity(map: Pick<BattleMapResponse, 'categoryId' | 'mapCode'>): string {
+  return `${map.categoryId}\u0000${map.mapCode ?? ''}`;
+}
+
+export function filterQuestMapOptions(
+  maps: readonly BattleMapResponse[],
+  query: string,
+  filter: QuestMapFilter,
+): BattleMapResponse[] {
+  const needle = normalizeSearch(query);
+  return maps.filter((map) => {
+    if (!map.resolved || map.mapCode == null) return false;
+    const allowed = filter === 'ALL'
+      ? map.categoryId === 'battle_map' || map.categoryId === 'adventure_map'
+      : filter === 'BATTLE' ? map.categoryId === 'battle_map' : map.categoryId === 'adventure_map';
+    return allowed && (!needle || normalizeSearch(`${map.name} ${map.groupName ?? ''}`).includes(needle));
+  });
+}
+
+export function appendMissionMap(
+  maps: readonly QuestMapSettingRequest[],
+  missionKey: string,
+  selected: BattleMapResponse,
+): QuestMapSettingRequest[] {
+  if (selected.mapCode == null || maps.some((map) => buildQuestMapIdentity(map) === buildQuestMapIdentity(selected))) {
+    return [...maps];
+  }
+  return normalizeMapOrder([...maps, manualMapSetting(missionKey, selected.categoryId, selected.mapCode)]);
+}
+
+export function replaceMissionMap(
+  _maps: readonly QuestMapSettingRequest[],
+  missionKey: string,
+  selected: BattleMapResponse,
+): QuestMapSettingRequest[] {
+  return selected.mapCode == null ? [] : [manualMapSetting(missionKey, selected.categoryId, selected.mapCode)];
+}
+
+export function restoreQuestSelection(
+  snapshot: QuestSnapshot,
+  cached: QuestSelectionDraft,
+  catalog: readonly QuestMapCatalogItem[] = [],
+): QuestSelectionDraft {
+  const cachedMapsByMission = new Map(cached.missions.map((mission) => [mission.key, mission.maps]));
+  const fresh = buildSelection(snapshot, null, catalog);
+  return {
+    ...fresh,
+    enabled: cached.enabled,
+    missions: fresh.missions.map((mission) => (
+      !isCombatMission(mission) || !cachedMapsByMission.has(mission.key)
+        ? mission
+        : { ...mission, maps: normalizeMissionMaps(mission.type, cachedMapsByMission.get(mission.key)!) }
+    )),
+  };
 }
 
 export function buildQuestAutomationDraft(
@@ -155,14 +226,37 @@ export function hydrateAutoMatchedMapClearMissions(
   const quests = draft.quests.map((quest) => {
     let questChanged = false;
     const missions = quest.missions.map((mission) => {
-      if (mission.type !== 'MAP_CLEAR' || isBlocked(quest.questCode, mission.key) || mission.maps.some(({ manuallyOverridden }) => manuallyOverridden)) return mission;
+      if (mission.type !== 'MAP_CLEAR') return mission;
+      const normalizedMaps = normalizeMissionMaps(mission.type, mission.maps);
+      const normalized = normalizedMaps.length !== mission.maps.length
+        || normalizedMaps.some((map, index) => map.executionOrder !== mission.maps[index]?.executionOrder);
+      const normalizedMission = normalized ? { ...mission, maps: normalizedMaps } : mission;
+      if (isBlocked(quest.questCode, mission.key) || normalizedMaps.some(({ manuallyOverridden }) => manuallyOverridden)) {
+        if (normalized) {
+          changed = true;
+          questChanged = true;
+        }
+        return normalizedMission;
+      }
       const match = matchMapClearMission(mission, catalog);
-      if (!match) return mission;
-      const unresolvedIndex = mission.maps.findIndex(({ categoryId, mapCode }) => !categoryId.trim() || !mapCode.trim());
-      if (unresolvedIndex < 0 && mission.maps.length > 0) return mission;
-      const maps = mission.maps.length === 0
+      if (!match) {
+        if (normalized) {
+          changed = true;
+          questChanged = true;
+        }
+        return normalizedMission;
+      }
+      const unresolvedIndex = normalizedMaps.findIndex(({ categoryId, mapCode }) => !categoryId.trim() || !mapCode.trim());
+      if (unresolvedIndex < 0 && normalizedMaps.length > 0) {
+        if (normalized) {
+          changed = true;
+          questChanged = true;
+        }
+        return normalizedMission;
+      }
+      const maps = normalizedMaps.length === 0
         ? [applyAutoMatchedMap(emptyMapSetting(mission.key), match)]
-        : mission.maps.map((map, index) => index === unresolvedIndex ? applyAutoMatchedMap(map, match) : map);
+        : normalizedMaps.map((map, index) => index === unresolvedIndex ? applyAutoMatchedMap(map, match) : map);
       changed = true;
       questChanged = true;
       return { ...mission, maps };
@@ -198,7 +292,11 @@ export function getMissionReadiness(
   validPresetIds: readonly number[],
 ): QuestMissionReadiness | null {
   if (!isCombatMission(mission)) return null;
-  if (mission.maps.length === 0 || mission.maps.some((map) => !map.categoryId.trim() || !map.mapCode.trim())) {
+  if (
+    mission.maps.length === 0
+    || mission.type === 'MAP_CLEAR' && mission.maps.length !== 1
+    || mission.maps.some((map) => !map.categoryId.trim() || !map.mapCode.trim())
+  ) {
     return '맵 설정 필요';
   }
   if (mission.maps.some((map) => !isValidPreset(map, validPresetIds))) return '프리셋 설정 필요';
@@ -216,11 +314,18 @@ export function validateQuestAutomationDraft(
   for (const quest of draft.quests) {
     if (questCodes.has(quest.questCode)) errors.push(`${quest.name}: 중복 선택된 퀘스트입니다.`);
     questCodes.add(quest.questCode);
+    const missionKeys = new Set<string>();
+    const questMapIdentities = new Set<string>();
     for (const mission of quest.missions) {
       if (!isCombatMission(mission)) continue;
+      if (missionKeys.has(mission.key)) errors.push(`${quest.name} · ${buildMissionLabel(mission)}: 중복된 미션 설정입니다.`);
+      missionKeys.add(mission.key);
       if (mission.maps.length === 0) {
         errors.push(`${quest.name} · ${buildMissionLabel(mission)}: 맵 설정 필요`);
         continue;
+      }
+      if (mission.type === 'MAP_CLEAR' && mission.maps.length !== 1) {
+        errors.push(`${quest.name} · ${buildMissionLabel(mission)}: 맵은 하나만 선택할 수 있습니다.`);
       }
       const identities = new Set<string>();
       for (const map of mission.maps) {
@@ -230,6 +335,9 @@ export function validateQuestAutomationDraft(
         const identity = `${map.categoryId}\u0000${map.mapCode}`;
         if (identities.has(identity)) errors.push(`${quest.name} · ${buildMissionLabel(mission)}: 중복된 맵입니다.`);
         identities.add(identity);
+        const questIdentity = `${mission.key}\u0000${identity}`;
+        if (questMapIdentities.has(questIdentity)) errors.push(`${quest.name} · ${buildMissionLabel(mission)}: 중복된 맵입니다.`);
+        questMapIdentities.add(questIdentity);
         if (!isValidPreset(map, validPresetIds)) {
           errors.push(`${quest.name} · ${buildMissionLabel(mission)}: 프리셋 설정 필요`);
         }
@@ -266,9 +374,9 @@ function buildSelection(
   catalog: readonly QuestMapCatalogItem[],
 ): QuestSelectionDraft {
   const storedByMission = groupMapsByMission(stored?.maps ?? []);
-  const missions = snapshot.missions.map<QuestMissionDraft>((mission) => {
+  const missions = coalesceMissions(snapshot.missions).map<QuestMissionDraft>((mission) => {
     if (!isCombatMission(mission)) return { ...mission, maps: [] };
-    let maps = normalizeMapOrder(storedByMission.get(mission.key) ?? []);
+    let maps = normalizeMissionMaps(mission.type, storedByMission.get(mission.key) ?? []);
     if (mission.type === 'MAP_CLEAR' && !maps.some(({ manuallyOverridden }) => manuallyOverridden)) {
       const matched = matchMapClearMission(mission, catalog);
       if (matched) {
@@ -325,8 +433,37 @@ function emptyMapSetting(missionKey: string): QuestMapSettingRequest {
   return { missionKey, categoryId: '', mapCode: '', executionOrder: 0, manuallyOverridden: false, presetMode: 'PRIMARY', partyPresetId: null };
 }
 
+function manualMapSetting(missionKey: string, categoryId: string, mapCode: string): QuestMapSettingRequest {
+  return {
+    missionKey,
+    categoryId,
+    mapCode,
+    executionOrder: 0,
+    manuallyOverridden: true,
+    presetMode: 'PRIMARY',
+    partyPresetId: null,
+  };
+}
+
 function normalizeMapOrder(maps: readonly QuestMapSettingRequest[]): QuestMapSettingRequest[] {
   return maps.map((map, executionOrder) => ({ ...map, executionOrder }));
+}
+
+function normalizeMissionMaps(
+  type: CombatQuestMissionType,
+  maps: readonly QuestMapSettingRequest[],
+): QuestMapSettingRequest[] {
+  const normalized = normalizeMapOrder(maps);
+  return type === 'MAP_CLEAR' ? normalized.slice(0, 1) : normalized;
+}
+
+function coalesceMissions(missions: readonly QuestMission[]): QuestMission[] {
+  const seen = new Set<string>();
+  return missions.filter((mission) => {
+    if (seen.has(mission.key)) return false;
+    seen.add(mission.key);
+    return true;
+  });
 }
 
 function isValidPreset(map: QuestMapSettingRequest, validPresetIds: readonly number[]): boolean {

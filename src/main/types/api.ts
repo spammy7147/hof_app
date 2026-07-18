@@ -332,6 +332,7 @@ export type QuestSnapshot = {
   sourceOrder: number;
   missions: QuestMission[];
   actionNo: string | null;
+  rewards: string[];
 };
 
 export type UnifiedAutomationAction = 'start' | 'pause' | 'resume' | 'stop';
