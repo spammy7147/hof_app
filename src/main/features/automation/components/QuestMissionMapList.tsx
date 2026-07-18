@@ -26,6 +26,8 @@ export type QuestMissionMapListProps = {
 };
 
 type PresetInvocation = {
+  interactionGeneration: number;
+  map: QuestMapSettingRequest;
   rowKey: string;
   nodeHandle: ReturnType<typeof findNodeHandle>;
 };
@@ -163,8 +165,12 @@ export function QuestMissionMapList({
     }, 250);
   }, []);
 
-  const openPresetPicker = useCallback((rowKey: string) => {
-    if (disabledRef.current) return;
+  const openPresetPicker = useCallback((rowKey: string, map: QuestMapSettingRequest, interactionGeneration: number) => {
+    if (
+      disabledRef.current
+      || interactionGeneration !== interactionGenerationRef.current
+      || !rowsRef.current.some((row) => row.rowKey === rowKey && row.map === map)
+    ) return;
     presetFocusGenerationRef.current += 1;
     if (restorePresetFocusTimerRef.current) {
       clearTimeout(restorePresetFocusTimerRef.current);
@@ -172,6 +178,8 @@ export function QuestMissionMapList({
     }
     const triggerNode = presetTriggerNodesRef.current.get(rowKey) ?? null;
     invokingPresetTriggerRef.current = {
+      interactionGeneration,
+      map,
       rowKey,
       nodeHandle: findNodeHandle(triggerNode),
     };
@@ -183,23 +191,33 @@ export function QuestMissionMapList({
     ? null
     : rows.find((row) => row.rowKey === activePresetRowKey) ?? null;
   const activePresetMap = activePresetRow?.map.mapCode.trim() ? activePresetRow.map : null;
+  const activePresetInvocation = invokingPresetTriggerRef.current;
+  const activePresetInvocationValid = activePresetInvocation != null
+    && activePresetInvocation.interactionGeneration === interactionGenerationRef.current
+    && activePresetRow?.map === activePresetInvocation.map;
   const activeCatalogMap = activePresetRow == null
     ? null
     : catalog.find((map) => buildQuestMapIdentity(map) === activePresetRow.identity) ?? null;
 
   useEffect(() => {
-    if (activePresetRowKey != null && (disabled || activePresetMap == null)) {
+    if (activePresetRowKey != null && (disabled || activePresetMap == null || !activePresetInvocationValid)) {
       closePresetPicker(false);
     }
-  }, [activePresetMap, activePresetRowKey, closePresetPicker, disabled]);
+  }, [activePresetInvocationValid, activePresetMap, activePresetRowKey, closePresetPicker, disabled]);
 
   function selectPreset(partyPresetId: number | null) {
     if (disabledRef.current) return;
     const rowKey = activePresetRowKeyRef.current;
-    if (rowKey == null) return;
+    const invocation = invokingPresetTriggerRef.current;
+    if (rowKey == null || invocation == null) return;
     const currentMaps = mapsRef.current;
     const targetRow = rowsRef.current.find((row) => row.rowKey === rowKey);
-    if (!targetRow) {
+    if (
+      !targetRow
+      || invocation.rowKey !== rowKey
+      || invocation.interactionGeneration !== interactionGenerationRef.current
+      || targetRow.map !== invocation.map
+    ) {
       closePresetPicker(false);
       return;
     }
@@ -329,7 +347,7 @@ export function QuestMissionMapList({
                 onPress={() => {
                   if (!findCurrentRow(rowKey, map, renderInteractionGeneration)) return;
                   swipeableNodesRef.current.get(rowKey)?.close();
-                  openPresetPicker(rowKey);
+                  openPresetPicker(rowKey, map, renderInteractionGeneration);
                 }}
                 style={styles.presetButton}
               >

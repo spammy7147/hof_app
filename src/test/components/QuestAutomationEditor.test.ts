@@ -220,6 +220,37 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.deepEqual(updates, [[{ ...first, executionOrder: 0 }]]);
   });
 
+  it('fences a duplicate preset picker across reorder while keeping the current picker live', async () => {
+    accessibilityFocusCalls.length = 0;
+    const first = mapSetting('kill', 'a', 0);
+    const second = { ...mapSetting('kill', 'a', 1), presetMode: 'EXPLICIT' as const, partyPresetId: 8 };
+    const updates: QuestMapSettingRequest[][] = [];
+    const props = missionMapListProps({
+      maps: [first, second],
+      presets: [preset(7, 'Safe'), preset(8, 'Speed')],
+      onUpdate: (maps) => { updates.push(maps); },
+    });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(QuestMissionMapList, props)); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 2번째 맵 프리셋 선택' }).props.onPress(); });
+    const retainedSelect = renderer.root.findByProps({ accessibilityLabel: 'Safe 프리셋 선택' }).props.onPress as () => void;
+
+    await act(async () => {
+      renderer.update(React.createElement(QuestMissionMapList, { ...props, maps: [second, first] }));
+    });
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '프리셋 검색' }).length, 0);
+    await act(async () => { retainedSelect(); });
+    await act(async () => { await delay(280); });
+    assert.equal(updates.length, 0);
+    assert.deepEqual(accessibilityFocusCalls, []);
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 프리셋 선택' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Safe 프리셋 선택' }).props.onPress(); });
+    assert.deepEqual(updates[0]?.map(({ partyPresetId }) => partyPresetId), [7, null]);
+    await act(async () => { await delay(280); });
+    assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), 'Combat · kill 1번째 맵 프리셋 선택');
+  });
+
   it('shows loading, error/retry, and empty states', async () => {
     const pending = deferred<QuestSnapshot[]>();
     const loading = await renderEditor({ fetchQuests: () => pending.promise });
