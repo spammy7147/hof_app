@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type ElementRef } from 'react';
 import { AccessibilityInfo, findNodeHandle, Pressable, StyleSheet, Text, View } from 'react-native';
-import { ArrowDown, ArrowUp, X } from 'lucide-react-native';
+import { GripVertical, Trash2 } from 'lucide-react-native';
+import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
+import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist';
 
 import {
   buildQuestMapIdentity,
   moveMissionMap,
   removeMissionMap,
+  reorderMissionMaps,
 } from '../../../domain/questAutomation';
 import { formatAutomationPresetSelection } from '../../../domain/partyPresets';
 import { theme } from '../../../styles/theme';
@@ -54,10 +57,14 @@ export function QuestMissionMapList({
   onUpdate,
 }: QuestMissionMapListProps) {
   const [activePresetRowKey, setActivePresetRowKey] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
   const mountedRef = useRef(false);
   const disabledRef = useRef(disabled);
+  const draggingRef = useRef(dragging);
   const mapsRef = useRef(maps);
   const rowsRef = useRef<MissionMapRow[]>([]);
+  const openSwipeableRef = useRef<SwipeableMethods | null>(null);
+  const swipeableNodesRef = useRef(new Map<string, SwipeableMethods>());
   const activePresetRowKeyRef = useRef<string | null>(null);
   const presetTriggerNodesRef = useRef(new Map<string, ElementRef<typeof Pressable>>());
   const invokingPresetTriggerRef = useRef<PresetInvocation | null>(null);
@@ -65,8 +72,10 @@ export function QuestMissionMapList({
   const restorePresetFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   disabledRef.current = disabled;
+  draggingRef.current = dragging;
   mapsRef.current = maps;
   const rows = buildMissionMapRows(maps);
+  const rowKeys = rows.map(({ rowKey }) => rowKey).join('\u0001');
   rowsRef.current = rows;
   activePresetRowKeyRef.current = activePresetRowKey;
 
@@ -74,6 +83,9 @@ export function QuestMissionMapList({
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      openSwipeableRef.current?.close();
+      openSwipeableRef.current = null;
+      swipeableNodesRef.current.clear();
       presetFocusGenerationRef.current += 1;
       invokingPresetTriggerRef.current = null;
       if (restorePresetFocusTimerRef.current) {
@@ -82,6 +94,26 @@ export function QuestMissionMapList({
       }
     };
   }, []);
+
+  const closeOpenSwipeable = useCallback(() => {
+    openSwipeableRef.current?.close();
+    openSwipeableRef.current = null;
+  }, []);
+
+  const registerOpenSwipeable = useCallback((swipeable: SwipeableMethods | null) => {
+    if (openSwipeableRef.current && openSwipeableRef.current !== swipeable) {
+      openSwipeableRef.current.close();
+    }
+    openSwipeableRef.current = swipeable;
+  }, []);
+
+  useEffect(() => {
+    closeOpenSwipeable();
+    if (disabled) {
+      draggingRef.current = false;
+      setDragging(false);
+    }
+  }, [closeOpenSwipeable, disabled, rowKeys]);
 
   const closePresetPicker = useCallback((restoreFocus: boolean) => {
     const focusGeneration = ++presetFocusGenerationRef.current;
@@ -166,38 +198,99 @@ export function QuestMissionMapList({
     closePresetPicker(true);
   }
 
-  return (
-    <>
-      {rows.map(({ identity, index, map, rowKey }) => {
-        const resolved = catalog.find((candidate) => buildQuestMapIdentity(candidate) === identity);
-        const presetLabel = formatAutomationPresetSelection(map, presets);
-        const category = map.categoryId === 'battle_map'
-          ? '전투맵'
-          : map.categoryId === 'adventure_map'
-            ? '모험맵'
-            : map.categoryId;
-        return (
-          <View key={`${missionKey}:${rowKey}`} style={styles.mapCard}>
-            <View style={styles.mapHeading}>
-              <View style={styles.mapCopy}>
-                <Text style={styles.mapName}>{resolved?.name ?? (map.mapCode || '맵을 선택해 주세요')}</Text>
-                {resolved?.groupName || category ? <Text style={styles.mapContext}>{[resolved?.groupName, category].filter(Boolean).join(' · ')}</Text> : null}
-              </View>
-              <Pressable accessibilityLabel={`${questContext} · ${missionKey} ${index + 1}번째 맵 위로`} accessibilityRole="button" accessibilityState={{ disabled: disabled || index === 0 }} disabled={disabled || index === 0} onPress={() => {
-                if (disabledRef.current) return;
-                const liveRow = rowsRef.current.find((candidate) => candidate.rowKey === rowKey);
-                if (liveRow && liveRow.index > 0) onUpdate(moveMissionMap(mapsRef.current, liveRow.index, liveRow.index - 1));
-              }} style={styles.smallIcon}><ArrowUp color={theme.colors.textMuted} size={15} /></Pressable>
-              <Pressable accessibilityLabel={`${questContext} · ${missionKey} ${index + 1}번째 맵 아래로`} accessibilityRole="button" accessibilityState={{ disabled: disabled || index === maps.length - 1 }} disabled={disabled || index === maps.length - 1} onPress={() => {
-                if (disabledRef.current) return;
-                const liveRow = rowsRef.current.find((candidate) => candidate.rowKey === rowKey);
-                if (liveRow && liveRow.index < mapsRef.current.length - 1) onUpdate(moveMissionMap(mapsRef.current, liveRow.index, liveRow.index + 1));
-              }} style={styles.smallIcon}><ArrowDown color={theme.colors.textMuted} size={15} /></Pressable>
-              <Pressable accessibilityLabel={`${questContext} · ${missionKey} ${index + 1}번째 맵 제거`} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={() => {
-                if (disabledRef.current) return;
-                const liveRow = rowsRef.current.find((candidate) => candidate.rowKey === rowKey);
-                if (liveRow) onUpdate(removeMissionMap(mapsRef.current, liveRow.index));
-              }} style={styles.smallIcon}><X color={theme.colors.danger} size={15} /></Pressable>
+  function moveRow(rowKey: string, offset: -1 | 1) {
+    if (disabledRef.current || draggingRef.current) return;
+    const liveRow = rowsRef.current.find((row) => row.rowKey === rowKey);
+    if (!liveRow) return;
+    const targetIndex = liveRow.index + offset;
+    if (targetIndex < 0 || targetIndex >= mapsRef.current.length) return;
+    onUpdate(moveMissionMap(mapsRef.current, liveRow.index, targetIndex));
+  }
+
+  function deleteRow(rowKey: string) {
+    if (disabledRef.current || draggingRef.current) return;
+    const liveRow = rowsRef.current.find((row) => row.rowKey === rowKey);
+    if (!liveRow) return;
+    closeOpenSwipeable();
+    onUpdate(removeMissionMap(mapsRef.current, liveRow.index));
+  }
+
+  function beginDrag(rowKey: string, drag: () => void) {
+    if (disabledRef.current || draggingRef.current) return;
+    const rowSwipeable = swipeableNodesRef.current.get(rowKey) ?? null;
+    if (rowSwipeable !== openSwipeableRef.current) rowSwipeable?.close();
+    closeOpenSwipeable();
+    draggingRef.current = true;
+    setDragging(true);
+    drag();
+  }
+
+  function renderMapRow({ item: { identity, map, rowKey }, drag, getIndex, isActive }: RenderItemParams<MissionMapRow>) {
+    const resolved = catalog.find((candidate) => buildQuestMapIdentity(candidate) === identity);
+    const presetLabel = formatAutomationPresetSelection(map, presets);
+    const category = map.categoryId === 'battle_map'
+      ? '전투맵'
+      : map.categoryId === 'adventure_map'
+        ? '모험맵'
+        : map.categoryId;
+    const index = getIndex() ?? rowsRef.current.find((row) => row.rowKey === rowKey)?.index ?? -1;
+    const mapName = resolved?.name ?? (map.mapCode || '맵을 선택해 주세요');
+    const interactionDisabled = disabled || dragging || isActive;
+    const accessibilityActions = [
+      ...(index > 0 ? [{ name: 'decrement' as const, label: '위로 이동' }] : []),
+      ...(index >= 0 && index < rows.length - 1 ? [{ name: 'increment' as const, label: '아래로 이동' }] : []),
+      { name: 'delete' as const, label: '삭제' },
+    ];
+
+    return (
+      <ReanimatedSwipeable
+        ref={(node) => {
+          if (node) swipeableNodesRef.current.set(rowKey, node);
+          else swipeableNodesRef.current.delete(rowKey);
+        }}
+        containerStyle={styles.swipeContainer}
+        enabled={!interactionDisabled}
+        friction={2}
+        onSwipeableWillOpen={() => registerOpenSwipeable(swipeableNodesRef.current.get(rowKey) ?? null)}
+        overshootRight={false}
+        renderRightActions={() => (
+          <Pressable
+            accessibilityLabel={`${questContext} · ${missionKey} · ${mapName} 삭제`}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: interactionDisabled }}
+            disabled={interactionDisabled}
+            onPress={() => deleteRow(rowKey)}
+            style={({ pressed }) => [styles.deleteAction, pressed && !interactionDisabled && styles.pressed]}
+          >
+            <Trash2 color={theme.colors.buttonText} size={18} />
+            <Text style={styles.deleteActionText}>삭제</Text>
+          </Pressable>
+        )}
+        rightThreshold={40}
+      >
+        <View style={[styles.mapCard, isActive && styles.mapCardActive]}>
+          <Pressable
+            accessibilityActions={accessibilityActions}
+            accessibilityHint="길게 누르거나 접근성 동작으로 순서를 바꾸세요"
+            accessibilityLabel={`${questContext} · ${missionKey} ${index + 1}번째 맵 순서 이동`}
+            accessibilityRole="adjustable"
+            accessibilityState={{ disabled: interactionDisabled }}
+            delayLongPress={120}
+            disabled={interactionDisabled}
+            onAccessibilityAction={({ nativeEvent: { actionName } }) => {
+              if (actionName === 'decrement') moveRow(rowKey, -1);
+              if (actionName === 'increment') moveRow(rowKey, 1);
+              if (actionName === 'delete') deleteRow(rowKey);
+            }}
+            onLongPress={() => beginDrag(rowKey, drag)}
+            style={({ pressed }) => [styles.dragHandle, pressed && !interactionDisabled && styles.pressed]}
+          >
+            <GripVertical color={theme.colors.textMuted} size={18} />
+          </Pressable>
+          <View style={styles.mapBody}>
+            <View style={styles.mapCopy}>
+              <Text style={styles.mapName}>{mapName}</Text>
+              {resolved?.groupName || category ? <Text style={styles.mapContext}>{[resolved?.groupName, category].filter(Boolean).join(' · ')}</Text> : null}
             </View>
             {map.mapCode.trim() ? (
               <Pressable
@@ -207,18 +300,44 @@ export function QuestMissionMapList({
                 }}
                 accessibilityLabel={`${questContext} · ${missionKey} ${index + 1}번째 맵 프리셋 선택`}
                 accessibilityRole="button"
-                accessibilityState={{ disabled }}
+                accessibilityState={{ disabled: interactionDisabled }}
                 accessibilityValue={{ text: presetLabel }}
-                disabled={disabled}
-                onPress={() => openPresetPicker(rowKey)}
+                disabled={interactionDisabled}
+                onPress={() => {
+                  swipeableNodesRef.current.get(rowKey)?.close();
+                  openPresetPicker(rowKey);
+                }}
                 style={styles.presetButton}
               >
                 <Text style={styles.presetButtonText}>{presetLabel}</Text>
               </Pressable>
             ) : null}
           </View>
-        );
-      })}
+        </View>
+      </ReanimatedSwipeable>
+    );
+  }
+
+  return (
+    <>
+      <DraggableFlatList
+        activationDistance={8}
+        data={rows}
+        keyExtractor={(row) => `${missionKey}:${row.rowKey}`}
+        onDragBegin={() => {
+          closeOpenSwipeable();
+          draggingRef.current = true;
+          setDragging(true);
+        }}
+        onDragEnd={({ data, from, to }) => {
+          closeOpenSwipeable();
+          draggingRef.current = false;
+          setDragging(false);
+          if (from !== to) onUpdate(reorderMissionMaps(data.map(({ map }) => map)));
+        }}
+        renderItem={renderMapRow}
+        scrollEnabled={false}
+      />
       <BattleMapPresetPickerModal
         disabled={disabled}
         mapName={activeCatalogMap?.name ?? activePresetMap?.mapCode ?? ''}
@@ -234,12 +353,17 @@ export function QuestMissionMapList({
 }
 
 const styles = StyleSheet.create({
-  mapCard: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md, gap: theme.spacing.sm, padding: theme.spacing.sm },
-  mapHeading: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },
+  swipeContainer: { borderRadius: theme.radius.md, overflow: 'hidden' },
+  mapCard: { alignItems: 'stretch', backgroundColor: theme.colors.surfaceAlt, borderColor: 'transparent', borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, padding: theme.spacing.xs },
+  mapCardActive: { borderColor: theme.colors.accentGreen, opacity: 0.82 },
+  dragHandle: { alignItems: 'center', justifyContent: 'center', minHeight: 44, width: 32 },
+  mapBody: { flex: 1, gap: theme.spacing.xs, minWidth: 0 },
   mapCopy: { flex: 1, minWidth: 0 },
   mapName: { color: theme.colors.text, fontSize: 12, fontWeight: '800' },
   mapContext: { color: theme.colors.textMuted, fontSize: 10, marginTop: 2 },
-  smallIcon: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
+  deleteAction: { alignItems: 'center', backgroundColor: theme.colors.danger, justifyContent: 'center', width: 72 },
+  deleteActionText: { color: theme.colors.buttonText, fontSize: 11, fontWeight: '900', marginTop: 2 },
+  pressed: { opacity: 0.72 },
   presetButton: { borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, minHeight: 44, justifyContent: 'center', paddingHorizontal: theme.spacing.sm },
   presetButtonText: { color: theme.colors.text, fontSize: 11, fontWeight: '800' },
 });

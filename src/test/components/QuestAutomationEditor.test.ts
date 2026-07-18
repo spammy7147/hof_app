@@ -17,6 +17,7 @@ import type {
 
 let alertArguments: unknown[] | null = null;
 const accessibilityFocusCalls: unknown[] = [];
+const dragCalls: unknown[] = [];
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
   const nodeRef = React.useRef<Record<string, unknown>>({});
   Object.assign(nodeRef.current, props);
@@ -38,6 +39,50 @@ const flatList = (props: Record<string, unknown>) => {
     }, renderItem({ item }))),
   );
 };
+const draggableFlatList = (props: Record<string, unknown>) => {
+  const data = props.data as unknown[];
+  const renderItem = props.renderItem as (params: {
+    item: unknown;
+    drag: () => void;
+    getIndex: () => number | undefined;
+    isActive: boolean;
+  }) => React.ReactNode;
+  return React.createElement(
+    'DraggableFlatList',
+    props,
+    data.map((item, index) => React.createElement(React.Fragment, {
+      key: typeof props.keyExtractor === 'function'
+        ? (props.keyExtractor as (value: unknown, itemIndex: number) => string)(item, index)
+        : index,
+    }, renderItem({ item, drag: () => { dragCalls.push(item); }, getIndex: () => index, isActive: false }))),
+  );
+};
+type SwipeableMockMethods = {
+  close: () => void;
+  openLeft: () => void;
+  openRight: () => void;
+  reset: () => void;
+  closeCalls: number;
+};
+const reanimatedSwipeable = React.forwardRef<SwipeableMockMethods, Record<string, unknown>>((props, ref) => {
+  const methods = React.useMemo<SwipeableMockMethods>(() => ({
+    closeCalls: 0,
+    close() { methods.closeCalls += 1; },
+    openLeft: () => undefined,
+    openRight: () => undefined,
+    reset: () => undefined,
+  }), []);
+  React.useImperativeHandle(ref, () => methods, [methods]);
+  const renderRightActions = props.renderRightActions as
+    | ((progress: unknown, translation: unknown, swipeable: SwipeableMockMethods) => React.ReactNode)
+    | undefined;
+  return React.createElement(
+    'ReanimatedSwipeable',
+    { ...props, mockMethods: methods },
+    props.children as React.ReactNode,
+    renderRightActions?.({}, {}, methods),
+  );
+});
 const modal = (props: Record<string, unknown>) => React.createElement(
   'Modal',
   props,
@@ -68,6 +113,8 @@ moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') return reactNativeMock;
   if (request === 'react-native-safe-area-context') return { useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
   if (request === 'lucide-react-native') return iconsMock;
+  if (request === 'react-native-gesture-handler/ReanimatedSwipeable') return { __esModule: true, default: reanimatedSwipeable };
+  if (request === 'react-native-draggable-flatlist') return { __esModule: true, default: draggableFlatList };
   return originalLoad(request, parent, isMain);
 };
 const { QuestAutomationEditor } = require(
@@ -628,21 +675,22 @@ describe('QuestAutomationEditor mounted behavior', () => {
       await Promise.resolve();
     });
     const presetChoice = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 프리셋 선택' });
-    const remove = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 제거' });
-    const reorder = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 2번째 맵 위로' });
+    const remove = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill · Alpha 삭제' });
+    const reorder = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 2번째 맵 순서 이동' });
     const add = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 전투맵 추가' });
     assert.equal(presetChoice.props.accessibilityRole, 'button');
     assert.deepEqual(presetChoice.props.accessibilityState, { disabled: true });
     assert.equal(remove.props.accessibilityRole, 'button');
     assert.equal(remove.props.accessibilityState.disabled, true);
-    assert.equal(reorder.props.accessibilityRole, 'button');
+    assert.equal(reorder.props.accessibilityRole, 'adjustable');
     assert.equal(reorder.props.accessibilityState.disabled, true);
     assert.equal(add.props.accessibilityState.disabled, true);
 
     await act(async () => {
       presetChoice.props.onPress();
       remove.props.onPress();
-      reorder.props.onPress();
+      reorder.props.onLongPress();
+      reorder.props.onAccessibilityAction({ nativeEvent: { actionName: 'decrement' } });
       add.props.onPress();
     });
     assert.equal(hasText(renderer.root, 'Alpha'), true);
@@ -667,12 +715,24 @@ describe('QuestAutomationEditor mounted behavior', () => {
       onSave: async (request) => { saves.push(request); return true; },
     });
 
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 2번째 맵 위로' }).props.onPress(); });
+    const list = findHost(renderer.root, 'DraggableFlatList');
+    assert.equal(list.props.scrollEnabled, false);
+    assert.equal(list.props.activationDistance, 8);
+    assert.equal(findHosts(renderer.root, 'ArrowUp').length, 0);
+    assert.equal(findHosts(renderer.root, 'ArrowDown').length, 0);
+    assert.equal(findHosts(renderer.root, 'X').length, 0);
+    assert.equal(renderer.root.findAll((node) => typeof node.props.accessibilityLabel === 'string'
+      && /(번째 맵 위로|번째 맵 아래로|번째 맵 제거)$/.test(node.props.accessibilityLabel)).length, 0);
+    const rows = list.props.data as unknown[];
+    await act(async () => { list.props.onDragEnd({ data: [...rows].reverse(), from: 0, to: 1 }); });
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
     assert.deepEqual(saves[0]?.quests[0]?.maps.map(({ mapCode, executionOrder }) => ({ mapCode, executionOrder })), [
       { mapCode: 'b', executionOrder: 0 },
       { mapCode: 'a', executionOrder: 1 },
     ]);
+    const liveFirst = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 순서 이동' });
+    await act(async () => { liveFirst.props.onAccessibilityAction({ nativeEvent: { actionName: 'delete' } }); });
+    assert.equal(hasText(renderer.root, 'Beta'), false);
   });
 
   it('removes a selected monster map and normalizes the remaining order', async () => {
@@ -689,14 +749,95 @@ describe('QuestAutomationEditor mounted behavior', () => {
       onSave: async (request) => { saves.push(request); return true; },
     });
 
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 제거' }).props.onPress(); });
+    const swipeable = findHosts(renderer.root, 'ReanimatedSwipeable')[0]!;
+    assert.equal(swipeable.props.overshootRight, false);
+    assert.equal(swipeable.props.rightThreshold, 40);
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill · Alpha 삭제' }).props.onPress(); });
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
     assert.deepEqual(saves[0]?.quests[0]?.maps.map(({ mapCode, executionOrder }) => ({ mapCode, executionOrder })), [
       { mapCode: 'b', executionOrder: 0 },
     ]);
   });
 
+  it('offers bounded accessible map reordering through the drag handle', async () => {
+    const saves: UpdateQuestAutomationRequest[] = [];
+    const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
+    const renderer = await renderEditor({
+      entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [
+        mapSetting('kill', 'a', 0), mapSetting('kill', 'b', 1),
+      ] }]),
+      quests: [quest],
+      maps: [catalogMap('battle_map', 'a', 'Alpha'), catalogMap('battle_map', 'b', 'Beta')],
+      onSave: async (request) => { saves.push(request); return true; },
+    });
+    const first = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 순서 이동' });
+    const second = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 2번째 맵 순서 이동' });
+
+    assert.deepEqual(first.props.accessibilityActions.map(({ name }: { name: string }) => name), ['increment', 'delete']);
+    assert.deepEqual(second.props.accessibilityActions.map(({ name }: { name: string }) => name), ['decrement', 'delete']);
+    first.props.onAccessibilityAction({ nativeEvent: { actionName: 'decrement' } });
+    await act(async () => { first.props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }); });
+    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
+    assert.deepEqual(saves[0]?.quests[0]?.maps.map(({ mapCode, executionOrder }) => ({ mapCode, executionOrder })), [
+      { mapCode: 'b', executionOrder: 0 },
+      { mapCode: 'a', executionOrder: 1 },
+    ]);
+  });
+
+  it('closes swipe rows across opening, drag, map updates, disabled state, and unmount', async () => {
+    dragCalls.length = 0;
+    const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
+    const base = editorProps({
+      entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [
+        mapSetting('kill', 'a', 0), mapSetting('kill', 'b', 1),
+      ] }]),
+      quests: [quest],
+      maps: [catalogMap('battle_map', 'a', 'Alpha'), catalogMap('battle_map', 'b', 'Beta')],
+    });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(QuestAutomationEditor, base)); });
+    let swipeables = findHosts(renderer.root, 'ReanimatedSwipeable');
+    const firstMethods = swipeables[0]?.props.mockMethods as SwipeableMockMethods;
+    const secondMethods = swipeables[1]?.props.mockMethods as SwipeableMockMethods;
+    swipeables[0]?.props.onSwipeableWillOpen();
+    swipeables[1]?.props.onSwipeableWillOpen();
+    assert.equal(firstMethods.closeCalls, 1);
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 2번째 맵 순서 이동' }).props.onLongPress(); });
+    assert.equal(secondMethods.closeCalls, 1);
+    assert.equal(dragCalls.length, 1);
+    assert.equal(findHosts(renderer.root, 'ReanimatedSwipeable').every(({ props }) => props.enabled === false), true);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Combat · kill · Alpha 삭제' }).props.disabled, true);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 순서 이동' }).props.disabled, true);
+    const list = findHost(renderer.root, 'DraggableFlatList');
+    await act(async () => { list.props.onDragEnd({ data: list.props.data, from: 0, to: 0 }); });
+
+    swipeables = findHosts(renderer.root, 'ReanimatedSwipeable');
+    const liveFirstMethods = swipeables[0]?.props.mockMethods as SwipeableMockMethods;
+    swipeables[0]?.props.onSwipeableWillOpen();
+    const changedBase = {
+      ...base,
+      entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'b', 0)] }]),
+    };
+    await act(async () => { renderer.update(React.createElement(QuestAutomationEditor, changedBase)); });
+    assert.ok(liveFirstMethods.closeCalls >= 1);
+
+    swipeables = findHosts(renderer.root, 'ReanimatedSwipeable');
+    const remainingMethods = swipeables[0]?.props.mockMethods as SwipeableMockMethods;
+    swipeables[0]?.props.onSwipeableWillOpen();
+    await act(async () => { renderer.update(React.createElement(QuestAutomationEditor, { ...changedBase, saving: true })); });
+    assert.ok(remainingMethods.closeCalls >= 1);
+
+    await act(async () => { renderer.update(React.createElement(QuestAutomationEditor, changedBase)); });
+    swipeables = findHosts(renderer.root, 'ReanimatedSwipeable');
+    const finalMethods = swipeables[0]?.props.mockMethods as SwipeableMockMethods;
+    swipeables[0]?.props.onSwipeableWillOpen();
+    await act(async () => { renderer.unmount(); });
+    assert.ok(finalMethods.closeCalls >= 1);
+  });
+
   it('searches quest map presets and saves explicit and primary selections', async () => {
+    dragCalls.length = 0;
     const saves: UpdateQuestAutomationRequest[] = [];
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
     const entry = questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]);
@@ -713,6 +854,8 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.deepEqual(trigger.props.accessibilityValue, { text: '대표 프리셋 없음' });
     assert.equal(trigger.props.style.minHeight, 44);
     await act(async () => { trigger.props.onPress(); });
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Combat 선택' }).props.accessibilityState.checked, true);
+    assert.equal(dragCalls.length, 0);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Safe 프리셋 선택' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Speed 프리셋 선택' }));
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }).props.onChangeText('safe'); });
@@ -772,7 +915,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 프리셋 선택' }).props.accessibilityValue, { text: '대표 프리셋 없음' });
     assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 2번째 맵 프리셋 선택' }).props.accessibilityValue, { text: 'Safe' });
 
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 제거' }).props.onPress(); });
+    await act(async () => { renderer.root.findAllByProps({ accessibilityLabel: 'Combat · kill · Alpha 삭제' })[0]?.props.onPress(); });
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
     assert.deepEqual(saves[0]?.quests[0]?.maps, [{
       ...second,
@@ -795,7 +938,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
 
     const secondLabel = 'Combat · kill 2번째 맵 프리셋 선택';
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: secondLabel }).props.onPress(); });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 제거' }).props.onPress(); });
+    await act(async () => { renderer.root.findAllByProps({ accessibilityLabel: 'Combat · kill · Alpha 삭제' })[0]?.props.onPress(); });
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '프리셋 검색' }).length, 0);
     assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 프리셋 선택' }).props.accessibilityValue, { text: 'Speed' });
     await act(async () => { await delay(280); });
@@ -889,7 +1032,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     const firstLabel = 'Combat · kill 1번째 맵 프리셋 선택';
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: firstLabel }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 제거' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill · Alpha 삭제' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { await delay(280); });
     assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === firstLabel), false);
@@ -1132,7 +1275,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     });
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(React.createElement(QuestAutomationEditor, base)); });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Clear Quest · clear-key 1번째 맵 제거' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Clear Quest · clear-key · Target 삭제' }).props.onPress(); });
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.disabled, true);
 
     await act(async () => {
@@ -1172,7 +1315,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(hasText(renderer.root, 'Target'), false);
     assert.equal(hasText(renderer.root, 'Other Field'), true);
     assert.equal(hasText(renderer.root, '사용자 변경'), true);
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Clear Quest · clear-key 1번째 맵 제거' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Clear Quest · clear-key · Other Field 삭제' }));
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
     assert.equal(saves[0]?.quests[0]?.maps[0]?.manuallyOverridden, true);
     assert.equal(saves[0]?.quests[0]?.maps[0]?.mapCode, 'other');
@@ -1347,7 +1490,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(selected.props.accessibilityState.selected, true);
     assert.equal(hasText(selected, '추가됨'), true);
     await act(async () => { selected.props.onPress(); });
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'One · shared 1번째 맵 제거' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'One · shared · Alpha 삭제' }));
   });
 
   it('includes quest context in every combat map control accessibility label', async () => {
@@ -1367,8 +1510,8 @@ describe('QuestAutomationEditor mounted behavior', () => {
       presets: [preset(7, 'Explicit')],
     });
 
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'One Quest · shared 1번째 맵 제거' }));
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'One Quest · shared 2번째 맵 위로' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'One Quest · shared · Alpha 삭제' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'One Quest · shared 2번째 맵 순서 이동' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'One Quest · shared 1번째 맵 프리셋 선택' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Two Quest · shared 전투맵 추가' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'missing-code · shared 전투맵 추가' }));
@@ -1563,6 +1706,12 @@ function renderedText(root: ReactTestInstance): string {
   return root.findAll((node) => (node.type as unknown) === 'Text')
     .map((node) => node.children.filter((child) => typeof child === 'string').join(''))
     .join('\n');
+}
+function findHosts(root: ReactTestInstance, name: string): ReactTestInstance[] {
+  return root.findAll((node) => (node.type as unknown) === name);
+}
+function findHost(root: ReactTestInstance, name: string): ReactTestInstance {
+  return root.find((node) => (node.type as unknown) === name);
 }
 function focusedLabel(node: unknown): unknown {
   return node && typeof node === 'object'
