@@ -403,7 +403,8 @@ export function BattleMapAutomationEditor({
     Alert.alert('전투 맵 자동화를 삭제할까요?', '맵 설정은 삭제되지만 오늘 성공 횟수는 서버에 유지됩니다.', [
       { text: '취소', style: 'cancel' },
       { text: '삭제', style: 'destructive', onPress: async () => {
-        if (controlsDisabled) return;
+        if (controlsDisabledRef.current) return;
+        controlsDisabledRef.current = true;
         onClearMutationMessage();
         setLocalBusy(true);
         try {
@@ -416,7 +417,8 @@ export function BattleMapAutomationEditor({
   }
 
   async function save() {
-    if (saveDisabled) return;
+    if (saveDisabled || controlsDisabledRef.current) return;
+    controlsDisabledRef.current = true;
     onClearMutationMessage();
     setLocalBusy(true);
     try {
@@ -433,28 +435,34 @@ export function BattleMapAutomationEditor({
       return <Text style={styles.muted}>아래 목록에서 실행할 맵을 선택해 주세요.</Text>;
     }
     if (item.kind === 'CATALOG_SEARCH') {
-      return <TextInput accessibilityLabel="전투 맵 검색" editable={!controlsDisabled} onChangeText={setQuery} placeholder="맵 이름, 그룹, 추천 레벨 검색" placeholderTextColor={theme.colors.textMuted} style={styles.search} value={query} />;
+      return <TextInput accessibilityLabel="전투 맵 검색" editable onChangeText={setQuery} placeholder="맵 이름, 그룹, 추천 레벨 검색" placeholderTextColor={theme.colors.textMuted} style={styles.search} value={query} />;
     }
     if (item.kind === 'CATALOG_EMPTY') return <Text style={styles.muted}>검색 가능한 맵이 없습니다.</Text>;
     if (item.kind === 'CATALOG_ROW') {
       const { row } = item;
       if (row.kind === 'CATEGORY') {
-        return <BattleMapCatalogCategoryRow category={row.category} expanded={row.expanded} mapCount={row.mapCount} onPress={() => toggleCatalogCategory(row.category.id)} />;
+        const interactionDisabled = query.trim().length > 0;
+        return <BattleMapCatalogCategoryRow category={row.category} expanded={row.expanded} interactionDisabled={interactionDisabled} mapCount={row.mapCount} onPress={() => { if (!interactionDisabled) toggleCatalogCategory(row.category.id); }} />;
       }
       if (row.kind === 'STATE') {
         return <BattleMapCatalogStateRow category={row.category} error={row.error} onRetry={() => { void loadCategoryMaps(row.category); }} state={row.state} />;
       }
       if (row.kind === 'GROUP') {
-        return <BattleMapCatalogGroupRow expanded={row.expanded} group={row.group} onPress={() => toggleCatalogGroup(row.group.key)} />;
+        const interactionDisabled = query.trim().length > 0;
+        return <BattleMapCatalogGroupRow expanded={row.expanded} group={row.group} interactionDisabled={interactionDisabled} onPress={() => { if (!interactionDisabled) toggleCatalogGroup(row.group.key); }} />;
       }
       const { map } = row;
       const identity = map.mapCode == null ? null : battleMapIdentity({ categoryId: map.categoryId, mapCode: map.mapCode });
       const selected = identity != null && draft.maps.some((setting) => battleMapIdentity(setting) === identity);
-      return <BattleMapCatalogMapRow disabled={controlsDisabled} map={map} onPress={() => updateDraft((current) => {
-        const currentlySelected = identity != null
-          && current.maps.some((setting) => battleMapIdentity(setting) === identity);
-        return selectBattleMap(current, map, !currentlySelected);
-      })} selected={selected} />;
+      return <BattleMapCatalogMapRow disabled={controlsDisabled} map={map} onPress={() => {
+        if (controlsDisabledRef.current) return;
+        updateDraft((current) => {
+          if (controlsDisabledRef.current) return current;
+          const currentlySelected = identity != null
+            && current.maps.some((setting) => battleMapIdentity(setting) === identity);
+          return selectBattleMap(current, map, !currentlySelected);
+        });
+      }} selected={selected} />;
     }
 
     const { setting, index } = item;

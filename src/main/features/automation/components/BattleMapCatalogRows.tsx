@@ -8,6 +8,7 @@ import type { BattleCategoryResponse, BattleMapResponse } from '../../../types/a
 type BattleMapCatalogCategoryRowProps = {
   category: BattleCategoryResponse;
   expanded: boolean;
+  interactionDisabled?: boolean;
   mapCount: number | null;
   onPress: () => void;
 };
@@ -15,17 +16,22 @@ type BattleMapCatalogCategoryRowProps = {
 export function BattleMapCatalogCategoryRow({
   category,
   expanded,
+  interactionDisabled = false,
   mapCount,
   onPress,
 }: BattleMapCatalogCategoryRowProps) {
   const action = expanded ? '닫기' : '열기';
+  const accessibilityLabel = interactionDisabled
+    ? `${category.label} 카테고리 검색 결과`
+    : `${category.label} 카테고리 ${action}`;
 
   return (
     <Pressable
-      accessibilityLabel={`${category.label} 카테고리 ${action}`}
+      accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
-      accessibilityState={{ expanded }}
-      onPress={onPress}
+      accessibilityState={interactionDisabled ? { disabled: true, expanded } : { expanded }}
+      disabled={interactionDisabled}
+      onPress={() => { if (!interactionDisabled) onPress(); }}
       style={styles.category}
     >
       <View style={styles.rowContent}>
@@ -45,21 +51,26 @@ export function BattleMapCatalogCategoryRow({
 type BattleMapCatalogGroupRowProps = {
   group: BattleMapGroup;
   expanded: boolean;
+  interactionDisabled?: boolean;
   onPress: () => void;
 };
 
-export function BattleMapCatalogGroupRow({ group, expanded, onPress }: BattleMapCatalogGroupRowProps) {
+export function BattleMapCatalogGroupRow({ group, expanded, interactionDisabled = false, onPress }: BattleMapCatalogGroupRowProps) {
   const action = expanded ? '닫기' : '열기';
+  const accessibilityLabel = interactionDisabled
+    ? `${group.name} 그룹 검색 결과`
+    : `${group.name} 그룹 ${action}`;
   const details = [group.recommendedLevel == null ? null : `Lv ${group.recommendedLevel}`, `${group.maps.length}개`]
     .filter((detail): detail is string => detail != null)
     .join(' · ');
 
   return (
     <Pressable
-      accessibilityLabel={`${group.name} 그룹 ${action}`}
+      accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
-      accessibilityState={{ expanded }}
-      onPress={onPress}
+      accessibilityState={interactionDisabled ? { disabled: true, expanded } : { expanded }}
+      disabled={interactionDisabled}
+      onPress={() => { if (!interactionDisabled) onPress(); }}
       style={styles.group}
     >
       <View style={styles.rowContent}>
