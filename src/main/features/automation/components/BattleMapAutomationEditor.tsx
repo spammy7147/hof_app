@@ -102,6 +102,7 @@ export function BattleMapAutomationEditor({
   const [draftReady, setDraftReady] = useState(false);
   const [serverRefreshWarning, setServerRefreshWarning] = useState(false);
   const draftRef = useRef(draft);
+  const queryRef = useRef(query);
   const baselineRef = useRef(serializeEditableDraft(draft));
   const entrySettingsRef = useRef(serializeEntrySettings(entry));
   const mountedGenerationRef = useRef(0);
@@ -125,6 +126,10 @@ export function BattleMapAutomationEditor({
     draftRef.current = next;
     setDraft(next);
   }, []);
+  const updateEditableDraft = useCallback((updater: (current: BattleMapAutomationDraft) => BattleMapAutomationDraft) => {
+    if (controlsDisabledRef.current) return;
+    updateDraft((current) => controlsDisabledRef.current ? current : updater(current));
+  }, [updateDraft]);
 
   const loadPresets = useCallback(async () => {
     const generation = ++presetGenerationRef.current;
@@ -279,6 +284,7 @@ export function BattleMapAutomationEditor({
   const busy = saving || localBusy;
   const controlsDisabled = busy || !draftReady;
   controlsDisabledRef.current = controlsDisabled;
+  queryRef.current = query;
   const dirty = serializeEditableDraft(draft) !== baselineRef.current;
   const hasExplicitPreset = draft.maps.some(({ presetMode }) => presetMode === 'EXPLICIT');
   const saveDisabled = controlsDisabled || validationErrors.length > 0
@@ -353,13 +359,20 @@ export function BattleMapAutomationEditor({
     setActivePresetIdentity(identity);
   }, []);
   const toggleCatalogCategory = useCallback((categoryId: string) => {
-    setExpandedCategoryId((current) => current === categoryId ? null : categoryId);
-    setExpandedGroupKeys([]);
+    if (queryRef.current.trim().length > 0) return;
+    setExpandedCategoryId((current) => queryRef.current.trim().length > 0
+      ? current
+      : current === categoryId ? null : categoryId);
+    setExpandedGroupKeys((current) => queryRef.current.trim().length > 0 ? current : []);
   }, []);
   const toggleCatalogGroup = useCallback((groupKey: string) => {
-    setExpandedGroupKeys((current) => current.includes(groupKey)
-      ? current.filter((key) => key !== groupKey)
-      : [...current, groupKey]);
+    if (queryRef.current.trim().length > 0) return;
+    setExpandedGroupKeys((current) => {
+      if (queryRef.current.trim().length > 0) return current;
+      return current.includes(groupKey)
+        ? current.filter((key) => key !== groupKey)
+        : [...current, groupKey];
+    });
   }, []);
   const listItems = useMemo<EditorListItem[]>(() => [
     { key: 'selected-heading', kind: 'HEADING', title: '선택한 맵 · 실행 순서' },
@@ -422,8 +435,10 @@ export function BattleMapAutomationEditor({
     onClearMutationMessage();
     setLocalBusy(true);
     try {
-      const request = buildBattleMapAutomationRequest(draftRef.current, validPresetIds);
-      if (await onSave(request)) baselineRef.current = serializeEditableDraft(draftRef.current);
+      const submittedDraft = draftRef.current;
+      const request = buildBattleMapAutomationRequest(submittedDraft, validPresetIds);
+      const submittedBaseline = serializeEditableDraft(submittedDraft);
+      if (await onSave(request)) baselineRef.current = submittedBaseline;
     } finally {
       setLocalBusy(false);
     }
@@ -435,7 +450,10 @@ export function BattleMapAutomationEditor({
       return <Text style={styles.muted}>아래 목록에서 실행할 맵을 선택해 주세요.</Text>;
     }
     if (item.kind === 'CATALOG_SEARCH') {
-      return <TextInput accessibilityLabel="전투 맵 검색" editable onChangeText={setQuery} placeholder="맵 이름, 그룹, 추천 레벨 검색" placeholderTextColor={theme.colors.textMuted} style={styles.search} value={query} />;
+      return <TextInput accessibilityLabel="전투 맵 검색" editable onChangeText={(value) => {
+        queryRef.current = value;
+        setQuery(value);
+      }} placeholder="맵 이름, 그룹, 추천 레벨 검색" placeholderTextColor={theme.colors.textMuted} style={styles.search} value={query} />;
     }
     if (item.kind === 'CATALOG_EMPTY') return <Text style={styles.muted}>검색 가능한 맵이 없습니다.</Text>;
     if (item.kind === 'CATALOG_ROW') {
@@ -484,11 +502,11 @@ export function BattleMapAutomationEditor({
             <Text style={styles.mapName}>{setting.displayName}</Text>
             {!setting.resolved ? <Text style={styles.problem}>현재 맵 목록에 없음 · 저장된 설정</Text> : null}
           </View>
-          <Pressable accessibilityLabel={`${setting.displayName} 맵 위로`} accessibilityRole="button" accessibilityState={{ disabled: controlsDisabled || index === 0 }} disabled={controlsDisabled || index === 0} onPress={() => updateDraft((current) => moveBattleMapSetting(current, index, index - 1))} style={styles.smallIcon}><ArrowUp color={theme.colors.textMuted} size={16} /></Pressable>
-          <Pressable accessibilityLabel={`${setting.displayName} 맵 아래로`} accessibilityRole="button" accessibilityState={{ disabled: controlsDisabled || index === draft.maps.length - 1 }} disabled={controlsDisabled || index === draft.maps.length - 1} onPress={() => updateDraft((current) => moveBattleMapSetting(current, index, index + 1))} style={styles.smallIcon}><ArrowDown color={theme.colors.textMuted} size={16} /></Pressable>
-          <Pressable accessibilityLabel={`${setting.displayName} 맵 제거`} accessibilityRole="button" accessibilityState={{ disabled: controlsDisabled }} disabled={controlsDisabled} onPress={() => updateDraft((current) => removeBattleMapSetting(current, index))} style={styles.smallIcon}><Trash2 color={theme.colors.danger} size={16} /></Pressable>
+          <Pressable accessibilityLabel={`${setting.displayName} 맵 위로`} accessibilityRole="button" accessibilityState={{ disabled: controlsDisabled || index === 0 }} disabled={controlsDisabled || index === 0} onPress={() => updateEditableDraft((current) => moveBattleMapSetting(current, index, index - 1))} style={styles.smallIcon}><ArrowUp color={theme.colors.textMuted} size={16} /></Pressable>
+          <Pressable accessibilityLabel={`${setting.displayName} 맵 아래로`} accessibilityRole="button" accessibilityState={{ disabled: controlsDisabled || index === draft.maps.length - 1 }} disabled={controlsDisabled || index === draft.maps.length - 1} onPress={() => updateEditableDraft((current) => moveBattleMapSetting(current, index, index + 1))} style={styles.smallIcon}><ArrowDown color={theme.colors.textMuted} size={16} /></Pressable>
+          <Pressable accessibilityLabel={`${setting.displayName} 맵 제거`} accessibilityRole="button" accessibilityState={{ disabled: controlsDisabled }} disabled={controlsDisabled} onPress={() => updateEditableDraft((current) => removeBattleMapSetting(current, index))} style={styles.smallIcon}><Trash2 color={theme.colors.danger} size={16} /></Pressable>
         </View>
-        <TextInput accessibilityLabel={`${setting.displayName} 일일 목표`} editable={!controlsDisabled} keyboardType="number-pad" onChangeText={(value) => updateDraft((current) => ({ ...current, maps: current.maps.map((map) => battleMapIdentity(map) === identity ? { ...map, dailyTargetCount: value } : map) }))} style={styles.targetInput} value={String(setting.dailyTargetCount)} />
+        <TextInput accessibilityLabel={`${setting.displayName} 일일 목표`} editable={!controlsDisabled} keyboardType="number-pad" onChangeText={(value) => updateEditableDraft((current) => ({ ...current, maps: current.maps.map((map) => battleMapIdentity(map) === identity ? { ...map, dailyTargetCount: value } : map) }))} style={styles.targetInput} value={String(setting.dailyTargetCount)} />
         <View style={styles.progressLabels}>
           <Text style={styles.muted}>오늘 성공 {successes}회</Text>
           <Text style={styles.muted}>남은 목표 {progress.remaining}회</Text>
@@ -522,7 +540,7 @@ export function BattleMapAutomationEditor({
         </Pressable>
       </View>
     );
-  }, [controlsDisabled, draft, loadCategoryMaps, openPresetPicker, presets, presetsVerified, presetState.error, presetState.loading, query, toggleCatalogCategory, toggleCatalogGroup, updateDraft]);
+  }, [controlsDisabled, draft, loadCategoryMaps, openPresetPicker, presets, presetsVerified, presetState.error, presetState.loading, query, toggleCatalogCategory, toggleCatalogGroup, updateDraft, updateEditableDraft]);
 
   return (
     <View style={styles.screen}>
@@ -534,7 +552,7 @@ export function BattleMapAutomationEditor({
           <Text style={styles.title}>전투 맵 자동화</Text>
           <Text style={styles.subtitle}>맵별 오늘 목표와 실행 순서를 설정하세요.</Text>
         </View>
-        <Switch accessibilityLabel="전투 맵 자동화 사용" disabled={controlsDisabled} value={draft.enabled} onValueChange={(enabled) => updateDraft((current) => ({ ...current, enabled }))} />
+        <Switch accessibilityLabel="전투 맵 자동화 사용" disabled={controlsDisabled} value={draft.enabled} onValueChange={(enabled) => updateEditableDraft((current) => ({ ...current, enabled }))} />
       </View>
 
       {mutationMessage ? <Text accessibilityLabel="전투 맵 자동화 작업 오류" accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.problem}>{mutationMessage}</Text> : null}
@@ -550,8 +568,8 @@ export function BattleMapAutomationEditor({
         mapName={activePresetSetting?.displayName ?? ''}
         onClose={() => closePresetPicker(true)}
         onSelect={(presetId) => {
-          if (activePresetIdentity == null) return;
-          updateDraft((current) => updatePreset(current, activePresetIdentity, presetId));
+          if (controlsDisabledRef.current || activePresetIdentity == null) return;
+          updateEditableDraft((current) => updatePreset(current, activePresetIdentity, presetId));
           closePresetPicker(true);
         }}
         presets={presets}

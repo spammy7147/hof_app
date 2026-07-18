@@ -282,6 +282,54 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(alertArguments, null);
   });
 
+  it('fences every retained editor mutation during save and baselines the submitted draft', async () => {
+    alertArguments = null;
+    let backs = 0;
+    const saveResult = deferred<boolean>();
+    const saves: UpdateBattleMapAutomationRequest[] = [];
+    const renderer = await renderEditor({
+      entry: battleEntry([setting('a', 3, 0), setting('b', 4, 1)]),
+      maps: [catalogMap('a', 'Alpha'), catalogMap('b', 'Beta', { mapOrder: 1 })],
+      presets: [preset(9, 'Raid Team')],
+      onSave: async (request) => { saves.push(request); return saveResult.promise; },
+      onBack: () => { backs += 1; },
+    });
+    const retainedMoveDown = renderer.root.findByProps({ accessibilityLabel: 'Alpha 맵 아래로' }).props.onPress as () => void;
+    const retainedMoveUp = renderer.root.findByProps({ accessibilityLabel: 'Beta 맵 위로' }).props.onPress as () => void;
+    const retainedRemove = renderer.root.findByProps({ accessibilityLabel: 'Alpha 맵 제거' }).props.onPress as () => void;
+    const retainedTargetChange = renderer.root.findByProps({ accessibilityLabel: 'Alpha 일일 목표' }).props.onChangeText as (value: string) => void;
+    const retainedEnabledChange = renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 사용' }).props.onValueChange as (enabled: boolean) => void;
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' }).props.onPress(); });
+    const retainedPresetPress = renderer.root.findByProps({ accessibilityLabel: 'Raid Team 프리셋 선택' }).props.onPress as () => void;
+    let pendingSave!: Promise<void>;
+
+    await act(async () => {
+      pendingSave = renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.onPress();
+    });
+    await act(async () => {
+      retainedTargetChange('9');
+      retainedEnabledChange(false);
+      retainedPresetPress();
+      retainedMoveDown();
+      retainedMoveUp();
+      retainedRemove();
+    });
+
+    assert.deepEqual(saves, [{ enabled: true, maps: [setting('a', 3, 0), setting('b', 4, 1)] }]);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Alpha 일일 목표' }).props.value, '3');
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 사용' }).props.value, true);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Alpha 맵 제거' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Beta 맵 제거' }));
+
+    await act(async () => {
+      saveResult.resolve(true);
+      await pendingSave;
+    });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 뒤로' }).props.onPress(); });
+    assert.equal(backs, 1);
+    assert.equal(alertArguments, null);
+  });
+
   it('fences a retained enabled catalog callback after external saving begins', async () => {
     const base = editorProps({ maps: [catalogMap('a', 'Alpha')] });
     let renderer!: ReactTestRenderer;
@@ -565,6 +613,8 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     });
     await openCatalogGroup(renderer, '전투맵', '수동 그룹');
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '수동 맵 맵 선택' }));
+    const retainedManualCategoryPress = renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 닫기' }).props.onPress as () => void;
+    const retainedManualGroupPress = renderer.root.findByProps({ accessibilityLabel: '수동 그룹 그룹 닫기' }).props.onPress as () => void;
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투 맵 검색' }).props.onChangeText('바늘'); });
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '바늘 레이드 맵 선택' }));
@@ -577,6 +627,8 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     await act(async () => {
       searchCategory.props.onPress();
       searchGroup.props.onPress();
+      retainedManualCategoryPress();
+      retainedManualGroupPress();
     });
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투 맵 검색' }).props.onChangeText(''); });
