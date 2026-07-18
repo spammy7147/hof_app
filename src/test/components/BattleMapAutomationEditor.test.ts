@@ -61,11 +61,70 @@ moduleWithLoader._load = (request, parent, isMain) => {
 const { BattleMapAutomationEditor } = require(
   '../../main/features/automation/components/BattleMapAutomationEditor',
 ) as typeof import('../../main/features/automation/components/BattleMapAutomationEditor');
+const {
+  BattleMapCatalogCategoryRow,
+  BattleMapCatalogGroupRow,
+  BattleMapCatalogMapRow,
+  BattleMapCatalogStateRow,
+} = require(
+  '../../main/features/automation/components/BattleMapCatalogRows',
+) as typeof import('../../main/features/automation/components/BattleMapCatalogRows');
 moduleWithLoader._load = originalLoad;
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('BattleMapAutomationEditor mounted behavior', () => {
+  it('renders accessible catalog rows and changes map selection through the row callback', async () => {
+    const catalogCategory = { id: 'battle', label: '전투맵', description: '전투할 맵을 고르세요.', order: 0, enabled: true };
+    const catalogMapRow = catalogMap('mansion', "Noble's Mansion- 저택 서관(놀이방)", { keyCount: 8, requiredTime: 10 });
+    const catalogGroup = { key: 'battle:0:저택 서관', name: '저택 서관', groupOrder: 0, recommendedLevel: '50-60', maps: [catalogMapRow] };
+    let mapPresses = 0;
+    let disabledPresses = 0;
+    let retries = 0;
+
+    function CatalogRowsHarness() {
+      const [selected, setSelected] = React.useState(false);
+      return React.createElement(React.Fragment, null,
+        React.createElement(BattleMapCatalogCategoryRow, { category: catalogCategory, expanded: false, mapCount: null, onPress: () => undefined }),
+        React.createElement(BattleMapCatalogGroupRow, { group: catalogGroup, expanded: true, onPress: () => undefined }),
+        React.createElement(BattleMapCatalogMapRow, { map: catalogMapRow, selected, disabled: false, onPress: () => { mapPresses += 1; setSelected(true); } }),
+        React.createElement(BattleMapCatalogMapRow, { map: catalogMap('disabled', '잠긴 맵'), selected: false, disabled: true, onPress: () => { disabledPresses += 1; } }),
+        React.createElement(BattleMapCatalogStateRow, { category: catalogCategory, state: 'error', error: '연결이 끊겼어요.', onRetry: () => { retries += 1; } }),
+      );
+    }
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(CatalogRowsHarness)); });
+
+    const categoryButton = renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 열기' });
+    assert.equal(categoryButton.props.accessibilityRole, 'button');
+    assert.equal(categoryButton.props.accessibilityState.expanded, false);
+    const groupButton = renderer.root.findByProps({ accessibilityLabel: '저택 서관 그룹 닫기' });
+    assert.equal(groupButton.props.accessibilityRole, 'button');
+    assert.equal(groupButton.props.accessibilityState.expanded, true);
+    const mapButton = () => renderer.root.findByProps({ accessibilityLabel: '저택 서관(놀이방) 맵 선택' });
+    assert.equal(mapButton().props.accessibilityRole, 'checkbox');
+    assert.equal(mapButton().props.accessibilityState.checked, false);
+    assert.equal(hasText(renderer.root, '저택 서관(놀이방)'), true);
+    assert.equal(hasText(renderer.root, 'key 8 · Time 10'), true);
+    assert.equal(hasText(renderer.root, '선택됨'), false);
+    assert.equal(hasText(renderer.root, '확인 중'), true);
+    assert.equal(hasText(renderer.root, 'Lv 50-60 · 1개'), true);
+    assert.equal(renderer.root.findAll((node) => ['Folder', 'Swords', 'Check'].includes(node.type as string)).length, 0);
+
+    await act(async () => { mapButton().props.onPress(); });
+    assert.equal(mapPresses, 1);
+    assert.equal(mapButton().props.accessibilityState.checked, true);
+    assert.equal(hasText(renderer.root, '선택됨'), true);
+    const disabledMapButton = renderer.root.findByProps({ accessibilityLabel: '잠긴 맵 맵 선택' });
+    assert.equal(disabledMapButton.props.accessibilityState.disabled, true);
+    await act(async () => { disabledMapButton.props.onPress(); });
+    assert.equal(disabledPresses, 0);
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투맵 맵 다시 불러오기' }).props.onPress(); });
+    assert.equal(retries, 1);
+    assert.equal(hasText(renderer.root, '연결이 끊겼어요.'), true);
+  });
+
   it('searches/selects, edits target, shows progress/capability, chooses preset, reorders/removes, and saves exact typed settings', async () => {
     const saves: UpdateBattleMapAutomationRequest[] = [];
     const renderer = await renderEditor({
