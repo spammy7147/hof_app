@@ -576,7 +576,7 @@ Expected: all focused tests and typecheck PASS.
 ```bash
 npm test
 npm run typecheck
-git diff --check HEAD~3..HEAD
+git diff --check 88bebc4..HEAD
 ```
 
 Expected: all tests PASS, typecheck exits 0, and diff check prints nothing.
@@ -584,8 +584,8 @@ Expected: all tests PASS, typecheck exits 0, and diff check prints nothing.
 - [ ] **Step 2: Audit the final diff**
 
 ```bash
-git diff --stat HEAD~3..HEAD
-git diff HEAD~3..HEAD -- src/main/domain/battleMapCatalog.ts src/main/features/automation/components/BattleMapCatalogRows.tsx src/main/features/automation/components/BattleMapAutomationEditor.tsx
+git diff --stat 88bebc4..HEAD
+git diff 88bebc4..HEAD -- src/main/domain/battleMapCatalog.ts src/main/features/automation/components/BattleMapCatalogRows.tsx src/main/features/automation/components/BattleMapAutomationEditor.tsx
 ```
 
 Confirm: one FlatList; neutral category/group rows without left icons or selected styling; mint styling and `선택됨` only on selected maps; derived search expansion; unchanged request builder and execution order; category-scoped retries; no backend/API changes.
