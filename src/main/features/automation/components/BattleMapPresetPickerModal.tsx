@@ -55,6 +55,7 @@ export function BattleMapPresetPickerModal({
         .map((preset) => ({ key: `preset:${preset.id}`, kind: 'EXPLICIT' as const, preset })),
     ];
   }, [presets, query]);
+  const noExplicitResults = query.trim().length > 0 && options.length === 1;
 
   function handleShow() {
     searchRef.current?.focus();
@@ -102,6 +103,7 @@ export function BattleMapPresetPickerModal({
             style={styles.search}
             value={query}
           />
+          {noExplicitResults ? <Text accessibilityLiveRegion="polite" style={styles.empty}>검색 결과가 없습니다</Text> : null}
           <FlatList
             contentContainerStyle={styles.options}
             data={options}
@@ -174,6 +176,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
   },
   list: { flexShrink: 1 },
+  empty: { color: theme.colors.textMuted, fontSize: 12 },
   options: { gap: theme.spacing.xs, paddingBottom: theme.spacing.lg },
   option: {
     borderColor: theme.colors.borderStrong,

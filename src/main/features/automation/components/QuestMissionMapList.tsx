@@ -23,9 +23,26 @@ export type QuestMissionMapListProps = {
 };
 
 type PresetInvocation = {
-  identity: string;
+  rowKey: string;
   nodeHandle: ReturnType<typeof findNodeHandle>;
 };
+
+type MissionMapRow = {
+  identity: string;
+  index: number;
+  map: QuestMapSettingRequest;
+  rowKey: string;
+};
+
+function buildMissionMapRows(maps: readonly QuestMapSettingRequest[]): MissionMapRow[] {
+  const occurrences = new Map<string, number>();
+  return maps.map((map, index) => {
+    const identity = buildQuestMapIdentity(map);
+    const occurrence = occurrences.get(identity) ?? 0;
+    occurrences.set(identity, occurrence + 1);
+    return { identity, index, map, rowKey: `${identity}\u0000${occurrence}` };
+  });
+}
 
 export function QuestMissionMapList({
   catalog,
@@ -36,11 +53,12 @@ export function QuestMissionMapList({
   questContext,
   onUpdate,
 }: QuestMissionMapListProps) {
-  const [activePresetIdentity, setActivePresetIdentity] = useState<string | null>(null);
+  const [activePresetRowKey, setActivePresetRowKey] = useState<string | null>(null);
   const mountedRef = useRef(false);
   const disabledRef = useRef(disabled);
   const mapsRef = useRef(maps);
-  const activePresetIdentityRef = useRef<string | null>(null);
+  const rowsRef = useRef<MissionMapRow[]>([]);
+  const activePresetRowKeyRef = useRef<string | null>(null);
   const presetTriggerNodesRef = useRef(new Map<string, ElementRef<typeof Pressable>>());
   const invokingPresetTriggerRef = useRef<PresetInvocation | null>(null);
   const presetFocusGenerationRef = useRef(0);
@@ -48,7 +66,9 @@ export function QuestMissionMapList({
 
   disabledRef.current = disabled;
   mapsRef.current = maps;
-  activePresetIdentityRef.current = activePresetIdentity;
+  const rows = buildMissionMapRows(maps);
+  rowsRef.current = rows;
+  activePresetRowKeyRef.current = activePresetRowKey;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -66,8 +86,8 @@ export function QuestMissionMapList({
   const closePresetPicker = useCallback((restoreFocus: boolean) => {
     const focusGeneration = ++presetFocusGenerationRef.current;
     const invocation = invokingPresetTriggerRef.current;
-    activePresetIdentityRef.current = null;
-    setActivePresetIdentity(null);
+    activePresetRowKeyRef.current = null;
+    setActivePresetRowKey(null);
     if (restorePresetFocusTimerRef.current) {
       clearTimeout(restorePresetFocusTimerRef.current);
       restorePresetFocusTimerRef.current = null;
@@ -84,14 +104,14 @@ export function QuestMissionMapList({
       if (
         !mountedRef.current
         || disabledRef.current
-        || activePresetIdentityRef.current != null
+        || activePresetRowKeyRef.current != null
         || presetFocusGenerationRef.current !== focusGeneration
-        || !mapsRef.current.some((map) => buildQuestMapIdentity(map) === invocation.identity)
+        || !rowsRef.current.some((row) => row.rowKey === invocation.rowKey)
       ) {
         clearInvocation();
         return;
       }
-      const liveNode = presetTriggerNodesRef.current.get(invocation.identity) ?? null;
+      const liveNode = presetTriggerNodesRef.current.get(invocation.rowKey) ?? null;
       const liveHandle = findNodeHandle(liveNode);
       if (liveHandle != null && liveHandle === invocation.nodeHandle) {
         AccessibilityInfo.setAccessibilityFocus(liveHandle);
@@ -100,46 +120,47 @@ export function QuestMissionMapList({
     }, 250);
   }, []);
 
-  const openPresetPicker = useCallback((identity: string) => {
+  const openPresetPicker = useCallback((rowKey: string) => {
     if (disabledRef.current) return;
     presetFocusGenerationRef.current += 1;
     if (restorePresetFocusTimerRef.current) {
       clearTimeout(restorePresetFocusTimerRef.current);
       restorePresetFocusTimerRef.current = null;
     }
-    const triggerNode = presetTriggerNodesRef.current.get(identity) ?? null;
+    const triggerNode = presetTriggerNodesRef.current.get(rowKey) ?? null;
     invokingPresetTriggerRef.current = {
-      identity,
+      rowKey,
       nodeHandle: findNodeHandle(triggerNode),
     };
-    activePresetIdentityRef.current = identity;
-    setActivePresetIdentity(identity);
+    activePresetRowKeyRef.current = rowKey;
+    setActivePresetRowKey(rowKey);
   }, []);
 
-  const activePresetMap = activePresetIdentity == null
+  const activePresetRow = activePresetRowKey == null
     ? null
-    : maps.find((map) => buildQuestMapIdentity(map) === activePresetIdentity) ?? null;
-  const activeCatalogMap = activePresetMap == null
+    : rows.find((row) => row.rowKey === activePresetRowKey) ?? null;
+  const activePresetMap = activePresetRow?.map.mapCode.trim() ? activePresetRow.map : null;
+  const activeCatalogMap = activePresetRow == null
     ? null
-    : catalog.find((map) => buildQuestMapIdentity(map) === activePresetIdentity) ?? null;
+    : catalog.find((map) => buildQuestMapIdentity(map) === activePresetRow.identity) ?? null;
 
   useEffect(() => {
-    if (activePresetIdentity != null && (disabled || activePresetMap == null)) {
+    if (activePresetRowKey != null && (disabled || activePresetMap == null)) {
       closePresetPicker(false);
     }
-  }, [activePresetIdentity, activePresetMap, closePresetPicker, disabled]);
+  }, [activePresetMap, activePresetRowKey, closePresetPicker, disabled]);
 
   function selectPreset(partyPresetId: number | null) {
     if (disabledRef.current) return;
-    const identity = activePresetIdentityRef.current;
-    if (identity == null) return;
+    const rowKey = activePresetRowKeyRef.current;
+    if (rowKey == null) return;
     const currentMaps = mapsRef.current;
-    const targetIndex = currentMaps.findIndex((map) => buildQuestMapIdentity(map) === identity);
-    if (targetIndex < 0) {
+    const targetRow = rowsRef.current.find((row) => row.rowKey === rowKey);
+    if (!targetRow) {
       closePresetPicker(false);
       return;
     }
-    onUpdate(currentMaps.map((map, index) => index !== targetIndex ? map : partyPresetId == null
+    onUpdate(currentMaps.map((map, index) => index !== targetRow.index ? map : partyPresetId == null
       ? { ...map, presetMode: 'PRIMARY', partyPresetId: null }
       : { ...map, presetMode: 'EXPLICIT', partyPresetId }));
     closePresetPicker(true);
@@ -147,16 +168,16 @@ export function QuestMissionMapList({
 
   return (
     <>
-      {maps.map((map, index) => {
-        const identity = buildQuestMapIdentity(map);
+      {rows.map(({ identity, index, map, rowKey }) => {
         const resolved = catalog.find((candidate) => buildQuestMapIdentity(candidate) === identity);
+        const presetLabel = formatAutomationPresetSelection(map, presets);
         const category = map.categoryId === 'battle_map'
           ? '전투맵'
           : map.categoryId === 'adventure_map'
             ? '모험맵'
             : map.categoryId;
         return (
-          <View key={`${missionKey}:${identity}`} style={styles.mapCard}>
+          <View key={`${missionKey}:${rowKey}`} style={styles.mapCard}>
             <View style={styles.mapHeading}>
               <View style={styles.mapCopy}>
                 <Text style={styles.mapName}>{resolved?.name ?? (map.mapCode || '맵을 선택해 주세요')}</Text>
@@ -164,34 +185,37 @@ export function QuestMissionMapList({
               </View>
               <Pressable accessibilityLabel={`${questContext} · ${missionKey} ${index + 1}번째 맵 위로`} accessibilityRole="button" accessibilityState={{ disabled: disabled || index === 0 }} disabled={disabled || index === 0} onPress={() => {
                 if (disabledRef.current) return;
-                const liveIndex = mapsRef.current.findIndex((candidate) => buildQuestMapIdentity(candidate) === identity);
-                if (liveIndex > 0) onUpdate(moveMissionMap(mapsRef.current, liveIndex, liveIndex - 1));
+                const liveRow = rowsRef.current.find((candidate) => candidate.rowKey === rowKey);
+                if (liveRow && liveRow.index > 0) onUpdate(moveMissionMap(mapsRef.current, liveRow.index, liveRow.index - 1));
               }} style={styles.smallIcon}><ArrowUp color={theme.colors.textMuted} size={15} /></Pressable>
               <Pressable accessibilityLabel={`${questContext} · ${missionKey} ${index + 1}번째 맵 아래로`} accessibilityRole="button" accessibilityState={{ disabled: disabled || index === maps.length - 1 }} disabled={disabled || index === maps.length - 1} onPress={() => {
                 if (disabledRef.current) return;
-                const liveIndex = mapsRef.current.findIndex((candidate) => buildQuestMapIdentity(candidate) === identity);
-                if (liveIndex >= 0 && liveIndex < mapsRef.current.length - 1) onUpdate(moveMissionMap(mapsRef.current, liveIndex, liveIndex + 1));
+                const liveRow = rowsRef.current.find((candidate) => candidate.rowKey === rowKey);
+                if (liveRow && liveRow.index < mapsRef.current.length - 1) onUpdate(moveMissionMap(mapsRef.current, liveRow.index, liveRow.index + 1));
               }} style={styles.smallIcon}><ArrowDown color={theme.colors.textMuted} size={15} /></Pressable>
               <Pressable accessibilityLabel={`${questContext} · ${missionKey} ${index + 1}번째 맵 제거`} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={() => {
                 if (disabledRef.current) return;
-                const liveIndex = mapsRef.current.findIndex((candidate) => buildQuestMapIdentity(candidate) === identity);
-                if (liveIndex >= 0) onUpdate(removeMissionMap(mapsRef.current, liveIndex));
+                const liveRow = rowsRef.current.find((candidate) => candidate.rowKey === rowKey);
+                if (liveRow) onUpdate(removeMissionMap(mapsRef.current, liveRow.index));
               }} style={styles.smallIcon}><X color={theme.colors.danger} size={15} /></Pressable>
             </View>
-            <Pressable
-              ref={(node) => {
-                if (node) presetTriggerNodesRef.current.set(identity, node);
-                else presetTriggerNodesRef.current.delete(identity);
-              }}
-              accessibilityLabel={`${questContext} · ${missionKey} ${index + 1}번째 맵 프리셋 선택`}
-              accessibilityRole="button"
-              accessibilityState={{ disabled }}
-              disabled={disabled}
-              onPress={() => openPresetPicker(identity)}
-              style={styles.presetButton}
-            >
-              <Text style={styles.presetButtonText}>{formatAutomationPresetSelection(map, presets)}</Text>
-            </Pressable>
+            {map.mapCode.trim() ? (
+              <Pressable
+                ref={(node) => {
+                  if (node) presetTriggerNodesRef.current.set(rowKey, node);
+                  else presetTriggerNodesRef.current.delete(rowKey);
+                }}
+                accessibilityLabel={`${questContext} · ${missionKey} ${index + 1}번째 맵 프리셋 선택`}
+                accessibilityRole="button"
+                accessibilityState={{ disabled }}
+                accessibilityValue={{ text: presetLabel }}
+                disabled={disabled}
+                onPress={() => openPresetPicker(rowKey)}
+                style={styles.presetButton}
+              >
+                <Text style={styles.presetButtonText}>{presetLabel}</Text>
+              </Pressable>
+            ) : null}
           </View>
         );
       })}

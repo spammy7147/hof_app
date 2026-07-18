@@ -710,6 +710,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
 
     const trigger = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 프리셋 선택' });
     assert.equal(trigger.props.accessibilityRole, 'button');
+    assert.deepEqual(trigger.props.accessibilityValue, { text: '대표 프리셋 없음' });
     assert.equal(trigger.props.style.minHeight, 44);
     await act(async () => { trigger.props.onPress(); });
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Safe 프리셋 선택' }));
@@ -720,7 +721,9 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '대표 프리셋 선택' }));
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Safe 프리셋 선택' }).props.onPress(); });
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '프리셋 검색' }).length, 0);
-    assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 프리셋 선택' }), 'Safe'), true);
+    const explicitTrigger = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 프리셋 선택' });
+    assert.equal(hasText(explicitTrigger, 'Safe'), true);
+    assert.deepEqual(explicitTrigger.props.accessibilityValue, { text: 'Safe' });
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
     assert.deepEqual(saves[0]?.quests[0]?.maps[0], {
       ...mapSetting('kill', 'a', 0),
@@ -737,6 +740,95 @@ describe('QuestAutomationEditor mounted behavior', () => {
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
     assert.equal(saves[1]?.quests[0]?.maps[0]?.presetMode, 'PRIMARY');
     assert.equal(saves[1]?.quests[0]?.maps[0]?.partyPresetId, null);
+  });
+
+  it('targets duplicate stored map occurrences independently without duplicate React keys', async () => {
+    const saves: UpdateQuestAutomationRequest[] = [];
+    const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
+    const first = mapSetting('kill', 'a', 0);
+    const second = { ...mapSetting('kill', 'a', 1), presetMode: 'EXPLICIT' as const, partyPresetId: 8 };
+    const duplicateKeyWarnings: unknown[][] = [];
+    const originalConsoleError = console.error;
+    console.error = (...args: unknown[]) => {
+      if (String(args[0]).includes('Encountered two children with the same key')) duplicateKeyWarnings.push(args);
+    };
+    let renderer!: ReactTestRenderer;
+    try {
+      renderer = await renderEditor({
+        entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [first, second] }]),
+        quests: [quest],
+        maps: [catalogMap('battle_map', 'a', 'Alpha')],
+        presets: [preset(7, 'Safe'), preset(8, 'Speed')],
+        onSave: async (request) => { saves.push(request); return true; },
+      });
+    } finally {
+      console.error = originalConsoleError;
+    }
+    assert.deepEqual(duplicateKeyWarnings, []);
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 2번째 맵 프리셋 선택' }).props.onPress(); });
+    assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: 'Speed 프리셋 선택' }).props.accessibilityState, { checked: true, disabled: false });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Safe 프리셋 선택' }).props.onPress(); });
+    assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 프리셋 선택' }).props.accessibilityValue, { text: '대표 프리셋 없음' });
+    assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 2번째 맵 프리셋 선택' }).props.accessibilityValue, { text: 'Safe' });
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 제거' }).props.onPress(); });
+    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
+    assert.deepEqual(saves[0]?.quests[0]?.maps, [{
+      ...second,
+      executionOrder: 0,
+      presetMode: 'EXPLICIT',
+      partyPresetId: 7,
+    }]);
+  });
+
+  it('closes a duplicate occurrence picker when deleting an earlier duplicate removes its row key', async () => {
+    accessibilityFocusCalls.length = 0;
+    const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
+    const second = { ...mapSetting('kill', 'a', 1), presetMode: 'EXPLICIT' as const, partyPresetId: 8 };
+    const renderer = await renderEditor({
+      entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0), second] }]),
+      quests: [quest],
+      maps: [catalogMap('battle_map', 'a', 'Alpha')],
+      presets: [preset(8, 'Speed')],
+    });
+
+    const secondLabel = 'Combat · kill 2번째 맵 프리셋 선택';
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: secondLabel }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 제거' }).props.onPress(); });
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '프리셋 검색' }).length, 0);
+    assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 프리셋 선택' }).props.accessibilityValue, { text: 'Speed' });
+    await act(async () => { await delay(280); });
+    assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === secondLabel), false);
+  });
+
+  it('does not render a preset trigger for a blank stored map code', async () => {
+    const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
+    const blank = { ...mapSetting('kill', '', 0), categoryId: '' };
+    const renderer = await renderEditor({
+      entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [blank] }]),
+      quests: [quest],
+      maps: [catalogMap('battle_map', 'a', 'Alpha')],
+    });
+
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 프리셋 선택' }).length, 0);
+    assert.equal(hasText(renderer.root, '맵을 선택해 주세요'), true);
+  });
+
+  it('keeps PRIMARY available and shows an empty result for an unmatched preset search', async () => {
+    const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
+    const renderer = await renderEditor({
+      entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]),
+      quests: [quest],
+      maps: [catalogMap('battle_map', 'a', 'Alpha')],
+      presets: [preset(7, 'Safe')],
+    });
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 프리셋 선택' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }).props.onChangeText('missing'); });
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Safe 프리셋 선택' }).length, 0);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '대표 프리셋 선택' }));
+    assert.equal(hasText(renderer.root, '검색 결과가 없습니다'), true);
   });
 
   it('renders exactly one current-preset button for malformed PRIMARY data', async () => {
