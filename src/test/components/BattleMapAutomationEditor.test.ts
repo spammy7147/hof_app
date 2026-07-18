@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import React from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 
+import { theme } from '../../main/styles/theme';
 import type {
   BattleMapResponse,
   TypedAutomationEntryResponse,
@@ -86,10 +87,14 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
       const [selected, setSelected] = React.useState(false);
       return React.createElement(React.Fragment, null,
         React.createElement(BattleMapCatalogCategoryRow, { category: catalogCategory, expanded: false, mapCount: null, onPress: () => undefined }),
+        React.createElement(BattleMapCatalogCategoryRow, { category: catalogCategory, expanded: true, mapCount: 1, onPress: () => undefined }),
         React.createElement(BattleMapCatalogGroupRow, { group: catalogGroup, expanded: true, onPress: () => undefined }),
+        React.createElement(BattleMapCatalogGroupRow, { group: catalogGroup, expanded: false, onPress: () => undefined }),
         React.createElement(BattleMapCatalogMapRow, { map: catalogMapRow, selected, disabled: false, onPress: () => { mapPresses += 1; setSelected(true); } }),
         React.createElement(BattleMapCatalogMapRow, { map: catalogMap('disabled', '잠긴 맵'), selected: false, disabled: true, onPress: () => { disabledPresses += 1; } }),
+        React.createElement(BattleMapCatalogStateRow, { category: catalogCategory, state: 'loading', error: null, onRetry: () => undefined }),
         React.createElement(BattleMapCatalogStateRow, { category: catalogCategory, state: 'error', error: '연결이 끊겼어요.', onRetry: () => { retries += 1; } }),
+        React.createElement(BattleMapCatalogStateRow, { category: catalogCategory, state: 'empty', error: null, onRetry: () => undefined }),
       );
     }
 
@@ -99,23 +104,47 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     const categoryButton = renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 열기' });
     assert.equal(categoryButton.props.accessibilityRole, 'button');
     assert.equal(categoryButton.props.accessibilityState.expanded, false);
+    const categoryStyle = flattenStyle(categoryButton.props.style);
+    assert.notEqual(categoryStyle.backgroundColor, theme.colors.accentGreen);
+    assert.notEqual(categoryStyle.borderColor, theme.colors.accentGreen);
+    const expandedCategoryStyle = flattenStyle(renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 닫기' }).props.style);
+    assert.notEqual(expandedCategoryStyle.backgroundColor, theme.colors.accentGreen);
+    assert.notEqual(expandedCategoryStyle.borderColor, theme.colors.accentGreen);
     const groupButton = renderer.root.findByProps({ accessibilityLabel: '저택 서관 그룹 닫기' });
     assert.equal(groupButton.props.accessibilityRole, 'button');
     assert.equal(groupButton.props.accessibilityState.expanded, true);
+    const groupStyle = flattenStyle(groupButton.props.style);
+    assert.notEqual(groupStyle.backgroundColor, theme.colors.accentGreen);
+    assert.notEqual(groupStyle.borderColor, theme.colors.accentGreen);
+    const collapsedGroupStyle = flattenStyle(renderer.root.findByProps({ accessibilityLabel: '저택 서관 그룹 열기' }).props.style);
+    assert.notEqual(collapsedGroupStyle.backgroundColor, theme.colors.accentGreen);
+    assert.notEqual(collapsedGroupStyle.borderColor, theme.colors.accentGreen);
     const mapButton = () => renderer.root.findByProps({ accessibilityLabel: '저택 서관(놀이방) 맵 선택' });
     assert.equal(mapButton().props.accessibilityRole, 'checkbox');
     assert.equal(mapButton().props.accessibilityState.checked, false);
+    assert.equal(flattenStyle(mapButton().props.style).backgroundColor, theme.colors.surfaceAlt);
     assert.equal(hasText(renderer.root, '저택 서관(놀이방)'), true);
     assert.equal(hasText(renderer.root, 'key 8 · Time 10'), true);
     assert.equal(hasText(renderer.root, '선택됨'), false);
     assert.equal(hasText(renderer.root, '확인 중'), true);
     assert.equal(hasText(renderer.root, 'Lv 50-60 · 1개'), true);
     assert.equal(renderer.root.findAll((node) => ['Folder', 'Swords', 'Check'].includes(node.type as string)).length, 0);
+    assert.equal(hasText(renderer.root, '전투맵 맵 불러오는 중'), true);
+    assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'ActivityIndicator').length, 1);
+    assert.equal(hasText(renderer.root, '전투맵 맵이 없습니다.'), true);
+    assert.equal(hasText(renderer.root, '다시 시도'), true);
 
     await act(async () => { mapButton().props.onPress(); });
     assert.equal(mapPresses, 1);
     assert.equal(mapButton().props.accessibilityState.checked, true);
     assert.equal(hasText(renderer.root, '선택됨'), true);
+    const selectedMapStyle = flattenStyle(mapButton().props.style);
+    assert.notEqual(selectedMapStyle.backgroundColor, theme.colors.accentGreen);
+    assert.equal(selectedMapStyle.backgroundColor, theme.colors.surface);
+    assert.equal(selectedMapStyle.borderColor, theme.colors.accentGreen);
+    assert.equal(flattenStyle(findTextNode(renderer.root, '저택 서관(놀이방)').props.style).color, theme.colors.text);
+    assert.equal(flattenStyle(findTextNode(renderer.root, 'key 8 · Time 10').props.style).color, theme.colors.textMuted);
+    assert.equal(flattenStyle(findTextNode(renderer.root, '선택됨').props.style).color, theme.colors.accentGreen);
     const disabledMapButton = renderer.root.findByProps({ accessibilityLabel: '잠긴 맵 맵 선택' });
     assert.equal(disabledMapButton.props.accessibilityState.disabled, true);
     await act(async () => { disabledMapButton.props.onPress(); });
@@ -716,6 +745,18 @@ function editorProps(overrides: Overrides = {}) {
 
 function hasText(root: ReactTestInstance, text: string): boolean {
   return root.findAll((node) => (node.type as unknown) === 'Text' && node.children.join('') === text).length > 0;
+}
+function findTextNode(root: ReactTestInstance, text: string): ReactTestInstance {
+  return root.find((node) => (node.type as unknown) === 'Text' && node.children.join('') === text);
+}
+function flattenStyle(style: unknown): Record<string, unknown> {
+  if (Array.isArray(style)) {
+    return style.reduce<Record<string, unknown>>(
+      (flattened, entry) => ({ ...flattened, ...flattenStyle(entry) }),
+      {},
+    );
+  }
+  return style != null && typeof style === 'object' ? style as Record<string, unknown> : {};
 }
 function focusedLabel(node: unknown): unknown {
   return node && typeof node === 'object'

@@ -94,8 +94,8 @@ export function BattleMapCatalogMapRow({ map, selected, disabled, onPress }: Bat
       style={[styles.map, selected && styles.mapSelected, disabled && styles.disabled]}
     >
       <View style={styles.rowContent}>
-        <Text style={[styles.mapName, selected && styles.mapNameSelected]}>{name}</Text>
-        {meta ? <Text style={[styles.meta, selected && styles.metaSelected]}>{meta}</Text> : null}
+        <Text style={styles.mapName}>{name}</Text>
+        {meta ? <Text style={styles.meta}>{meta}</Text> : null}
       </View>
       {selected ? <Text style={styles.selected}>선택됨</Text> : null}
     </Pressable>
@@ -129,7 +129,7 @@ export function BattleMapCatalogStateRow({ category, state, error, onRetry }: Ba
           onPress={onRetry}
           style={styles.retry}
         >
-          <Text style={styles.retryText}>다시 불러오기</Text>
+          <Text style={styles.retryText}>다시 시도</Text>
         </Pressable>
       </View>
     );
@@ -175,7 +175,7 @@ const styles = StyleSheet.create({
   groupName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
   map: {
     alignItems: 'center',
-    backgroundColor: theme.colors.surface,
+    backgroundColor: theme.colors.surfaceAlt,
     borderColor: theme.colors.border,
     borderRadius: theme.radius.md,
     borderWidth: 1,
@@ -187,14 +187,12 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.sm,
   },
   mapName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
-  mapNameSelected: { color: theme.colors.buttonText },
-  mapSelected: { backgroundColor: theme.colors.accentGreen, borderColor: theme.colors.accentGreen },
+  mapSelected: { backgroundColor: theme.colors.surface, borderColor: theme.colors.accentGreen },
   meta: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16, marginTop: 2 },
-  metaSelected: { color: theme.colors.buttonText },
   retry: { justifyContent: 'center', minHeight: 44, paddingHorizontal: theme.spacing.sm },
   retryText: { color: theme.colors.accentGreen, fontSize: 12, fontWeight: '900' },
   rowContent: { flex: 1 },
-  selected: { color: theme.colors.buttonText, fontSize: 11, fontWeight: '900' },
+  selected: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '900' },
   state: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, minHeight: 44, paddingHorizontal: theme.spacing.xl },
   stateText: { color: theme.colors.textMuted, fontSize: 12 },
   trailing: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },
