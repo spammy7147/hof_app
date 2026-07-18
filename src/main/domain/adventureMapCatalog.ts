@@ -74,7 +74,7 @@ export function buildAdventureMapCatalogRows({
     for (const map of group.maps) {
       rows.push({
         kind: 'MAP',
-        key: `map:${encodePart(group.key)}|${encodePart(adventureMapIdentity(map))}`,
+        key: `map:${encodePart(adventureMapIdentity(map))}`,
         groupKey: group.key,
         map,
       });

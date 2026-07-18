@@ -109,6 +109,45 @@ describe('adventure map catalog rows', () => {
     assert.deepEqual(mapRows.map(({ groupKey }) => groupKey), groups.map(({ key }) => key));
   });
 
+  it('keeps a map row key stable when its group metadata changes', () => {
+    const beforeCatalog = [
+      map('same-map', '같은 맵', { groupName: '이전 그룹', groupOrder: 1 }),
+    ];
+    const afterCatalog = [
+      map('same-map', '같은 맵', { groupName: '새 그룹', groupOrder: 9 }),
+    ];
+    const beforeGroup = buildAdventureMapCatalogRows({
+      catalog: beforeCatalog,
+      expandedGroupKeys: [],
+      query: '',
+    }).rows[0];
+    const afterGroup = buildAdventureMapCatalogRows({
+      catalog: afterCatalog,
+      expandedGroupKeys: [],
+      query: '',
+    }).rows[0];
+    assert.equal(beforeGroup?.kind, 'GROUP');
+    assert.equal(afterGroup?.kind, 'GROUP');
+
+    const beforeRows = buildAdventureMapCatalogRows({
+      catalog: beforeCatalog,
+      expandedGroupKeys: [beforeGroup.group.key],
+      query: '',
+    });
+    const afterRows = buildAdventureMapCatalogRows({
+      catalog: afterCatalog,
+      expandedGroupKeys: [afterGroup.group.key],
+      query: '',
+    });
+    const beforeMap = beforeRows.rows.find((row) => row.kind === 'MAP');
+    const afterMap = afterRows.rows.find((row) => row.kind === 'MAP');
+
+    assert.equal(beforeMap?.kind, 'MAP');
+    assert.equal(afterMap?.kind, 'MAP');
+    assert.equal(beforeMap.key, afterMap.key);
+    assert.notEqual(beforeMap.groupKey, afterMap.groupKey);
+  });
+
   it('inherits filtered catalog ordering and keeps group map order stable', () => {
     const catalog = [
       map('zulu', '가나다', { groupName: '첫 그룹', groupOrder: 0, mapOrder: 2 }),
