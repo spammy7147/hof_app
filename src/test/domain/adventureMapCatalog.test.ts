@@ -135,7 +135,7 @@ describe('adventure map catalog rows', () => {
         groupName: '특수 허수아비',
       }),
       map('unresolved', '해결 안 됨', { resolved: false }),
-      map(null, '코드 없음', { resolved: false, groupOrder: 2 }),
+      map(null, '코드 없음', { groupOrder: 2 }),
       map('other-category', '다른 카테고리', { categoryId: 'battle_map', groupOrder: 3 }),
     ];
     const collapsed = buildAdventureMapCatalogRows({ catalog, expandedGroupKeys: [], query: '' });
