@@ -66,6 +66,16 @@ export function filterQuests(
     .sort((left, right) => left.sourceOrder - right.sourceOrder);
 }
 
+export function prioritizeSelectedQuests(
+  quests: readonly QuestSnapshot[],
+  selectedQuestIds: ReadonlySet<string>,
+): QuestSnapshot[] {
+  return [...quests].sort((left, right) => {
+    const selectedDifference = Number(selectedQuestIds.has(right.questId)) - Number(selectedQuestIds.has(left.questId));
+    return selectedDifference || left.sourceOrder - right.sourceOrder;
+  });
+}
+
 export function buildMissionLabel(mission: QuestMission): string {
   const label = MISSION_LABELS[mission.type];
   return mission.target?.trim() ? `${label} · ${mission.target.trim()}` : label;
@@ -278,6 +288,12 @@ export function moveMissionMap(
   const [moved] = reordered.splice(from, 1);
   reordered.splice(to, 0, moved!);
   return normalizeMapOrder(reordered);
+}
+
+export function reorderMissionMaps(
+  maps: readonly QuestMapSettingRequest[],
+): QuestMapSettingRequest[] {
+  return normalizeMapOrder(maps);
 }
 
 export function removeMissionMap(

@@ -18,7 +18,9 @@ import {
   hydrateAutoMatchedMapClearMissions,
   matchMapClearMission,
   moveMissionMap,
+  prioritizeSelectedQuests,
   removeMissionMap,
+  reorderMissionMaps,
   replaceMissionMap,
   restoreQuestSelection,
   selectQuest,
@@ -40,6 +42,24 @@ describe('quest automation domain', () => {
     ];
     assert.deepEqual(filterQuests(quests, 'ACTIVE', 'killer').map(({ questId }) => questId), ['early', 'late']);
     assert.deepEqual(filterQuests(quests, 'WAITING', 'request').map(({ questId }) => questId), ['waiting']);
+  });
+
+  it('prioritizes selected quests while preserving HOF order within each group', () => {
+    const quests = [
+      snapshot('late', 'Late', 'ACTIVE', 9, []),
+      snapshot('first-selected', 'First selected', 'ACTIVE', 2, []),
+      snapshot('early', 'Early', 'ACTIVE', 1, []),
+      snapshot('second-selected', 'Second selected', 'ACTIVE', 7, []),
+    ];
+
+    assert.deepEqual(
+      prioritizeSelectedQuests(quests, new Set(['second-selected', 'first-selected'])).map(({ questId }) => questId),
+      ['first-selected', 'second-selected', 'early', 'late'],
+    );
+    assert.deepEqual(
+      prioritizeSelectedQuests(quests, new Set()).map(({ questId }) => questId),
+      ['early', 'first-selected', 'second-selected', 'late'],
+    );
   });
 
   it('builds Korean mission labels and a separate progress label', () => {
@@ -322,6 +342,17 @@ describe('quest automation domain', () => {
     const maps = [mapSetting('kill', 'a', 0), mapSetting('kill', 'b', 1), mapSetting('kill', 'c', 2)];
     assert.deepEqual(moveMissionMap(maps, 2, 0).map(({ mapCode, executionOrder }) => [mapCode, executionOrder]), [['c', 0], ['a', 1], ['b', 2]]);
     assert.deepEqual(removeMissionMap(maps, 1).map(({ mapCode, executionOrder }) => [mapCode, executionOrder]), [['a', 0], ['c', 1]]);
+  });
+
+  it('preserves dragged map order while normalizing execution order without mutating input', () => {
+    const maps = [mapSetting('kill', 'c', 9), mapSetting('kill', 'a', 4), mapSetting('kill', 'b', 7)];
+
+    assert.deepEqual(reorderMissionMaps(maps).map(({ mapCode, executionOrder }) => [mapCode, executionOrder]), [
+      ['c', 0], ['a', 1], ['b', 2],
+    ]);
+    assert.deepEqual(maps.map(({ mapCode, executionOrder }) => [mapCode, executionOrder]), [
+      ['c', 9], ['a', 4], ['b', 7],
+    ]);
   });
 
   it('validates maps, presets, duplicates, and excludes map config from non-combat missions', () => {
