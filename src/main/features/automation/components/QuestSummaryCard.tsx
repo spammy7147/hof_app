@@ -58,8 +58,8 @@ export function QuestSummaryCard({
             <Text numberOfLines={1} style={styles.name}>{snapshot.name}</Text>
             <Text style={styles.section}>{sectionLabel}</Text>
           </View>
-          <Text numberOfLines={1} style={styles.summary}>{buildQuestMissionSummary(snapshot.missions)}</Text>
-          <Text numberOfLines={1} style={styles.reward}>{buildQuestRewardSummary(snapshot.rewards)}</Text>
+          <Text style={styles.summary}>{buildQuestMissionSummary(snapshot.missions)}</Text>
+          <Text style={styles.reward}>{buildQuestRewardSummary(snapshot.rewards)}</Text>
         </View>
       </View>
       {combatMissions.map((mission) => (

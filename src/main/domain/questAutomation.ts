@@ -77,12 +77,16 @@ export function buildMissionProgressLabel(mission: QuestMission): string | null 
 
 export function buildQuestMissionSummary(missions: readonly QuestMission[]): string {
   if (missions.length === 0) return '미션 · 없음';
-  return `미션 · ${buildMissionLabel(missions[0]!)}${missions.length > 1 ? ` 외 ${missions.length - 1}개` : ''}`;
+  const items = missions.map((mission) => {
+    const progress = buildMissionProgressLabel(mission);
+    return `${buildMissionLabel(mission)}${progress ? ` ${progress.replace(' / ', '/')}` : ''}`;
+  });
+  return `미션 · ${items.join(' · ')}`;
 }
 
 export function buildQuestRewardSummary(rewards: readonly string[]): string {
-  if (rewards.length === 0) return '보상 · 없음';
-  return `보상 · ${rewards[0]!.trim()}${rewards.length > 1 ? ` 외 ${rewards.length - 1}개` : ''}`;
+  const items = rewards.map((reward) => reward.trim()).filter(Boolean);
+  return items.length === 0 ? '보상 · 없음' : `보상 · ${items.join(' · ')}`;
 }
 
 export function buildQuestMapIdentity(map: Pick<BattleMapResponse, 'categoryId' | 'mapCode'>): string {

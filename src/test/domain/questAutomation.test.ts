@@ -51,19 +51,22 @@ describe('quest automation domain', () => {
     assert.equal(buildMissionProgressLabel({ ...mission('kill', 'MONSTER_KILL', 'Killer Maid'), progress: { current: 2, required: 5 } }), '2 / 5');
   });
 
-  it('builds compact quest mission summaries for empty, single, and multiple missions', () => {
+  it('builds full quest mission summaries with progress in source order', () => {
     assert.equal(buildQuestMissionSummary([]), '미션 · 없음');
-    assert.equal(buildQuestMissionSummary([mission('kill', 'MONSTER_KILL', 'Killer Maid')]), '미션 · 몬스터 처치 · Killer Maid');
     assert.equal(buildQuestMissionSummary([
-      mission('kill', 'MONSTER_KILL', 'Killer Maid'),
-      mission('item', 'ITEM_TURN_IN', 'Silver Key'),
-    ]), '미션 · 몬스터 처치 · Killer Maid 외 1개');
+      { ...mission('kill', 'MONSTER_KILL', 'Killer Maid'), progress: { current: 12, required: 30 } },
+      mission('clear', 'MAP_CLEAR', 'Maid Hall'),
+      { ...mission('item', 'ITEM_TURN_IN', 'Silver Key'), progress: { current: 1, required: 1 } },
+    ]), '미션 · 몬스터 처치 · Killer Maid 12/30 · 맵 클리어 · Maid Hall · 아이템 반납 · Silver Key 1/1');
   });
 
-  it('builds compact reward summaries for empty, single, and multiple rewards', () => {
+  it('builds full reward summaries and ignores blank entries', () => {
     assert.equal(buildQuestRewardSummary([]), '보상 · 없음');
-    assert.equal(buildQuestRewardSummary(['  Red Potion ×2  ']), '보상 · Red Potion ×2');
-    assert.equal(buildQuestRewardSummary([' Red Potion ×2 ', 'Silver Key']), '보상 · Red Potion ×2 외 1개');
+    assert.equal(buildQuestRewardSummary(['', '  ']), '보상 · 없음');
+    assert.equal(
+      buildQuestRewardSummary([' Red Potion ×2 ', '', 'Blue Potion ×2', '  Fund $15,000  ']),
+      '보상 · Red Potion ×2 · Blue Potion ×2 · Fund $15,000',
+    );
   });
 
   it('builds map identities from a category and its map code, including a missing code', () => {

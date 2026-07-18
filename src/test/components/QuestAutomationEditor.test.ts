@@ -109,7 +109,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Active Quest 선택' }).props.accessibilityState.checked, true);
   });
 
-  it('keeps mixed quests compact until selected and expands only combat missions', async () => {
+  it('shows every mission, progress, and reward while expanding only combat missions', async () => {
     const mixed = {
       ...snapshot('mixed', 'Mixed', 'ACTIVE', [
       { ...mission('kill', 'MONSTER_KILL', 'Killer Maid'), progress: { current: 2, required: 5 } },
@@ -118,14 +118,20 @@ describe('QuestAutomationEditor mounted behavior', () => {
       rewards: ['Red Potion ×2', 'Blue Potion'],
     };
     const renderer = await renderEditor({ quests: [mixed] });
-    assert.equal(hasText(renderer.root, '미션 · 몬스터 처치 · Killer Maid 외 1개'), true);
-    assert.equal(hasText(renderer.root, '보상 · Red Potion ×2 외 1개'), true);
+    const missionSummary = findText(renderer.root, '미션 · 몬스터 처치 · Killer Maid 2/5 · 아이템 반납 · Horn');
+    const rewardSummary = findText(renderer.root, '보상 · Red Potion ×2 · Blue Potion');
+    assert.match(renderedText(renderer.root), /Killer Maid 2\/5/);
+    assert.match(renderedText(renderer.root), /Horn/);
+    assert.match(renderedText(renderer.root), /Red Potion ×2/);
+    assert.match(renderedText(renderer.root), /Blue Potion/);
+    assert.doesNotMatch(renderedText(renderer.root), /외 \d+개/);
+    assert.equal(missionSummary.props.numberOfLines, undefined);
+    assert.equal(rewardSummary.props.numberOfLines, undefined);
+    assert.equal(findText(renderer.root, 'Mixed').props.numberOfLines, 1);
     assert.equal(hasText(renderer.root, '원본 순서 1'), false);
     assert.equal(hasText(renderer.root, '맵 설정이 필요 없는 미션입니다.'), false);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Mixed · kill 전투맵 추가' }).length, 0);
     const checkbox = renderer.root.findByProps({ accessibilityLabel: 'Mixed 선택' });
-    const missionSummary = findText(renderer.root, '미션 · 몬스터 처치 · Killer Maid 외 1개');
-    const rewardSummary = findText(renderer.root, '보상 · Red Potion ×2 외 1개');
     const copy = missionSummary.parent?.parent;
     assert.ok(copy);
     assert.equal(copy, rewardSummary.parent?.parent);
@@ -1344,6 +1350,11 @@ function hasText(root: ReactTestInstance, text: string): boolean {
 }
 function findText(root: ReactTestInstance, text: string): ReactTestInstance {
   return root.find((node) => (node.type as unknown) === 'Text' && node.children.join('') === text);
+}
+function renderedText(root: ReactTestInstance): string {
+  return root.findAll((node) => (node.type as unknown) === 'Text')
+    .map((node) => node.children.filter((child) => typeof child === 'string').join(''))
+    .join('\n');
 }
 function focusedLabel(node: unknown): unknown {
   return node && typeof node === 'object'
