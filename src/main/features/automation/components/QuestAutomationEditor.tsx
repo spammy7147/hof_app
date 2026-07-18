@@ -18,6 +18,7 @@ import {
   filterQuests,
   hydrateAutoMatchedMapClearMissions,
   isCombatMission,
+  prioritizeSelectedQuests,
   restoreQuestSelection,
   selectQuest,
   validateQuestAutomationDraft,
@@ -350,9 +351,13 @@ export function QuestAutomationEditor({
     }
   }, [areBattleCategoriesLoaded, battleCategories.length, battleCategoriesError, catalog, clearUndo, eligibleCategories, entry, isBattleCategoriesLoading, questLoaded, mapResources, snapshots]);
 
+  const selectedQuestIds = useMemo(
+    () => new Set(draft?.quests.map(({ questCode }) => questCode) ?? []),
+    [draft],
+  );
   const visibleQuests = useMemo(
-    () => filterQuests(snapshots, section, query),
-    [query, section, snapshots],
+    () => prioritizeSelectedQuests(filterQuests(snapshots, section, query), selectedQuestIds),
+    [query, section, selectedQuestIds, snapshots],
   );
   const presetIds = useMemo(() => presets.map(({ id }) => id), [presets]);
   const validationErrors = useMemo(

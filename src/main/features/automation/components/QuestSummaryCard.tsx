@@ -42,17 +42,19 @@ export function QuestSummaryCard({
 
   return (
     <View style={[styles.card, selected && styles.cardSelected]}>
-      <View style={styles.heading}>
-        <Pressable
-          accessibilityLabel={`${snapshot.name} 선택`}
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: selected != null, disabled }}
-          disabled={disabled}
-          onPress={onToggle}
-          style={[styles.checkbox, selected && styles.checkboxSelected]}
-        >
-          <Text style={styles.checkboxText}>{selected ? '✓' : ''}</Text>
-        </Pressable>
+      <Pressable
+        accessibilityLabel={`${snapshot.name} 선택`}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: selected != null, disabled }}
+        disabled={disabled}
+        onPress={onToggle}
+        style={({ pressed }) => [
+          styles.summaryPressable,
+          pressed && styles.summaryPressed,
+          disabled && styles.summaryDisabled,
+        ]}
+        testID={`quest-summary:${snapshot.name}`}
+      >
         <View style={styles.copy}>
           <View style={styles.titleRow}>
             <Text numberOfLines={1} style={styles.name}>{snapshot.name}</Text>
@@ -61,7 +63,7 @@ export function QuestSummaryCard({
           <Text style={styles.summary}>{buildQuestMissionSummary(snapshot.missions)}</Text>
           <Text style={styles.reward}>{buildQuestRewardSummary(snapshot.rewards)}</Text>
         </View>
-      </View>
+      </Pressable>
       {combatMissions.map((mission) => (
         <View key={mission.key} style={styles.missionBlock}>
           <CombatMissionEditor
@@ -84,11 +86,10 @@ export function QuestSummaryCard({
 
 const styles = StyleSheet.create({
   card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md + 4, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.md },
-  cardSelected: { borderColor: theme.colors.accentGreen },
-  heading: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
-  checkbox: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: 5, borderWidth: 1, height: 44, justifyContent: 'center', width: 44 },
-  checkboxSelected: { backgroundColor: theme.colors.accentGreen, borderColor: theme.colors.accentGreen },
-  checkboxText: { color: theme.colors.buttonText, fontSize: 18, fontWeight: '900' },
+  cardSelected: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.accentGreen },
+  summaryPressable: { justifyContent: 'center', minHeight: 44 },
+  summaryPressed: { opacity: 0.72 },
+  summaryDisabled: { opacity: 0.5 },
   copy: { flex: 1, minWidth: 0 },
   titleRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
   name: { color: theme.colors.text, flex: 1, fontSize: 14, fontWeight: '900' },

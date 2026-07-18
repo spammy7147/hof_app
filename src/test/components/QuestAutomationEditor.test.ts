@@ -109,7 +109,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Active Quest 선택' }).props.accessibilityState.checked, true);
   });
 
-  it('shows every mission, progress, and reward while expanding only combat missions', async () => {
+  it('makes the quest summary the accessible checkbox without rendering a check glyph', async () => {
     const mixed = {
       ...snapshot('mixed', 'Mixed', 'ACTIVE', [
       { ...mission('kill', 'MONSTER_KILL', 'Killer Maid'), progress: { current: 2, required: 5 } },
@@ -131,18 +131,41 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(hasText(renderer.root, '원본 순서 1'), false);
     assert.equal(hasText(renderer.root, '맵 설정이 필요 없는 미션입니다.'), false);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Mixed · kill 전투맵 추가' }).length, 0);
-    const checkbox = renderer.root.findByProps({ accessibilityLabel: 'Mixed 선택' });
-    const copy = missionSummary.parent?.parent;
-    assert.ok(copy);
-    assert.equal(copy, rewardSummary.parent?.parent);
-    assert.equal(copy.parent?.parent, checkbox.parent);
+    const summary = renderer.root.findByProps({ testID: 'quest-summary:Mixed' });
+    assert.equal(summary.props.accessibilityLabel, 'Mixed 선택');
+    assert.equal(summary.props.accessibilityRole, 'checkbox');
+    assert.deepEqual(summary.props.accessibilityState, { checked: false, disabled: false });
+    assert.doesNotMatch(renderedText(renderer.root), /✓/);
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Mixed 선택' }).props.onPress(); });
+    assert.deepEqual(renderer.root.findByProps({ testID: 'quest-summary:Mixed' }).props.accessibilityState, { checked: true, disabled: false });
+    assert.doesNotMatch(renderedText(renderer.root), /✓/);
     assert.equal(hasText(renderer.root, '몬스터 처치 · Killer Maid'), true);
     assert.equal(hasText(renderer.root, '2 / 5'), true);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Mixed · kill 전투맵 추가' }));
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Mixed · item 전투맵 추가' }).length, 0);
     assert.equal(hasText(renderer.root, '맵 설정이 필요 없는 미션입니다.'), false);
+    assert.equal(renderer.root.findByProps({ testID: 'quest-summary:Mixed' }).findAllByProps({ accessibilityLabel: 'Mixed · kill 전투맵 추가' }).length, 0);
+
+    const busy = await renderEditor({ quests: [mixed], saving: true });
+    assert.deepEqual(busy.root.findByProps({ testID: 'quest-summary:Mixed' }).props.accessibilityState, { checked: false, disabled: true });
+  });
+
+  it('prioritizes selected quests after source-order filtering without changing their selection order', async () => {
+    const renderer = await renderEditor({ quests: [
+      snapshot('first', 'First', 'ACTIVE', [mission('first-now', 'IMMEDIATE', null)], 0),
+      snapshot('second', 'Second', 'ACTIVE', [mission('second-now', 'IMMEDIATE', null)], 1),
+      snapshot('third', 'Third', 'ACTIVE', [mission('third-now', 'IMMEDIATE', null)], 2),
+    ] });
+
+    assert.deepEqual(summaryOrder(renderer.root), ['quest-summary:First', 'quest-summary:Second', 'quest-summary:Third']);
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Second 선택' }).props.onPress(); });
+    assert.deepEqual(summaryOrder(renderer.root), ['quest-summary:Second', 'quest-summary:First', 'quest-summary:Third']);
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Third 선택' }).props.onPress(); });
+    assert.deepEqual(summaryOrder(renderer.root), ['quest-summary:Second', 'quest-summary:Third', 'quest-summary:First']);
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Second 선택' }).props.onPress(); });
+    assert.deepEqual(summaryOrder(renderer.root), ['quest-summary:Third', 'quest-summary:First', 'quest-summary:Second']);
+    await act(async () => { renderer.unmount(); });
   });
 
   it('does not expand a selected noncombat quest', async () => {
@@ -1362,7 +1385,12 @@ function focusedLabel(node: unknown): unknown {
     : undefined;
 }
 function mission(key: string, type: QuestMission['type'], target: string | null): QuestMission { return { key, type, target, progress: null, completable: false }; }
-function snapshot(questId: string, name: string, section: QuestSnapshot['section'], missions: QuestMission[]): QuestSnapshot { return { questId, name, section, state: section === 'ACTIVE' ? 'ACTIVE' : section === 'AVAILABLE' ? 'AVAILABLE' : 'UNAVAILABLE', sourceOrder: 0, missions, actionNo: null, rewards: [] }; }
+function summaryOrder(root: ReactTestInstance): string[] {
+  return root.findAll((node) => (node.type as unknown) === 'Pressable'
+    && typeof node.props.testID === 'string' && node.props.testID.startsWith('quest-summary:'))
+    .map((node) => node.props.testID as string);
+}
+function snapshot(questId: string, name: string, section: QuestSnapshot['section'], missions: QuestMission[], sourceOrder = 0): QuestSnapshot { return { questId, name, section, state: section === 'ACTIVE' ? 'ACTIVE' : section === 'AVAILABLE' ? 'AVAILABLE' : 'UNAVAILABLE', sourceOrder, missions, actionNo: null, rewards: [] }; }
 function questEntry(quests: TypedAutomationEntryResponse['quests'] = []): TypedAutomationEntryResponse { return { id: 1, type: 'QUEST', enabled: true, priority: 0, ready: true, warnings: [], quests, battleMaps: [], battleMapProgress: [], adventureMaps: [] }; }
 function mapSetting(missionKey: string, mapCode: string, executionOrder: number) { return { missionKey, categoryId: 'battle_map', mapCode, executionOrder, manuallyOverridden: true, presetMode: 'PRIMARY' as const, partyPresetId: null }; }
 function catalogMap(categoryId: string, mapCode: string, name: string): BattleMapResponse { return { categoryId, mapCode, name, groupName: null, groupOrder: 0, mapOrder: 0, recommendedLevel: null, availableCount: null, attemptCount: null, winCount: null, cooldownRemainingText: null, cooldownRemainingSeconds: null, keyCount: null, requiredTime: null, supportsThreeBattles: false, enabled: true, resolved: true, iconUrl: null, rawHref: '' }; }
