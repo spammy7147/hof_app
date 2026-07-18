@@ -227,7 +227,9 @@ describe('QuestAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat 선택' }).props.onPress(); });
     assert.equal(hasText(renderer.root, 'Alpha'), true);
     assert.equal(hasText(renderer.root, 'Beta'), true);
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 2번째 맵 Explicit 프리셋' }).props.accessibilityState.checked, true);
+    const restoredPreset = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 2번째 맵 프리셋 선택' });
+    assert.equal(restoredPreset.props.accessibilityRole, 'button');
+    assert.equal(hasText(restoredPreset, 'Explicit'), true);
     assert.equal(hasText(renderer.root, '선택 해제됨'), false);
 
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
@@ -618,19 +620,19 @@ describe('QuestAutomationEditor mounted behavior', () => {
       presets: [preset(7, 'Explicit')],
       onSave: async () => saving.promise,
     });
-    assert.equal(hasText(renderer.root, '여러 맵을 실행 가능한 순서대로 확인하고 전투 횟수를 고르게 분배해요'), true);
+    assert.equal(hasText(renderer.root, '여러 맵을 실행 가능한 순서대로 확인하고 전투 횟수를 고르게 분배해요'), false);
 
     let savePromise!: Promise<void>;
     await act(async () => {
       savePromise = renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress();
       await Promise.resolve();
     });
-    const presetChoice = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 Explicit 프리셋' });
+    const presetChoice = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 프리셋 선택' });
     const remove = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 제거' });
     const reorder = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 2번째 맵 위로' });
     const add = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 전투맵 추가' });
-    assert.equal(presetChoice.props.accessibilityRole, 'radio');
-    assert.deepEqual(presetChoice.props.accessibilityState, { checked: false, disabled: true });
+    assert.equal(presetChoice.props.accessibilityRole, 'button');
+    assert.deepEqual(presetChoice.props.accessibilityState, { disabled: true });
     assert.equal(remove.props.accessibilityRole, 'button');
     assert.equal(remove.props.accessibilityState.disabled, true);
     assert.equal(reorder.props.accessibilityRole, 'button');
@@ -645,7 +647,8 @@ describe('QuestAutomationEditor mounted behavior', () => {
     });
     assert.equal(hasText(renderer.root, 'Alpha'), true);
     assert.equal(hasText(renderer.root, 'Beta'), true);
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 대표 프리셋' }).props.accessibilityState.checked, true);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '프리셋 검색' }).length, 0);
+    assert.equal(hasText(presetChoice, '대표 프리셋 없음'), true);
 
     await act(async () => { saving.resolve(true); await savePromise; });
   });
@@ -693,7 +696,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     ]);
   });
 
-  it('saves explicit and primary preset changes from enabled radio controls', async () => {
+  it('searches quest map presets and saves explicit and primary selections', async () => {
     const saves: UpdateQuestAutomationRequest[] = [];
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
     const entry = questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]);
@@ -701,12 +704,23 @@ describe('QuestAutomationEditor mounted behavior', () => {
       entry,
       quests: [quest],
       maps: [catalogMap('battle_map', 'a', 'Alpha')],
-      presets: [preset(7, 'Explicit')],
+      presets: [preset(7, 'Safe'), preset(8, 'Speed')],
       onSave: async (request) => { saves.push(request); return true; },
     });
 
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 Explicit 프리셋' }).props.onPress(); });
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 Explicit 프리셋' }).props.accessibilityState.checked, true);
+    const trigger = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 프리셋 선택' });
+    assert.equal(trigger.props.accessibilityRole, 'button');
+    assert.equal(trigger.props.style.minHeight, 44);
+    await act(async () => { trigger.props.onPress(); });
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Safe 프리셋 선택' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Speed 프리셋 선택' }));
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }).props.onChangeText('safe'); });
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Speed 프리셋 선택' }).length, 0);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Safe 프리셋 선택' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '대표 프리셋 선택' }));
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Safe 프리셋 선택' }).props.onPress(); });
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '프리셋 검색' }).length, 0);
+    assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 프리셋 선택' }), 'Safe'), true);
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
     assert.deepEqual(saves[0]?.quests[0]?.maps[0], {
       ...mapSetting('kill', 'a', 0),
@@ -714,14 +728,18 @@ describe('QuestAutomationEditor mounted behavior', () => {
       partyPresetId: 7,
     });
 
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 대표 프리셋' }).props.onPress(); });
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 대표 프리셋' }).props.accessibilityState.checked, true);
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 프리셋 선택' }).props.onPress(); });
+    assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: 'Safe 프리셋 선택' }).props.accessibilityState, { checked: true, disabled: false });
+    const primary = renderer.root.findByProps({ accessibilityLabel: '대표 프리셋 선택' });
+    assert.deepEqual(primary.props.accessibilityState, { checked: false, disabled: false });
+    await act(async () => { primary.props.onPress(); });
+    assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 프리셋 선택' }), '대표 프리셋 없음'), true);
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
     assert.equal(saves[1]?.quests[0]?.maps[0]?.presetMode, 'PRIMARY');
     assert.equal(saves[1]?.quests[0]?.maps[0]?.partyPresetId, null);
   });
 
-  it('groups preset radios and does not check an explicit preset for malformed PRIMARY data', async () => {
+  it('renders exactly one current-preset button for malformed PRIMARY data', async () => {
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
     const malformed = { ...mapSetting('kill', 'a', 0), partyPresetId: 7 } as unknown as QuestMapSettingRequest;
     const renderer = await renderEditor({
@@ -731,9 +749,78 @@ describe('QuestAutomationEditor mounted behavior', () => {
       presets: [preset(7, 'Explicit')],
     });
 
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 프리셋 선택' }).props.accessibilityRole, 'radiogroup');
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 Explicit 프리셋' }).props.accessibilityState.checked, false);
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 대표 프리셋' }).props.accessibilityState.checked, true);
+    const triggers = renderer.root.findAll((node) => (node.type as unknown) === 'Pressable'
+      && node.props.accessibilityLabel === 'Combat · kill 1번째 맵 프리셋 선택');
+    assert.equal(triggers.length, 1);
+    assert.equal(triggers[0]?.props.accessibilityRole, 'button');
+    assert.equal(hasText(triggers[0]!, '대표 프리셋 없음'), true);
+    assert.equal(renderer.root.findAllByProps({ accessibilityRole: 'radiogroup' }).length, 0);
+  });
+
+  it('restores focus to a live quest preset trigger after close and selection', async () => {
+    accessibilityFocusCalls.length = 0;
+    const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
+    const renderer = await renderEditor({
+      entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]),
+      quests: [quest],
+      maps: [catalogMap('battle_map', 'a', 'Alpha')],
+      presets: [preset(7, 'Safe')],
+    });
+
+    const label = 'Combat · kill 1번째 맵 프리셋 선택';
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: label }).props.onPress(); });
+    accessibilityFocusCalls.length = 0;
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
+    await act(async () => { await delay(280); });
+    assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), label);
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: label }).props.onPress(); });
+    accessibilityFocusCalls.length = 0;
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Safe 프리셋 선택' }).props.onPress(); });
+    await act(async () => { await delay(280); });
+    assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), label);
+  });
+
+  it('fences stale quest preset focus after target removal, busy closure, newer invocation, and unmount', async () => {
+    const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
+    const entry = questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [
+      mapSetting('kill', 'a', 0), mapSetting('kill', 'b', 1),
+    ] }]);
+    const base = editorProps({
+      entry,
+      quests: [quest],
+      maps: [catalogMap('battle_map', 'a', 'Alpha'), catalogMap('battle_map', 'b', 'Beta')],
+    });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(QuestAutomationEditor, base)); });
+
+    const firstLabel = 'Combat · kill 1번째 맵 프리셋 선택';
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: firstLabel }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 제거' }).props.onPress(); });
+    accessibilityFocusCalls.length = 0;
+    await act(async () => { await delay(280); });
+    assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === firstLabel), false);
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: firstLabel }).props.onPress(); });
+    accessibilityFocusCalls.length = 0;
+    await act(async () => { renderer.update(React.createElement(QuestAutomationEditor, { ...base, saving: true })); });
+    await act(async () => { await delay(280); });
+    assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === firstLabel), false);
+
+    await act(async () => { renderer.update(React.createElement(QuestAutomationEditor, base)); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: firstLabel }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: firstLabel }).props.onPress(); });
+    accessibilityFocusCalls.length = 0;
+    await act(async () => { await delay(280); });
+    assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === firstLabel), false);
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
+    accessibilityFocusCalls.length = 0;
+    await act(async () => { renderer.unmount(); });
+    await act(async () => { await delay(280); });
+    assert.equal(accessibilityFocusCalls.length, 0);
   });
 
   it('restores focus to the monster picker trigger after ordinary close and map selection', async () => {
@@ -1102,7 +1189,8 @@ describe('QuestAutomationEditor mounted behavior', () => {
     });
     assert.equal(hasText(renderer.root, '저장된 전투 설정 · stored-key'), true);
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.disabled, true);
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'missing · stored-key 1번째 맵 대표 프리셋' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'missing · stored-key 1번째 맵 프리셋 선택' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '대표 프리셋 선택' }).props.onPress(); });
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
     assert.equal(saves[0]?.quests[0]?.maps[0]?.presetMode, 'PRIMARY');
   });
@@ -1189,8 +1277,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
 
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'One Quest · shared 1번째 맵 제거' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'One Quest · shared 2번째 맵 위로' }));
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'One Quest · shared 1번째 맵 대표 프리셋' }));
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'One Quest · shared 1번째 맵 Explicit 프리셋' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'One Quest · shared 1번째 맵 프리셋 선택' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Two Quest · shared 전투맵 추가' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'missing-code · shared 전투맵 추가' }));
   });
