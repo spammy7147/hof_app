@@ -21,7 +21,6 @@ import {
   buildBattleProgress,
   describeBattleBatch,
   filterBattleAutomationCategories,
-  filterBattleMapCatalog,
   moveBattleMapSetting,
   parseBattleDailyTarget,
   removeBattleMapSetting,
@@ -29,6 +28,7 @@ import {
   validateBattleMapAutomationDraft,
   type BattleMapAutomationDraft,
 } from '../../../domain/battleMapAutomation';
+import { buildBattleMapCatalogRows, type BattleMapCatalogRow } from '../../../domain/battleMapCatalog';
 import { toUserFacingErrorMessage } from '../../../domain/userFacingErrors';
 import { formatAutomationPresetSelection } from '../../../domain/partyPresets';
 import { theme } from '../../../styles/theme';
@@ -40,6 +40,12 @@ import type {
   UpdateBattleMapAutomationRequest,
 } from '../../../types/api';
 import { BattleMapPresetPickerModal } from './BattleMapPresetPickerModal';
+import {
+  BattleMapCatalogCategoryRow,
+  BattleMapCatalogGroupRow,
+  BattleMapCatalogMapRow,
+  BattleMapCatalogStateRow,
+} from './BattleMapCatalogRows';
 
 type Props = {
   entry: TypedAutomationEntryResponse;
@@ -65,7 +71,7 @@ type EditorListItem =
   | { key: string; kind: 'SELECTED'; setting: BattleMapAutomationDraft['maps'][number]; index: number }
   | { key: string; kind: 'CATALOG_SEARCH' }
   | { key: string; kind: 'CATALOG_EMPTY' }
-  | { key: string; kind: 'CATALOG_MAP'; map: BattleMapResponse };
+  | { key: string; kind: 'CATALOG_ROW'; row: BattleMapCatalogRow };
 
 export function BattleMapAutomationEditor({
   entry,
@@ -86,6 +92,8 @@ export function BattleMapAutomationEditor({
   const [draft, setDraft] = useState<BattleMapAutomationDraft>(() => buildBattleMapAutomationDraft(entry, []));
   const [catalog, setCatalog] = useState<BattleMapResponse[]>([]);
   const [query, setQuery] = useState('');
+  const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
+  const [expandedGroupKeys, setExpandedGroupKeys] = useState<string[]>([]);
   const [activePresetIdentity, setActivePresetIdentity] = useState<string | null>(null);
   const [presets, setPresets] = useState<PartyPresetResponse[]>([]);
   const [presetState, setPresetState] = useState<ResourceState>({ loading: true, error: null });
@@ -275,9 +283,24 @@ export function BattleMapAutomationEditor({
   const hasExplicitPreset = draft.maps.some(({ presetMode }) => presetMode === 'EXPLICIT');
   const saveDisabled = controlsDisabled || validationErrors.length > 0
     || (hasExplicitPreset && (presetState.loading || presetState.error != null));
-  const visibleCatalog = useMemo(() => filterBattleMapCatalog(catalog, query), [catalog, query]);
+  const catalogResult = useMemo(() => buildBattleMapCatalogRows({
+    categories: eligibleCategories,
+    catalog,
+    categoryStates: mapStates,
+    expandedCategoryId,
+    expandedGroupKeys,
+    query,
+  }), [catalog, eligibleCategories, expandedCategoryId, expandedGroupKeys, mapStates, query]);
   const categoryLoading = isBattleCategoriesLoading
     || (!areBattleCategoriesLoaded && battleCategories.length === 0 && !battleCategoriesError);
+  const catalogSearchEmpty = query.trim().length > 0
+    && catalogResult.matchCount === 0
+    && !categoryLoading
+    && battleCategoriesError == null
+    && eligibleCategories.every(({ id }) => {
+      const state = mapStates[id];
+      return state != null && !state.loading && state.error == null;
+    });
   const activePresetSetting = activePresetIdentity == null
     ? null
     : draft.maps.find((setting) => battleMapIdentity(setting) === activePresetIdentity) ?? null;
@@ -329,6 +352,15 @@ export function BattleMapAutomationEditor({
     };
     setActivePresetIdentity(identity);
   }, []);
+  const toggleCatalogCategory = useCallback((categoryId: string) => {
+    setExpandedCategoryId((current) => current === categoryId ? null : categoryId);
+    setExpandedGroupKeys([]);
+  }, []);
+  const toggleCatalogGroup = useCallback((groupKey: string) => {
+    setExpandedGroupKeys((current) => current.includes(groupKey)
+      ? current.filter((key) => key !== groupKey)
+      : [...current, groupKey]);
+  }, []);
   const listItems = useMemo<EditorListItem[]>(() => [
     { key: 'selected-heading', kind: 'HEADING', title: '선택한 맵 · 실행 순서' },
     ...(draft.maps.length === 0
@@ -341,15 +373,15 @@ export function BattleMapAutomationEditor({
       }))),
     { key: 'catalog-heading', kind: 'HEADING', title: '맵 찾기' },
     { key: 'catalog-search', kind: 'CATALOG_SEARCH' },
-    ...visibleCatalog.map((map) => ({
-      key: `catalog:${map.categoryId}:${map.mapCode}`,
-      kind: 'CATALOG_MAP' as const,
-      map,
+    ...catalogResult.rows.map((row) => ({
+      key: `catalog:${row.key}`,
+      kind: 'CATALOG_ROW' as const,
+      row,
     })),
-    ...(visibleCatalog.length === 0 && !Object.values(mapStates).some(({ loading }) => loading)
+    ...(catalogSearchEmpty
       ? [{ key: 'catalog-empty', kind: 'CATALOG_EMPTY' } as const]
       : []),
-  ], [draft.maps, mapStates, visibleCatalog]);
+  ], [catalogResult.rows, catalogSearchEmpty, draft.maps]);
 
   useEffect(() => {
     if (activePresetIdentity != null && (controlsDisabled || activePresetSetting == null)) {
@@ -404,17 +436,25 @@ export function BattleMapAutomationEditor({
       return <TextInput accessibilityLabel="전투 맵 검색" editable={!controlsDisabled} onChangeText={setQuery} placeholder="맵 이름, 그룹, 추천 레벨 검색" placeholderTextColor={theme.colors.textMuted} style={styles.search} value={query} />;
     }
     if (item.kind === 'CATALOG_EMPTY') return <Text style={styles.muted}>검색 가능한 맵이 없습니다.</Text>;
-    if (item.kind === 'CATALOG_MAP') {
-      const { map } = item;
-      const selected = map.mapCode != null && draft.maps.some((setting) => (
-        setting.categoryId === map.categoryId && setting.mapCode === map.mapCode
-      ));
-      return (
-        <Pressable accessibilityLabel={`${map.name} 맵 선택`} accessibilityRole="checkbox" accessibilityState={{ checked: selected, disabled: controlsDisabled }} disabled={controlsDisabled} onPress={() => updateDraft((current) => selectBattleMap(current, map, !selected))} style={[styles.mapOption, selected && styles.mapOptionSelected]}>
-          <Text style={styles.mapName}>{map.name}</Text>
-          <Text style={styles.muted}>{[map.groupName, map.recommendedLevel].filter(Boolean).join(' · ')}</Text>
-        </Pressable>
-      );
+    if (item.kind === 'CATALOG_ROW') {
+      const { row } = item;
+      if (row.kind === 'CATEGORY') {
+        return <BattleMapCatalogCategoryRow category={row.category} expanded={row.expanded} mapCount={row.mapCount} onPress={() => toggleCatalogCategory(row.category.id)} />;
+      }
+      if (row.kind === 'STATE') {
+        return <BattleMapCatalogStateRow category={row.category} error={row.error} onRetry={() => { void loadCategoryMaps(row.category); }} state={row.state} />;
+      }
+      if (row.kind === 'GROUP') {
+        return <BattleMapCatalogGroupRow expanded={row.expanded} group={row.group} onPress={() => toggleCatalogGroup(row.group.key)} />;
+      }
+      const { map } = row;
+      const identity = map.mapCode == null ? null : battleMapIdentity({ categoryId: map.categoryId, mapCode: map.mapCode });
+      const selected = identity != null && draft.maps.some((setting) => battleMapIdentity(setting) === identity);
+      return <BattleMapCatalogMapRow disabled={controlsDisabled} map={map} onPress={() => updateDraft((current) => {
+        const currentlySelected = identity != null
+          && current.maps.some((setting) => battleMapIdentity(setting) === identity);
+        return selectBattleMap(current, map, !currentlySelected);
+      })} selected={selected} />;
     }
 
     const { setting, index } = item;
@@ -474,7 +514,7 @@ export function BattleMapAutomationEditor({
         </Pressable>
       </View>
     );
-  }, [controlsDisabled, draft, openPresetPicker, presets, presetsVerified, presetState.error, presetState.loading, query, updateDraft]);
+  }, [controlsDisabled, draft, loadCategoryMaps, openPresetPicker, presets, presetsVerified, presetState.error, presetState.loading, query, toggleCatalogCategory, toggleCatalogGroup, updateDraft]);
 
   return (
     <View style={styles.screen}>
@@ -494,9 +534,6 @@ export function BattleMapAutomationEditor({
       {categoryLoading ? <Text style={styles.muted}>맵 카테고리 불러오는 중</Text> : null}
       {battleCategoriesError ? <ResourceWarning label="맵 카테고리" retryLabel="맵 카테고리 다시 불러오기" onRetry={onLoadBattleCategories} /> : null}
       {presetState.error ? <ResourceWarning label="프리셋" retryLabel="프리셋 다시 불러오기" onRetry={loadPresets} /> : presetState.loading ? <Text style={styles.muted}>프리셋 불러오는 중</Text> : null}
-      {eligibleCategories.filter(({ id }) => mapStates[id]?.error).map((category) => (
-        <ResourceWarning key={category.id} label={`${category.label} 맵`} retryLabel={`${category.label} 맵 다시 불러오기`} onRetry={() => loadCategoryMaps(category)} />
-      ))}
 
       <FlatList contentContainerStyle={styles.content} data={listItems} initialNumToRender={12} keyboardShouldPersistTaps="handled" keyExtractor={editorListKey} renderItem={renderListItem} windowSize={7} />
 
@@ -580,8 +617,6 @@ const styles = StyleSheet.create({
   choiceActive: { borderColor: theme.colors.accentGreen },
   choiceText: { color: theme.colors.text, fontSize: 11, fontWeight: '700' },
   search: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: 46, paddingHorizontal: theme.spacing.md },
-  mapOption: { borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: 2, minHeight: 48, justifyContent: 'center', paddingHorizontal: theme.spacing.md },
-  mapOptionSelected: { borderColor: theme.colors.accentGreen },
   warningRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between' },
   secondaryButton: { borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, minHeight: 44, justifyContent: 'center', paddingHorizontal: theme.spacing.md },
   secondaryText: { color: theme.colors.text, fontWeight: '800' },

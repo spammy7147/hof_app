@@ -201,7 +201,8 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(hasText(renderer.root, 'saved'), true);
     assert.equal(hasText(renderer.root, '저장 실패'), true);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 작업 오류' }));
-    assert.equal(hasText(renderer.root, '전투맵 맵을 불러오지 못했어요.'), true);
+    await openCatalogGroup(renderer);
+    assert.equal(hasText(renderer.root, 'map down'), true);
     assert.equal(hasText(renderer.root, '프리셋을 불러오지 못했어요.'), true);
 
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '전투맵 맵 다시 불러오기' }).props.onPress(); });
@@ -209,6 +210,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(mapAttempts, 2);
     assert.equal(presetAttempts, 2);
     assert.equal(hasText(renderer.root, 'saved'), true);
+    await openCatalogGroup(renderer);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'New Map 맵 선택' }));
   });
 
@@ -242,6 +244,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(busy.root.findByProps({ accessibilityLabel: '전투 맵 자동화 사용' }).props.disabled, true);
     assert.equal(busy.root.findByProps({ accessibilityLabel: '전투 맵 검색' }).props.editable, false);
     assert.equal(busy.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' }).props.disabled, true);
+    await openCatalogGroup(busy);
     assert.equal(busy.root.findByProps({ accessibilityLabel: 'Alpha 맵 선택' }).props.disabled, true);
   });
 
@@ -368,6 +371,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
       await second.promise;
     });
     assert.equal(attempts, 2);
+    await openCatalogGroup(renderer);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Fresh 맵 선택' }));
   });
 
@@ -474,6 +478,119 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'ScrollView').length, 0);
   });
 
+  it('opens one manual category at a time while keeping multiple groups open within it', async () => {
+    const renderer = await renderEditor({
+      battleCategories: [
+        { id: 'battle', label: '전투맵', description: '', order: 0, enabled: true },
+        { id: 'raid', label: '레이드', description: '', order: 1, enabled: true },
+      ],
+      onLoadBattleMaps: async (categoryId) => categoryId === 'battle'
+        ? [
+          catalogMap('forest', '숲 맵', { groupName: '숲', groupOrder: 0 }),
+          catalogMap('desert', '사막 맵', { groupName: '사막', groupOrder: 1 }),
+        ]
+        : [catalogMap('raid', '레이드 맵', { categoryId, groupName: '보스' })],
+    });
+
+    await openCatalogGroup(renderer, '전투맵', '숲');
+    await openCatalogGroup(renderer, '전투맵', '사막');
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '숲 맵 맵 선택' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '사막 맵 맵 선택' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '숲 그룹 닫기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '사막 그룹 닫기' }));
+
+    await openCatalogGroup(renderer, '레이드', '보스');
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '레이드 맵 맵 선택' }));
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '숲 맵 맵 선택' }).length, 0);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '사막 맵 맵 선택' }).length, 0);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 열기' }));
+  });
+
+  it('auto-expands search matches without replacing the prior manual category and group expansion', async () => {
+    const renderer = await renderEditor({
+      battleCategories: [
+        { id: 'battle', label: '전투맵', description: '', order: 0, enabled: true },
+        { id: 'raid', label: '레이드', description: '', order: 1, enabled: true },
+      ],
+      onLoadBattleMaps: async (categoryId) => categoryId === 'battle'
+        ? [catalogMap('manual', '수동 맵', { groupName: '수동 그룹' })]
+        : [catalogMap('needle', '바늘 레이드', { categoryId, groupName: '레이드 그룹' })],
+    });
+    await openCatalogGroup(renderer, '전투맵', '수동 그룹');
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '수동 맵 맵 선택' }));
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투 맵 검색' }).props.onChangeText('바늘'); });
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '바늘 레이드 맵 선택' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '레이드 카테고리 닫기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '레이드 그룹 그룹 닫기' }));
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투 맵 검색' }).props.onChangeText(''); });
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '수동 맵 맵 선택' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 닫기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '수동 그룹 그룹 닫기' }));
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '바늘 레이드 맵 선택' }).length, 0);
+  });
+
+  it('retries only an expanded failed category and leaves expansion operable while saving', async () => {
+    const attempts: Record<string, number> = {};
+    const renderer = await renderEditor({
+      saving: true,
+      battleCategories: [
+        { id: 'battle', label: '전투맵', description: '', order: 0, enabled: true },
+        { id: 'raid', label: '레이드', description: '', order: 1, enabled: true },
+      ],
+      onLoadBattleMaps: async (categoryId) => {
+        attempts[categoryId] = (attempts[categoryId] ?? 0) + 1;
+        if (categoryId === 'battle' && attempts[categoryId] === 1) throw new Error('전투맵 연결 실패');
+        return [catalogMap(`${categoryId}-map`, categoryId === 'battle' ? '재시도 맵' : '레이드 맵', { categoryId })];
+      },
+    });
+
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투맵 맵 다시 불러오기' }).length, 0);
+    await openCatalogGroup(renderer);
+    assert.equal(hasText(renderer.root, '전투맵 연결 실패'), true);
+    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '전투맵 맵 다시 불러오기' }).props.onPress(); });
+    assert.deepEqual(attempts, { battle: 2, raid: 1 });
+    await openCatalogGroup(renderer);
+    const map = renderer.root.findByProps({ accessibilityLabel: '재시도 맵 맵 선택' });
+    assert.equal(map.props.accessibilityState.disabled, true);
+    await act(async () => { map.props.onPress(); });
+    assert.equal(map.props.accessibilityState.checked, false);
+    assert.equal(hasText(renderer.root, '선택됨'), false);
+  });
+
+  it('keeps saved execution order independent from catalog category and group display order', async () => {
+    const saves: UpdateBattleMapAutomationRequest[] = [];
+    const renderer = await renderEditor({
+      entry: battleEntry([setting('later-group', 4, 0), setting('first-group', 5, 1)]),
+      maps: [
+        catalogMap('first-group', '가 맵', { groupName: '가 그룹', groupOrder: 0, mapOrder: 0 }),
+        catalogMap('later-group', '나 맵', { groupName: '나 그룹', groupOrder: 1, mapOrder: 0 }),
+      ],
+      onSave: async (request) => { saves.push(request); return true; },
+    });
+    await openCatalogGroup(renderer, '전투맵', '가 그룹');
+    await openCatalogGroup(renderer, '전투맵', '나 그룹');
+    const mapLabels = renderer.root.findAll((node) => (node.type as unknown) === 'Pressable' && node.props.accessibilityRole === 'checkbox')
+      .map(({ props }) => props.accessibilityLabel);
+    assert.deepEqual(mapLabels, ['가 맵 맵 선택', '나 맵 맵 선택']);
+
+    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.onPress(); });
+    assert.deepEqual(saves, [{ enabled: true, maps: [setting('later-group', 4, 0), setting('first-group', 5, 1)] }]);
+  });
+
+  it('shows authoritative search empty only after every eligible category settles successfully', async () => {
+    const failed = await renderEditor({
+      onLoadBattleMaps: async () => { throw new Error('맵 연결 실패'); },
+    });
+    await act(async () => { failed.root.findByProps({ accessibilityLabel: '전투 맵 검색' }).props.onChangeText('없는 맵'); });
+    assert.equal(hasText(failed.root, '검색 가능한 맵이 없습니다.'), false);
+
+    const settled = await renderEditor({ maps: [catalogMap('a', 'Alpha')] });
+    await act(async () => { settled.root.findByProps({ accessibilityLabel: '전투 맵 검색' }).props.onChangeText('없는 맵'); });
+    assert.equal(hasText(settled.root, '검색 가능한 맵이 없습니다.'), true);
+  });
+
   it('retries a category failure independently and keeps the stored draft available', async () => {
     let categoryRetries = 0;
     const renderer = await renderEditor({
@@ -521,6 +638,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Union New 맵 선택' }).length, 0);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'legacy-adventure 맵 제거' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'legacy-union 맵 제거' }));
+    await openCatalogGroup(renderer);
     const supported = renderer.root.findByProps({ accessibilityLabel: 'Limited Supported 맵 선택' });
     assert.equal(supported.props.disabled, false);
     await act(async () => { supported.props.onPress(); });
@@ -775,7 +893,13 @@ function setting(mapCode: string, dailyTargetCount: number, executionOrder: numb
   return { categoryId: 'battle', mapCode, dailyTargetCount, executionOrder, presetMode: 'PRIMARY' as const, partyPresetId: null };
 }
 function catalogMap(mapCode: string, name: string, overrides: Partial<BattleMapResponse> = {}): BattleMapResponse {
-  return { categoryId: 'battle', mapCode, name, groupName: null, groupOrder: 0, mapOrder: 0, recommendedLevel: null, availableCount: null, attemptCount: null, winCount: null, cooldownRemainingText: null, cooldownRemainingSeconds: null, keyCount: null, requiredTime: null, enabled: true, resolved: true, iconUrl: null, rawHref: '', ...overrides, supportsThreeBattles: overrides.supportsThreeBattles ?? false };
+  return { categoryId: 'battle', mapCode, name, groupName: '기타', groupOrder: 0, mapOrder: 0, recommendedLevel: null, availableCount: null, attemptCount: null, winCount: null, cooldownRemainingText: null, cooldownRemainingSeconds: null, keyCount: null, requiredTime: null, enabled: true, resolved: true, iconUrl: null, rawHref: '', ...overrides, supportsThreeBattles: overrides.supportsThreeBattles ?? false };
+}
+async function openCatalogGroup(renderer: ReactTestRenderer, categoryLabel = '전투맵', groupName = '기타'): Promise<void> {
+  const category = renderer.root.findAllByProps({ accessibilityLabel: `${categoryLabel} 카테고리 열기` })[0];
+  if (category) await act(async () => { category.props.onPress(); });
+  const group = renderer.root.findAllByProps({ accessibilityLabel: `${groupName} 그룹 열기` })[0];
+  if (group) await act(async () => { group.props.onPress(); });
 }
 function preset(id: number, name: string) { return { id, accountId: 1, name, isPrimary: false, members: [], createdAt: '', updatedAt: '' }; }
 function deferred<T>() {
