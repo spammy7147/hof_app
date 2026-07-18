@@ -262,11 +262,18 @@ describe('AdventureMapAutomationEditor', () => {
     await act(async () => { retainedOpen(); });
     const retainedPreset = renderer.root.findByProps({ accessibilityLabel: '고정 파티 프리셋 선택' }).props.onPress as () => void;
     let saving!: Promise<void>;
+    const selectedOrder = () => renderer.root.findAll((node) => (
+      (node.type as unknown) === 'Pressable'
+      && (node.props.accessibilityLabel === '첫 맵 제거'
+        || node.props.accessibilityLabel === '둘째 맵 제거')
+    )).map((node) => node.props.accessibilityLabel);
 
     await act(async () => { saving = renderer.root.findByProps({ accessibilityLabel: '모험맵 자동화 저장' }).props.onPress(); });
+    await act(async () => { retainedMoveDown(); });
+    assert.deepEqual(selectedOrder(), ['첫 맵 제거', '둘째 맵 제거']);
+    await act(async () => { retainedMoveUp(); });
+    assert.deepEqual(selectedOrder(), ['첫 맵 제거', '둘째 맵 제거']);
     await act(async () => {
-      retainedMoveDown();
-      retainedMoveUp();
       retainedRemove();
       retainedEnabled(false);
       retainedCatalog();
