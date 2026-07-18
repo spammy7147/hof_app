@@ -61,6 +61,9 @@ export function QuestMissionMapList({
   const mountedRef = useRef(false);
   const disabledRef = useRef(disabled);
   const draggingRef = useRef(dragging);
+  const interactionGenerationRef = useRef(0);
+  const interactionContextRef = useRef({ disabled, maps, missionKey });
+  const activeDragGenerationRef = useRef<number | null>(null);
   const mapsRef = useRef(maps);
   const rowsRef = useRef<MissionMapRow[]>([]);
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
@@ -74,6 +77,16 @@ export function QuestMissionMapList({
   disabledRef.current = disabled;
   draggingRef.current = dragging;
   mapsRef.current = maps;
+  const previousInteractionContext = interactionContextRef.current;
+  if (
+    previousInteractionContext.disabled !== disabled
+    || previousInteractionContext.maps !== maps
+    || previousInteractionContext.missionKey !== missionKey
+  ) {
+    interactionGenerationRef.current += 1;
+    interactionContextRef.current = { disabled, maps, missionKey };
+  }
+  const renderInteractionGeneration = interactionGenerationRef.current;
   const rows = buildMissionMapRows(maps);
   rowsRef.current = rows;
   activePresetRowKeyRef.current = activePresetRowKey;
@@ -108,10 +121,9 @@ export function QuestMissionMapList({
 
   useEffect(() => {
     closeOpenSwipeable();
-    if (disabled) {
-      draggingRef.current = false;
-      setDragging(false);
-    }
+    activeDragGenerationRef.current = null;
+    draggingRef.current = false;
+    setDragging(false);
   }, [closeOpenSwipeable, disabled, maps, missionKey]);
 
   const closePresetPicker = useCallback((restoreFocus: boolean) => {
@@ -197,28 +209,36 @@ export function QuestMissionMapList({
     closePresetPicker(true);
   }
 
-  function moveRow(rowKey: string, offset: -1 | 1) {
-    if (disabledRef.current || draggingRef.current) return;
+  function findCurrentRow(rowKey: string, capturedMap: QuestMapSettingRequest, generation: number) {
+    if (generation !== interactionGenerationRef.current) return null;
     const liveRow = rowsRef.current.find((row) => row.rowKey === rowKey);
+    return liveRow?.map === capturedMap ? liveRow : null;
+  }
+
+  function moveRow(rowKey: string, capturedMap: QuestMapSettingRequest, generation: number, offset: -1 | 1) {
+    if (disabledRef.current || draggingRef.current) return;
+    const liveRow = findCurrentRow(rowKey, capturedMap, generation);
     if (!liveRow) return;
     const targetIndex = liveRow.index + offset;
     if (targetIndex < 0 || targetIndex >= mapsRef.current.length) return;
     onUpdate(moveMissionMap(mapsRef.current, liveRow.index, targetIndex));
   }
 
-  function deleteRow(rowKey: string) {
+  function deleteRow(rowKey: string, capturedMap: QuestMapSettingRequest, generation: number) {
     if (disabledRef.current || draggingRef.current) return;
-    const liveRow = rowsRef.current.find((row) => row.rowKey === rowKey);
+    const liveRow = findCurrentRow(rowKey, capturedMap, generation);
     if (!liveRow) return;
     closeOpenSwipeable();
     onUpdate(removeMissionMap(mapsRef.current, liveRow.index));
   }
 
-  function beginDrag(rowKey: string, drag: () => void) {
+  function beginDrag(rowKey: string, capturedMap: QuestMapSettingRequest, generation: number, drag: () => void) {
     if (disabledRef.current || draggingRef.current) return;
+    if (!findCurrentRow(rowKey, capturedMap, generation)) return;
     const rowSwipeable = swipeableNodesRef.current.get(rowKey) ?? null;
     if (rowSwipeable !== openSwipeableRef.current) rowSwipeable?.close();
     closeOpenSwipeable();
+    activeDragGenerationRef.current = generation;
     draggingRef.current = true;
     setDragging(true);
     drag();
@@ -250,7 +270,11 @@ export function QuestMissionMapList({
         containerStyle={styles.swipeContainer}
         enabled={!interactionDisabled}
         friction={2}
-        onSwipeableWillOpen={() => registerOpenSwipeable(swipeableNodesRef.current.get(rowKey) ?? null)}
+        onSwipeableWillOpen={() => {
+          if (findCurrentRow(rowKey, map, renderInteractionGeneration)) {
+            registerOpenSwipeable(swipeableNodesRef.current.get(rowKey) ?? null);
+          }
+        }}
         overshootRight={false}
         renderRightActions={() => (
           <Pressable
@@ -258,7 +282,7 @@ export function QuestMissionMapList({
             accessibilityRole="button"
             accessibilityState={{ disabled: interactionDisabled }}
             disabled={interactionDisabled}
-            onPress={() => deleteRow(rowKey)}
+            onPress={() => deleteRow(rowKey, map, renderInteractionGeneration)}
             style={({ pressed }) => [styles.deleteAction, pressed && !interactionDisabled && styles.pressed]}
           >
             <Trash2 color={theme.colors.buttonText} size={18} />
@@ -277,11 +301,11 @@ export function QuestMissionMapList({
             delayLongPress={120}
             disabled={interactionDisabled}
             onAccessibilityAction={({ nativeEvent: { actionName } }) => {
-              if (actionName === 'decrement') moveRow(rowKey, -1);
-              if (actionName === 'increment') moveRow(rowKey, 1);
-              if (actionName === 'delete') deleteRow(rowKey);
+              if (actionName === 'decrement') moveRow(rowKey, map, renderInteractionGeneration, -1);
+              if (actionName === 'increment') moveRow(rowKey, map, renderInteractionGeneration, 1);
+              if (actionName === 'delete') deleteRow(rowKey, map, renderInteractionGeneration);
             }}
-            onLongPress={() => beginDrag(rowKey, drag)}
+            onLongPress={() => beginDrag(rowKey, map, renderInteractionGeneration, drag)}
             style={({ pressed }) => [styles.dragHandle, pressed && !interactionDisabled && styles.pressed]}
           >
             <GripVertical color={theme.colors.textMuted} size={18} />
@@ -303,6 +327,7 @@ export function QuestMissionMapList({
                 accessibilityValue={{ text: presetLabel }}
                 disabled={interactionDisabled}
                 onPress={() => {
+                  if (!findCurrentRow(rowKey, map, renderInteractionGeneration)) return;
                   swipeableNodesRef.current.get(rowKey)?.close();
                   openPresetPicker(rowKey);
                 }}
@@ -324,14 +349,23 @@ export function QuestMissionMapList({
         data={rows}
         keyExtractor={(row) => `${missionKey}:${row.rowKey}`}
         onDragBegin={() => {
+          if (renderInteractionGeneration !== interactionGenerationRef.current || disabledRef.current) return;
           closeOpenSwipeable();
+          activeDragGenerationRef.current = renderInteractionGeneration;
           draggingRef.current = true;
           setDragging(true);
         }}
         onDragEnd={({ data, from, to }) => {
           closeOpenSwipeable();
+          const activeDragGeneration = activeDragGenerationRef.current;
+          activeDragGenerationRef.current = null;
           draggingRef.current = false;
           setDragging(false);
+          if (
+            activeDragGeneration !== renderInteractionGeneration
+            || renderInteractionGeneration !== interactionGenerationRef.current
+            || disabledRef.current
+          ) return;
           if (from !== to) onUpdate(reorderMissionMaps(data.map(({ map }) => map)));
         }}
         renderItem={renderMapRow}

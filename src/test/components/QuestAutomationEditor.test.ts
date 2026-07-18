@@ -179,6 +179,47 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(methods.closeCalls, 1);
   });
 
+  it('ignores a retained drag completion after the list becomes disabled', async () => {
+    await assertStaleMissionMapDragEndIgnored((props) => ({ ...props, disabled: true }));
+  });
+
+  it('ignores a retained drag completion after same-identity maps are replaced', async () => {
+    await assertStaleMissionMapDragEndIgnored((props) => ({
+      ...props,
+      maps: props.maps.map((map) => ({ ...map, presetMode: 'EXPLICIT' as const, partyPresetId: 7 })),
+    }));
+  });
+
+  it('ignores a retained drag completion after the mission key changes', async () => {
+    await assertStaleMissionMapDragEndIgnored((props) => ({ ...props, missionKey: 'clear' }));
+  });
+
+  it('does not let retained duplicate-row callbacks retarget a reordered occurrence', async () => {
+    const first = mapSetting('kill', 'a', 0);
+    const second = { ...mapSetting('kill', 'a', 1), presetMode: 'EXPLICIT' as const, partyPresetId: 7 };
+    const updates: QuestMapSettingRequest[][] = [];
+    const props = missionMapListProps({ maps: [first, second], onUpdate: (maps) => { updates.push(maps); } });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(QuestMissionMapList, props)); });
+    const deleteLabel = 'Combat · kill · Alpha 삭제';
+    const retainedDelete = renderer.root.findAllByProps({ accessibilityLabel: deleteLabel })[0]!;
+    const retainedHandle = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 순서 이동' });
+    const retainedDeletePress = retainedDelete.props.onPress as () => void;
+    const retainedAccessibilityAction = retainedHandle.props.onAccessibilityAction as (event: { nativeEvent: { actionName: string } }) => void;
+
+    await act(async () => {
+      renderer.update(React.createElement(QuestMissionMapList, { ...props, maps: [second, first] }));
+    });
+    await act(async () => {
+      retainedDeletePress();
+      retainedAccessibilityAction({ nativeEvent: { actionName: 'delete' } });
+    });
+    assert.deepEqual(updates, []);
+
+    await act(async () => { renderer.root.findAllByProps({ accessibilityLabel: deleteLabel })[0]?.props.onPress(); });
+    assert.deepEqual(updates, [[{ ...first, executionOrder: 0 }]]);
+  });
+
   it('shows loading, error/retry, and empty states', async () => {
     const pending = deferred<QuestSnapshot[]>();
     const loading = await renderEditor({ fetchQuests: () => pending.promise });
@@ -778,6 +819,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(renderer.root.findAll((node) => typeof node.props.accessibilityLabel === 'string'
       && /(번째 맵 위로|번째 맵 아래로|번째 맵 제거)$/.test(node.props.accessibilityLabel)).length, 0);
     const rows = list.props.data as unknown[];
+    await act(async () => { list.props.onDragBegin(); });
     await act(async () => { list.props.onDragEnd({ data: [...rows].reverse(), from: 0, to: 1 }); });
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
     assert.deepEqual(saves[0]?.quests[0]?.maps.map(({ mapCode, executionOrder }) => ({ mapCode, executionOrder })), [
@@ -1753,6 +1795,36 @@ function missionMapListProps(overrides: Partial<React.ComponentProps<typeof Ques
     onUpdate: () => undefined,
     ...overrides,
   };
+}
+
+async function assertStaleMissionMapDragEndIgnored(
+  updateProps: (props: React.ComponentProps<typeof QuestMissionMapList>) => React.ComponentProps<typeof QuestMissionMapList>,
+): Promise<void> {
+  const updates: QuestMapSettingRequest[][] = [];
+  const props = missionMapListProps({
+    maps: [mapSetting('kill', 'a', 0), mapSetting('kill', 'b', 1)],
+    catalog: [catalogMap('battle_map', 'a', 'Alpha'), catalogMap('battle_map', 'b', 'Beta')],
+    onUpdate: (maps) => { updates.push(maps); },
+  });
+  let renderer!: ReactTestRenderer;
+  await act(async () => { renderer = create(React.createElement(QuestMissionMapList, props)); });
+  const list = findHost(renderer.root, 'DraggableFlatList');
+  const retainedDragEnd = list.props.onDragEnd as (event: { data: unknown[]; from: number; to: number }) => void;
+  const reversed = [...list.props.data].reverse();
+  await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 순서 이동' }).props.onLongPress(); });
+  const nextProps = updateProps(props);
+  await act(async () => { renderer.update(React.createElement(QuestMissionMapList, nextProps)); });
+  const currentSwipeable = findHosts(renderer.root, 'ReanimatedSwipeable')[0]!;
+  const currentSwipeMethods = currentSwipeable.props.mockMethods as SwipeableMockMethods;
+  const closeCallsBeforeCompletion = currentSwipeMethods.closeCalls;
+  if (!nextProps.disabled) currentSwipeable.props.onSwipeableWillOpen();
+  await act(async () => { retainedDragEnd({ data: reversed, from: 0, to: 1 }); });
+
+  assert.deepEqual(updates, []);
+  if (!nextProps.disabled) assert.equal(currentSwipeMethods.closeCalls, closeCallsBeforeCompletion + 1);
+  assert.equal(renderer.root.findByProps({
+    accessibilityLabel: `${nextProps.questContext} · ${nextProps.missionKey} 1번째 맵 순서 이동`,
+  }).props.disabled, nextProps.disabled);
 }
 
 async function renderEditor(overrides: EditorOverrides = {}): Promise<ReactTestRenderer> {
