@@ -184,6 +184,7 @@ export function CombatMissionEditor({
         error={catalogError}
         loading={catalogLoading}
         maps={catalog}
+        mode={mission.type === 'MAP_CLEAR' ? 'REPLACE' : 'ADD'}
         selectedMapIdentities={mission.maps.map(buildQuestMapIdentity)}
         target={mission.target}
         visible={pickerOpen}

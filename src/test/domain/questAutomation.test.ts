@@ -149,6 +149,25 @@ describe('quest automation domain', () => {
     assert.deepEqual(restoreQuestSelection(current, cached).missions[0]?.maps, [{ ...automatic, executionOrder: 0 }]);
   });
 
+  it('restores only the first ordered cached map for a map-clear mission', () => {
+    const current = snapshot('q1', 'Current', 'AVAILABLE', 12, [mission('clear', 'MAP_CLEAR', 'Target')]);
+    const cached = {
+      questCode: 'q1', name: 'Old', section: 'ACTIVE' as const, sourceOrder: 1, enabled: true, missing: false,
+      missions: [{
+        ...mission('clear', 'MAP_CLEAR', 'Target'),
+        maps: [
+          { ...mapSetting('clear', 'first', 4), executionOrder: 4, manuallyOverridden: true },
+          { ...mapSetting('clear', 'second', 5), executionOrder: 5, manuallyOverridden: true },
+        ],
+      }],
+    };
+
+    assert.deepEqual(restoreQuestSelection(current, cached).missions[0]?.maps, [{
+      ...mapSetting('clear', 'first', 0),
+      manuallyOverridden: true,
+    }]);
+  });
+
   it('keeps a selected repeated quest and its config when the latest snapshot disappears', () => {
     const entry = questEntry([{ questCode: 'repeat', enabled: true, sourceOrder: 7, maps: [mapSetting('kill', 'a', 0)] }]);
     const draft = buildQuestAutomationDraft(entry, []);
@@ -222,6 +241,20 @@ describe('quest automation domain', () => {
     assert.equal(getMissionReadiness(draft.quests[0]!.missions[0]!, []), '사용자 변경');
   });
 
+  it('keeps only one ordered map from malformed legacy map-clear settings', () => {
+    const clearQuest = snapshot('q-clear', 'Clear', 'ACTIVE', 0, [mission('clear-key', 'MAP_CLEAR', 'Missing')]);
+    const first = { ...mapSetting('clear-key', 'first', 0), manuallyOverridden: true };
+    const second = { ...mapSetting('clear-key', 'second', 1), manuallyOverridden: true };
+    const draft = buildQuestAutomationDraft(
+      questEntry([{ questCode: 'q-clear', enabled: true, sourceOrder: 0, maps: [first, second] }]),
+      [clearQuest],
+      [],
+    );
+
+    assert.deepEqual(draft.quests[0]?.missions[0]?.maps, [first]);
+    assert.deepEqual(buildQuestAutomationRequest(draft, []).quests[0]?.maps, [first]);
+  });
+
   it('hydrates only unresolved automatic map-clear rows while preserving user-owned draft fields', () => {
     const clearQuest = snapshot('q-clear', 'Clear', 'ACTIVE', 0, [mission('clear-key', 'MAP_CLEAR', 'Target')]);
     const automatic = {
@@ -266,6 +299,22 @@ describe('quest automation domain', () => {
     ), removed);
   });
 
+  it('normalizes malformed map-clear drafts to one map during catalog hydration', () => {
+    const clearQuest = snapshot('q-clear', 'Clear', 'ACTIVE', 0, [mission('clear-key', 'MAP_CLEAR', 'Target')]);
+    const draft = buildQuestAutomationDraft(questEntry([]), [clearQuest]);
+    draft.quests = [selectQuest(draft, clearQuest, true).quests[0]!];
+    draft.quests[0]!.missions[0]!.maps = [
+      { ...mapSetting('clear-key', 'first', 3), executionOrder: 3, manuallyOverridden: true },
+      { ...mapSetting('clear-key', 'second', 4), executionOrder: 4, manuallyOverridden: true },
+    ];
+
+    assert.deepEqual(
+      hydrateAutoMatchedMapClearMissions(draft, [catalogMap('battle_map', 'target', 'Target')])
+        .quests[0]?.missions[0]?.maps,
+      [{ ...mapSetting('clear-key', 'first', 0), manuallyOverridden: true }],
+    );
+  });
+
   it('supports ordered monster maps with reorder and remove', () => {
     const maps = [mapSetting('kill', 'a', 0), mapSetting('kill', 'b', 1), mapSetting('kill', 'c', 2)];
     assert.deepEqual(moveMissionMap(maps, 2, 0).map(({ mapCode, executionOrder }) => [mapCode, executionOrder]), [['c', 0], ['a', 1], ['b', 2]]);
@@ -292,6 +341,43 @@ describe('quest automation domain', () => {
     draft.quests[0]!.missions[0]!.maps = [{ ...mapSetting('kill', 'a', 0), manuallyOverridden: true }];
     assert.equal(getMissionReadiness(draft.quests[0]!.missions[0]!, [9]), '사용자 변경');
     assert.deepEqual(buildQuestAutomationRequest(draft, [9]).quests[0]?.maps.map(({ missionKey }) => missionKey), ['kill']);
+  });
+
+  it('requires exactly one map for map-clear missions', () => {
+    const quest = snapshot('clear', 'Clear', 'ACTIVE', 0, [mission('clear-key', 'MAP_CLEAR', 'Target')]);
+    const draft = selectQuest(buildQuestAutomationDraft(questEntry([]), [quest]), quest, true);
+    draft.quests[0]!.missions[0]!.maps = [
+      { ...mapSetting('clear-key', 'a', 0), manuallyOverridden: true },
+      { ...mapSetting('clear-key', 'b', 1), manuallyOverridden: true },
+    ];
+
+    assert.match(validateQuestAutomationDraft(draft, []).join(' '), /하나/);
+    assert.throws(() => buildQuestAutomationRequest(draft, []), /하나/);
+  });
+
+  it('coalesces repeated semantic mission instances into one UI setting and one request map list', () => {
+    const repeated = snapshot('repeat', 'Repeated', 'ACTIVE', 0, [
+      mission('kill-key', 'MONSTER_KILL', 'Killer Maid'),
+      mission('kill-key', 'MONSTER_KILL', 'Killer Maid'),
+    ]);
+    const storedMaps = [mapSetting('kill-key', 'a', 0), mapSetting('kill-key', 'b', 1)];
+    const draft = buildQuestAutomationDraft(
+      questEntry([{ questCode: 'repeat', enabled: true, sourceOrder: 0, maps: storedMaps }]),
+      [repeated],
+    );
+
+    assert.equal(draft.quests[0]?.missions.length, 1);
+    assert.deepEqual(buildQuestAutomationRequest(draft, []).quests[0]?.maps, storedMaps);
+  });
+
+  it('validates duplicate semantic mission map identities across the whole quest', () => {
+    const quest = snapshot('repeat', 'Repeated', 'ACTIVE', 0, [mission('kill-key', 'MONSTER_KILL', 'Killer Maid')]);
+    const draft = selectQuest(buildQuestAutomationDraft(questEntry([]), [quest]), quest, true);
+    const duplicated = { ...draft.quests[0]!.missions[0]!, maps: [mapSetting('kill-key', 'a', 0)] };
+    draft.quests[0]!.missions = [duplicated, structuredClone(duplicated)];
+
+    assert.match(validateQuestAutomationDraft(draft, []).join(' '), /중복/);
+    assert.throws(() => buildQuestAutomationRequest(draft, []), /중복/);
   });
 
   it('emits contiguous unique source order in deterministic draft order', () => {

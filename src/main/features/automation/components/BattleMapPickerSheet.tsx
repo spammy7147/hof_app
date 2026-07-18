@@ -25,6 +25,7 @@ import type { BattleMapResponse } from '../../../types/api';
 
 export type BattleMapPickerSheetProps = {
   visible: boolean;
+  mode: 'ADD' | 'REPLACE';
   target: string | null;
   maps: BattleMapResponse[];
   selectedMapIdentities: string[];
@@ -43,6 +44,7 @@ const FILTERS: ReadonlyArray<{ value: QuestMapFilter; label: string }> = [
 
 export function BattleMapPickerSheet({
   visible,
+  mode,
   target,
   maps,
   selectedMapIdentities,
@@ -59,6 +61,8 @@ export function BattleMapPickerSheet({
   const selected = useMemo(() => new Set(selectedMapIdentities), [selectedMapIdentities]);
   const results = useMemo(() => filterQuestMapOptions(maps, query, filter), [filter, maps, query]);
   const subtitle = target?.trim() ? target : '실행할 맵을 선택해 주세요.';
+  const title = mode === 'REPLACE' ? '전투맵 변경' : '전투맵 추가';
+  const actionLabel = mode === 'REPLACE' ? '변경' : '추가';
 
   useEffect(() => {
     if (!visible) return;
@@ -85,7 +89,7 @@ export function BattleMapPickerSheet({
           <Text style={styles.category}>{categoryLabel}</Text>
         </View>
         <Pressable
-          accessibilityLabel={`${item.name} 추가`}
+          accessibilityLabel={`${item.name} ${actionLabel}`}
           accessibilityRole="button"
           accessibilityState={{ disabled }}
           disabled={disabled}
@@ -100,7 +104,7 @@ export function BattleMapPickerSheet({
           ]}
         >
           <Text style={[styles.addButtonText, disabled && styles.addButtonTextDisabled]}>
-            {alreadySelected ? '추가됨' : '추가'}
+            {alreadySelected ? (mode === 'REPLACE' ? '선택됨' : '추가됨') : actionLabel}
           </Text>
         </Pressable>
       </View>
@@ -127,7 +131,7 @@ export function BattleMapPickerSheet({
             <View style={styles.dragHandle} />
             <View style={styles.header}>
               <View style={styles.headerCopy}>
-                <Text ref={titleRef} accessibilityLabel="전투맵 추가" accessibilityRole="header" style={styles.title}>전투맵 추가</Text>
+                <Text ref={titleRef} accessibilityLabel={title} accessibilityRole="header" style={styles.title}>{title}</Text>
                 <Text style={styles.subtitle}>{subtitle}</Text>
               </View>
               <Pressable

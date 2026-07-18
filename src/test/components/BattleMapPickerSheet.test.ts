@@ -102,6 +102,18 @@ describe('BattleMapPickerSheet', () => {
     assert.equal(closes, 3);
   });
 
+  it('uses replacement title and action labels in replace mode', async () => {
+    const renderer = await renderSheet({
+      mode: 'REPLACE',
+      maps: [map('battle_map', 'maid-hall', 'Maid Hall')],
+    });
+
+    assert.equal(hasText(renderer.root, '전투맵 변경'), true);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투맵 변경' }).props.accessibilityRole, 'header');
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Maid Hall 변경' }).props.accessibilityRole, 'button');
+    assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: 'Maid Hall 변경' }), '변경'), true);
+  });
+
   it('moves focus to the title when the modal opens', async () => {
     focusCalls.length = 0;
     const renderer = await renderSheet();
@@ -236,6 +248,7 @@ describe('BattleMapPickerSheet', () => {
 function sheetProps(overrides: Partial<React.ComponentProps<typeof BattleMapPickerSheet>> = {}) {
   return {
     visible: true,
+    mode: 'ADD' as const,
     target: null,
     maps: [],
     selectedMapIdentities: [],

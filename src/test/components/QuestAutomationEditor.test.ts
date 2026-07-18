@@ -935,7 +935,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.disabled, true);
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Clear Quest · clear-key 전투맵 변경' }).props.onPress(); });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Target 추가' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Target 변경' }).props.onPress(); });
     assert.equal(hasText(renderer.root, '사용자 변경'), true);
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.disabled, false);
   });
@@ -953,7 +953,8 @@ describe('QuestAutomationEditor mounted behavior', () => {
 
     assert.equal(hasText(renderer.root, '자동 매칭됨'), true);
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Clear Quest · clear-key 전투맵 변경' }).props.onPress(); });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Other Field 추가' }).props.onPress(); });
+    assert.equal(hasText(renderer.root, '전투맵 변경'), true);
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Other Field 변경' }).props.onPress(); });
     assert.equal(hasText(renderer.root, 'Target'), false);
     assert.equal(hasText(renderer.root, 'Other Field'), true);
     assert.equal(hasText(renderer.root, '사용자 변경'), true);
