@@ -266,7 +266,6 @@ export function AdventureMapAutomationEditor({
   controlsDisabledRef.current = controlsDisabled;
   busyRef.current = busy;
   queryRef.current = query;
-  const dirty = draftDirty;
   const hasExplicitPreset = draft.maps.some(({ presetMode }) => presetMode === 'EXPLICIT');
   const saveDisabled = controlsDisabled || errors.length > 0
     || (hasExplicitPreset && !presetsVerified);
@@ -311,7 +310,7 @@ export function AdventureMapAutomationEditor({
   }, [activePresetSession, activePresetSetting, closePresetPicker, controlsDisabled]);
 
   const openPresetPicker = useCallback((identity: string) => {
-    if (controlsDisabledRef.current) return;
+    if (controlsDisabledRef.current || presetSessionRef.current != null) return;
     const session = { generation: ++presetSessionGenerationRef.current, identity };
     presetSessionRef.current = session;
     setActivePresetSession(session);
@@ -329,7 +328,7 @@ export function AdventureMapAutomationEditor({
 
   function requestBack() {
     if (busyRef.current) return;
-    if (!dirty) return onBack();
+    if (serializeDraft(draftRef.current) === baselineRef.current) return onBack();
     Alert.alert('변경 사항을 버릴까요?', '저장하지 않은 모험맵 설정이 있습니다.', [
       { text: '계속 편집', style: 'cancel' },
       { text: '나가기', style: 'destructive', onPress: () => {

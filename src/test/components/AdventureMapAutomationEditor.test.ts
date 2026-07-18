@@ -384,6 +384,42 @@ describe('AdventureMapAutomationEditor', () => {
     assert.equal(renderer.root.findByType('Modal' as unknown as React.ElementType).props.visible, false);
   });
 
+  it('does not let a retained preset-open callback replace the active picker session', async () => {
+    const renderer = await renderEditor({
+      entry: entry([
+        setting('first', 0, 'PRIMARY', null),
+        setting('second', 1, 'PRIMARY', null),
+      ]),
+      maps: [map('first', '첫 맵'), map('second', '둘째 맵')],
+      onListPartyPresets: async () => [preset(9, '고정 파티', false)],
+    });
+    const retainedOpenA = renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.onPress as () => void;
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.onPress(); });
+    const currentSelectB = renderer.root.findByProps({ accessibilityLabel: '고정 파티 프리셋 선택' }).props.onPress as () => void;
+
+    await act(async () => { retainedOpenA(); });
+    assert.equal(hasText(renderer.root, '둘째 맵 프리셋 선택'), true);
+    await act(async () => { currentSelectB(); });
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '둘째 맵 현재 프리셋: 고정 파티' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '첫 맵 현재 프리셋: 대표 프리셋 없음' }));
+
+    await act(async () => { retainedOpenA(); });
+    assert.equal(hasText(renderer.root, '첫 맵 프리셋 선택'), true);
+  });
+
+  it('uses live dirty state when a Back callback retained from a clean render is invoked', async () => {
+    alertArguments = null;
+    let backs = 0;
+    const renderer = await renderEditor({ onBack: () => { backs += 1; } });
+    const retainedBack = renderer.root.findByProps({ accessibilityLabel: '모험맵 자동화 뒤로' }).props.onPress as () => void;
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '모험맵 자동화 사용' }).props.onValueChange(false); });
+    await act(async () => { retainedBack(); });
+
+    assert.equal(backs, 0);
+    assert.equal(alertArguments?.[0], '변경 사항을 버릴까요?');
+  });
+
   it('fences retained back callbacks and an open dirty-back action while saving', async () => {
     alertArguments = null;
     const pending = deferred<boolean>();
