@@ -51,11 +51,14 @@ describe('quest automation domain', () => {
       snapshot('early', 'Early', 'ACTIVE', 1, []),
       snapshot('second-selected', 'Second selected', 'ACTIVE', 7, []),
     ];
+    const prioritized = prioritizeSelectedQuests(quests, new Set(['second-selected', 'first-selected']));
 
     assert.deepEqual(
-      prioritizeSelectedQuests(quests, new Set(['second-selected', 'first-selected'])).map(({ questId }) => questId),
+      prioritized.map(({ questId }) => questId),
       ['first-selected', 'second-selected', 'early', 'late'],
     );
+    assert.notEqual(prioritized, quests);
+    assert.deepEqual(quests.map(({ questId }) => questId), ['late', 'first-selected', 'early', 'second-selected']);
     assert.deepEqual(
       prioritizeSelectedQuests(quests, new Set()).map(({ questId }) => questId),
       ['early', 'first-selected', 'second-selected', 'late'],
