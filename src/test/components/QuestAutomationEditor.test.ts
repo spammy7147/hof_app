@@ -152,17 +152,23 @@ describe('QuestAutomationEditor mounted behavior', () => {
   });
 
   it('prioritizes selected quests after source-order filtering without changing their selection order', async () => {
+    const saves: UpdateQuestAutomationRequest[] = [];
     const renderer = await renderEditor({ quests: [
       snapshot('first', 'First', 'ACTIVE', [mission('first-now', 'IMMEDIATE', null)], 0),
       snapshot('second', 'Second', 'ACTIVE', [mission('second-now', 'IMMEDIATE', null)], 1),
       snapshot('third', 'Third', 'ACTIVE', [mission('third-now', 'IMMEDIATE', null)], 2),
-    ] });
+    ], onSave: async (request) => { saves.push(request); return true; } });
 
     assert.deepEqual(summaryOrder(renderer.root), ['quest-summary:First', 'quest-summary:Second', 'quest-summary:Third']);
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Second 선택' }).props.onPress(); });
     assert.deepEqual(summaryOrder(renderer.root), ['quest-summary:Second', 'quest-summary:First', 'quest-summary:Third']);
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Third 선택' }).props.onPress(); });
     assert.deepEqual(summaryOrder(renderer.root), ['quest-summary:Second', 'quest-summary:Third', 'quest-summary:First']);
+    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
+    assert.deepEqual(saves[0]?.quests.map(({ questCode, sourceOrder }) => ({ questCode, sourceOrder })), [
+      { questCode: 'second', sourceOrder: 0 },
+      { questCode: 'third', sourceOrder: 1 },
+    ]);
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Second 선택' }).props.onPress(); });
     assert.deepEqual(summaryOrder(renderer.root), ['quest-summary:Third', 'quest-summary:First', 'quest-summary:Second']);
     await act(async () => { renderer.unmount(); });
