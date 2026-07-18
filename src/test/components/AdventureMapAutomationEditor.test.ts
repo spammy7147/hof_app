@@ -25,9 +25,10 @@ const flatList = React.forwardRef<unknown, Record<string, unknown>>((props, ref)
     (props.renderItem as (value: { item: unknown; index: number }) => React.ReactNode)({ item, index }),
   )),
 ));
+let alertArguments: unknown[] | null = null;
 const reactNativeMock = {
   ActivityIndicator: host('ActivityIndicator'),
-  Alert: { alert: () => undefined },
+  Alert: { alert: (...args: unknown[]) => { alertArguments = args; } },
   FlatList: flatList,
   Modal: host('Modal'),
   Pressable: host('Pressable'),
@@ -208,19 +209,18 @@ describe('AdventureMapAutomationEditor', () => {
     }]);
   });
 
-  it('auto-expands matching groups without letting search-time group presses change manual expansion', async () => {
+  it('restores manual groups and fences callbacks retained before search', async () => {
     const renderer = await renderEditor({
       maps: [
         map('manual', '수동 맵', { groupName: '수동 그룹', groupOrder: 0 }),
         map('needle', '바늘 맵', { groupName: '검색 그룹', groupOrder: 1 }),
       ],
     });
-    const retainedManualPress = renderer.root.findByProps({ accessibilityLabel: '수동 그룹 그룹 열기' }).props.onPress as () => void;
+    await openAdventureGroup(renderer, '수동 그룹');
+    const retainedManualPress = renderer.root.findByProps({ accessibilityLabel: '수동 그룹 그룹 닫기' }).props.onPress as () => void;
 
-    await act(async () => {
-      renderer.root.findByProps({ accessibilityLabel: '모험맵 검색' }).props.onChangeText('바늘');
-      retainedManualPress();
-    });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '모험맵 검색' }).props.onChangeText('바늘'); });
+    await act(async () => { retainedManualPress(); });
 
     const searchGroup = renderer.root.findByProps({ accessibilityLabel: '검색 그룹 그룹 검색 결과' });
     assert.equal(searchGroup.props.disabled, true);
@@ -229,8 +229,122 @@ describe('AdventureMapAutomationEditor', () => {
     await act(async () => { searchGroup.props.onPress(); });
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '모험맵 검색' }).props.onChangeText(''); });
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '수동 그룹 그룹 열기' }));
-    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '수동 맵 모험맵 선택' }).length, 0);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '수동 그룹 그룹 닫기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '수동 맵 모험맵 선택' }));
+  });
+
+  it('fences every retained edit callback while saving and leaves the submitted draft clean', async () => {
+    alertArguments = null;
+    const pending = deferred<boolean>();
+    const saves: UpdateAdventureMapAutomationRequest[] = [];
+    let backs = 0;
+    const renderer = await renderEditor({
+      entry: entry([
+        setting('first', 0, 'PRIMARY', null),
+        setting('second', 1, 'PRIMARY', null),
+      ]),
+      maps: [
+        map('first', '첫 맵', { groupName: '그룹', mapOrder: 0 }),
+        map('second', '둘째 맵', { groupName: '그룹', mapOrder: 1 }),
+        map('third', '셋째 맵', { groupName: '그룹', mapOrder: 2 }),
+      ],
+      onListPartyPresets: async () => [preset(9, '고정 파티', false)],
+      onSave: async (request) => { saves.push(request); return pending.promise; },
+      onBack: () => { backs += 1; },
+    });
+    await openAdventureGroup(renderer, '그룹');
+    const retainedMoveDown = renderer.root.findByProps({ accessibilityLabel: '첫 맵 아래로' }).props.onPress as () => void;
+    const retainedMoveUp = renderer.root.findByProps({ accessibilityLabel: '둘째 맵 위로' }).props.onPress as () => void;
+    const retainedRemove = renderer.root.findByProps({ accessibilityLabel: '첫 맵 제거' }).props.onPress as () => void;
+    const retainedEnabled = renderer.root.findByProps({ accessibilityLabel: '모험맵 자동화 사용' }).props.onValueChange as (value: boolean) => void;
+    const retainedCatalog = renderer.root.findByProps({ accessibilityLabel: '셋째 맵 모험맵 선택' }).props.onPress as () => void;
+    const retainedOpen = renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.onPress as () => void;
+    await act(async () => { retainedOpen(); });
+    const retainedPreset = renderer.root.findByProps({ accessibilityLabel: '고정 파티 프리셋 선택' }).props.onPress as () => void;
+    let saving!: Promise<void>;
+
+    await act(async () => { saving = renderer.root.findByProps({ accessibilityLabel: '모험맵 자동화 저장' }).props.onPress(); });
+    await act(async () => {
+      retainedMoveDown();
+      retainedMoveUp();
+      retainedRemove();
+      retainedEnabled(false);
+      retainedCatalog();
+      retainedOpen();
+      retainedPreset();
+    });
+
+    assert.deepEqual(saves, [{
+      enabled: true,
+      maps: [
+        { categoryId: 'adventure_map', mapCode: 'first', presetMode: 'PRIMARY', partyPresetId: null, executionOrder: 0 },
+        { categoryId: 'adventure_map', mapCode: 'second', presetMode: 'PRIMARY', partyPresetId: null, executionOrder: 1 },
+      ],
+    }]);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '모험맵 자동화 사용' }).props.value, true);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '첫 맵 제거' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '둘째 맵 제거' }));
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '셋째 맵 모험맵 선택' }).props.accessibilityState.checked, false);
+
+    await act(async () => { pending.resolve(true); await saving; });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '모험맵 자동화 뒤로' }).props.onPress(); });
+    assert.equal(backs, 1);
+    assert.equal(alertArguments, null);
+  });
+
+  it('baselines the submitted snapshot when a later server entry is reconciled during save', async () => {
+    alertArguments = null;
+    const pending = deferred<boolean>();
+    const initialEntry = entry([setting('first', 0, 'PRIMARY', null)]);
+    const base = editorProps({
+      entry: initialEntry,
+      onLoadBattleMaps: async () => [map('first', '첫 맵'), map('server', '서버 맵')],
+      onSave: async () => pending.promise,
+    });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(AdventureMapAutomationEditor, base)); });
+    let saving!: Promise<void>;
+    await act(async () => { saving = renderer.root.findByProps({ accessibilityLabel: '모험맵 자동화 저장' }).props.onPress(); });
+
+    await act(async () => {
+      renderer.update(React.createElement(AdventureMapAutomationEditor, {
+        ...base,
+        entry: entry([setting('server', 0, 'PRIMARY', null)]),
+      }));
+    });
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '서버 맵 제거' }));
+
+    await act(async () => { pending.resolve(true); await saving; });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '모험맵 자동화 뒤로' }).props.onPress(); });
+    assert.equal(alertArguments?.[0], '변경 사항을 버릴까요?');
+  });
+
+  it('fences duplicate save and confirmed delete callbacks synchronously', async () => {
+    alertArguments = null;
+    const savePending = deferred<boolean>();
+    let saves = 0;
+    const saveRenderer = await renderEditor({
+      onSave: async () => { saves += 1; return savePending.promise; },
+    });
+    const save = saveRenderer.root.findByProps({ accessibilityLabel: '모험맵 자동화 저장' }).props.onPress as () => Promise<void>;
+    let firstSave!: Promise<void>;
+    await act(async () => { firstSave = save(); void save(); });
+    assert.equal(saves, 1);
+    await act(async () => { savePending.resolve(true); await firstSave; });
+
+    const deletePending = deferred<boolean>();
+    let deletes = 0;
+    const deleteRenderer = await renderEditor({
+      onDelete: async () => { deletes += 1; return deletePending.promise; },
+    });
+    await act(async () => { deleteRenderer.root.findByProps({ accessibilityLabel: '모험맵 자동화 삭제' }).props.onPress(); });
+    const buttons = alertArguments?.[2] as unknown as Array<{ text: string; onPress?: () => Promise<void> }>;
+    const remove = buttons.find(({ text }) => text === '삭제')?.onPress;
+    assert.ok(remove);
+    let firstDelete!: Promise<void>;
+    await act(async () => { firstDelete = remove!(); void remove!(); });
+    assert.equal(deletes, 1);
+    await act(async () => { deletePending.resolve(false); await firstDelete; });
   });
 
   it('shows the search-only empty message after a settled query has no matches', async () => {

@@ -109,12 +109,18 @@ export function AdventureMapAutomationEditor({
   const draftRef = useRef(draft);
   const queryRef = useRef(query);
   const baselineRef = useRef(serializeDraft(draft));
+  const entrySettingsRef = useRef(serializeEntrySettings(entry));
+  const controlsDisabledRef = useRef(false);
 
   const updateDraft = useCallback((updater: (current: AdventureMapAutomationDraft) => AdventureMapAutomationDraft) => {
     const next = updater(draftRef.current);
     draftRef.current = next;
     setDraft(next);
   }, []);
+  const updateEditableDraft = useCallback((updater: (current: AdventureMapAutomationDraft) => AdventureMapAutomationDraft) => {
+    if (controlsDisabledRef.current) return;
+    updateDraft((current) => controlsDisabledRef.current ? current : updater(current));
+  }, [updateDraft]);
 
   useEffect(() => () => {
     mountedRef.current = false;
@@ -227,6 +233,17 @@ export function AdventureMapAutomationEditor({
     void loadMaps();
   }, [loadMaps]);
 
+  useEffect(() => {
+    const source = serializeEntrySettings(entry);
+    if (source === entrySettingsRef.current) return;
+    entrySettingsRef.current = source;
+    if (serializeDraft(draftRef.current) !== baselineRef.current) return;
+    const next = buildAdventureMapAutomationDraft(entry, catalog);
+    draftRef.current = next;
+    setDraft(next);
+    baselineRef.current = serializeDraft(next);
+  }, [catalog, entry]);
+
   const validPresetIds = useMemo(() => presets.map(({ id }) => id), [presets]);
   const presetsVerified = !presetState.loading && presetState.error == null;
   const errors = useMemo(
@@ -237,6 +254,8 @@ export function AdventureMapAutomationEditor({
   );
   const busy = saving || localBusy;
   const controlsDisabled = busy || mapState.loading;
+  controlsDisabledRef.current = controlsDisabled;
+  queryRef.current = query;
   const dirty = serializeDraft(draft) !== baselineRef.current;
   const hasExplicitPreset = draft.maps.some(({ presetMode }) => presetMode === 'EXPLICIT');
   const saveDisabled = controlsDisabled || errors.length > 0
@@ -272,6 +291,21 @@ export function AdventureMapAutomationEditor({
     if (activePresetSetting == null || controlsDisabled) setActivePresetIdentity(null);
   }, [activePresetSetting, controlsDisabled]);
 
+  const openPresetPicker = useCallback((identity: string) => {
+    if (controlsDisabledRef.current) return;
+    setActivePresetIdentity(identity);
+  }, []);
+
+  const toggleCatalogGroup = useCallback((groupKey: string) => {
+    if (queryRef.current.trim().length > 0) return;
+    setExpandedGroupKeys((current) => {
+      if (queryRef.current.trim().length > 0) return current;
+      return current.includes(groupKey)
+        ? current.filter((key) => key !== groupKey)
+        : [...current, groupKey];
+    });
+  }, []);
+
   function requestBack() {
     if (busy) return;
     if (!dirty) return onBack();
@@ -282,10 +316,12 @@ export function AdventureMapAutomationEditor({
   }
 
   function confirmDelete() {
-    if (controlsDisabled) return;
+    if (controlsDisabledRef.current) return;
     Alert.alert('모험맵 자동화를 삭제할까요?', '선택한 모험맵 설정이 삭제됩니다.', [
       { text: '취소', style: 'cancel' },
       { text: '삭제', style: 'destructive', onPress: async () => {
+        if (controlsDisabledRef.current) return;
+        controlsDisabledRef.current = true;
         setLocalBusy(true);
         onClearMutationMessage();
         try {
@@ -298,12 +334,15 @@ export function AdventureMapAutomationEditor({
   }
 
   async function save() {
-    if (saveDisabled) return;
+    if (saveDisabled || controlsDisabledRef.current) return;
+    controlsDisabledRef.current = true;
     setLocalBusy(true);
     onClearMutationMessage();
     try {
-      const request = buildAdventureMapAutomationRequest(draftRef.current, validPresetIds);
-      if (await onSave(request)) baselineRef.current = serializeDraft(draftRef.current);
+      const submittedDraft = draftRef.current;
+      const request = buildAdventureMapAutomationRequest(submittedDraft, validPresetIds);
+      const submittedBaseline = serializeDraft(submittedDraft);
+      if (await onSave(request)) baselineRef.current = submittedBaseline;
     } finally {
       if (mountedRef.current) setLocalBusy(false);
     }
@@ -322,12 +361,7 @@ export function AdventureMapAutomationEditor({
           expanded={item.expanded}
           group={item.group}
           interactionDisabled={searching}
-          onPress={() => {
-            if (queryRef.current.trim()) return;
-            setExpandedGroupKeys((current) => current.includes(item.group.key)
-              ? current.filter((key) => key !== item.group.key)
-              : [...current, item.group.key]);
-          }}
+          onPress={() => toggleCatalogGroup(item.group.key)}
         />
       );
     }
@@ -337,7 +371,7 @@ export function AdventureMapAutomationEditor({
         <AdventureMapCatalogMapRow
           disabled={controlsDisabled}
           map={item.map}
-          onPress={() => updateDraft((current) => {
+          onPress={() => updateEditableDraft((current) => {
             const currentlySelected = current.maps.some(
               (setting) => adventureMapIdentity(setting) === adventureMapIdentity(item.map),
             );
@@ -360,9 +394,9 @@ export function AdventureMapAutomationEditor({
             <Text style={styles.mapName}>{setting.displayName}</Text>
             <Text style={styles.state}>{state.label}</Text>
           </View>
-          <Pressable accessibilityLabel={`${setting.displayName} 위로`} disabled={controlsDisabled || index === 0} onPress={() => updateDraft((current) => moveAdventureMapSetting(current, index, index - 1))} style={styles.iconButton}><ArrowUp color={theme.colors.textMuted} size={16} /></Pressable>
-          <Pressable accessibilityLabel={`${setting.displayName} 아래로`} disabled={controlsDisabled || index === draft.maps.length - 1} onPress={() => updateDraft((current) => moveAdventureMapSetting(current, index, index + 1))} style={styles.iconButton}><ArrowDown color={theme.colors.textMuted} size={16} /></Pressable>
-          <Pressable accessibilityLabel={`${setting.displayName} 제거`} disabled={controlsDisabled} onPress={() => updateDraft((current) => removeAdventureMapSetting(current, index))} style={styles.iconButton}><Trash2 color={theme.colors.danger} size={16} /></Pressable>
+          <Pressable accessibilityLabel={`${setting.displayName} 위로`} disabled={controlsDisabled || index === 0} onPress={() => updateEditableDraft((current) => moveAdventureMapSetting(current, index, index - 1))} style={styles.iconButton}><ArrowUp color={theme.colors.textMuted} size={16} /></Pressable>
+          <Pressable accessibilityLabel={`${setting.displayName} 아래로`} disabled={controlsDisabled || index === draft.maps.length - 1} onPress={() => updateEditableDraft((current) => moveAdventureMapSetting(current, index, index + 1))} style={styles.iconButton}><ArrowDown color={theme.colors.textMuted} size={16} /></Pressable>
+          <Pressable accessibilityLabel={`${setting.displayName} 제거`} disabled={controlsDisabled} onPress={() => updateEditableDraft((current) => removeAdventureMapSetting(current, index))} style={styles.iconButton}><Trash2 color={theme.colors.danger} size={16} /></Pressable>
         </View>
         {state.detail ? <Text style={styles.muted}>{state.detail}</Text> : null}
         <View style={styles.constraintList}>
@@ -374,10 +408,10 @@ export function AdventureMapAutomationEditor({
           <Text style={styles.muted}>현재 프리셋</Text>
           <Text style={styles.choiceText}>{presetLabel}</Text>
         </View>
-        <Pressable accessibilityLabel={`${setting.displayName} 프리셋 선택 열기`} disabled={controlsDisabled} onPress={() => setActivePresetIdentity(adventureMapIdentity(setting))} style={styles.choice}><Text style={styles.choiceText}>프리셋 변경</Text></Pressable>
+        <Pressable accessibilityLabel={`${setting.displayName} 프리셋 선택 열기`} disabled={controlsDisabled} onPress={() => openPresetPicker(adventureMapIdentity(setting))} style={styles.choice}><Text style={styles.choiceText}>프리셋 변경</Text></Pressable>
       </View>
     );
-  }, [controlsDisabled, draft.maps, presets, query, searching, updateDraft]);
+  }, [controlsDisabled, draft.maps, openPresetPicker, presets, query, searching, toggleCatalogGroup, updateEditableDraft]);
 
   return (
     <View style={styles.screen}>
@@ -387,7 +421,7 @@ export function AdventureMapAutomationEditor({
           <Text style={styles.title}>모험맵 자동화</Text>
           <Text style={styles.subtitle}>상태와 관계없이 선택하고 실행 순서를 정하세요.</Text>
         </View>
-        <Switch accessibilityLabel="모험맵 자동화 사용" disabled={controlsDisabled} value={draft.enabled} onValueChange={(enabled) => updateDraft((current) => ({ ...current, enabled }))} />
+        <Switch accessibilityLabel="모험맵 자동화 사용" disabled={controlsDisabled} value={draft.enabled} onValueChange={(enabled) => updateEditableDraft((current) => ({ ...current, enabled }))} />
       </View>
       <View style={styles.refreshBand}>
         <Text style={styles.refreshTitle}>한국 날짜 00시 초기화</Text>
@@ -403,8 +437,8 @@ export function AdventureMapAutomationEditor({
         mapName={activePresetSetting?.displayName ?? ''}
         onClose={() => setActivePresetIdentity(null)}
         onSelect={(presetId) => {
-          if (activePresetIdentity == null) return;
-          updateDraft((current) => ({
+          if (controlsDisabledRef.current || activePresetIdentity == null) return;
+          updateEditableDraft((current) => ({
             ...current,
             maps: current.maps.map((map) => adventureMapIdentity(map) !== activePresetIdentity ? map : presetId == null
               ? { ...map, presetMode: 'PRIMARY', partyPresetId: null }
@@ -431,6 +465,9 @@ function ResourceWarning({ label, onRetry }: { label: string; onRetry: () => voi
 }
 function serializeDraft(draft: AdventureMapAutomationDraft): string {
   return JSON.stringify([draft.enabled, draft.maps.map(({ categoryId, mapCode, presetMode, partyPresetId, executionOrder }) => [categoryId, mapCode, presetMode, partyPresetId, executionOrder])]);
+}
+function serializeEntrySettings(entry: TypedAutomationEntryResponse): string {
+  return JSON.stringify([entry.enabled, entry.adventureMaps]);
 }
 
 const styles = StyleSheet.create({
