@@ -120,11 +120,65 @@ moduleWithLoader._load = (request, parent, isMain) => {
 const { QuestAutomationEditor } = require(
   '../../main/features/automation/components/QuestAutomationEditor',
 ) as typeof import('../../main/features/automation/components/QuestAutomationEditor');
+const { QuestMissionMapList } = require(
+  '../../main/features/automation/components/QuestMissionMapList',
+) as typeof import('../../main/features/automation/components/QuestMissionMapList');
 moduleWithLoader._load = originalLoad;
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('QuestAutomationEditor mounted behavior', () => {
+  it('closes an open mission-map swipe when same-identity map fields change', async () => {
+    const initial = mapSetting('kill', 'a', 0);
+    const props = missionMapListProps({ maps: [initial] });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(QuestMissionMapList, props)); });
+    const swipeable = findHost(renderer.root, 'ReanimatedSwipeable');
+    const methods = swipeable.props.mockMethods as SwipeableMockMethods;
+    swipeable.props.onSwipeableWillOpen();
+
+    await act(async () => {
+      renderer.update(React.createElement(QuestMissionMapList, {
+        ...props,
+        maps: [{ ...initial, presetMode: 'EXPLICIT', partyPresetId: 7 }],
+      }));
+    });
+
+    assert.equal(methods.closeCalls, 1);
+  });
+
+  it('closes an open mission-map swipe when duplicate occurrences reorder', async () => {
+    const first = mapSetting('kill', 'a', 0);
+    const second = { ...mapSetting('kill', 'a', 1), presetMode: 'EXPLICIT' as const, partyPresetId: 7 };
+    const props = missionMapListProps({ maps: [first, second] });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(QuestMissionMapList, props)); });
+    const swipeable = findHosts(renderer.root, 'ReanimatedSwipeable')[0]!;
+    const methods = swipeable.props.mockMethods as SwipeableMockMethods;
+    swipeable.props.onSwipeableWillOpen();
+
+    await act(async () => {
+      renderer.update(React.createElement(QuestMissionMapList, { ...props, maps: [second, first] }));
+    });
+
+    assert.equal(methods.closeCalls, 1);
+  });
+
+  it('closes an open mission-map swipe when the mission key changes', async () => {
+    const props = missionMapListProps();
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(QuestMissionMapList, props)); });
+    const swipeable = findHost(renderer.root, 'ReanimatedSwipeable');
+    const methods = swipeable.props.mockMethods as SwipeableMockMethods;
+    swipeable.props.onSwipeableWillOpen();
+
+    await act(async () => {
+      renderer.update(React.createElement(QuestMissionMapList, { ...props, missionKey: 'clear' }));
+    });
+
+    assert.equal(methods.closeCalls, 1);
+  });
+
   it('shows loading, error/retry, and empty states', async () => {
     const pending = deferred<QuestSnapshot[]>();
     const loading = await renderEditor({ fetchQuests: () => pending.promise });
@@ -1685,6 +1739,19 @@ function editorProps(overrides: EditorOverrides = {}) {
     onSave: overrides.onSave ?? (async () => true),
     mutationMessage: overrides.mutationMessage ?? null,
     onClearMutationMessage: overrides.onClearMutationMessage ?? (() => undefined),
+  };
+}
+
+function missionMapListProps(overrides: Partial<React.ComponentProps<typeof QuestMissionMapList>> = {}): React.ComponentProps<typeof QuestMissionMapList> {
+  return {
+    catalog: [catalogMap('battle_map', 'a', 'Alpha')],
+    disabled: false,
+    maps: [mapSetting('kill', 'a', 0)],
+    missionKey: 'kill',
+    presets: [preset(7, 'Safe')],
+    questContext: 'Combat',
+    onUpdate: () => undefined,
+    ...overrides,
   };
 }
 

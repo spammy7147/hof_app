@@ -75,7 +75,6 @@ export function QuestMissionMapList({
   draggingRef.current = dragging;
   mapsRef.current = maps;
   const rows = buildMissionMapRows(maps);
-  const rowKeys = rows.map(({ rowKey }) => rowKey).join('\u0001');
   rowsRef.current = rows;
   activePresetRowKeyRef.current = activePresetRowKey;
 
@@ -113,7 +112,7 @@ export function QuestMissionMapList({
       draggingRef.current = false;
       setDragging(false);
     }
-  }, [closeOpenSwipeable, disabled, rowKeys]);
+  }, [closeOpenSwipeable, disabled, maps, missionKey]);
 
   const closePresetPicker = useCallback((restoreFocus: boolean) => {
     const focusGeneration = ++presetFocusGenerationRef.current;
