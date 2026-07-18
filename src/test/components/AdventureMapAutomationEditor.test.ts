@@ -65,6 +65,7 @@ describe('AdventureMapAutomationEditor', () => {
     });
 
     assert.equal(hasText(renderer.root, '오늘 초기화 완료 · 오전 12:03'), true);
+    await openAdventureGroup(renderer, '기타');
     const cooldown = renderer.root.findByProps({ accessibilityLabel: '쿨다운 맵 모험맵 선택' });
     assert.equal(cooldown.props.disabled, false);
     await act(async () => { cooldown.props.onPress(); });
@@ -148,12 +149,98 @@ describe('AdventureMapAutomationEditor', () => {
       await Promise.all([oldMaps.promise, oldPresets.promise]);
     });
 
+    await openAdventureGroup(renderer, '기타');
     assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '최신 맵 모험맵 선택' }).length > 0);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '이전 맵 모험맵 선택' }).length, 0);
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '최신 맵 모험맵 선택' }).props.onPress(); });
     assert.equal(hasText(renderer.root, '대표 · 최신 대표'), true);
     assert.equal(hasText(renderer.root, '대표 · 이전 대표'), false);
+  });
+
+  it('starts groups collapsed, keeps multiple open, and saves selection order independently from catalog order', async () => {
+    const saves: UpdateAdventureMapAutomationRequest[] = [];
+    const renderer = await renderEditor({
+      maps: [
+        map('early', '선순위 맵', { groupName: '앞 그룹', groupOrder: 0, recommendedLevel: 'Lv 10' }),
+        map('late', '후순위 맵', { groupName: '뒤 그룹', groupOrder: 1, recommendedLevel: 'Lv 20' }),
+      ],
+      onSave: async (request) => { saves.push(request); return true; },
+    });
+
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '앞 그룹 그룹 열기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '뒤 그룹 그룹 열기' }));
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '선순위 맵 모험맵 선택' }).length, 0);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '후순위 맵 모험맵 선택' }).length, 0);
+    assert.equal(hasText(renderer.root, 'Lv 10 · 1개'), true);
+    assert.equal(hasText(renderer.root, 'Lv 20 · 1개'), true);
+
+    await openAdventureGroup(renderer, '뒤 그룹');
+    await openAdventureGroup(renderer, '앞 그룹');
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '앞 그룹 그룹 닫기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '뒤 그룹 그룹 닫기' }));
+
+    let late = renderer.root.findByProps({ accessibilityLabel: '후순위 맵 모험맵 선택' });
+    let early = renderer.root.findByProps({ accessibilityLabel: '선순위 맵 모험맵 선택' });
+    assert.equal(late.props.accessibilityRole, 'checkbox');
+    assert.deepEqual(late.props.accessibilityState, { checked: false, disabled: false });
+    assert.equal(late.findAll((node) => ['Checkbox', 'Square', 'CheckSquare', 'Image'].includes(String(node.type))).length, 0);
+    assert.equal(hasText(late, '횟수 제한 없음 · 반복 실행'), true);
+    assert.equal(hasText(late, 'Lv 20 · 앞 순서에 있으면 계속 반복될 수 있습니다.'), true);
+
+    await act(async () => { late.props.onPress(); });
+    late = renderer.root.findByProps({ accessibilityLabel: '후순위 맵 모험맵 선택' });
+    assert.equal(late.props.accessibilityState.checked, true);
+    assert.equal(hasText(late, '선택됨'), true);
+    await act(async () => { early.props.onPress(); });
+    early = renderer.root.findByProps({ accessibilityLabel: '선순위 맵 모험맵 선택' });
+    assert.equal(early.props.accessibilityState.checked, true);
+    assert.equal(hasText(early, '선택됨'), true);
+
+    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '모험맵 자동화 저장' }).props.onPress(); });
+
+    assert.deepEqual(saves, [{
+      enabled: true,
+      maps: [
+        { categoryId: 'adventure_map', mapCode: 'late', presetMode: 'PRIMARY', partyPresetId: null, executionOrder: 0 },
+        { categoryId: 'adventure_map', mapCode: 'early', presetMode: 'PRIMARY', partyPresetId: null, executionOrder: 1 },
+      ],
+    }]);
+  });
+
+  it('auto-expands matching groups without letting search-time group presses change manual expansion', async () => {
+    const renderer = await renderEditor({
+      maps: [
+        map('manual', '수동 맵', { groupName: '수동 그룹', groupOrder: 0 }),
+        map('needle', '바늘 맵', { groupName: '검색 그룹', groupOrder: 1 }),
+      ],
+    });
+    const retainedManualPress = renderer.root.findByProps({ accessibilityLabel: '수동 그룹 그룹 열기' }).props.onPress as () => void;
+
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '모험맵 검색' }).props.onChangeText('바늘');
+      retainedManualPress();
+    });
+
+    const searchGroup = renderer.root.findByProps({ accessibilityLabel: '검색 그룹 그룹 검색 결과' });
+    assert.equal(searchGroup.props.disabled, true);
+    assert.deepEqual(searchGroup.props.accessibilityState, { disabled: true, expanded: true });
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '바늘 맵 모험맵 선택' }));
+    await act(async () => { searchGroup.props.onPress(); });
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '모험맵 검색' }).props.onChangeText(''); });
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '수동 그룹 그룹 열기' }));
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '수동 맵 모험맵 선택' }).length, 0);
+  });
+
+  it('shows the search-only empty message after a settled query has no matches', async () => {
+    const renderer = await renderEditor({ maps: [map('forest', '숲 모험', { groupName: '숲' })] });
+
+    assert.equal(hasText(renderer.root, '검색 가능한 모험맵이 없습니다.'), false);
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '모험맵 검색' }).props.onChangeText('없는 맵'); });
+    assert.equal(hasText(renderer.root, '검색 가능한 모험맵이 없습니다.'), true);
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '모험맵 검색' }).props.onChangeText('   '); });
+    assert.equal(hasText(renderer.root, '검색 가능한 모험맵이 없습니다.'), false);
   });
 
   it('clears stale observations only after a newer successful map refresh omits the selected map', async () => {
@@ -269,6 +356,9 @@ describe('AdventureMapAutomationEditor', () => {
         winCount: 1,
       })],
     });
+    await openAdventureGroup(renderer, '기타');
+    assert.equal(hasText(renderer.root, '쿨다운 1분 30초'), true);
+    assert.equal(hasText(renderer.root, '쿨다운이 끝난 뒤 자동으로 다시 확인합니다.'), true);
 
     for (const label of [
       '쿨다운 · 1분 30초',
@@ -282,15 +372,31 @@ describe('AdventureMapAutomationEditor', () => {
   });
 });
 
-async function renderEditor(overrides: { maps?: BattleMapResponse[]; onSave?: (request: UpdateAdventureMapAutomationRequest) => Promise<boolean> } = {}): Promise<ReactTestRenderer> {
+type RenderEditorOptions = Partial<React.ComponentProps<typeof AdventureMapAutomationEditor>> & {
+  maps?: BattleMapResponse[];
+};
+
+async function renderEditor({
+  maps = [],
+  onLoadBattleMaps = async () => maps,
+  onSave = async () => true,
+  ...overrides
+}: RenderEditorOptions = {}): Promise<ReactTestRenderer> {
   let renderer!: ReactTestRenderer;
   await act(async () => {
     renderer = create(React.createElement(AdventureMapAutomationEditor, editorProps({
-      onLoadBattleMaps: async () => overrides.maps ?? [],
-      onSave: overrides.onSave ?? (async () => true),
+      ...overrides,
+      onLoadBattleMaps,
+      onSave,
     })));
   });
   return renderer;
+}
+
+async function openAdventureGroup(renderer: ReactTestRenderer, name: string): Promise<void> {
+  await act(async () => {
+    renderer.root.findByProps({ accessibilityLabel: `${name} 그룹 열기` }).props.onPress();
+  });
 }
 
 function editorProps(overrides: Partial<React.ComponentProps<typeof AdventureMapAutomationEditor>> = {}) {

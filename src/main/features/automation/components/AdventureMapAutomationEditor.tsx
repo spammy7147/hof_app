@@ -28,6 +28,10 @@ import {
   validateAdventureMapAutomationDraft,
   type AdventureMapAutomationDraft,
 } from '../../../domain/adventureMapAutomation';
+import {
+  buildAdventureMapCatalogRows,
+  type AdventureMapCatalogRow,
+} from '../../../domain/adventureMapCatalog';
 import { toUserFacingErrorMessage } from '../../../domain/userFacingErrors';
 import { theme } from '../../../styles/theme';
 import type {
@@ -39,6 +43,10 @@ import type {
   UpdateAdventureMapAutomationRequest,
 } from '../../../types/api';
 import { BattleMapPresetPickerModal } from './BattleMapPresetPickerModal';
+import {
+  AdventureMapCatalogGroupRow,
+  AdventureMapCatalogMapRow,
+} from './AdventureMapCatalogRows';
 
 type Props = {
   entry: TypedAutomationEntryResponse;
@@ -64,7 +72,8 @@ type ListItem =
   | { key: string; kind: 'EMPTY' }
   | { key: string; kind: 'SELECTED'; setting: AdventureMapAutomationDraft['maps'][number]; index: number }
   | { key: string; kind: 'SEARCH' }
-  | { key: string; kind: 'CATALOG'; map: BattleMapResponse };
+  | { key: string; kind: 'NO_RESULTS' }
+  | AdventureMapCatalogRow;
 
 export function AdventureMapAutomationEditor({
   entry,
@@ -89,6 +98,7 @@ export function AdventureMapAutomationEditor({
   const [mapState, setMapState] = useState<ResourceState>({ loading: true, error: null });
   const [presetState, setPresetState] = useState<ResourceState>({ loading: true, error: null });
   const [query, setQuery] = useState('');
+  const [expandedGroupKeys, setExpandedGroupKeys] = useState<string[]>([]);
   const [activePresetIdentity, setActivePresetIdentity] = useState<string | null>(null);
   const [localBusy, setLocalBusy] = useState(false);
   const requestedCategoriesRef = useRef(false);
@@ -97,6 +107,7 @@ export function AdventureMapAutomationEditor({
   const mapGenerationRef = useRef(0);
   const presetGenerationRef = useRef(0);
   const draftRef = useRef(draft);
+  const queryRef = useRef(query);
   const baselineRef = useRef(serializeDraft(draft));
 
   const updateDraft = useCallback((updater: (current: AdventureMapAutomationDraft) => AdventureMapAutomationDraft) => {
@@ -233,7 +244,12 @@ export function AdventureMapAutomationEditor({
   const activePresetSetting = activePresetIdentity == null
     ? null
     : draft.maps.find((setting) => adventureMapIdentity(setting) === activePresetIdentity) ?? null;
-  const visibleCatalog = useMemo(() => filterAdventureMapCatalog(catalog, query), [catalog, query]);
+  const searching = query.trim().length > 0;
+  const catalogRows = useMemo(() => buildAdventureMapCatalogRows({
+    catalog,
+    expandedGroupKeys,
+    query,
+  }), [catalog, expandedGroupKeys, query]);
   const items = useMemo<ListItem[]>(() => [
     { key: 'selected-title', kind: 'HEADING', title: '선택한 모험맵 · 실행 순서' },
     ...(draft.maps.length === 0
@@ -246,12 +262,11 @@ export function AdventureMapAutomationEditor({
       }))),
     { key: 'catalog-title', kind: 'HEADING', title: '모험맵 찾기' },
     { key: 'search', kind: 'SEARCH' },
-    ...visibleCatalog.map((map) => ({
-      key: `catalog:${map.categoryId}:${map.mapCode}`,
-      kind: 'CATALOG' as const,
-      map,
-    })),
-  ], [draft.maps, visibleCatalog]);
+    ...catalogRows.rows,
+    ...(searching && !mapState.loading && mapState.error == null && battleCategoriesError == null && catalogRows.matchCount === 0
+      ? [{ key: 'catalog-no-results', kind: 'NO_RESULTS' } as const]
+      : []),
+  ], [battleCategoriesError, catalogRows.matchCount, catalogRows.rows, draft.maps, mapState.error, mapState.loading, searching]);
 
   useEffect(() => {
     if (activePresetSetting == null || controlsDisabled) setActivePresetIdentity(null);
@@ -298,35 +313,38 @@ export function AdventureMapAutomationEditor({
     if (item.kind === 'HEADING') return <Text style={styles.sectionTitle}>{item.title}</Text>;
     if (item.kind === 'EMPTY') return <Text style={styles.muted}>아래 목록에서 실행할 모험맵을 추가해 주세요.</Text>;
     if (item.kind === 'SEARCH') {
-      return <TextInput accessibilityLabel="모험맵 검색" editable={!controlsDisabled} onChangeText={setQuery} placeholder="맵 이름, 그룹, 추천 레벨 검색" placeholderTextColor={theme.colors.textMuted} style={styles.search} value={query} />;
+      return <TextInput accessibilityLabel="모험맵 검색" editable={!controlsDisabled} onChangeText={(nextQuery) => { queryRef.current = nextQuery; setQuery(nextQuery); }} placeholder="맵 이름, 그룹, 추천 레벨 검색" placeholderTextColor={theme.colors.textMuted} style={styles.search} value={query} />;
     }
-    if (item.kind === 'CATALOG') {
-      const { map } = item;
-      const selected = map.mapCode != null && draft.maps.some((setting) => (
-        setting.categoryId === map.categoryId && setting.mapCode === map.mapCode
-      ));
-      const state = describeAdventureMapState(map);
-      const constraints = describeAdventureMapConstraints(map);
+    if (item.kind === 'NO_RESULTS') return <Text style={styles.muted}>검색 가능한 모험맵이 없습니다.</Text>;
+    if (item.kind === 'GROUP') {
       return (
-        <Pressable
-          accessibilityLabel={`${map.name} 모험맵 선택`}
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: selected, disabled: controlsDisabled }}
+        <AdventureMapCatalogGroupRow
+          expanded={item.expanded}
+          group={item.group}
+          interactionDisabled={searching}
+          onPress={() => {
+            if (queryRef.current.trim()) return;
+            setExpandedGroupKeys((current) => current.includes(item.group.key)
+              ? current.filter((key) => key !== item.group.key)
+              : [...current, item.group.key]);
+          }}
+        />
+      );
+    }
+    if (item.kind === 'MAP') {
+      const selected = draft.maps.some((setting) => adventureMapIdentity(setting) === adventureMapIdentity(item.map));
+      return (
+        <AdventureMapCatalogMapRow
           disabled={controlsDisabled}
-          onPress={() => updateDraft((current) => selectAdventureMap(current, map, !selected))}
-          style={[styles.option, selected && styles.optionSelected]}
-        >
-          <View style={styles.optionHeading}>
-            <Text style={styles.mapName}>{map.name}</Text>
-            <Text style={state.kind === 'RUNNABLE' || state.kind === 'UNLIMITED' ? styles.runnable : styles.state}>{state.label}</Text>
-          </View>
-          <Text style={styles.muted}>{[map.groupName, map.recommendedLevel, state.detail].filter(Boolean).join(' · ')}</Text>
-          <View style={styles.constraintList}>
-            {constraints.map((constraint) => (
-              <Text key={constraint.key} style={styles.constraintChip}>{constraint.label}</Text>
-            ))}
-          </View>
-        </Pressable>
+          map={item.map}
+          onPress={() => updateDraft((current) => {
+            const currentlySelected = current.maps.some(
+              (setting) => adventureMapIdentity(setting) === adventureMapIdentity(item.map),
+            );
+            return selectAdventureMap(current, item.map, !currentlySelected);
+          })}
+          selected={selected}
+        />
       );
     }
     const { setting, index } = item;
@@ -359,7 +377,7 @@ export function AdventureMapAutomationEditor({
         <Pressable accessibilityLabel={`${setting.displayName} 프리셋 선택 열기`} disabled={controlsDisabled} onPress={() => setActivePresetIdentity(adventureMapIdentity(setting))} style={styles.choice}><Text style={styles.choiceText}>프리셋 변경</Text></Pressable>
       </View>
     );
-  }, [controlsDisabled, draft.maps, presets, query, updateDraft]);
+  }, [controlsDisabled, draft.maps, presets, query, searching, updateDraft]);
 
   return (
     <View style={styles.screen}>
@@ -427,9 +445,6 @@ const styles = StyleSheet.create({
   content: { gap: theme.spacing.md, paddingBottom: theme.spacing.lg },
   sectionTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '900', marginTop: theme.spacing.sm },
   search: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: 46, paddingHorizontal: theme.spacing.md },
-  option: { borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: 4, minHeight: 62, justifyContent: 'center', padding: theme.spacing.md },
-  optionSelected: { borderColor: theme.colors.accentGreen },
-  optionHeading: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between' },
   card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md + 4, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md },
   rowHeading: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },
   mapName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
