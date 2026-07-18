@@ -39,8 +39,9 @@ export function buildBattleMapCatalogRows(
     const allMaps = cachedMaps.filter(({ categoryId }) => categoryId === category.id);
     const resource = args.categoryStates[category.id];
     const loading = resource == null || resource.loading;
+    const error = resource?.error ?? null;
 
-    if (searching && maps.length === 0) continue;
+    if (searching && maps.length === 0 && !loading && error == null) continue;
 
     const expanded = searching || args.expandedCategoryId === category.id;
     rows.push({
@@ -48,11 +49,11 @@ export function buildBattleMapCatalogRows(
       key: `category:${category.id}`,
       category,
       expanded,
-      mapCount: loading && allMaps.length === 0 ? null : allMaps.length,
+      mapCount: loading ? null : allMaps.length,
     });
     if (!expanded) continue;
 
-    if (loading && allMaps.length === 0) {
+    if (loading) {
       rows.push({
         kind: 'STATE',
         key: `state:${category.id}:loading`,
@@ -60,20 +61,23 @@ export function buildBattleMapCatalogRows(
         state: 'loading',
         error: null,
       });
-      continue;
+      if (maps.length === 0) continue;
     }
-    if (resource?.error) {
+    if (error != null) {
       rows.push({
         kind: 'STATE',
         key: `state:${category.id}:error`,
         category,
         state: 'error',
-        error: resource.error,
+        error,
       });
-      if (allMaps.length === 0) continue;
+      if (maps.length === 0) continue;
     }
 
-    const groups = groupBattleMaps(maps);
+    const groups = groupBattleMaps(maps).map((group) => ({
+      ...group,
+      key: buildBattleMapCatalogGroupKey(group),
+    }));
     if (groups.length === 0) {
       rows.push({
         kind: 'STATE',
@@ -96,4 +100,11 @@ export function buildBattleMapCatalogRows(
   }
 
   return { rows, matchCount: visibleMaps.length };
+}
+
+function buildBattleMapCatalogGroupKey(group: BattleMapGroup): string {
+  const categoryId = group.maps[0]?.categoryId ?? '';
+  return [categoryId, String(group.groupOrder), group.name]
+    .map((part) => `${part.length}:${part}`)
+    .join('|');
 }
