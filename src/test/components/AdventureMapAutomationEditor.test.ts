@@ -356,6 +356,65 @@ describe('AdventureMapAutomationEditor', () => {
     assert.equal(alertArguments, null);
   });
 
+  it('resolves a retained move callback against the selected map live index after reconciliation', async () => {
+    const base = editorProps({
+      entry: entry([
+        setting('first', 0, 'PRIMARY', null),
+        setting('second', 1, 'PRIMARY', null),
+      ]),
+      onLoadBattleMaps: async () => [
+        map('first', '첫 맵'),
+        map('second', '둘째 맵'),
+        map('server', '서버 맵'),
+      ],
+    });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(AdventureMapAutomationEditor, base)); });
+    const retainedMoveDown = renderer.root.findByProps({ accessibilityLabel: '첫 맵 아래로' }).props.onPress as () => void;
+
+    await act(async () => {
+      renderer.update(React.createElement(AdventureMapAutomationEditor, {
+        ...base,
+        entry: entry([
+          setting('server', 0, 'PRIMARY', null),
+          setting('first', 1, 'PRIMARY', null),
+        ]),
+      }));
+    });
+    assert.deepEqual(selectedMapRemovalOrder(renderer), ['서버 맵 제거', '첫 맵 제거']);
+
+    await act(async () => { retainedMoveDown(); });
+    assert.deepEqual(selectedMapRemovalOrder(renderer), ['서버 맵 제거', '첫 맵 제거']);
+  });
+
+  it('ignores a retained remove callback after its selected map is reconciled away', async () => {
+    const base = editorProps({
+      entry: entry([
+        setting('first', 0, 'PRIMARY', null),
+        setting('second', 1, 'PRIMARY', null),
+      ]),
+      onLoadBattleMaps: async () => [
+        map('first', '첫 맵'),
+        map('second', '둘째 맵'),
+        map('server', '서버 맵'),
+      ],
+    });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(AdventureMapAutomationEditor, base)); });
+    const retainedRemove = renderer.root.findByProps({ accessibilityLabel: '첫 맵 제거' }).props.onPress as () => void;
+
+    await act(async () => {
+      renderer.update(React.createElement(AdventureMapAutomationEditor, {
+        ...base,
+        entry: entry([setting('server', 0, 'PRIMARY', null)]),
+      }));
+    });
+    assert.deepEqual(selectedMapRemovalOrder(renderer), ['서버 맵 제거']);
+
+    await act(async () => { retainedRemove(); });
+    assert.deepEqual(selectedMapRemovalOrder(renderer), ['서버 맵 제거']);
+  });
+
   it('fences select and close callbacks retained from an older preset picker session', async () => {
     const renderer = await renderEditor({
       entry: entry([
@@ -683,6 +742,13 @@ function editorProps(overrides: Partial<React.ComponentProps<typeof AdventureMap
 }
 function hasText(root: ReactTestInstance, text: string): boolean {
   return root.findAll((node) => (node.type as unknown) === 'Text' && node.children.join('') === text).length > 0;
+}
+function selectedMapRemovalOrder(renderer: ReactTestRenderer): string[] {
+  return renderer.root.findAll((node) => (
+    (node.type as unknown) === 'Pressable'
+    && typeof node.props.accessibilityLabel === 'string'
+    && node.props.accessibilityLabel.endsWith(' 제거')
+  )).map((node) => node.props.accessibilityLabel as string);
 }
 function entry(adventureMaps: TypedAutomationEntryResponse['adventureMaps'] = []): TypedAutomationEntryResponse {
   return { id: 15, type: 'ADVENTURE_MAP', enabled: true, priority: 2, ready: true, warnings: [], quests: [], battleMaps: [], battleMapProgress: [], adventureMaps };

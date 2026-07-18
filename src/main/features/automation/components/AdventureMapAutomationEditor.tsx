@@ -406,6 +406,7 @@ export function AdventureMapAutomationEditor({
       );
     }
     const { setting, index } = item;
+    const settingIdentity = adventureMapIdentity(setting);
     const state = setting.observed == null
       ? { label: '현재 상태 확인 불가', detail: '저장된 설정은 유지되며 목록 갱신 후 다시 확인합니다.' }
       : describeAdventureMapState(setting.observed);
@@ -418,9 +419,18 @@ export function AdventureMapAutomationEditor({
             <Text style={styles.mapName}>{setting.displayName}</Text>
             <Text style={styles.state}>{state.label}</Text>
           </View>
-          <Pressable accessibilityLabel={`${setting.displayName} 위로`} disabled={controlsDisabled || index === 0} onPress={() => updateEditableDraft((current) => moveAdventureMapSetting(current, index, index - 1))} style={styles.iconButton}><ArrowUp color={theme.colors.textMuted} size={16} /></Pressable>
-          <Pressable accessibilityLabel={`${setting.displayName} 아래로`} disabled={controlsDisabled || index === draft.maps.length - 1} onPress={() => updateEditableDraft((current) => moveAdventureMapSetting(current, index, index + 1))} style={styles.iconButton}><ArrowDown color={theme.colors.textMuted} size={16} /></Pressable>
-          <Pressable accessibilityLabel={`${setting.displayName} 제거`} disabled={controlsDisabled} onPress={() => updateEditableDraft((current) => removeAdventureMapSetting(current, index))} style={styles.iconButton}><Trash2 color={theme.colors.danger} size={16} /></Pressable>
+          <Pressable accessibilityLabel={`${setting.displayName} 위로`} disabled={controlsDisabled || index === 0} onPress={() => updateEditableDraft((current) => {
+            const liveIndex = current.maps.findIndex((map) => adventureMapIdentity(map) === settingIdentity);
+            return liveIndex < 0 ? current : moveAdventureMapSetting(current, liveIndex, liveIndex - 1);
+          })} style={styles.iconButton}><ArrowUp color={theme.colors.textMuted} size={16} /></Pressable>
+          <Pressable accessibilityLabel={`${setting.displayName} 아래로`} disabled={controlsDisabled || index === draft.maps.length - 1} onPress={() => updateEditableDraft((current) => {
+            const liveIndex = current.maps.findIndex((map) => adventureMapIdentity(map) === settingIdentity);
+            return liveIndex < 0 ? current : moveAdventureMapSetting(current, liveIndex, liveIndex + 1);
+          })} style={styles.iconButton}><ArrowDown color={theme.colors.textMuted} size={16} /></Pressable>
+          <Pressable accessibilityLabel={`${setting.displayName} 제거`} disabled={controlsDisabled} onPress={() => updateEditableDraft((current) => {
+            const liveIndex = current.maps.findIndex((map) => adventureMapIdentity(map) === settingIdentity);
+            return liveIndex < 0 ? current : removeAdventureMapSetting(current, liveIndex);
+          })} style={styles.iconButton}><Trash2 color={theme.colors.danger} size={16} /></Pressable>
         </View>
         {state.detail ? <Text style={styles.muted}>{state.detail}</Text> : null}
         <View style={styles.constraintList}>
@@ -432,7 +442,7 @@ export function AdventureMapAutomationEditor({
           <Text style={styles.muted}>현재 프리셋</Text>
           <Text style={styles.choiceText}>{presetLabel}</Text>
         </View>
-        <Pressable accessibilityLabel={`${setting.displayName} 프리셋 선택 열기`} disabled={controlsDisabled} onPress={() => openPresetPicker(adventureMapIdentity(setting))} style={styles.choice}><Text style={styles.choiceText}>프리셋 변경</Text></Pressable>
+        <Pressable accessibilityLabel={`${setting.displayName} 프리셋 선택 열기`} disabled={controlsDisabled} onPress={() => openPresetPicker(settingIdentity)} style={styles.choice}><Text style={styles.choiceText}>프리셋 변경</Text></Pressable>
       </View>
     );
   }, [controlsDisabled, draft.maps, openPresetPicker, presets, query, searching, toggleCatalogGroup, updateEditableDraft]);
