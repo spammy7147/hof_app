@@ -119,6 +119,44 @@ describe('AdventureMapAutomationEditor', () => {
     assert.equal(selectedStyle.borderColor, theme.colors.accentGreen);
   });
 
+  it('mounts one compact selected-card metadata and preset row without placeholders', async () => {
+    const renderer = await renderEditor({
+      entry: entry([setting('compact', 0, 'PRIMARY', null)]),
+      maps: [map('compact', '압축 모험', {
+        groupName: '수정 동굴',
+        keyMode: 'LIMITED',
+        keyCount: 114,
+        availableCount: 3,
+      })],
+      onListPartyPresets: async () => [preset(7, '대표 프리셋', true)],
+    });
+
+    const presetChoice = renderer.root.findByProps({ accessibilityLabel: '압축 모험 프리셋 선택 열기' });
+    const cardStyle = flattenStyle(presetChoice.parent?.props.style);
+    assert.equal(cardStyle.padding, theme.spacing.sm);
+    assert.equal(cardStyle.gap, theme.spacing.xs);
+    assert.equal(flattenStyle(presetChoice.props.style).minHeight, 44);
+    assert.equal(hasText(renderer.root, '압축 모험'), true);
+    assert.equal(hasText(renderer.root, '실행 가능'), true);
+    assert.equal(textCount(renderer.root, '수정 동굴 · 키 114개 · 가능 3회'), 1);
+    assert.equal(textCount(renderer.root, '키 114개'), 0);
+    assert.equal(hasText(renderer.root, '관측 잔여'), false);
+    assert.equal(hasText(renderer.root, '제한 없음'), false);
+    assert.equal(hasText(renderer.root, '쿨다운 없음'), false);
+    assert.equal(hasText(renderer.root, '현재 프리셋'), false);
+    assert.equal(hasText(renderer.root, '프리셋 변경'), false);
+    assert.equal(hasText(presetChoice, '프리셋'), true);
+    assert.equal(textCount(presetChoice, '대표 · 대표 프리셋'), 1);
+    assert.equal(presetChoice.findAll((node) => (node.type as unknown) === 'ChevronRight').length, 1);
+
+    const list = renderer.root.find((node) => (
+      (node.type as unknown) === 'FlatList'
+      && Array.isArray(node.props.data)
+      && node.props.data.some((item: { key?: string }) => item.key === 'catalog-title')
+    ));
+    assert.equal(flattenStyle(list.props.contentContainerStyle).gap, 6);
+  });
+
   it('shows observed unavailable state without disabling selection and saves ordered typed settings', async () => {
     const saves: UpdateAdventureMapAutomationRequest[] = [];
     const renderer = await renderEditor({
@@ -509,9 +547,9 @@ describe('AdventureMapAutomationEditor', () => {
     });
 
     assert.equal(hasText(renderer.root, '둘째 맵 프리셋 선택'), true);
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '첫 맵 현재 프리셋: 대표 프리셋 없음' }));
+    assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.accessibilityValue, { text: '대표 프리셋 없음' });
     await act(async () => { currentSelectB(); });
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '둘째 맵 현재 프리셋: 고정 파티' }));
+    assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.accessibilityValue, { text: '고정 파티' });
     assert.equal(renderer.root.findByType('Modal' as unknown as React.ElementType).props.visible, false);
   });
 
@@ -531,8 +569,8 @@ describe('AdventureMapAutomationEditor', () => {
     await act(async () => { retainedOpenA(); });
     assert.equal(hasText(renderer.root, '둘째 맵 프리셋 선택'), true);
     await act(async () => { currentSelectB(); });
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '둘째 맵 현재 프리셋: 고정 파티' }));
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '첫 맵 현재 프리셋: 대표 프리셋 없음' }));
+    assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.accessibilityValue, { text: '고정 파티' });
+    assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.accessibilityValue, { text: '대표 프리셋 없음' });
 
     await act(async () => { retainedOpenA(); });
     assert.equal(hasText(renderer.root, '첫 맵 프리셋 선택'), true);
@@ -656,7 +694,7 @@ describe('AdventureMapAutomationEditor', () => {
       await first.promise;
     });
     assert.equal(hasText(renderer.root, '쿨다운 1분'), true);
-    assert.equal(hasText(renderer.root, '키 2개'), true);
+    assert.equal(hasText(renderer.root, '키 2개 · 도전 3회'), true);
 
     await act(async () => {
       renderer.update(React.createElement(AdventureMapAutomationEditor, {
@@ -671,7 +709,7 @@ describe('AdventureMapAutomationEditor', () => {
     });
 
     assert.equal(hasText(renderer.root, '현재 상태 확인 불가'), true);
-    assert.equal(hasText(renderer.root, '상태 미확인'), true);
+    assert.equal(hasText(renderer.root, '상태 미확인'), false);
     assert.equal(hasText(renderer.root, '쿨다운 1분'), false);
   });
 
@@ -806,6 +844,9 @@ function editorProps(overrides: Partial<React.ComponentProps<typeof AdventureMap
 }
 function hasText(root: ReactTestInstance, text: string): boolean {
   return root.findAll((node) => (node.type as unknown) === 'Text' && node.children.join('') === text).length > 0;
+}
+function textCount(root: ReactTestInstance, text: string): number {
+  return root.findAll((node) => (node.type as unknown) === 'Text' && node.children.join('') === text).length;
 }
 function findTextNode(root: ReactTestInstance, text: string): ReactTestInstance {
   return root.find((node) => (node.type as unknown) === 'Text' && node.children.join('') === text);

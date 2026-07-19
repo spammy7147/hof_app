@@ -167,6 +167,42 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(hasText(renderer.root, '연결이 끊겼어요.'), true);
   });
 
+  it('mounts one compact selected-card summary without duplicated progress or preset copy', async () => {
+    const renderer = await renderEditor({
+      entry: battleEntry(
+        [setting('compact', 10, 0)],
+        [{ categoryId: 'battle', mapCode: 'compact', successfulRuns: 2 }],
+      ),
+      maps: [catalogMap('compact', '압축 전투', { supportsThreeBattles: true })],
+      presets: [{ ...preset(7, '대표 프리셋'), isPrimary: true }],
+    });
+
+    const presetChoice = renderer.root.findByProps({ accessibilityLabel: '압축 전투 프리셋 선택 열기' });
+    const cardStyle = flattenStyle(presetChoice.parent?.props.style);
+    assert.equal(cardStyle.padding, theme.spacing.sm);
+    assert.equal(cardStyle.gap, theme.spacing.xs);
+    assert.equal(flattenStyle(presetChoice.props.style).minHeight, 44);
+    assert.equal(hasText(presetChoice, '프리셋'), true);
+    assert.equal(textCount(renderer.root, '대표 · 대표 프리셋'), 1);
+    assert.equal(presetChoice.findAll((node) => (node.type as unknown) === 'ChevronRight').length, 1);
+
+    assert.equal(hasText(renderer.root, '현재 프리셋'), false);
+    assert.equal(hasText(renderer.root, '프리셋 변경'), false);
+    assert.equal(textCount(renderer.root, '오늘 2/10 · 8회 남음'), 1);
+    assert.equal(textCount(renderer.root, '다음 3회 전투'), 1);
+    assert.equal(hasText(renderer.root, '20%'), false);
+    assert.equal(hasText(renderer.root, '3회 전투 지원'), false);
+    const progress = renderer.root.findByProps({ accessibilityLabel: '압축 전투 오늘 진행률' });
+    assert.ok(Number(flattenStyle(progress.props.style).height) <= 4);
+
+    const list = renderer.root.find((node) => (
+      (node.type as unknown) === 'FlatList'
+      && Array.isArray(node.props.data)
+      && node.props.data.some((item: { key?: string }) => item.key === 'catalog-heading')
+    ));
+    assert.equal(flattenStyle(list.props.contentContainerStyle).gap, 6);
+  });
+
   it('searches/selects, edits target, shows progress/capability, chooses preset, reorders/removes, and saves exact typed settings', async () => {
     const saves: UpdateBattleMapAutomationRequest[] = [];
     const renderer = await renderEditor({
@@ -179,10 +215,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
       onSave: async (request) => { saves.push(request); return true; },
     });
 
-    assert.equal(hasText(renderer.root, '오늘 성공 3회'), true);
-    assert.equal(hasText(renderer.root, '남은 목표 2회'), true);
-    assert.equal(hasText(renderer.root, '60%'), true);
-    assert.equal(hasText(renderer.root, '3회 전투 지원'), true);
+    assert.equal(hasText(renderer.root, '오늘 3/5 · 2회 남음'), true);
     assert.equal(hasText(renderer.root, '다음 3회 전투'), true);
     assert.equal(hasText(renderer.root, 'missing'), true);
 
@@ -415,7 +448,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
 
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 사용' }).props.value, false);
     assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Alpha 일일 목표' }).props.value, '3');
-    assert.equal(hasText(renderer.root, '오늘 성공 2회'), true);
+    assert.equal(hasText(renderer.root, '오늘 2/3 · 1회 남음'), true);
     assert.equal(hasText(renderer.root, '새 서버 설정이 있지만 편집 중인 변경은 유지했습니다.'), true);
   });
 
@@ -504,7 +537,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
       renderer.update(React.createElement(BattleMapAutomationEditor, { ...base, battleCategories: enabled }));
     });
     assert.equal(attempts, 2);
-    assert.equal(hasText(renderer.root, '오늘 성공 2회'), true);
+    assert.equal(hasText(renderer.root, '오늘 2/4 · 2회 남음'), true);
     assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Alpha Refreshed 일일 목표' }).props.value, '4');
   });
 
@@ -991,6 +1024,9 @@ function editorProps(overrides: Overrides = {}) {
 
 function hasText(root: ReactTestInstance, text: string): boolean {
   return root.findAll((node) => (node.type as unknown) === 'Text' && node.children.join('') === text).length > 0;
+}
+function textCount(root: ReactTestInstance, text: string): number {
+  return root.findAll((node) => (node.type as unknown) === 'Text' && node.children.join('') === text).length;
 }
 function findTextNode(root: ReactTestInstance, text: string): ReactTestInstance {
   return root.find((node) => (node.type as unknown) === 'Text' && node.children.join('') === text);

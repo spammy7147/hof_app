@@ -10,7 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { ArrowDown, ArrowLeft, ArrowUp, Save, Trash2 } from 'lucide-react-native';
+import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Save, Trash2 } from 'lucide-react-native';
 
 import {
   adventureMapIdentity,
@@ -408,16 +408,28 @@ export function AdventureMapAutomationEditor({
     const { setting, index } = item;
     const settingIdentity = adventureMapIdentity(setting);
     const state = setting.observed == null
-      ? { label: '현재 상태 확인 불가', detail: '저장된 설정은 유지되며 목록 갱신 후 다시 확인합니다.' }
+      ? { kind: 'UNAVAILABLE' as const, label: '현재 상태 확인 불가', detail: '저장된 설정은 유지되며 목록 갱신 후 다시 확인합니다.' }
       : describeAdventureMapState(setting.observed);
     const presetLabel = formatAutomationPresetSelection(setting, presets);
     const constraints = describeAdventureMapConstraints(setting.observed);
+    const stateHeading = state.kind === 'UNLIMITED' ? '반복 실행' : state.label;
+    const metadata = [
+      setting.groupName?.trim() || null,
+      ...constraints
+        .filter(({ key, label }) => key !== 'STATE' && key !== 'UNLIMITED' && label !== state.label)
+        .map(({ label }) => label),
+    ].filter((value): value is string => value != null && value.length > 0);
+    const actionableDetail = state.detail != null
+      && state.detail !== stateHeading
+      && !metadata.includes(state.detail)
+      ? state.detail
+      : null;
     return (
       <View style={styles.card}>
         <View style={styles.rowHeading}>
           <View style={styles.copy}>
             <Text style={styles.mapName}>{setting.displayName}</Text>
-            <Text style={styles.state}>{state.label}</Text>
+            <Text style={styles.state}>{stateHeading}</Text>
           </View>
           <Pressable accessibilityLabel={`${setting.displayName} 위로`} disabled={controlsDisabled || index === 0} onPress={() => updateEditableDraft((current) => {
             const liveIndex = current.maps.findIndex((map) => adventureMapIdentity(map) === settingIdentity);
@@ -432,17 +444,21 @@ export function AdventureMapAutomationEditor({
             return liveIndex < 0 ? current : removeAdventureMapSetting(current, liveIndex);
           })} style={styles.iconButton}><Trash2 color={theme.colors.danger} size={16} /></Pressable>
         </View>
-        {state.detail ? <Text style={styles.muted}>{state.detail}</Text> : null}
-        <View style={styles.constraintList}>
-          {constraints.map((constraint) => (
-            <Text key={constraint.key} style={styles.constraintChip}>{constraint.label}</Text>
-          ))}
-        </View>
-        <View accessibilityLabel={`${setting.displayName} 현재 프리셋: ${presetLabel}`} style={styles.presetSummary}>
-          <Text style={styles.muted}>현재 프리셋</Text>
-          <Text style={styles.choiceText}>{presetLabel}</Text>
-        </View>
-        <Pressable accessibilityLabel={`${setting.displayName} 프리셋 선택 열기`} disabled={controlsDisabled} onPress={() => openPresetPicker(settingIdentity)} style={styles.choice}><Text style={styles.choiceText}>프리셋 변경</Text></Pressable>
+        {metadata.length > 0 ? <Text numberOfLines={2} style={styles.metadata}>{metadata.join(' · ')}</Text> : null}
+        {actionableDetail ? <Text style={styles.muted}>{actionableDetail}</Text> : null}
+        <Pressable
+          accessibilityLabel={`${setting.displayName} 프리셋 선택 열기`}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: controlsDisabled }}
+          accessibilityValue={{ text: presetLabel }}
+          disabled={controlsDisabled}
+          onPress={() => openPresetPicker(settingIdentity)}
+          style={[styles.choice, controlsDisabled && styles.disabled]}
+        >
+          <Text style={styles.choiceLabel}>프리셋</Text>
+          <Text numberOfLines={1} style={styles.choiceText}>{presetLabel}</Text>
+          <ChevronRight color={theme.colors.textMuted} size={16} />
+        </Pressable>
       </View>
     );
   }, [controlsDisabled, draft.maps, openPresetPicker, presets, query, searching, toggleCatalogGroup, updateEditableDraft]);
@@ -512,7 +528,7 @@ function isSamePresetSession(left: PresetSession | null, right: PresetSession | 
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, gap: theme.spacing.sm, padding: theme.spacing.lg },
+  screen: { flex: 1, gap: theme.spacing.xs, padding: theme.spacing.lg },
   header: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
   copy: { flex: 1 },
   title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' },
@@ -521,21 +537,20 @@ const styles = StyleSheet.create({
   refreshTitle: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '700' },
   refreshText: { color: theme.colors.accentGreen, fontSize: 13, fontWeight: '900' },
   content: { gap: 6, paddingBottom: theme.spacing.lg },
-  sectionTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '900', marginTop: theme.spacing.sm },
+  sectionTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '900', marginTop: theme.spacing.xs },
   search: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: 46, paddingHorizontal: theme.spacing.md },
-  card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md + 4, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md },
+  card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md + 4, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.sm },
   rowHeading: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },
   mapName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
   state: { color: theme.colors.accentAmber, fontSize: 11, fontWeight: '800' },
   runnable: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '800' },
-  constraintList: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs },
-  constraintChip: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.sm, color: theme.colors.textMuted, fontSize: 10, fontWeight: '700', paddingHorizontal: theme.spacing.sm, paddingVertical: 4 },
+  metadata: { color: theme.colors.textMuted, fontSize: 10, fontWeight: '700', lineHeight: 14 },
   muted: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
   problem: { color: theme.colors.accentAmber, fontSize: 11, lineHeight: 16 },
   iconButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
-  presetSummary: { gap: 2 },
-  choice: { borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: theme.spacing.md },
-  choiceText: { color: theme.colors.text, fontSize: 12, fontWeight: '800' },
+  choice: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: 44, paddingHorizontal: theme.spacing.sm },
+  choiceLabel: { color: theme.colors.textMuted, fontSize: 10, fontWeight: '700' },
+  choiceText: { color: theme.colors.text, flex: 1, fontSize: 12, fontWeight: '800' },
   warning: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between' },
   footer: { flexDirection: 'row', gap: theme.spacing.sm },
   deleteButton: { alignItems: 'center', borderColor: theme.colors.danger, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, minHeight: 48, justifyContent: 'center', paddingHorizontal: theme.spacing.lg },
