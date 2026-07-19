@@ -11,8 +11,6 @@ import type {
 
 export type CombatQuestMissionType = Extract<QuestMissionType, 'MONSTER_KILL' | 'MAP_CLEAR'>;
 export type QuestMissionReadiness = '자동 매칭됨' | '사용자 변경' | '맵 설정 필요' | '프리셋 설정 필요';
-/** @deprecated Kept until BattleMapPickerSheet migrates to the grouped quest-map catalog. */
-export type QuestMapFilter = 'ALL' | 'BATTLE' | 'ADVENTURE';
 
 export type QuestMissionDraft = QuestMission & {
   maps: QuestMapSettingRequest[];
@@ -102,22 +100,6 @@ export function buildQuestRewardSummary(rewards: readonly string[]): string {
 
 export function buildQuestMapIdentity(map: Pick<BattleMapResponse, 'categoryId' | 'mapCode'>): string {
   return `${map.categoryId}\u0000${map.mapCode ?? ''}`;
-}
-
-/** @deprecated Use buildQuestMapCatalogRows after the picker migration. */
-export function filterQuestMapOptions(
-  maps: readonly BattleMapResponse[],
-  query: string,
-  filter: QuestMapFilter,
-): BattleMapResponse[] {
-  const needle = normalizeSearch(query);
-  return maps.filter((map) => {
-    if (!map.resolved || map.mapCode == null) return false;
-    const allowed = filter === 'ALL'
-      ? map.categoryId === 'battle_map' || map.categoryId === 'adventure_map'
-      : filter === 'BATTLE' ? map.categoryId === 'battle_map' : map.categoryId === 'adventure_map';
-    return allowed && (!needle || normalizeSearch(`${map.name} ${map.groupName ?? ''}`).includes(needle));
-  });
 }
 
 export function appendMissionMap(

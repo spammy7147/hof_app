@@ -8,6 +8,7 @@ import {
   buildMissionProgressLabel,
   buildQuestMapIdentity,
   getMissionReadiness,
+  removeMissionMap,
   replaceMissionMap,
   type QuestMissionDraft,
 } from '../../../domain/questAutomation';
@@ -100,7 +101,7 @@ export function CombatMissionEditor({
   }, []);
 
   const openPicker = useCallback(() => {
-    if (disabledRef.current) return;
+    if (disabled) return;
     focusGenerationRef.current += 1;
     if (restoreFocusTimerRef.current) {
       clearTimeout(restoreFocusTimerRef.current);
@@ -115,12 +116,16 @@ export function CombatMissionEditor({
     if (disabled) closePicker(false);
   }, [closePicker, disabled]);
 
-  function selectMap(selected: BattleMapResponse) {
-    if (disabled) return;
+  function toggleMap(selectedMap: BattleMapResponse) {
+    if (disabledRef.current) return;
+    const selectedIdentity = buildQuestMapIdentity(selectedMap);
+    const selectedIndex = mission.maps.findIndex((candidate) => buildQuestMapIdentity(candidate) === selectedIdentity);
+    const selected = selectedIndex >= 0;
     onUpdate(mission.type === 'MAP_CLEAR'
-      ? replaceMissionMap(mission.maps, mission.key, selected)
-      : appendMissionMap(mission.maps, mission.key, selected));
-    closePicker(true);
+      ? (selected ? [] : replaceMissionMap(mission.maps, mission.key, selectedMap))
+      : (selected
+        ? removeMissionMap(mission.maps, selectedIndex)
+        : appendMissionMap(mission.maps, mission.key, selectedMap)));
   }
 
   const pickerLabel = mission.type === 'MAP_CLEAR' ? '전투맵 변경' : '전투맵 추가';
@@ -163,7 +168,7 @@ export function CombatMissionEditor({
         visible={pickerOpen}
         onClose={() => closePicker(true)}
         onRetry={onRetryCatalog}
-        onSelect={selectMap}
+        onToggle={toggleMap}
       />
     </View>
   );
