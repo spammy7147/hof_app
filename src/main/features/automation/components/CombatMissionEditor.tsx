@@ -101,7 +101,7 @@ export function CombatMissionEditor({
   }, []);
 
   const openPicker = useCallback(() => {
-    if (disabled) return;
+    if (disabledRef.current) return;
     focusGenerationRef.current += 1;
     if (restoreFocusTimerRef.current) {
       clearTimeout(restoreFocusTimerRef.current);

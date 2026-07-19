@@ -1511,6 +1511,28 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Combat · kill · Beta 삭제' }).length, 0);
   });
 
+  it('opens the quest map picker after the editor changes from disabled to enabled', async () => {
+    const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
+    const base = editorProps({
+      entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]),
+      quests: [quest],
+      maps: [catalogMap('battle_map', 'a', 'Alpha')],
+      saving: true,
+    });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(QuestAutomationEditor, base)); });
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 전투맵 추가' }).props.disabled, true);
+
+    await act(async () => {
+      renderer.update(React.createElement(QuestAutomationEditor, { ...base, saving: false }));
+    });
+    const trigger = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 전투맵 추가' });
+    assert.equal(trigger.props.disabled, false);
+    await act(async () => { trigger.props.onPress(); });
+
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투맵 선택' }));
+  });
+
   it('prunes disabled category picker state, fences stale responses, and reloads on re-enable', async () => {
     const first = deferred<BattleMapResponse[]>();
     const second = deferred<BattleMapResponse[]>();
