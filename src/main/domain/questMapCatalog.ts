@@ -26,11 +26,12 @@ type BuildQuestMapCatalogRowsArgs = {
 };
 
 type CatalogCategory = { id: QuestMapCatalogCategoryId; label: string };
+type CatalogItem = { map: BattleMapResponse; rowIdentity: string };
 type CatalogGroup = {
   key: string;
   name: string;
   recommendedLevel: string | null;
-  maps: BattleMapResponse[];
+  items: CatalogItem[];
 };
 
 const CATEGORIES: readonly CatalogCategory[] = [
@@ -45,34 +46,40 @@ export function buildQuestMapCatalogRows({
   expandedGroupKeys,
   query,
 }: BuildQuestMapCatalogRowsArgs): QuestMapCatalogRow[] {
-  const canonicalMaps = maps
+  const fallbackIdentityOccurrences = new Map<string, number>();
+  const canonicalItems = maps
     .map((map, sourceIndex) => ({ map, sourceIndex }))
     .filter(({ map }) => isSupportedMap(map))
     .sort(compareCatalogItems)
-    .map(({ map }) => map);
-  const selectedMaps = canonicalMaps.filter((map) => isSelectedMap(map, selectedIdentities));
-  const selectedMapIdentities = new Set(selectedMaps.map(buildQuestMapIdentity));
-  const remainingMaps = canonicalMaps.filter((map) => !selectedMapIdentities.has(buildQuestMapIdentity(map)));
+    .map(({ map }) => {
+      const fallbackIdentity = buildFallbackMapRowIdentity(map);
+      const occurrence = fallbackIdentityOccurrences.get(fallbackIdentity) ?? 0;
+      if (!map.mapCode?.trim()) fallbackIdentityOccurrences.set(fallbackIdentity, occurrence + 1);
+      return { map, rowIdentity: buildMapRowIdentity(map, occurrence) };
+    });
+  const selectedItems = canonicalItems.filter(({ map }) => isSelectedMap(map, selectedIdentities));
+  const selectedMapIdentities = new Set(selectedItems.map(({ map }) => buildQuestMapIdentity(map)));
+  const remainingItems = canonicalItems.filter(({ map }) => !selectedMapIdentities.has(buildQuestMapIdentity(map)));
   const needle = normalizeSearch(query);
   const searching = needle.length > 0;
   const rows: QuestMapCatalogRow[] = [];
 
-  if (selectedMaps.length > 0) {
+  if (selectedItems.length > 0) {
     rows.push({ kind: 'SELECTED_HEADING', key: 'selected-heading' });
-    for (const map of selectedMaps) {
+    for (const item of selectedItems) {
       rows.push({
         kind: 'SELECTED_MAP',
-        key: `selected-map:${buildMapRowIdentity(map)}`,
-        map,
+        key: `selected-map:${item.rowIdentity}`,
+        map: item.map,
       });
     }
   }
 
   for (const category of CATEGORIES) {
-    const categoryMaps = remainingMaps.filter((map) => (
+    const categoryItems = remainingItems.filter(({ map }) => (
       map.categoryId === category.id && matchesQuery(map, category.label, needle)
     ));
-    if (categoryMaps.length === 0) continue;
+    if (categoryItems.length === 0) continue;
 
     const expanded = searching || expandedCategoryIds.has(category.id);
     rows.push({
@@ -81,11 +88,11 @@ export function buildQuestMapCatalogRows({
       categoryId: category.id,
       label: category.label,
       expanded,
-      count: categoryMaps.length,
+      count: categoryItems.length,
     });
     if (!expanded) continue;
 
-    for (const group of groupMaps(categoryMaps)) {
+    for (const group of groupMaps(categoryItems)) {
       const groupExpanded = searching || expandedGroupKeys.has(group.key);
       rows.push({
         kind: 'GROUP',
@@ -98,8 +105,8 @@ export function buildQuestMapCatalogRows({
       });
       if (!groupExpanded) continue;
 
-      for (const map of group.maps) {
-        rows.push({ kind: 'MAP', key: `map:${buildMapRowIdentity(map)}`, map });
+      for (const item of group.items) {
+        rows.push({ kind: 'MAP', key: `map:${item.rowIdentity}`, map: item.map });
       }
     }
   }
@@ -115,14 +122,15 @@ export function buildQuestMapCatalogGroupKey(
     .map((part) => `${part.length}:${part}`).join('|');
 }
 
-function groupMaps(maps: readonly BattleMapResponse[]): CatalogGroup[] {
+function groupMaps(items: readonly CatalogItem[]): CatalogGroup[] {
   const groups = new Map<string, CatalogGroup>();
 
-  for (const map of maps) {
+  for (const item of items) {
+    const { map } = item;
     const key = buildQuestMapCatalogGroupKey(map);
     const existing = groups.get(key);
     if (existing != null) {
-      existing.maps.push(map);
+      existing.items.push(item);
       if (!existing.recommendedLevel && map.recommendedLevel?.trim()) {
         existing.recommendedLevel = map.recommendedLevel.trim();
       }
@@ -132,7 +140,7 @@ function groupMaps(maps: readonly BattleMapResponse[]): CatalogGroup[] {
       key,
       name: map.groupName?.trim() || '기타',
       recommendedLevel: map.recommendedLevel?.trim() || null,
-      maps: [map],
+      items: [item],
     });
   }
 
@@ -140,7 +148,7 @@ function groupMaps(maps: readonly BattleMapResponse[]): CatalogGroup[] {
 }
 
 function buildGroupMeta(group: CatalogGroup): string {
-  return [group.recommendedLevel ? `Lv ${group.recommendedLevel}` : null, `${group.maps.length}개`]
+  return [group.recommendedLevel ? `Lv ${group.recommendedLevel}` : null, `${group.items.length}개`]
     .filter((part): part is string => part != null)
     .join(' · ');
 }
@@ -201,8 +209,12 @@ function compareText(left: string | null | undefined, right: string | null | und
   return normalizedLeft.localeCompare(normalizedRight, 'ko-KR');
 }
 
-function buildMapRowIdentity(map: BattleMapResponse): string {
+function buildMapRowIdentity(map: BattleMapResponse, fallbackOccurrence: number): string {
   if (map.mapCode?.trim()) return encodePart(buildQuestMapIdentity(map));
+  return `${buildFallbackMapRowIdentity(map)}|occurrence:${encodePart(String(fallbackOccurrence))}`;
+}
+
+function buildFallbackMapRowIdentity(map: BattleMapResponse): string {
   return [map.categoryId, String(map.groupOrder), String(map.mapOrder), map.name.trim()]
     .map(encodePart)
     .join('|');

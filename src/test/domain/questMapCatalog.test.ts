@@ -132,6 +132,27 @@ describe('quest map catalog rows', () => {
     assert.equal(group?.meta, 'Lv 20-30 · 3개');
   });
 
+  it('gives duplicate null and blank-code metadata rows stable unique keys', () => {
+    const firstNull = map('battle_map', null, '중복 맵');
+    const secondNull = map('battle_map', null, '중복 맵');
+    const blank = map('battle_map', '   ', '중복 맵');
+    const args = {
+      maps: [secondNull, blank, firstNull],
+      selectedIdentities: new Set<string>(),
+      expandedCategoryIds: new Set(['battle_map']),
+      expandedGroupKeys: new Set([buildQuestMapCatalogGroupKey(firstNull)]),
+      query: '',
+    };
+
+    const first = buildQuestMapCatalogRows(args);
+    const second = buildQuestMapCatalogRows(args);
+    const firstKeys = first.map(({ key }) => key);
+
+    assert.equal(first.filter(isMapRow).length, 3);
+    assert.equal(new Set(firstKeys).size, firstKeys.length);
+    assert.deepEqual(second.map(({ key }) => key), firstKeys);
+  });
+
   it('builds the exact collision-safe group key from a map-like value', () => {
     const first = buildQuestMapCatalogGroupKey({ categoryId: 'a|1', groupOrder: 23, groupName: '  반복  ' });
     const second = buildQuestMapCatalogGroupKey({ categoryId: 'a', groupOrder: 1, groupName: '23|반복' });
