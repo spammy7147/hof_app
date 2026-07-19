@@ -35,7 +35,7 @@ export type AdventureMapStateDescription = {
 };
 
 export type AdventureMapConstraintDescription = {
-  key: 'COOLDOWN' | 'KEY' | 'AVAILABLE' | 'ATTEMPT' | 'WIN';
+  key: 'STATE' | 'UNLIMITED' | 'COOLDOWN' | 'KEY' | 'AVAILABLE' | 'ATTEMPT' | 'WIN';
   label: string;
 };
 
@@ -221,7 +221,7 @@ export function describeAdventureMapConstraints(
   map: BattleMapResponse | null,
 ): AdventureMapConstraintDescription[] {
   if (map == null) {
-    return [{ key: 'KEY', label: '상태 미확인' }];
+    return [{ key: 'STATE', label: '상태 미확인' }];
   }
   const constraints: AdventureMapConstraintDescription[] = [];
   const cooldownText = map.cooldownRemainingText?.trim();
@@ -239,15 +239,15 @@ export function describeAdventureMapConstraints(
     constraints.push({ key: 'KEY', label: '키 상태 미확인' });
   }
   if (map.availableCount != null) {
-    constraints.push({ key: 'AVAILABLE', label: `가능 횟수 ${map.availableCount.toLocaleString('ko-KR')}회` });
+    constraints.push({ key: 'AVAILABLE', label: `가능 ${map.availableCount.toLocaleString('ko-KR')}회` });
   }
   if (map.attemptCount != null) {
-    constraints.push({ key: 'ATTEMPT', label: `도전 잔여 ${map.attemptCount.toLocaleString('ko-KR')}회` });
+    constraints.push({ key: 'ATTEMPT', label: `도전 ${map.attemptCount.toLocaleString('ko-KR')}회` });
   }
   if (map.winCount != null) {
-    constraints.push({ key: 'WIN', label: `승리 잔여 ${map.winCount.toLocaleString('ko-KR')}회` });
+    constraints.push({ key: 'WIN', label: `승리 ${map.winCount.toLocaleString('ko-KR')}회` });
   }
-  return constraints.length > 0 ? constraints : [{ key: 'KEY', label: '제한 없음' }];
+  return constraints.length > 0 ? constraints : [{ key: 'UNLIMITED', label: '제한 없음' }];
 }
 
 export function formatAutomationPresetSelection(

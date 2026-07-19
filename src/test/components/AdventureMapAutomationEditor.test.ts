@@ -630,7 +630,7 @@ describe('AdventureMapAutomationEditor', () => {
     });
 
     assert.equal(hasText(renderer.root, '쿨다운 1분'), true);
-    assert.equal(hasText(renderer.root, '가능 횟수 2회'), true);
+    assert.equal(hasText(renderer.root, '가능 2회'), true);
   });
 
   it('keeps mutations disabled while categories are still loading and does not finalize a missing category', async () => {
@@ -686,9 +686,9 @@ describe('AdventureMapAutomationEditor', () => {
     for (const label of [
       '쿨다운 1분 30초',
       '키 0개',
-      '가능 횟수 4회',
-      '도전 잔여 2회',
-      '승리 잔여 1회',
+      '가능 4회',
+      '도전 2회',
+      '승리 1회',
     ]) {
       assert.equal(hasText(renderer.root, label), true);
     }

@@ -74,27 +74,27 @@ describe('adventure map automation domain', () => {
     assert.deepEqual(describeAdventureMapConstraints(map('limited', {
       keyMode: 'LIMITED',
       keyCount: 114,
-    })).map(({ label }) => label), ['키 114개']);
+    })), [{ key: 'KEY', label: '키 114개' }]);
   });
 
   it('describes an unlimited key without repeating absent constraints', () => {
     assert.deepEqual(describeAdventureMapConstraints(map('unlimited', {
       keyMode: 'UNLIMITED',
       keyCount: null,
-    })).map(({ label }) => label), ['영구 키']);
+    })), [{ key: 'KEY', label: '영구 키' }]);
   });
 
   it('uses one unrestricted fallback when a map needs no key and has no dynamic constraints', () => {
     assert.deepEqual(describeAdventureMapConstraints(map('open', {
       keyMode: 'NOT_REQUIRED',
-    })).map(({ label }) => label), ['제한 없음']);
+    })), [{ key: 'UNLIMITED', label: '제한 없음' }]);
   });
 
   it('describes an unknown key state without inventing other constraints', () => {
     assert.deepEqual(describeAdventureMapConstraints(map('unknown', {
       keyMode: 'UNKNOWN',
       keyCount: null,
-    })).map(({ label }) => label), ['키 상태 미확인']);
+    })), [{ key: 'KEY', label: '키 상태 미확인' }]);
   });
 
   it('describes each meaningful dynamic constraint exactly once', () => {
@@ -106,17 +106,17 @@ describe('adventure map automation domain', () => {
       cooldownRemainingText: '1분 30초',
       keyMode: 'LIMITED',
       keyCount: 0,
-    })).map(({ label }) => label), [
-      '쿨다운 1분 30초',
-      '키 0개',
-      '가능 횟수 4회',
-      '도전 잔여 2회',
-      '승리 잔여 1회',
+    })), [
+      { key: 'COOLDOWN', label: '쿨다운 1분 30초' },
+      { key: 'KEY', label: '키 0개' },
+      { key: 'AVAILABLE', label: '가능 4회' },
+      { key: 'ATTEMPT', label: '도전 2회' },
+      { key: 'WIN', label: '승리 1회' },
     ]);
   });
 
   it('uses one unknown-status fallback when a stored map has no successful observation', () => {
-    assert.deepEqual(describeAdventureMapConstraints(null).map(({ label }) => label), ['상태 미확인']);
+    assert.deepEqual(describeAdventureMapConstraints(null), [{ key: 'STATE', label: '상태 미확인' }]);
   });
 
   it('does not repeat a finite key count as observed remaining state detail', () => {
