@@ -20,4 +20,10 @@ describe('captcha challenge modal', () => {
     assert.match(modalSource, /onError=\{handleImageError\}/);
     assert.match(modalSource, /캡차 이미지를 불러오지 못했습니다/);
   });
+
+  it('keeps the retry input reachable when captcha content is taller than the screen', () => {
+    assert.match(modalSource, /\bScrollView\b/);
+    assert.match(modalSource, /keyboardShouldPersistTaps="handled"/);
+    assert.match(modalSource, /maxHeight:\s*'90%'/);
+  });
 });
