@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
   Alert,
+  findNodeHandle,
   FlatList,
   Pressable,
   StyleSheet,
@@ -115,6 +117,10 @@ export function AdventureMapAutomationEditor({
   const busyRef = useRef(false);
   const presetSessionGenerationRef = useRef(0);
   const presetSessionRef = useRef<PresetSession | null>(null);
+  const presetTriggerNodesRef = useRef(new Map<string, ElementRef<typeof Pressable>>());
+  const invokingPresetTriggerRef = useRef<{ identity: string; nodeHandle: ReturnType<typeof findNodeHandle> } | null>(null);
+  const presetFocusGenerationRef = useRef(0);
+  const restorePresetFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const updateDraft = useCallback((updater: (current: AdventureMapAutomationDraft) => AdventureMapAutomationDraft) => {
     const next = updater(draftRef.current);
@@ -132,6 +138,13 @@ export function AdventureMapAutomationEditor({
     controlsDisabledRef.current = true;
     presetSessionRef.current = null;
     presetSessionGenerationRef.current += 1;
+    presetFocusGenerationRef.current += 1;
+    presetTriggerNodesRef.current.clear();
+    invokingPresetTriggerRef.current = null;
+    if (restorePresetFocusTimerRef.current) {
+      clearTimeout(restorePresetFocusTimerRef.current);
+      restorePresetFocusTimerRef.current = null;
+    }
     mountedGenerationRef.current += 1;
     mapGenerationRef.current += 1;
     presetGenerationRef.current += 1;
@@ -297,21 +310,59 @@ export function AdventureMapAutomationEditor({
       : []),
   ], [battleCategoriesError, catalogRows.matchCount, catalogRows.rows, draft.maps, mapState.error, mapState.loading, searching]);
 
-  const closePresetPicker = useCallback((session: PresetSession | null) => {
+  const closePresetPicker = useCallback((session: PresetSession | null, restoreFocus = true) => {
     if (!isSamePresetSession(presetSessionRef.current, session)) return;
+    const focusGeneration = ++presetFocusGenerationRef.current;
+    const invocation = invokingPresetTriggerRef.current;
     presetSessionRef.current = null;
     setActivePresetSession((current) => isSamePresetSession(current, session) ? null : current);
+    if (restorePresetFocusTimerRef.current) {
+      clearTimeout(restorePresetFocusTimerRef.current);
+      restorePresetFocusTimerRef.current = null;
+    }
+    if (!restoreFocus || invocation == null || invocation.identity !== session?.identity) {
+      invokingPresetTriggerRef.current = null;
+      return;
+    }
+    restorePresetFocusTimerRef.current = setTimeout(() => {
+      restorePresetFocusTimerRef.current = null;
+      const clearInvocation = () => {
+        if (invokingPresetTriggerRef.current === invocation) invokingPresetTriggerRef.current = null;
+      };
+      if (
+        !mountedRef.current
+        || controlsDisabledRef.current
+        || presetFocusGenerationRef.current !== focusGeneration
+        || !draftRef.current.maps.some((setting) => adventureMapIdentity(setting) === invocation.identity)
+      ) {
+        clearInvocation();
+        return;
+      }
+      const liveNode = presetTriggerNodesRef.current.get(invocation.identity) ?? null;
+      const liveHandle = findNodeHandle(liveNode);
+      if (liveHandle != null && liveHandle === invocation.nodeHandle) {
+        AccessibilityInfo.setAccessibilityFocus(liveHandle);
+      }
+      clearInvocation();
+    }, 250);
   }, []);
 
   useEffect(() => {
     if (activePresetSession != null && (activePresetSetting == null || controlsDisabled)) {
-      closePresetPicker(activePresetSession);
+      closePresetPicker(activePresetSession, !controlsDisabled);
     }
   }, [activePresetSession, activePresetSetting, closePresetPicker, controlsDisabled]);
 
   const openPresetPicker = useCallback((identity: string) => {
     if (controlsDisabledRef.current || presetSessionRef.current != null) return;
+    presetFocusGenerationRef.current += 1;
+    if (restorePresetFocusTimerRef.current) {
+      clearTimeout(restorePresetFocusTimerRef.current);
+      restorePresetFocusTimerRef.current = null;
+    }
     const session = { generation: ++presetSessionGenerationRef.current, identity };
+    const triggerNode = presetTriggerNodesRef.current.get(identity) ?? null;
+    invokingPresetTriggerRef.current = { identity, nodeHandle: findNodeHandle(triggerNode) };
     presetSessionRef.current = session;
     setActivePresetSession(session);
   }, []);
@@ -413,15 +464,14 @@ export function AdventureMapAutomationEditor({
     const presetLabel = formatAutomationPresetSelection(setting, presets);
     const constraints = describeAdventureMapConstraints(setting.observed);
     const stateHeading = state.kind === 'UNLIMITED' ? '반복 실행' : state.label;
-    const metadata = [
-      setting.groupName?.trim() || null,
-      ...constraints
-        .filter(({ key, label }) => key !== 'STATE' && key !== 'UNLIMITED' && label !== state.label)
-        .map(({ label }) => label),
-    ].filter((value): value is string => value != null && value.length > 0);
+    const groupName = setting.groupName?.trim() || null;
+    const constraintLabels = constraints
+      .filter(({ key, label }) => key !== 'STATE' && key !== 'UNLIMITED' && label !== state.label)
+      .map(({ label }) => label);
+    const constraintSummary = constraintLabels.length > 0 ? constraintLabels.join(' · ') : '추가 조건 없음';
     const actionableDetail = state.detail != null
       && state.detail !== stateHeading
-      && !metadata.includes(state.detail)
+      && !constraintLabels.includes(state.detail)
       ? state.detail
       : null;
     return (
@@ -444,9 +494,14 @@ export function AdventureMapAutomationEditor({
             return liveIndex < 0 ? current : removeAdventureMapSetting(current, liveIndex);
           })} style={styles.iconButton}><Trash2 color={theme.colors.danger} size={16} /></Pressable>
         </View>
-        {metadata.length > 0 ? <Text numberOfLines={2} style={styles.metadata}>{metadata.join(' · ')}</Text> : null}
+        {groupName ? <Text ellipsizeMode="tail" numberOfLines={1} style={styles.groupMetadata}>{groupName}</Text> : null}
+        <Text style={styles.constraintMetadata}>{constraintSummary}</Text>
         {actionableDetail ? <Text style={styles.muted}>{actionableDetail}</Text> : null}
         <Pressable
+          ref={(node) => {
+            if (node) presetTriggerNodesRef.current.set(settingIdentity, node);
+            else presetTriggerNodesRef.current.delete(settingIdentity);
+          }}
           accessibilityLabel={`${setting.displayName} 프리셋 선택 열기`}
           accessibilityRole="button"
           accessibilityState={{ disabled: controlsDisabled }}
@@ -544,7 +599,8 @@ const styles = StyleSheet.create({
   mapName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
   state: { color: theme.colors.accentAmber, fontSize: 11, fontWeight: '800' },
   runnable: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '800' },
-  metadata: { color: theme.colors.textMuted, fontSize: 10, fontWeight: '700', lineHeight: 14 },
+  groupMetadata: { color: theme.colors.textMuted, fontSize: 10, lineHeight: 14 },
+  constraintMetadata: { color: theme.colors.textMuted, fontSize: 10, fontWeight: '700', lineHeight: 14 },
   muted: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
   problem: { color: theme.colors.accentAmber, fontSize: 11, lineHeight: 16 },
   iconButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },

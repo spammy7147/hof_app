@@ -486,8 +486,9 @@ export function BattleMapAutomationEditor({
     const { setting, index } = item;
     const identity = battleMapIdentity(setting);
     const successes = draft.dailyProgress[identity]?.successfulRuns ?? 0;
-    const dailyTarget = parseBattleDailyTarget(setting.dailyTargetCount) ?? 0;
-    const progress = buildBattleProgress({ target: dailyTarget, successes });
+    const parsedDailyTarget = parseBattleDailyTarget(setting.dailyTargetCount);
+    const dailyTarget = parsedDailyTarget != null && parsedDailyTarget > 0 ? parsedDailyTarget : null;
+    const progress = dailyTarget == null ? null : buildBattleProgress({ target: dailyTarget, successes });
     const selectedPreset = setting.presetMode === 'EXPLICIT'
       ? presets.find(({ id }) => id === setting.partyPresetId)
       : null;
@@ -497,7 +498,7 @@ export function BattleMapAutomationEditor({
           ? '프리셋 확인 불가'
           : formatAutomationPresetSelection(setting, presets);
     return (
-      <View style={[styles.card, progress.complete && styles.completeCard]}>
+      <View style={[styles.card, progress?.complete && styles.completeCard]}>
         <View style={styles.rowHeading}>
           <View style={styles.mapCopy}>
             <Text style={styles.mapName}>{setting.displayName}</Text>
@@ -508,11 +509,20 @@ export function BattleMapAutomationEditor({
           <Pressable accessibilityLabel={`${setting.displayName} 맵 제거`} accessibilityRole="button" accessibilityState={{ disabled: controlsDisabled }} disabled={controlsDisabled} onPress={() => updateEditableDraft((current) => removeBattleMapSetting(current, index))} style={styles.smallIcon}><Trash2 color={theme.colors.danger} size={16} /></Pressable>
         </View>
         <TextInput accessibilityLabel={`${setting.displayName} 일일 목표`} editable={!controlsDisabled} keyboardType="number-pad" onChangeText={(value) => updateEditableDraft((current) => ({ ...current, maps: current.maps.map((map) => battleMapIdentity(map) === identity ? { ...map, dailyTargetCount: value } : map) }))} style={styles.targetInput} value={String(setting.dailyTargetCount)} />
-        <Text style={styles.muted}>오늘 {successes}/{dailyTarget} · {progress.remaining}회 남음</Text>
-        <View accessibilityLabel={`${setting.displayName} 오늘 진행률`} accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: Math.round(progress.percent) }} style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${progress.percent}%` }]} />
-        </View>
-        <Text style={progress.complete ? styles.complete : styles.batch}>{describeBattleBatch({ supportsThreeBattles: setting.supportsThreeBattles, remaining: progress.remaining })}</Text>
+        {progress == null ? (
+          <>
+            <Text style={styles.muted}>오늘 {successes}회 성공 · 목표 확인 필요</Text>
+            <Text style={styles.batch}>목표 확인 후 실행</Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.muted}>오늘 {successes}/{dailyTarget} · {progress.remaining}회 남음</Text>
+            <View accessibilityLabel={`${setting.displayName} 오늘 진행률`} accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: Math.round(progress.percent) }} style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${progress.percent}%` }]} />
+            </View>
+            <Text style={progress.complete ? styles.complete : styles.batch}>{describeBattleBatch({ supportsThreeBattles: setting.supportsThreeBattles, remaining: progress.remaining })}</Text>
+          </>
+        )}
         {setting.presetMode === 'EXPLICIT' && presetsVerified && !selectedPreset ? <Text accessibilityLiveRegion="polite" accessibilityRole="alert" style={styles.problem}>선택한 프리셋이 삭제되었습니다. 다른 프리셋을 선택해 주세요.</Text> : null}
         <Pressable
           ref={(node) => {

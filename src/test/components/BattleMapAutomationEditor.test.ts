@@ -430,6 +430,27 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(saves[0]?.maps[0]?.dailyTargetCount, 42);
   });
 
+  it('shows neutral progress for empty, zero, and pasted invalid targets with existing successes', async () => {
+    const renderer = await renderEditor({
+      entry: battleEntry(
+        [setting('a', 10, 0)],
+        [{ categoryId: 'battle', mapCode: 'a', successfulRuns: 5 }],
+      ),
+      maps: [catalogMap('a', 'Alpha', { supportsThreeBattles: true })],
+    });
+    const input = renderer.root.findByProps({ accessibilityLabel: 'Alpha 일일 목표' });
+
+    for (const invalid of ['', '0', '0x10']) {
+      await act(async () => { input.props.onChangeText(invalid); });
+      assert.equal(hasText(renderer.root, '오늘 5회 성공 · 목표 확인 필요'), true, invalid);
+      assert.equal(hasText(renderer.root, '목표 확인 후 실행'), true, invalid);
+      assert.equal(hasText(renderer.root, '오늘 목표 완료'), false, invalid);
+      assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Alpha 오늘 진행률' }).length, 0, invalid);
+      const card = renderer.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' }).parent;
+      assert.notEqual(flattenStyle(card?.props.style).borderColor, theme.colors.accentGreen, invalid);
+    }
+  });
+
   it('accepts fresh server progress during a dirty settings edit without overwriting the edit', async () => {
     const base = editorProps({
       entry: battleEntry([setting('a', 3, 0)], [{ categoryId: 'battle', mapCode: 'a', successfulRuns: 1 }]),

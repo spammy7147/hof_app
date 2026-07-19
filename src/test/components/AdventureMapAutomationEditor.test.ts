@@ -14,7 +14,9 @@ import type {
 } from '../../main/types/api';
 
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
-  React.useImperativeHandle(ref, () => props, [props]);
+  const nodeRef = React.useRef<Record<string, unknown>>({});
+  Object.assign(nodeRef.current, props);
+  React.useImperativeHandle(ref, () => nodeRef.current, []);
   return React.createElement(name, props, props.children as React.ReactNode);
 });
 const flatList = React.forwardRef<unknown, Record<string, unknown>>((props, ref) => React.createElement(
@@ -27,9 +29,14 @@ const flatList = React.forwardRef<unknown, Record<string, unknown>>((props, ref)
   )),
 ));
 let alertArguments: unknown[] | null = null;
+const accessibilityFocusCalls: unknown[] = [];
 const reactNativeMock = {
+  AccessibilityInfo: {
+    setAccessibilityFocus: (node: unknown) => { accessibilityFocusCalls.push(node); },
+  },
   ActivityIndicator: host('ActivityIndicator'),
   Alert: { alert: (...args: unknown[]) => { alertArguments = args; } },
+  findNodeHandle: (node: unknown) => node,
   FlatList: flatList,
   Modal: host('Modal'),
   Pressable: host('Pressable'),
@@ -138,8 +145,10 @@ describe('AdventureMapAutomationEditor', () => {
     assert.equal(flattenStyle(presetChoice.props.style).minHeight, 44);
     assert.equal(hasText(renderer.root, '압축 모험'), true);
     assert.equal(hasText(renderer.root, '실행 가능'), true);
-    assert.equal(textCount(renderer.root, '수정 동굴 · 키 114개 · 가능 3회'), 1);
-    assert.equal(textCount(renderer.root, '키 114개'), 0);
+    const selectedCard = presetChoice.parent!;
+    assert.equal(textCount(selectedCard, '수정 동굴'), 1);
+    const constraints = findTextNode(selectedCard, '키 114개 · 가능 3회');
+    assert.equal(constraints.props.numberOfLines, undefined);
     assert.equal(hasText(renderer.root, '관측 잔여'), false);
     assert.equal(hasText(renderer.root, '제한 없음'), false);
     assert.equal(hasText(renderer.root, '쿨다운 없음'), false);
@@ -155,6 +164,28 @@ describe('AdventureMapAutomationEditor', () => {
       && node.props.data.some((item: { key?: string }) => item.key === 'catalog-title')
     ));
     assert.equal(flattenStyle(list.props.contentContainerStyle).gap, 6);
+  });
+
+  it('keeps every execution constraint visible below an ellipsized long group name', async () => {
+    const longGroup = '아주 길어서 한 줄에서 잘려야 하는 모험맵 그룹 이름';
+    const renderer = await renderEditor({
+      entry: entry([setting('dense', 0, 'PRIMARY', null)]),
+      maps: [map('dense', '제약 모험', {
+        groupName: longGroup,
+        keyMode: 'LIMITED',
+        keyCount: 114,
+        availableCount: 4,
+        attemptCount: 2,
+        winCount: 1,
+      })],
+    });
+
+    const selectedCard = renderer.root.findByProps({ accessibilityLabel: '제약 모험 프리셋 선택 열기' }).parent!;
+    const group = findTextNode(selectedCard, longGroup);
+    assert.equal(group.props.numberOfLines, 1);
+    assert.equal(group.props.ellipsizeMode, 'tail');
+    const constraints = findTextNode(selectedCard, '키 114개 · 가능 4회 · 도전 2회 · 승리 1회');
+    assert.equal(constraints.props.numberOfLines, undefined);
   });
 
   it('shows observed unavailable state without disabling selection and saves ordered typed settings', async () => {
@@ -576,6 +607,72 @@ describe('AdventureMapAutomationEditor', () => {
     assert.equal(hasText(renderer.root, '첫 맵 프리셋 선택'), true);
   });
 
+  it('restores accessibility focus to each live preset trigger after every ordinary close path', async () => {
+    accessibilityFocusCalls.length = 0;
+    const renderer = await renderEditor({
+      entry: entry([
+        setting('first', 0, 'PRIMARY', null),
+        setting('second', 1, 'PRIMARY', null),
+      ]),
+      maps: [map('first', '첫 맵'), map('second', '둘째 맵')],
+      onListPartyPresets: async () => [preset(9, '고정 파티', false)],
+    });
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.onPress(); });
+    accessibilityFocusCalls.length = 0;
+    await act(async () => { renderer.root.findByType('Modal' as unknown as React.ElementType).props.onRequestClose(); });
+    await act(async () => { await delay(280); });
+    assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), '첫 맵 프리셋 선택 열기');
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 배경 닫기' }).props.onPress(); });
+    await act(async () => { await delay(280); });
+    assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), '둘째 맵 프리셋 선택 열기');
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
+    await act(async () => { await delay(280); });
+    assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), '첫 맵 프리셋 선택 열기');
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '고정 파티 프리셋 선택' }).props.onPress(); });
+    await act(async () => { await delay(280); });
+    assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), '둘째 맵 프리셋 선택 열기');
+  });
+
+  it('does not restore stale adventure preset focus after row removal, busy state, or unmount', async () => {
+    accessibilityFocusCalls.length = 0;
+    const base = editorProps({
+      entry: entry([
+        setting('first', 0, 'PRIMARY', null),
+        setting('second', 1, 'PRIMARY', null),
+      ]),
+      onLoadBattleMaps: async () => [map('first', '첫 맵'), map('second', '둘째 맵')],
+      onListPartyPresets: async () => [preset(9, '고정 파티', false)],
+    });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(AdventureMapAutomationEditor, base)); });
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.onPress(); });
+    accessibilityFocusCalls.length = 0;
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '첫 맵 제거' }).props.onPress(); });
+    await act(async () => { await delay(280); });
+    assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === '첫 맵 프리셋 선택 열기'), false);
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.onPress(); });
+    accessibilityFocusCalls.length = 0;
+    await act(async () => { renderer.update(React.createElement(AdventureMapAutomationEditor, { ...base, saving: true })); });
+    await act(async () => { await delay(280); });
+    assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === '둘째 맵 프리셋 선택 열기'), false);
+
+    await act(async () => { renderer.update(React.createElement(AdventureMapAutomationEditor, base)); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.onPress(); });
+    accessibilityFocusCalls.length = 0;
+    await act(async () => { renderer.unmount(); });
+    await act(async () => { await delay(280); });
+    assert.equal(accessibilityFocusCalls.length, 0);
+  });
+
   it('uses live dirty state when a Back callback retained from a clean render is invoked', async () => {
     alertArguments = null;
     let backs = 0;
@@ -860,6 +957,11 @@ function flattenStyle(style: unknown): Record<string, unknown> {
   }
   return style != null && typeof style === 'object' ? style as Record<string, unknown> : {};
 }
+function focusedLabel(node: unknown): unknown {
+  return node && typeof node === 'object'
+    ? (node as { accessibilityLabel?: unknown }).accessibilityLabel
+    : undefined;
+}
 function selectedMapRemovalOrder(renderer: ReactTestRenderer): string[] {
   return renderer.root.findAll((node) => (
     (node.type as unknown) === 'Pressable'
@@ -896,4 +998,7 @@ function deferred<T>() {
     reject = fail;
   });
   return { promise, reject, resolve };
+}
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
