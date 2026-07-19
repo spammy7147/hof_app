@@ -188,6 +188,22 @@ describe('AdventureMapAutomationEditor', () => {
     assert.equal(constraints.props.numberOfLines, undefined);
   });
 
+  it('does not claim no extra conditions for an unobserved stored map', async () => {
+    const renderer = await renderEditor({
+      entry: entry([
+        setting('missing', 0, 'PRIMARY', null),
+        setting('open', 1, 'PRIMARY', null),
+      ]),
+      maps: [map('open', '관측된 맵', { keyMode: 'NOT_REQUIRED' })],
+    });
+
+    const missingCard = renderer.root.findByProps({ accessibilityLabel: 'missing 프리셋 선택 열기' }).parent!;
+    assert.equal(hasText(missingCard, '현재 상태 확인 불가'), true);
+    assert.equal(hasText(missingCard, '추가 조건 없음'), false);
+    const observedCard = renderer.root.findByProps({ accessibilityLabel: '관측된 맵 프리셋 선택 열기' }).parent!;
+    assert.equal(hasText(observedCard, '추가 조건 없음'), true);
+  });
+
   it('shows observed unavailable state without disabling selection and saves ordered typed settings', async () => {
     const saves: UpdateAdventureMapAutomationRequest[] = [];
     const renderer = await renderEditor({

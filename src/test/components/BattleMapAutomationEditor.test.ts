@@ -440,7 +440,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     });
     const input = renderer.root.findByProps({ accessibilityLabel: 'Alpha 일일 목표' });
 
-    for (const invalid of ['', '0', '0x10']) {
+    for (const invalid of ['', '0', '0x10', '2147483648']) {
       await act(async () => { input.props.onChangeText(invalid); });
       assert.equal(hasText(renderer.root, '오늘 5회 성공 · 목표 확인 필요'), true, invalid);
       assert.equal(hasText(renderer.root, '목표 확인 후 실행'), true, invalid);

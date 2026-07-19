@@ -21,6 +21,7 @@ import {
   buildBattleProgress,
   describeBattleBatch,
   filterBattleAutomationCategories,
+  MAX_BATTLE_DAILY_TARGET,
   moveBattleMapSetting,
   parseBattleDailyTarget,
   removeBattleMapSetting,
@@ -487,7 +488,11 @@ export function BattleMapAutomationEditor({
     const identity = battleMapIdentity(setting);
     const successes = draft.dailyProgress[identity]?.successfulRuns ?? 0;
     const parsedDailyTarget = parseBattleDailyTarget(setting.dailyTargetCount);
-    const dailyTarget = parsedDailyTarget != null && parsedDailyTarget > 0 ? parsedDailyTarget : null;
+    const dailyTarget = parsedDailyTarget != null
+      && parsedDailyTarget > 0
+      && parsedDailyTarget <= MAX_BATTLE_DAILY_TARGET
+      ? parsedDailyTarget
+      : null;
     const progress = dailyTarget == null ? null : buildBattleProgress({ target: dailyTarget, successes });
     const selectedPreset = setting.presetMode === 'EXPLICIT'
       ? presets.find(({ id }) => id === setting.partyPresetId)

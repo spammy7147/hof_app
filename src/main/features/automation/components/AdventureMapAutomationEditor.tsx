@@ -468,7 +468,9 @@ export function AdventureMapAutomationEditor({
     const constraintLabels = constraints
       .filter(({ key, label }) => key !== 'STATE' && key !== 'UNLIMITED' && label !== state.label)
       .map(({ label }) => label);
-    const constraintSummary = constraintLabels.length > 0 ? constraintLabels.join(' · ') : '추가 조건 없음';
+    const constraintSummary = setting.observed == null
+      ? null
+      : constraintLabels.length > 0 ? constraintLabels.join(' · ') : '추가 조건 없음';
     const actionableDetail = state.detail != null
       && state.detail !== stateHeading
       && !constraintLabels.includes(state.detail)
@@ -495,7 +497,7 @@ export function AdventureMapAutomationEditor({
           })} style={styles.iconButton}><Trash2 color={theme.colors.danger} size={16} /></Pressable>
         </View>
         {groupName ? <Text ellipsizeMode="tail" numberOfLines={1} style={styles.groupMetadata}>{groupName}</Text> : null}
-        <Text style={styles.constraintMetadata}>{constraintSummary}</Text>
+        {constraintSummary ? <Text style={styles.constraintMetadata}>{constraintSummary}</Text> : null}
         {actionableDetail ? <Text style={styles.muted}>{actionableDetail}</Text> : null}
         <Pressable
           ref={(node) => {
