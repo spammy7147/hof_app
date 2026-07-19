@@ -11,6 +11,7 @@ import type {
 
 export type CombatQuestMissionType = Extract<QuestMissionType, 'MONSTER_KILL' | 'MAP_CLEAR'>;
 export type QuestMissionReadiness = '자동 매칭됨' | '사용자 변경' | '맵 설정 필요' | '프리셋 설정 필요';
+/** @deprecated Kept until BattleMapPickerSheet migrates to the grouped quest-map catalog. */
 export type QuestMapFilter = 'ALL' | 'BATTLE' | 'ADVENTURE';
 
 export type QuestMissionDraft = QuestMission & {
@@ -103,6 +104,7 @@ export function buildQuestMapIdentity(map: Pick<BattleMapResponse, 'categoryId' 
   return `${map.categoryId}\u0000${map.mapCode ?? ''}`;
 }
 
+/** @deprecated Use buildQuestMapCatalogRows after the picker migration. */
 export function filterQuestMapOptions(
   maps: readonly BattleMapResponse[],
   query: string,
