@@ -10,6 +10,7 @@ import {
 } from 'react-test-renderer';
 
 import type { BattleMapResponse } from '../../main/types/api';
+import type { QuestMapCatalogRow } from '../../main/domain/questMapCatalog';
 
 const focusCalls: unknown[] = [];
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => (
@@ -21,13 +22,13 @@ const modal = (props: Record<string, unknown>) => React.createElement(
   props.visible ? props.children as React.ReactNode : null,
 );
 const flatList = (props: Record<string, unknown>) => {
-  const data = props.data as BattleMapResponse[];
-  const renderItem = props.renderItem as (info: { item: BattleMapResponse }) => React.ReactNode;
+  const data = props.data as QuestMapCatalogRow[];
+  const renderItem = props.renderItem as (info: { item: QuestMapCatalogRow }) => React.ReactNode;
   return React.createElement(
     'FlatList',
     props,
     data.length > 0
-      ? data.map((item) => React.createElement(React.Fragment, { key: `${item.categoryId}/${item.mapCode}` }, renderItem({ item })))
+      ? data.map((item) => React.createElement(React.Fragment, { key: item.key }, renderItem({ item })))
       : props.ListEmptyComponent as React.ReactNode,
   );
 };
@@ -57,6 +58,9 @@ const moduleWithLoader = Module as unknown as { _load: ModuleLoader };
 const originalLoad = moduleWithLoader._load;
 moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') return reactNativeMock;
+  if (request === 'lucide-react-native') {
+    return { ChevronDown: host('ChevronDown'), ChevronRight: host('ChevronRight') };
+  }
   if (request === './NativeSafeAreaProvider' && parent?.filename.includes('react-native-safe-area-context')) {
     return { NativeSafeAreaProvider: host('NativeSafeAreaProvider') };
   }
@@ -102,7 +106,7 @@ describe('BattleMapPickerSheet', () => {
     assert.equal(closes, 3);
   });
 
-  it('uses replacement title and action labels in replace mode', async () => {
+  it('uses the replacement title while keeping full-card selection labels', async () => {
     const renderer = await renderSheet({
       mode: 'REPLACE',
       maps: [map('battle_map', 'maid-hall', 'Maid Hall')],
@@ -110,20 +114,28 @@ describe('BattleMapPickerSheet', () => {
 
     assert.equal(hasText(renderer.root, '전투맵 변경'), true);
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투맵 변경' }).props.accessibilityRole, 'header');
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Maid Hall 변경' }).props.accessibilityRole, 'button');
-    assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: 'Maid Hall 변경' }), '변경'), true);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Maid Hall 맵 선택' }).props.accessibilityRole, 'button');
+    assert.equal(hasText(renderer.root, '변경'), false);
   });
 
-  it('announces an already selected replacement row with its visible selected state', async () => {
+  it('renders selected maps first without add or change buttons', async () => {
     const renderer = await renderSheet({
       mode: 'REPLACE',
-      maps: [map('battle_map', 'maid-hall', 'Maid Hall')],
+      maps: [
+        map('battle_map', 'maid-hall', 'Maid Hall'),
+        map('battle_map', 'castle', 'Castle'),
+        map('adventure_map', 'sky', 'Sky'),
+      ],
       selectedMapIdentities: ['battle_map\u0000maid-hall'],
     });
-    const button = renderer.root.findByProps({ accessibilityLabel: 'Maid Hall 선택됨' });
 
-    assert.deepEqual(button.props.accessibilityState, { disabled: true, selected: true });
-    assert.equal(hasText(button, '선택됨'), true);
+    assert.equal(hasText(renderer.root, '선택한 맵'), true);
+    assert.equal(hasText(renderer.root, '추가'), false);
+    assert.equal(hasText(renderer.root, '변경'), false);
+    assert.equal(hasText(renderer.root, '전투맵'), true);
+    assert.equal(hasText(renderer.root, '모험맵'), true);
+    const selectedCard = renderer.root.findByProps({ accessibilityLabel: 'Maid Hall 맵 선택 해제' });
+    assert.deepEqual(selectedCard.props.accessibilityState, { disabled: false, selected: true });
   });
 
   it('moves focus to the title when the modal opens', async () => {
@@ -153,44 +165,47 @@ describe('BattleMapPickerSheet', () => {
     assert.equal(hasText(renderer.root, '실행할 맵을 선택해 주세요.'), true);
   });
 
-  it('disables a selected Maid Hall row and labels it as added', async () => {
+  it('toggles a selected Maid Hall card and leaves the sheet open', async () => {
     const maid = map('battle_map', 'maid-hall', 'Maid Hall');
-    let selections = 0;
+    const toggled: BattleMapResponse[] = [];
     const renderer = await renderSheet({
       maps: [maid],
       selectedMapIdentities: ['battle_map\u0000maid-hall'],
-      onSelect: () => { selections += 1; },
+      onToggle: (item) => { toggled.push(item); },
     });
-    const button = renderer.root.findByProps({ accessibilityLabel: 'Maid Hall 추가됨' });
+    const button = renderer.root.findByProps({ accessibilityLabel: 'Maid Hall 맵 선택 해제' });
 
-    assert.equal(button.props.disabled, true);
+    assert.equal(button.props.disabled, false);
     assert.equal(button.props.accessibilityRole, 'button');
-    assert.deepEqual(button.props.accessibilityState, { disabled: true, selected: true });
-    assert.equal(hasText(button, '추가됨'), true);
+    assert.deepEqual(button.props.accessibilityState, { disabled: false, selected: true });
     button.props.onPress();
-    assert.equal(selections, 0);
+    assert.deepEqual(toggled, [maid]);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투맵 선택' }));
   });
 
-  it('filters to adventure maps without showing the battle map', async () => {
+  it('expands and collapses category and group rows without filter chips', async () => {
     const renderer = await renderSheet({ maps: [
       map('battle_map', 'maid-hall', 'Maid Hall'),
       map('adventure_map', 'sky-tower', 'Sky Tower'),
     ] });
 
-    const filter = renderer.root.findByProps({ accessibilityLabel: '전투맵 필터 모험맵' });
-    assert.equal(filter.props.accessibilityRole, 'radio');
-    assert.deepEqual(filter.props.accessibilityValue, { text: 'ADVENTURE' });
-    await act(async () => { filter.props.onPress(); });
+    assert.equal(renderer.root.findAllByProps({ accessibilityRole: 'radio' }).length, 0);
+    const category = renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 닫기' });
+    assert.deepEqual(category.props.accessibilityState, { expanded: true });
+    await act(async () => { category.props.onPress(); });
     assert.equal(hasText(renderer.root, 'Maid Hall'), false);
-    assert.equal(hasText(renderer.root, 'Sky Tower'), true);
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 열기' }).props.onPress(); });
+    const group = renderer.root.findByProps({ accessibilityLabel: 'Castle 그룹 닫기' });
+    await act(async () => { group.props.onPress(); });
+    assert.equal(hasText(renderer.root, 'Maid Hall'), false);
   });
 
-  it('searches Sky and calls onSelect exactly once', async () => {
+  it('searches Sky and calls onToggle exactly once while keeping the sheet open', async () => {
     const skyTower = map('adventure_map', 'sky-tower', 'Sky Tower');
     const selected: BattleMapResponse[] = [];
     const renderer = await renderSheet({
       maps: [map('battle_map', 'maid-hall', 'Maid Hall'), skyTower],
-      onSelect: (item) => { selected.push(item); },
+      onToggle: (item) => { selected.push(item); },
     });
 
     await act(async () => {
@@ -199,12 +214,13 @@ describe('BattleMapPickerSheet', () => {
     assert.equal(hasText(renderer.root, 'Maid Hall'), false);
     assert.equal(hasText(renderer.root, '모험맵'), true);
     await act(async () => {
-      renderer.root.findByProps({ accessibilityLabel: 'Sky Tower 추가' }).props.onPress();
+      renderer.root.findByProps({ accessibilityLabel: 'Sky Tower 맵 선택' }).props.onPress();
     });
     assert.deepEqual(selected, [skyTower]);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투맵 선택' }));
   });
 
-  it('resets the query and filter when reopened', async () => {
+  it('resets the query and expansion state when reopened', async () => {
     const props = sheetProps({ maps: [
       map('battle_map', 'maid-hall', 'Maid Hall'),
       map('adventure_map', 'sky-tower', 'Sky Tower'),
@@ -213,14 +229,14 @@ describe('BattleMapPickerSheet', () => {
 
     await act(async () => {
       renderer.root.findByProps({ accessibilityLabel: '전투맵 검색' }).props.onChangeText('Sky');
-      renderer.root.findByProps({ accessibilityLabel: '전투맵 필터 모험맵' }).props.onPress();
     });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '모험맵 카테고리 검색 결과' }).props.onPress(); });
     await act(async () => { renderer.update(withSafeArea(React.createElement(BattleMapPickerSheet, { ...props, visible: false }))); });
     await act(async () => { renderer.update(withSafeArea(React.createElement(BattleMapPickerSheet, props))); });
 
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투맵 검색' }).props.value, '');
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투맵 필터 전체' }).props.accessibilityState.checked, true);
     assert.equal(hasText(renderer.root, 'Maid Hall'), true);
+    assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 닫기' }).props.accessibilityState, { expanded: true });
   });
 
   it('renders loading, error retry, and empty states without stale actions', async () => {
@@ -229,11 +245,11 @@ describe('BattleMapPickerSheet', () => {
     const loading = await renderSheet({ loading: true, maps });
     assert.ok(findHost(loading.root, 'ActivityIndicator'));
     assert.equal(hasText(loading.root, '전투맵을 불러오는 중입니다.'), true);
-    assert.equal(loading.root.findAllByProps({ accessibilityLabel: 'Maid Hall 추가' }).length, 0);
+    assert.equal(loading.root.findAllByProps({ accessibilityLabel: 'Maid Hall 맵 선택' }).length, 0);
 
     const error = await renderSheet({ error: 'network', maps, onRetry: () => { retries += 1; } });
     assert.equal(hasText(error.root, '전투맵을 불러오지 못했어요.'), true);
-    assert.equal(error.root.findAllByProps({ accessibilityLabel: 'Maid Hall 추가' }).length, 0);
+    assert.equal(error.root.findAllByProps({ accessibilityLabel: 'Maid Hall 맵 선택' }).length, 0);
     error.root.findByProps({ accessibilityLabel: '전투맵 다시 불러오기' }).props.onPress();
     assert.equal(retries, 1);
 
@@ -241,19 +257,21 @@ describe('BattleMapPickerSheet', () => {
     assert.equal(hasText(empty.root, '검색 결과가 없습니다.'), true);
   });
 
-  it('does not render unresolved or unsupported union catalog rows', async () => {
+  it('keeps resolved null-code rows visible but disabled and omits unsupported rows', async () => {
     const renderer = await renderSheet({ maps: [
       map('battle_map', 'maid-hall', 'Maid Hall'),
-      map('battle_map', null, 'Unresolved Map'),
+      { ...map('battle_map', null, 'No Code Map'), resolved: true },
       map('other_category', 'union', 'Union Map'),
     ] });
 
     assert.equal(hasText(renderer.root, 'Maid Hall'), true);
-    assert.equal(hasText(renderer.root, 'Unresolved Map'), false);
+    const noCode = renderer.root.findByProps({ accessibilityLabel: 'No Code Map 맵 선택' });
+    assert.deepEqual(noCode.props.accessibilityState, { disabled: true, selected: false });
+    assert.equal(noCode.props.disabled, true);
     assert.equal(hasText(renderer.root, 'Union Map'), false);
     const list = findHost(renderer.root, 'FlatList');
     assert.equal(list.props.keyboardShouldPersistTaps, 'handled');
-    assert.equal(list.props.keyExtractor(map('battle_map', 'maid-hall', 'Maid Hall')), 'battle_map\u0000maid-hall');
+    assert.equal(list.props.keyExtractor(list.props.data[0]), list.props.data[0].key);
   });
 });
 
@@ -268,7 +286,7 @@ function sheetProps(overrides: Partial<React.ComponentProps<typeof BattleMapPick
     error: null,
     onClose: () => undefined,
     onRetry: () => undefined,
-    onSelect: (_map: BattleMapResponse) => undefined,
+    onToggle: (_map: BattleMapResponse) => undefined,
     ...overrides,
   };
 }
@@ -328,6 +346,7 @@ function map(categoryId: string, mapCode: string | null, name: string): BattleMa
     winCount: null,
     cooldownRemainingText: null,
     cooldownRemainingSeconds: null,
+    keyMode: mapCode == null ? 'UNKNOWN' : 'NOT_REQUIRED',
     keyCount: null,
     requiredTime: null,
     supportsThreeBattles: false,

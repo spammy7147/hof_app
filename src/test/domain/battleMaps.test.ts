@@ -29,6 +29,7 @@ describe('battle map utilities', () => {
         winCount: null,
         cooldownRemainingText: null,
         cooldownRemainingSeconds: null,
+        keyMode: 'NOT_REQUIRED',
         keyCount: null,
         requiredTime: null,
         supportsThreeBattles: false,
@@ -50,6 +51,7 @@ describe('battle map utilities', () => {
         winCount: null,
         cooldownRemainingText: null,
         cooldownRemainingSeconds: null,
+        keyMode: 'LIMITED',
         keyCount: 9,
         requiredTime: 100,
         supportsThreeBattles: false,
@@ -71,6 +73,7 @@ describe('battle map utilities', () => {
         winCount: null,
         cooldownRemainingText: null,
         cooldownRemainingSeconds: null,
+        keyMode: 'NOT_REQUIRED',
         keyCount: null,
         requiredTime: 50,
         supportsThreeBattles: false,
@@ -89,7 +92,7 @@ describe('battle map utilities', () => {
 
   it('sorts unresolved null-code maps safely after resolved maps', () => {
     const ordered = orderBattleMaps([
-      battleMapFixture({ mapCode: null, resolved: false, name: 'Same map' }),
+      battleMapFixture({ mapCode: null, resolved: false, name: 'Same map', keyMode: 'UNKNOWN' }),
       battleMapFixture({ mapCode: 'resolved', resolved: true, name: 'Same map' }),
     ]);
 
@@ -101,6 +104,7 @@ describe('battle map utilities', () => {
       categoryId: 'adventure_map',
       mapCode: null,
       resolved: false,
+      keyMode: 'UNKNOWN',
       groupName: '  대충산   위험지역 ',
       groupOrder: 7,
       mapOrder: 3,
@@ -180,7 +184,7 @@ describe('battle map utilities', () => {
 
   it('skips automation maps that are not currently runnable', () => {
     assert.equal(
-      getAutomationMapSkipReason(battleMapFixture({ mapCode: null, resolved: false })),
+      getAutomationMapSkipReason(battleMapFixture({ mapCode: null, resolved: false, keyMode: 'UNKNOWN' })),
       '맵 코드 확인 대기',
     );
     assert.equal(
@@ -188,7 +192,7 @@ describe('battle map utilities', () => {
       '현재 맵이 보이지 않음',
     );
     assert.equal(
-      getAutomationMapSkipReason(battleMapFixture({ keyCount: 0 })),
+      getAutomationMapSkipReason(battleMapFixture({ keyMode: 'LIMITED', keyCount: 0 })),
       '키 없음',
     );
     assert.equal(
@@ -210,8 +214,8 @@ describe('battle map utilities', () => {
   });
 
   it('allows automation maps with remaining keys or unknown dynamic limits', () => {
-    assert.equal(getAutomationMapSkipReason(battleMapFixture({ keyCount: 2 })), null);
-    assert.equal(getAutomationMapSkipReason(battleMapFixture({ keyCount: null, availableCount: null })), null);
+    assert.equal(getAutomationMapSkipReason(battleMapFixture({ keyMode: 'LIMITED', keyCount: 2 })), null);
+    assert.equal(getAutomationMapSkipReason(battleMapFixture({ keyMode: 'UNKNOWN', keyCount: null, availableCount: null })), null);
   });
 
   it('shows remaining key count in map metadata instead of the map name', () => {
@@ -220,6 +224,7 @@ describe('battle map utilities', () => {
         groupName: '대충산 위험지역',
         recommendedLevel: '40-60',
         requiredTime: 100,
+        keyMode: 'LIMITED',
         keyCount: 9,
       })),
       '대충산 위험지역 · Lv 40-60 · Time 100 · 키 9',
@@ -233,6 +238,7 @@ describe('battle map utilities', () => {
       recommendedLevel: '50-60',
       requiredTime: 0,
       availableCount: 15,
+      keyMode: 'LIMITED',
       keyCount: 23,
     });
 
@@ -243,6 +249,7 @@ describe('battle map utilities', () => {
   it('formats automation map dynamic limits and cooldown status', () => {
     assert.equal(
       formatAutomationMapListMeta(battleMapFixture({
+        keyMode: 'LIMITED',
         keyCount: 37,
         attemptCount: 15,
         winCount: 5,
@@ -263,6 +270,7 @@ describe('battle map utilities', () => {
     assert.equal(
       formatAutomationMapListName(battleMapFixture({
         name: '천년제 무투회 - 검과 방패의 자매',
+        keyMode: 'LIMITED',
         keyCount: 10,
         requiredTime: 30,
       })),
@@ -298,6 +306,7 @@ function battleMapFixture(overrides: Partial<BattleMapResponse>): BattleMapRespo
     winCount: null,
     cooldownRemainingText: null,
     cooldownRemainingSeconds: null,
+    keyMode: 'NOT_REQUIRED',
     keyCount: null,
     requiredTime: null,
     resolved: true,

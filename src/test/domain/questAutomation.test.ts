@@ -13,7 +13,6 @@ import {
   buildQuestMissionSummary,
   buildQuestRewardSummary,
   filterQuests,
-  filterQuestMapOptions,
   getMissionReadiness,
   hydrateAutoMatchedMapClearMissions,
   matchMapClearMission,
@@ -95,23 +94,6 @@ describe('quest automation domain', () => {
   it('builds map identities from a category and its map code, including a missing code', () => {
     assert.equal(buildQuestMapIdentity(catalogMap('battle_map', 'maid', 'Maid')), 'battle_map\u0000maid');
     assert.equal(buildQuestMapIdentity(catalogMap('battle_map', null, 'Unresolved')), 'battle_map\u0000');
-  });
-
-  it('filters resolved battle and adventure maps by category and normalized text in input order', () => {
-    const battle = catalogMap('battle_map', 'battle', 'Killer Field');
-    battle.groupName = 'Maid Group';
-    const adventure = catalogMap('adventure_map', 'adventure', 'Silver Cave');
-    adventure.groupName = 'Key Group';
-    const unresolved = catalogMap('battle_map', 'unresolved', 'Killer Unresolved');
-    unresolved.resolved = false;
-    const noCode = catalogMap('adventure_map', null, 'Killer No Code');
-    const union = catalogMap('union_map', 'union', 'Killer Union');
-    const maps = [adventure, unresolved, noCode, union, battle];
-
-    assert.deepEqual(filterQuestMapOptions(maps, '  MAID group ', 'ALL').map(({ mapCode }) => mapCode), ['battle']);
-    assert.deepEqual(filterQuestMapOptions(maps, '', 'BATTLE').map(({ mapCode }) => mapCode), ['battle']);
-    assert.deepEqual(filterQuestMapOptions(maps, 'key', 'ADVENTURE').map(({ mapCode }) => mapCode), ['adventure']);
-    assert.deepEqual(filterQuestMapOptions(maps, '', 'ALL').map(({ mapCode }) => mapCode), ['adventure', 'battle']);
   });
 
   it('appends only a unique resolved map with contiguous manual primary defaults', () => {
@@ -449,5 +431,5 @@ function questEntry(quests: TypedAutomationEntryResponse['quests']): TypedAutoma
 }
 
 function catalogMap(categoryId: string, mapCode: string | null, name: string): BattleMapResponse {
-  return { categoryId, mapCode, name, groupName: null, groupOrder: 0, mapOrder: 0, recommendedLevel: null, availableCount: null, attemptCount: null, winCount: null, cooldownRemainingText: null, cooldownRemainingSeconds: null, keyCount: null, requiredTime: null, supportsThreeBattles: false, enabled: true, resolved: true, iconUrl: null, rawHref: '' };
+  return { categoryId, mapCode, name, groupName: null, groupOrder: 0, mapOrder: 0, recommendedLevel: null, availableCount: null, attemptCount: null, winCount: null, cooldownRemainingText: null, cooldownRemainingSeconds: null, keyMode: mapCode == null ? 'UNKNOWN' : 'NOT_REQUIRED', keyCount: null, requiredTime: null, supportsThreeBattles: false, enabled: true, resolved: true, iconUrl: null, rawHref: '' };
 }

@@ -173,8 +173,8 @@ describe('adventure map catalog rows', () => {
       map('dummy-60', 'Simulation- 전체 공격 허수아비 Lv.60', {
         groupName: '특수 허수아비',
       }),
-      map('unresolved', '해결 안 됨', { resolved: false }),
-      map(null, '코드 없음', { groupOrder: 2 }),
+      map('unresolved', '해결 안 됨', { resolved: false, keyMode: 'UNKNOWN' }),
+      map(null, '코드 없음', { groupOrder: 2, keyMode: 'UNKNOWN' }),
       map('other-category', '다른 카테고리', { categoryId: 'battle_map', groupOrder: 3 }),
     ];
     const collapsed = buildAdventureMapCatalogRows({ catalog, expandedGroupKeys: [], query: '' });
@@ -228,6 +228,7 @@ function map(
     winCount: null,
     cooldownRemainingText: null,
     cooldownRemainingSeconds: null,
+    keyMode: 'NOT_REQUIRED',
     keyCount: null,
     requiredTime: null,
     supportsThreeBattles: false,

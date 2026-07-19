@@ -35,7 +35,7 @@ export type AdventureMapStateDescription = {
 };
 
 export type AdventureMapConstraintDescription = {
-  key: 'COOLDOWN' | 'KEY' | 'AVAILABLE' | 'ATTEMPT' | 'WIN';
+  key: 'STATE' | 'UNLIMITED' | 'COOLDOWN' | 'KEY' | 'AVAILABLE' | 'ATTEMPT' | 'WIN';
   label: string;
 };
 
@@ -204,42 +204,58 @@ export function describeAdventureMapState(map: BattleMapResponse): AdventureMapS
   if ([map.availableCount, map.attemptCount, map.winCount].some((value) => value != null && value <= 0)) {
     return { kind: 'DAILY_COMPLETE', label: '오늘 횟수 완료', detail: '다음 한국 날짜 초기화 전까지 건너뜁니다.' };
   }
-  if (map.keyCount != null && map.keyCount <= 0) {
+  if (map.keyMode === 'LIMITED' && (map.keyCount == null || map.keyCount <= 0)) {
     return { kind: 'MISSING_KEY', label: '열쇠 부족', detail: '열쇠를 확보할 때까지 건너뜁니다.' };
   }
   if (!map.resolved || !map.enabled) {
     return { kind: 'UNAVAILABLE', label: '현재 실행 불가', detail: '상태가 바뀌면 자동으로 다시 확인합니다.' };
   }
-  const limits = [map.availableCount, map.attemptCount, map.winCount, map.keyCount];
+  const limits = [
+    map.availableCount,
+    map.attemptCount,
+    map.winCount,
+    map.keyMode === 'LIMITED' ? map.keyCount : null,
+  ];
   if (limits.every((value) => value == null)) {
-    return { kind: 'UNLIMITED', label: '횟수 제한 없음 · 반복 실행', detail: '앞 순서에 있으면 계속 반복될 수 있습니다.' };
+    return { kind: 'UNLIMITED', label: '횟수 제한 없음 · 반복 실행', detail: null };
   }
-  const remaining = limits.filter((value): value is number => value != null);
-  return { kind: 'RUNNABLE', label: '실행 가능', detail: remaining.length > 0 ? `관측 잔여 ${Math.min(...remaining)}회` : null };
+  return { kind: 'RUNNABLE', label: '실행 가능', detail: null };
 }
 
 export function describeAdventureMapConstraints(
   map: BattleMapResponse | null,
 ): AdventureMapConstraintDescription[] {
   if (map == null) {
-    return [
-      { key: 'COOLDOWN', label: '쿨다운 · 미확인' },
-      { key: 'KEY', label: '열쇠 · 미확인' },
-      { key: 'AVAILABLE', label: '가능 횟수 · 미확인' },
-      { key: 'ATTEMPT', label: '도전 잔여 · 미확인' },
-      { key: 'WIN', label: '승리 잔여 · 미확인' },
-    ];
+    return [{ key: 'STATE', label: '상태 미확인' }];
   }
-  const cooldown = (map.cooldownRemainingSeconds ?? 0) > 0 || map.cooldownRemainingText?.trim()
-    ? map.cooldownRemainingText?.trim() || formatDuration(map.cooldownRemainingSeconds ?? 0)
-    : '없음';
-  return [
-    { key: 'COOLDOWN', label: `쿨다운 · ${cooldown}` },
-    { key: 'KEY', label: `열쇠 · ${formatConstraintCount(map.keyCount, '개')}` },
-    { key: 'AVAILABLE', label: `가능 횟수 · ${formatConstraintCount(map.availableCount, '회')}` },
-    { key: 'ATTEMPT', label: `도전 잔여 · ${formatConstraintCount(map.attemptCount, '회')}` },
-    { key: 'WIN', label: `승리 잔여 · ${formatConstraintCount(map.winCount, '회')}` },
-  ];
+  const constraints: AdventureMapConstraintDescription[] = [];
+  const cooldownText = map.cooldownRemainingText?.trim();
+  if ((map.cooldownRemainingSeconds ?? 0) > 0 || cooldownText) {
+    constraints.push({
+      key: 'COOLDOWN',
+      label: `쿨다운 ${cooldownText || formatDuration(map.cooldownRemainingSeconds ?? 0)}`,
+    });
+  }
+  if (map.keyMode === 'UNLIMITED') {
+    constraints.push({ key: 'KEY', label: '영구 키' });
+  } else if (map.keyMode === 'LIMITED') {
+    constraints.push({
+      key: 'KEY',
+      label: map.keyCount == null ? '키 상태 미확인' : `키 ${map.keyCount.toLocaleString('ko-KR')}개`,
+    });
+  } else if (map.keyMode === 'UNKNOWN') {
+    constraints.push({ key: 'KEY', label: '키 상태 미확인' });
+  }
+  if (map.availableCount != null) {
+    constraints.push({ key: 'AVAILABLE', label: `가능 ${map.availableCount.toLocaleString('ko-KR')}회` });
+  }
+  if (map.attemptCount != null) {
+    constraints.push({ key: 'ATTEMPT', label: `도전 ${map.attemptCount.toLocaleString('ko-KR')}회` });
+  }
+  if (map.winCount != null) {
+    constraints.push({ key: 'WIN', label: `승리 ${map.winCount.toLocaleString('ko-KR')}회` });
+  }
+  return constraints.length > 0 ? constraints : [{ key: 'UNLIMITED', label: '제한 없음' }];
 }
 
 export function formatAutomationPresetSelection(
@@ -270,7 +286,4 @@ function formatDuration(seconds: number): string {
   if (seconds < 60) return `${seconds}초`;
   const minutes = Math.ceil(seconds / 60);
   return minutes < 60 ? `${minutes}분` : `${Math.ceil(minutes / 60)}시간`;
-}
-function formatConstraintCount(value: number | null, unit: string): string {
-  return value == null ? '제한 없음' : `${value.toLocaleString('ko-KR')}${unit}`;
 }

@@ -13,13 +13,14 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { ChevronDown, ChevronRight } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
-  buildQuestMapIdentity,
-  filterQuestMapOptions,
-  type QuestMapFilter,
-} from '../../../domain/questAutomation';
+  buildQuestMapCatalogGroupKey,
+  buildQuestMapCatalogRows,
+  type QuestMapCatalogRow,
+} from '../../../domain/questMapCatalog';
 import { theme } from '../../../styles/theme';
 import type { BattleMapResponse } from '../../../types/api';
 
@@ -33,14 +34,8 @@ export type BattleMapPickerSheetProps = {
   error: string | null;
   onClose: () => void;
   onRetry: () => void;
-  onSelect: (map: BattleMapResponse) => void;
+  onToggle: (map: BattleMapResponse) => void;
 };
-
-const FILTERS: ReadonlyArray<{ value: QuestMapFilter; label: string }> = [
-  { value: 'ALL', label: '전체' },
-  { value: 'BATTLE', label: '전투맵' },
-  { value: 'ADVENTURE', label: '모험맵' },
-];
 
 export function BattleMapPickerSheet({
   visible,
@@ -52,22 +47,30 @@ export function BattleMapPickerSheet({
   error,
   onClose,
   onRetry,
-  onSelect,
+  onToggle,
 }: BattleMapPickerSheetProps) {
   const { bottom } = useSafeAreaInsets();
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<QuestMapFilter>('ALL');
+  const [expandedCategoryIds, setExpandedCategoryIds] = useState<Set<string>>(() => defaultCategoryIds(maps));
+  const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<string>>(() => defaultGroupKeys(maps));
   const titleRef = useRef<ElementRef<typeof Text>>(null);
-  const selected = useMemo(() => new Set(selectedMapIdentities), [selectedMapIdentities]);
-  const results = useMemo(() => filterQuestMapOptions(maps, query, filter), [filter, maps, query]);
+  const selectedIdentities = useMemo(() => new Set(selectedMapIdentities), [selectedMapIdentities]);
+  const rows = useMemo(() => buildQuestMapCatalogRows({
+    maps,
+    selectedIdentities,
+    expandedCategoryIds,
+    expandedGroupKeys,
+    query,
+  }), [expandedCategoryIds, expandedGroupKeys, maps, query, selectedIdentities]);
   const subtitle = target?.trim() ? target : '실행할 맵을 선택해 주세요.';
   const title = mode === 'REPLACE' ? '전투맵 변경' : '전투맵 추가';
-  const actionLabel = mode === 'REPLACE' ? '변경' : '추가';
+  const searching = query.trim().length > 0;
 
   useEffect(() => {
     if (!visible) return;
     setQuery('');
-    setFilter('ALL');
+    setExpandedCategoryIds(defaultCategoryIds(maps));
+    setExpandedGroupKeys(defaultGroupKeys(maps));
   }, [visible]);
 
   function handleShow() {
@@ -75,43 +78,64 @@ export function BattleMapPickerSheet({
     if (titleNode != null) AccessibilityInfo.setAccessibilityFocus(titleNode);
   }
 
-  function renderMap({ item }: { item: BattleMapResponse }) {
-    const identity = buildQuestMapIdentity(item);
-    const alreadySelected = selected.has(identity);
-    const disabled = alreadySelected || loading;
-    const categoryLabel = item.categoryId === 'battle_map' ? '전투맵' : '모험맵';
-    const displayedAction = alreadySelected
-      ? (mode === 'REPLACE' ? '선택됨' : '추가됨')
-      : actionLabel;
+  function toggleCategory(categoryId: string) {
+    if (searching) return;
+    setExpandedCategoryIds((current) => toggleSetValue(current, categoryId));
+  }
 
-    return (
-      <View style={styles.mapRow}>
-        <View style={styles.mapCopy}>
-          <Text style={styles.mapName}>{item.name}</Text>
-          {item.groupName ? <Text style={styles.groupName}>{item.groupName}</Text> : null}
-          <Text style={styles.category}>{categoryLabel}</Text>
-        </View>
+  function toggleGroup(groupKey: string) {
+    if (searching) return;
+    setExpandedGroupKeys((current) => toggleSetValue(current, groupKey));
+  }
+
+  function renderRow({ item }: { item: QuestMapCatalogRow }) {
+    if (item.kind === 'SELECTED_HEADING') {
+      return <Text accessibilityRole="header" style={styles.selectedHeading}>선택한 맵</Text>;
+    }
+    if (item.kind === 'CATEGORY') {
+      const action = item.expanded ? '닫기' : '열기';
+      return (
         <Pressable
-          accessibilityLabel={`${item.name} ${displayedAction}`}
+          accessibilityLabel={searching ? `${item.label} 카테고리 검색 결과` : `${item.label} 카테고리 ${action}`}
           accessibilityRole="button"
-          accessibilityState={{ disabled, selected: alreadySelected }}
-          disabled={disabled}
-          onPress={() => {
-            if (alreadySelected || loading) return;
-            onSelect(item);
-          }}
-          style={({ pressed }) => [
-            styles.addButton,
-            disabled && styles.addButtonDisabled,
-            pressed && !disabled && styles.pressed,
-          ]}
+          accessibilityState={searching ? { disabled: true, expanded: item.expanded } : { expanded: item.expanded }}
+          disabled={searching}
+          onPress={() => toggleCategory(item.categoryId)}
+          style={({ pressed }) => [styles.categoryRow, pressed && !searching && styles.pressed]}
         >
-          <Text style={[styles.addButtonText, disabled && styles.addButtonTextDisabled]}>
-            {displayedAction}
-          </Text>
+          <Text style={styles.categoryName}>{item.label}</Text>
+          <View style={styles.trailing}>
+            <Text style={styles.count}>{item.count}개</Text>
+            {item.expanded
+              ? <ChevronDown color={theme.colors.textMuted} size={18} />
+              : <ChevronRight color={theme.colors.textMuted} size={18} />}
+          </View>
         </Pressable>
-      </View>
-    );
+      );
+    }
+    if (item.kind === 'GROUP') {
+      const action = item.expanded ? '닫기' : '열기';
+      return (
+        <Pressable
+          accessibilityLabel={searching ? `${item.name} 그룹 검색 결과` : `${item.name} 그룹 ${action}`}
+          accessibilityRole="button"
+          accessibilityState={searching ? { disabled: true, expanded: item.expanded } : { expanded: item.expanded }}
+          disabled={searching}
+          onPress={() => toggleGroup(item.groupKey)}
+          style={({ pressed }) => [styles.groupRow, pressed && !searching && styles.pressed]}
+        >
+          <View style={styles.rowCopy}>
+            <Text numberOfLines={1} style={styles.groupName}>{item.name}</Text>
+            <Text style={styles.meta}>{item.meta}</Text>
+          </View>
+          {item.expanded
+            ? <ChevronDown color={theme.colors.textMuted} size={18} />
+            : <ChevronRight color={theme.colors.textMuted} size={18} />}
+        </Pressable>
+      );
+    }
+
+    return renderMapCard(item.map, item.kind === 'SELECTED_MAP', loading, onToggle);
   }
 
   return (
@@ -157,29 +181,6 @@ export function BattleMapPickerSheet({
               value={query}
             />
 
-            <View accessibilityRole="radiogroup" style={styles.filterRow}>
-              {FILTERS.map(({ value, label }) => {
-                const checked = filter === value;
-                return (
-                  <Pressable
-                    key={value}
-                    accessibilityLabel={`전투맵 필터 ${label}`}
-                    accessibilityRole="radio"
-                    accessibilityState={{ checked }}
-                    accessibilityValue={{ text: value }}
-                    onPress={() => setFilter(value)}
-                    style={({ pressed }) => [
-                      styles.filterChip,
-                      checked && styles.filterChipSelected,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Text style={[styles.filterText, checked && styles.filterTextSelected]}>{label}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
             {loading ? (
               <View accessibilityLiveRegion="polite" style={styles.state}>
                 <ActivityIndicator color={theme.colors.accentGreen} />
@@ -200,12 +201,12 @@ export function BattleMapPickerSheet({
             ) : (
               <FlatList
                 contentContainerStyle={[styles.listContent, { paddingBottom: theme.spacing.xl }]}
-                data={results}
+                data={rows}
                 extraData={`${selectedMapIdentities.join('\u0001')}\u0000${loading}`}
-                keyExtractor={buildQuestMapIdentity}
+                keyExtractor={({ key }) => key}
                 keyboardShouldPersistTaps="handled"
                 ListEmptyComponent={<Text style={styles.emptyText}>검색 결과가 없습니다.</Text>}
-                renderItem={renderMap}
+                renderItem={renderRow}
                 style={styles.list}
               />
             )}
@@ -214,6 +215,56 @@ export function BattleMapPickerSheet({
       </View>
     </Modal>
   );
+}
+
+function renderMapCard(
+  map: BattleMapResponse,
+  selected: boolean,
+  loading: boolean,
+  onToggle: (map: BattleMapResponse) => void,
+) {
+  const selectable = Boolean(map.mapCode?.trim());
+  const disabled = loading || !selectable;
+  const meta = [map.groupName?.trim() || null, map.recommendedLevel?.trim() ? `Lv ${map.recommendedLevel.trim()}` : null]
+    .filter((part): part is string => part != null)
+    .join(' · ');
+  return (
+    <Pressable
+      accessibilityLabel={`${map.name} 맵 ${selected ? '선택 해제' : '선택'}`}
+      accessibilityRole="button"
+      accessibilityState={{ disabled, selected }}
+      disabled={disabled}
+      onPress={() => { if (!disabled) onToggle(map); }}
+      style={({ pressed }) => [
+        styles.mapRow,
+        selected && styles.mapRowSelected,
+        disabled && styles.disabled,
+        pressed && !disabled && styles.pressed,
+      ]}
+    >
+      <Text numberOfLines={2} style={styles.mapName}>{map.name}</Text>
+      {meta ? <Text numberOfLines={1} style={styles.meta}>{meta}</Text> : null}
+    </Pressable>
+  );
+}
+
+function defaultCategoryIds(maps: readonly BattleMapResponse[]): Set<string> {
+  return new Set(maps.filter(isSupportedMap).map(({ categoryId }) => categoryId));
+}
+
+function defaultGroupKeys(maps: readonly BattleMapResponse[]): Set<string> {
+  return new Set(maps.filter(isSupportedMap).map(buildQuestMapCatalogGroupKey));
+}
+
+function isSupportedMap(map: BattleMapResponse): boolean {
+  return map.resolved && (map.categoryId === 'battle_map' || map.categoryId === 'adventure_map');
+}
+
+function toggleSetValue(current: Set<string>, value: string): Set<string> {
+  const next = new Set(current);
+  if (next.has(value)) next.delete(value);
+  else next.add(value);
+  return next;
 }
 
 const styles = StyleSheet.create({
@@ -229,22 +280,21 @@ const styles = StyleSheet.create({
   closeButton: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderRadius: 22, height: 44, justifyContent: 'center', width: 44 },
   closeText: { color: theme.colors.textMuted, fontSize: 26, fontWeight: '300', lineHeight: 30 },
   search: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, fontSize: 14, minHeight: 44, paddingHorizontal: theme.spacing.md },
-  filterRow: { flexDirection: 'row', gap: theme.spacing.sm, marginVertical: theme.spacing.md },
-  filterChip: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.border, borderRadius: 22, borderWidth: 1, justifyContent: 'center', minHeight: 44, paddingHorizontal: theme.spacing.md },
-  filterChipSelected: { backgroundColor: theme.colors.accentGreen, borderColor: theme.colors.accentGreen },
-  filterText: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '800' },
-  filterTextSelected: { color: theme.colors.buttonText },
-  list: { flexShrink: 1 },
-  listContent: { gap: theme.spacing.sm },
-  mapRow: { alignItems: 'center', backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md * 2, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.md, minHeight: 76, padding: theme.spacing.md },
-  mapCopy: { flex: 1, minWidth: 0 },
-  mapName: { color: theme.colors.text, fontSize: 14, fontWeight: '900' },
-  groupName: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16, marginTop: 2 },
-  category: { color: theme.colors.accentGreen, fontSize: 10, fontWeight: '800', marginTop: 3 },
-  addButton: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, justifyContent: 'center', minHeight: 44, minWidth: 56, paddingHorizontal: theme.spacing.md },
-  addButtonDisabled: { backgroundColor: theme.colors.surfaceAlt },
-  addButtonText: { color: theme.colors.buttonText, fontSize: 12, fontWeight: '900' },
-  addButtonTextDisabled: { color: theme.colors.textMuted },
+  list: { flexShrink: 1, marginTop: theme.spacing.md },
+  listContent: { gap: 6 },
+  selectedHeading: { color: theme.colors.text, fontSize: 13, fontWeight: '900', paddingHorizontal: 2, paddingVertical: 4 },
+  categoryRow: { alignItems: 'center', backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', minHeight: 54, paddingHorizontal: theme.spacing.md, paddingVertical: 6 },
+  categoryName: { color: theme.colors.text, flex: 1, fontSize: 14, fontWeight: '900' },
+  trailing: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },
+  count: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '700' },
+  groupRow: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.border, borderRadius: theme.radius.sm, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, marginLeft: theme.spacing.md, minHeight: 48, paddingHorizontal: theme.spacing.md, paddingVertical: 5 },
+  rowCopy: { flex: 1, minWidth: 0 },
+  groupName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
+  mapRow: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, marginLeft: theme.spacing.lg, minHeight: 46, paddingHorizontal: theme.spacing.md, paddingVertical: 7 },
+  mapRowSelected: { backgroundColor: theme.colors.surface, borderColor: theme.colors.accentGreen, marginLeft: 0 },
+  mapName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
+  meta: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 15, marginTop: 2 },
+  disabled: { opacity: 0.55 },
   state: { alignItems: 'center', gap: theme.spacing.md, justifyContent: 'center', minHeight: 132, paddingBottom: theme.spacing.xl },
   stateText: { color: theme.colors.textMuted, fontSize: 13 },
   errorText: { color: theme.colors.danger, fontSize: 13, fontWeight: '800' },

@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import React from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 
+import { theme } from '../../main/styles/theme';
 import type {
   AdventureMapSettingResponse,
   BattleMapResponse,
@@ -13,7 +14,9 @@ import type {
 } from '../../main/types/api';
 
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
-  React.useImperativeHandle(ref, () => props, [props]);
+  const nodeRef = React.useRef<Record<string, unknown>>({});
+  Object.assign(nodeRef.current, props);
+  React.useImperativeHandle(ref, () => nodeRef.current, []);
   return React.createElement(name, props, props.children as React.ReactNode);
 });
 const flatList = React.forwardRef<unknown, Record<string, unknown>>((props, ref) => React.createElement(
@@ -26,9 +29,14 @@ const flatList = React.forwardRef<unknown, Record<string, unknown>>((props, ref)
   )),
 ));
 let alertArguments: unknown[] | null = null;
+const accessibilityFocusCalls: unknown[] = [];
 const reactNativeMock = {
+  AccessibilityInfo: {
+    setAccessibilityFocus: (node: unknown) => { accessibilityFocusCalls.push(node); },
+  },
   ActivityIndicator: host('ActivityIndicator'),
   Alert: { alert: (...args: unknown[]) => { alertArguments = args; } },
+  findNodeHandle: (node: unknown) => node,
   FlatList: flatList,
   Modal: host('Modal'),
   Pressable: host('Pressable'),
@@ -50,21 +58,169 @@ moduleWithLoader._load = (request, parent, isMain) => {
 const { AdventureMapAutomationEditor } = require(
   '../../main/features/automation/components/AdventureMapAutomationEditor',
 ) as typeof import('../../main/features/automation/components/AdventureMapAutomationEditor');
+const {
+  AdventureMapCatalogGroupRow,
+  AdventureMapCatalogMapRow,
+} = require(
+  '../../main/features/automation/components/AdventureMapCatalogRows',
+) as typeof import('../../main/features/automation/components/AdventureMapCatalogRows');
 moduleWithLoader._load = originalLoad;
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('AdventureMapAutomationEditor', () => {
+  it('mounts compact full-card catalog rows with selected button semantics', async () => {
+    const catalogMap = { ...map('compact', '긴 모험맵 이름', {
+      groupName: '이벤트',
+      recommendedLevel: '40-60',
+      keyMode: 'LIMITED',
+      keyCount: 3,
+    }), mapCode: 'compact' };
+    const group = { key: 'group:event', name: '이벤트', groupOrder: 0, recommendedLevel: '40-60', maps: [catalogMap] };
+    let presses = 0;
+
+    function CatalogRowsHarness() {
+      const [selected, setSelected] = React.useState(false);
+      return React.createElement(React.Fragment, null,
+        React.createElement(AdventureMapCatalogGroupRow, { group, expanded: true, onPress: () => undefined }),
+        React.createElement(AdventureMapCatalogMapRow, {
+          map: catalogMap,
+          selected,
+          disabled: false,
+          onPress: () => { presses += 1; setSelected(true); },
+        }),
+      );
+    }
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(CatalogRowsHarness)); });
+
+    const groupButton = renderer.root.findByProps({ accessibilityLabel: '이벤트 그룹 닫기' });
+    const groupStyle = flattenStyle(groupButton.props.style);
+    assert.equal(groupStyle.minHeight, 52);
+    assert.equal(groupStyle.paddingHorizontal, 12);
+    assert.equal(groupStyle.paddingVertical, 6);
+
+    const mapButton = renderer.root.findByProps({ accessibilityLabel: '긴 모험맵 이름 모험맵 선택' });
+    assert.equal(mapButton.props.accessibilityRole, 'button');
+    assert.deepEqual(mapButton.props.accessibilityState, { disabled: false, selected: false });
+    const mapStyle = flattenStyle(mapButton.props.style);
+    assert.equal(mapStyle.minHeight, 48);
+    assert.equal(mapStyle.paddingHorizontal, 12);
+    assert.equal(mapStyle.paddingVertical, 8);
+    assert.equal(findTextNode(renderer.root, '긴 모험맵 이름').props.numberOfLines, 2);
+    const mapHeading = mapButton.find((node) => flattenStyle(node.props.style).justifyContent === 'space-between');
+    assert.equal(flattenStyle(mapHeading.props.style).gap, 4);
+    assert.equal(hasText(renderer.root, '선택됨'), false);
+    assert.equal(mapButton.findAll((node) => node.props.accessibilityRole === 'checkbox').length, 0);
+    assert.equal(hasText(mapButton, '40-60 · 키 3개'), true);
+
+    await act(async () => { mapButton.props.onPress(); });
+    assert.equal(presses, 1);
+    const selectedMapButton = renderer.root.findByProps({ accessibilityLabel: '긴 모험맵 이름 모험맵 선택 해제' });
+    assert.equal(selectedMapButton.props.accessibilityRole, 'button');
+    assert.deepEqual(selectedMapButton.props.accessibilityState, { disabled: false, selected: true });
+    assert.equal(hasText(selectedMapButton, '선택됨'), false);
+    const selectedStyle = flattenStyle(selectedMapButton.props.style);
+    assert.notEqual(selectedStyle.backgroundColor, theme.colors.accentGreen);
+    assert.equal(selectedStyle.borderColor, theme.colors.accentGreen);
+  });
+
+  it('mounts one compact selected-card metadata and preset row without placeholders', async () => {
+    const renderer = await renderEditor({
+      entry: entry([setting('compact', 0, 'PRIMARY', null)]),
+      maps: [map('compact', '압축 모험', {
+        groupName: '수정 동굴',
+        keyMode: 'LIMITED',
+        keyCount: 114,
+        availableCount: 3,
+      })],
+      onListPartyPresets: async () => [preset(7, '대표 프리셋', true)],
+    });
+
+    const presetChoice = renderer.root.findByProps({ accessibilityLabel: '압축 모험 프리셋 선택 열기' });
+    const cardStyle = flattenStyle(presetChoice.parent?.props.style);
+    assert.equal(cardStyle.padding, theme.spacing.sm);
+    assert.equal(cardStyle.gap, theme.spacing.xs);
+    assert.equal(flattenStyle(presetChoice.props.style).minHeight, 44);
+    assert.equal(hasText(renderer.root, '압축 모험'), true);
+    assert.equal(hasText(renderer.root, '실행 가능'), true);
+    const selectedCard = presetChoice.parent!;
+    assert.equal(textCount(selectedCard, '수정 동굴'), 1);
+    const constraints = findTextNode(selectedCard, '키 114개 · 가능 3회');
+    assert.equal(constraints.props.numberOfLines, undefined);
+    assert.equal(hasText(renderer.root, '관측 잔여'), false);
+    assert.equal(hasText(renderer.root, '제한 없음'), false);
+    assert.equal(hasText(renderer.root, '쿨다운 없음'), false);
+    assert.equal(hasText(renderer.root, '현재 프리셋'), false);
+    assert.equal(hasText(renderer.root, '프리셋 변경'), false);
+    assert.equal(hasText(presetChoice, '프리셋'), true);
+    assert.equal(textCount(presetChoice, '대표 · 대표 프리셋'), 1);
+    assert.equal(presetChoice.findAll((node) => (node.type as unknown) === 'ChevronRight').length, 1);
+
+    const list = renderer.root.find((node) => (
+      (node.type as unknown) === 'FlatList'
+      && Array.isArray(node.props.data)
+      && node.props.data.some((item: { key?: string }) => item.key === 'catalog-title')
+    ));
+    assert.equal(flattenStyle(list.props.contentContainerStyle).gap, 6);
+  });
+
+  it('keeps every execution constraint visible below an ellipsized long group name', async () => {
+    const longGroup = '아주 길어서 한 줄에서 잘려야 하는 모험맵 그룹 이름';
+    const renderer = await renderEditor({
+      entry: entry([setting('dense', 0, 'PRIMARY', null)]),
+      maps: [map('dense', '제약 모험', {
+        groupName: longGroup,
+        keyMode: 'LIMITED',
+        keyCount: 114,
+        availableCount: 4,
+        attemptCount: 2,
+        winCount: 1,
+      })],
+    });
+
+    const selectedCard = renderer.root.findByProps({ accessibilityLabel: '제약 모험 프리셋 선택 열기' }).parent!;
+    const group = findTextNode(selectedCard, longGroup);
+    assert.equal(group.props.numberOfLines, 1);
+    assert.equal(group.props.ellipsizeMode, 'tail');
+    const constraints = findTextNode(selectedCard, '키 114개 · 가능 4회 · 도전 2회 · 승리 1회');
+    assert.equal(constraints.props.numberOfLines, undefined);
+  });
+
+  it('does not claim no extra conditions for an unobserved stored map', async () => {
+    const renderer = await renderEditor({
+      entry: entry([
+        setting('missing', 0, 'PRIMARY', null),
+        setting('open', 1, 'PRIMARY', null),
+      ]),
+      maps: [map('open', '관측된 맵', { keyMode: 'NOT_REQUIRED' })],
+    });
+
+    const missingCard = renderer.root.findByProps({ accessibilityLabel: 'missing 프리셋 선택 열기' }).parent!;
+    assert.equal(hasText(missingCard, '현재 상태 확인 불가'), true);
+    assert.equal(hasText(missingCard, '추가 조건 없음'), false);
+    const observedCard = renderer.root.findByProps({ accessibilityLabel: '관측된 맵 프리셋 선택 열기' }).parent!;
+    assert.equal(hasText(observedCard, '추가 조건 없음'), true);
+  });
+
   it('shows observed unavailable state without disabling selection and saves ordered typed settings', async () => {
     const saves: UpdateAdventureMapAutomationRequest[] = [];
     const renderer = await renderEditor({
       maps: [
         map('cooldown', '쿨다운 맵', { cooldownRemainingSeconds: 60, cooldownRemainingText: '1분', enabled: false }),
-        map('free', '무제한 맵'),
+        map('free', '무제한 맵', { keyMode: 'UNLIMITED' }),
       ],
       onSave: async (request) => { saves.push(request); return true; },
     });
 
+    const lists = renderer.root.findAll((node) => (
+      (node.type as unknown) === 'FlatList'
+      && Array.isArray(node.props.data)
+      && node.props.data.some((item: { key?: string }) => item.key === 'catalog-title')
+    ));
+    assert.equal(lists.length, 1);
+    assert.equal(flattenStyle(lists[0]!.props.contentContainerStyle).gap, 6);
     assert.equal(hasText(renderer.root, '오늘 초기화 완료 · 오전 12:03'), true);
     await openAdventureGroup(renderer, '기타');
     const cooldown = renderer.root.findByProps({ accessibilityLabel: '쿨다운 맵 모험맵 선택' });
@@ -183,20 +339,21 @@ describe('AdventureMapAutomationEditor', () => {
 
     let late = renderer.root.findByProps({ accessibilityLabel: '후순위 맵 모험맵 선택' });
     let early = renderer.root.findByProps({ accessibilityLabel: '선순위 맵 모험맵 선택' });
-    assert.equal(late.props.accessibilityRole, 'checkbox');
-    assert.deepEqual(late.props.accessibilityState, { checked: false, disabled: false });
+    assert.equal(late.props.accessibilityRole, 'button');
+    assert.deepEqual(late.props.accessibilityState, { disabled: false, selected: false });
     assert.equal(late.findAll((node) => ['Checkbox', 'Square', 'CheckSquare', 'Image'].includes(String(node.type))).length, 0);
     assert.equal(hasText(late, '횟수 제한 없음 · 반복 실행'), true);
-    assert.equal(hasText(late, '40-60 · 앞 순서에 있으면 계속 반복될 수 있습니다.'), true);
+    assert.equal(hasText(late, '40-60'), true);
+    assert.equal(hasText(late, '앞 순서에 있으면 계속 반복될 수 있습니다.'), false);
 
     await act(async () => { late.props.onPress(); });
-    late = renderer.root.findByProps({ accessibilityLabel: '후순위 맵 모험맵 선택' });
-    assert.equal(late.props.accessibilityState.checked, true);
-    assert.equal(hasText(late, '선택됨'), true);
+    late = renderer.root.findByProps({ accessibilityLabel: '후순위 맵 모험맵 선택 해제' });
+    assert.equal(late.props.accessibilityState.selected, true);
+    assert.equal(hasText(late, '선택됨'), false);
     await act(async () => { early.props.onPress(); });
-    early = renderer.root.findByProps({ accessibilityLabel: '선순위 맵 모험맵 선택' });
-    assert.equal(early.props.accessibilityState.checked, true);
-    assert.equal(hasText(early, '선택됨'), true);
+    early = renderer.root.findByProps({ accessibilityLabel: '선순위 맵 모험맵 선택 해제' });
+    assert.equal(early.props.accessibilityState.selected, true);
+    assert.equal(hasText(early, '선택됨'), false);
 
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '모험맵 자동화 저장' }).props.onPress(); });
 
@@ -291,7 +448,7 @@ describe('AdventureMapAutomationEditor', () => {
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '모험맵 자동화 사용' }).props.value, true);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '첫 맵 제거' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '둘째 맵 제거' }));
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: '셋째 맵 모험맵 선택' }).props.accessibilityState.checked, false);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '셋째 맵 모험맵 선택' }).props.accessibilityState.selected, false);
 
     await act(async () => { pending.resolve(true); await saving; });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '모험맵 자동화 뒤로' }).props.onPress(); });
@@ -437,9 +594,9 @@ describe('AdventureMapAutomationEditor', () => {
     });
 
     assert.equal(hasText(renderer.root, '둘째 맵 프리셋 선택'), true);
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '첫 맵 현재 프리셋: 대표 프리셋 없음' }));
+    assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.accessibilityValue, { text: '대표 프리셋 없음' });
     await act(async () => { currentSelectB(); });
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '둘째 맵 현재 프리셋: 고정 파티' }));
+    assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.accessibilityValue, { text: '고정 파티' });
     assert.equal(renderer.root.findByType('Modal' as unknown as React.ElementType).props.visible, false);
   });
 
@@ -459,11 +616,77 @@ describe('AdventureMapAutomationEditor', () => {
     await act(async () => { retainedOpenA(); });
     assert.equal(hasText(renderer.root, '둘째 맵 프리셋 선택'), true);
     await act(async () => { currentSelectB(); });
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '둘째 맵 현재 프리셋: 고정 파티' }));
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '첫 맵 현재 프리셋: 대표 프리셋 없음' }));
+    assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.accessibilityValue, { text: '고정 파티' });
+    assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.accessibilityValue, { text: '대표 프리셋 없음' });
 
     await act(async () => { retainedOpenA(); });
     assert.equal(hasText(renderer.root, '첫 맵 프리셋 선택'), true);
+  });
+
+  it('restores accessibility focus to each live preset trigger after every ordinary close path', async () => {
+    accessibilityFocusCalls.length = 0;
+    const renderer = await renderEditor({
+      entry: entry([
+        setting('first', 0, 'PRIMARY', null),
+        setting('second', 1, 'PRIMARY', null),
+      ]),
+      maps: [map('first', '첫 맵'), map('second', '둘째 맵')],
+      onListPartyPresets: async () => [preset(9, '고정 파티', false)],
+    });
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.onPress(); });
+    accessibilityFocusCalls.length = 0;
+    await act(async () => { renderer.root.findByType('Modal' as unknown as React.ElementType).props.onRequestClose(); });
+    await act(async () => { await delay(280); });
+    assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), '첫 맵 프리셋 선택 열기');
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 배경 닫기' }).props.onPress(); });
+    await act(async () => { await delay(280); });
+    assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), '둘째 맵 프리셋 선택 열기');
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
+    await act(async () => { await delay(280); });
+    assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), '첫 맵 프리셋 선택 열기');
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '고정 파티 프리셋 선택' }).props.onPress(); });
+    await act(async () => { await delay(280); });
+    assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), '둘째 맵 프리셋 선택 열기');
+  });
+
+  it('does not restore stale adventure preset focus after row removal, busy state, or unmount', async () => {
+    accessibilityFocusCalls.length = 0;
+    const base = editorProps({
+      entry: entry([
+        setting('first', 0, 'PRIMARY', null),
+        setting('second', 1, 'PRIMARY', null),
+      ]),
+      onLoadBattleMaps: async () => [map('first', '첫 맵'), map('second', '둘째 맵')],
+      onListPartyPresets: async () => [preset(9, '고정 파티', false)],
+    });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(AdventureMapAutomationEditor, base)); });
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.onPress(); });
+    accessibilityFocusCalls.length = 0;
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '첫 맵 제거' }).props.onPress(); });
+    await act(async () => { await delay(280); });
+    assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === '첫 맵 프리셋 선택 열기'), false);
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.onPress(); });
+    accessibilityFocusCalls.length = 0;
+    await act(async () => { renderer.update(React.createElement(AdventureMapAutomationEditor, { ...base, saving: true })); });
+    await act(async () => { await delay(280); });
+    assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === '둘째 맵 프리셋 선택 열기'), false);
+
+    await act(async () => { renderer.update(React.createElement(AdventureMapAutomationEditor, base)); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.onPress(); });
+    accessibilityFocusCalls.length = 0;
+    await act(async () => { renderer.unmount(); });
+    await act(async () => { await delay(280); });
+    assert.equal(accessibilityFocusCalls.length, 0);
   });
 
   it('uses live dirty state when a Back callback retained from a clean render is invoked', async () => {
@@ -577,13 +800,14 @@ describe('AdventureMapAutomationEditor', () => {
       first.resolve([map('stored', '저장된 맵', {
         cooldownRemainingSeconds: 60,
         cooldownRemainingText: '1분',
+        keyMode: 'LIMITED',
         keyCount: 2,
         attemptCount: 3,
       })]);
       await first.promise;
     });
     assert.equal(hasText(renderer.root, '쿨다운 1분'), true);
-    assert.equal(hasText(renderer.root, '열쇠 · 2개'), true);
+    assert.equal(hasText(renderer.root, '키 2개 · 도전 3회'), true);
 
     await act(async () => {
       renderer.update(React.createElement(AdventureMapAutomationEditor, {
@@ -598,8 +822,7 @@ describe('AdventureMapAutomationEditor', () => {
     });
 
     assert.equal(hasText(renderer.root, '현재 상태 확인 불가'), true);
-    assert.equal(hasText(renderer.root, '쿨다운 · 미확인'), true);
-    assert.equal(hasText(renderer.root, '열쇠 · 미확인'), true);
+    assert.equal(hasText(renderer.root, '상태 미확인'), false);
     assert.equal(hasText(renderer.root, '쿨다운 1분'), false);
   });
 
@@ -629,7 +852,7 @@ describe('AdventureMapAutomationEditor', () => {
     });
 
     assert.equal(hasText(renderer.root, '쿨다운 1분'), true);
-    assert.equal(hasText(renderer.root, '가능 횟수 · 2회'), true);
+    assert.equal(hasText(renderer.root, '가능 2회'), true);
   });
 
   it('keeps mutations disabled while categories are still loading and does not finalize a missing category', async () => {
@@ -671,6 +894,7 @@ describe('AdventureMapAutomationEditor', () => {
       maps: [map('combined', '복합 제한 맵', {
         cooldownRemainingSeconds: 90,
         cooldownRemainingText: '1분 30초',
+        keyMode: 'LIMITED',
         keyCount: 0,
         availableCount: 4,
         attemptCount: 2,
@@ -679,17 +903,8 @@ describe('AdventureMapAutomationEditor', () => {
     });
     await openAdventureGroup(renderer, '기타');
     assert.equal(hasText(renderer.root, '쿨다운 1분 30초'), true);
-    assert.equal(hasText(renderer.root, '쿨다운이 끝난 뒤 자동으로 다시 확인합니다.'), true);
-
-    for (const label of [
-      '쿨다운 · 1분 30초',
-      '열쇠 · 0개',
-      '가능 횟수 · 4회',
-      '도전 잔여 · 2회',
-      '승리 잔여 · 1회',
-    ]) {
-      assert.equal(hasText(renderer.root, label), true);
-    }
+    assert.equal(hasText(renderer.root, '키 0개 · 가능 4회 · 도전 2회 · 승리 1회'), true);
+    assert.equal(hasText(renderer.root, '쿨다운이 끝난 뒤 자동으로 다시 확인합니다.'), false);
   });
 });
 
@@ -743,6 +958,26 @@ function editorProps(overrides: Partial<React.ComponentProps<typeof AdventureMap
 function hasText(root: ReactTestInstance, text: string): boolean {
   return root.findAll((node) => (node.type as unknown) === 'Text' && node.children.join('') === text).length > 0;
 }
+function textCount(root: ReactTestInstance, text: string): number {
+  return root.findAll((node) => (node.type as unknown) === 'Text' && node.children.join('') === text).length;
+}
+function findTextNode(root: ReactTestInstance, text: string): ReactTestInstance {
+  return root.find((node) => (node.type as unknown) === 'Text' && node.children.join('') === text);
+}
+function flattenStyle(style: unknown): Record<string, unknown> {
+  if (Array.isArray(style)) {
+    return style.reduce<Record<string, unknown>>(
+      (flattened, entry) => ({ ...flattened, ...flattenStyle(entry) }),
+      {},
+    );
+  }
+  return style != null && typeof style === 'object' ? style as Record<string, unknown> : {};
+}
+function focusedLabel(node: unknown): unknown {
+  return node && typeof node === 'object'
+    ? (node as { accessibilityLabel?: unknown }).accessibilityLabel
+    : undefined;
+}
 function selectedMapRemovalOrder(renderer: ReactTestRenderer): string[] {
   return renderer.root.findAll((node) => (
     (node.type as unknown) === 'Pressable'
@@ -754,7 +989,7 @@ function entry(adventureMaps: TypedAutomationEntryResponse['adventureMaps'] = []
   return { id: 15, type: 'ADVENTURE_MAP', enabled: true, priority: 2, ready: true, warnings: [], quests: [], battleMaps: [], battleMapProgress: [], adventureMaps };
 }
 function map(mapCode: string, name: string, overrides: Partial<BattleMapResponse> = {}): BattleMapResponse {
-  return { categoryId: 'adventure_map', mapCode, name, groupName: null, groupOrder: 0, mapOrder: 0, recommendedLevel: null, availableCount: null, attemptCount: null, winCount: null, cooldownRemainingText: null, cooldownRemainingSeconds: null, keyCount: null, requiredTime: null, supportsThreeBattles: false, enabled: true, resolved: true, iconUrl: null, rawHref: '', ...overrides };
+  return { categoryId: 'adventure_map', mapCode, name, groupName: null, groupOrder: 0, mapOrder: 0, recommendedLevel: null, availableCount: null, attemptCount: null, winCount: null, cooldownRemainingText: null, cooldownRemainingSeconds: null, keyMode: 'NOT_REQUIRED', keyCount: null, requiredTime: null, supportsThreeBattles: false, enabled: true, resolved: true, iconUrl: null, rawHref: '', ...overrides };
 }
 function setting(
   mapCode: string,
@@ -779,4 +1014,7 @@ function deferred<T>() {
     reject = fail;
   });
   return { promise, reject, resolve };
+}
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

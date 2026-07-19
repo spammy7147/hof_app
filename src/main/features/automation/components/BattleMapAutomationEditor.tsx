@@ -12,7 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { ArrowDown, ArrowLeft, ArrowUp, Save, Trash2 } from 'lucide-react-native';
+import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Save, Trash2 } from 'lucide-react-native';
 
 import {
   battleMapIdentity,
@@ -21,6 +21,7 @@ import {
   buildBattleProgress,
   describeBattleBatch,
   filterBattleAutomationCategories,
+  MAX_BATTLE_DAILY_TARGET,
   moveBattleMapSetting,
   parseBattleDailyTarget,
   removeBattleMapSetting,
@@ -486,7 +487,13 @@ export function BattleMapAutomationEditor({
     const { setting, index } = item;
     const identity = battleMapIdentity(setting);
     const successes = draft.dailyProgress[identity]?.successfulRuns ?? 0;
-    const progress = buildBattleProgress({ target: parseBattleDailyTarget(setting.dailyTargetCount) ?? 0, successes });
+    const parsedDailyTarget = parseBattleDailyTarget(setting.dailyTargetCount);
+    const dailyTarget = parsedDailyTarget != null
+      && parsedDailyTarget > 0
+      && parsedDailyTarget <= MAX_BATTLE_DAILY_TARGET
+      ? parsedDailyTarget
+      : null;
+    const progress = dailyTarget == null ? null : buildBattleProgress({ target: dailyTarget, successes });
     const selectedPreset = setting.presetMode === 'EXPLICIT'
       ? presets.find(({ id }) => id === setting.partyPresetId)
       : null;
@@ -496,7 +503,7 @@ export function BattleMapAutomationEditor({
           ? '프리셋 확인 불가'
           : formatAutomationPresetSelection(setting, presets);
     return (
-      <View style={[styles.card, progress.complete && styles.completeCard]}>
+      <View style={[styles.card, progress?.complete && styles.completeCard]}>
         <View style={styles.rowHeading}>
           <View style={styles.mapCopy}>
             <Text style={styles.mapName}>{setting.displayName}</Text>
@@ -507,22 +514,20 @@ export function BattleMapAutomationEditor({
           <Pressable accessibilityLabel={`${setting.displayName} 맵 제거`} accessibilityRole="button" accessibilityState={{ disabled: controlsDisabled }} disabled={controlsDisabled} onPress={() => updateEditableDraft((current) => removeBattleMapSetting(current, index))} style={styles.smallIcon}><Trash2 color={theme.colors.danger} size={16} /></Pressable>
         </View>
         <TextInput accessibilityLabel={`${setting.displayName} 일일 목표`} editable={!controlsDisabled} keyboardType="number-pad" onChangeText={(value) => updateEditableDraft((current) => ({ ...current, maps: current.maps.map((map) => battleMapIdentity(map) === identity ? { ...map, dailyTargetCount: value } : map) }))} style={styles.targetInput} value={String(setting.dailyTargetCount)} />
-        <View style={styles.progressLabels}>
-          <Text style={styles.muted}>오늘 성공 {successes}회</Text>
-          <Text style={styles.muted}>남은 목표 {progress.remaining}회</Text>
-          <Text style={styles.progressPercent}>{Math.round(progress.percent)}%</Text>
-        </View>
-        <View accessibilityLabel={`${setting.displayName} 오늘 진행률`} accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: Math.round(progress.percent) }} style={styles.progressTrack}>
-          <View style={[styles.progressFill, { width: `${progress.percent}%` }]} />
-        </View>
-        <View style={styles.progressLabels}>
-          <Text style={setting.supportsThreeBattles === true ? styles.capability : styles.muted}>{setting.supportsThreeBattles === true ? '3회 전투 지원' : setting.supportsThreeBattles === false ? '1회 전투 지원' : '전투 횟수 지원 상태 확인 전'}</Text>
-          <Text style={progress.complete ? styles.complete : styles.batch}>{describeBattleBatch({ supportsThreeBattles: setting.supportsThreeBattles, remaining: progress.remaining })}</Text>
-        </View>
-        <View accessibilityLabel={`${setting.displayName} 현재 프리셋: ${presetSummary}`} style={styles.presetSummary}>
-          <Text style={styles.muted}>현재 프리셋</Text>
-          <Text style={styles.choiceText}>{presetSummary}</Text>
-        </View>
+        {progress == null ? (
+          <>
+            <Text style={styles.muted}>오늘 {successes}회 성공 · 목표 확인 필요</Text>
+            <Text style={styles.batch}>목표 확인 후 실행</Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.muted}>오늘 {successes}/{dailyTarget} · {progress.remaining}회 남음</Text>
+            <View accessibilityLabel={`${setting.displayName} 오늘 진행률`} accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: Math.round(progress.percent) }} style={styles.progressTrack}>
+              <View style={[styles.progressFill, { width: `${progress.percent}%` }]} />
+            </View>
+            <Text style={progress.complete ? styles.complete : styles.batch}>{describeBattleBatch({ supportsThreeBattles: setting.supportsThreeBattles, remaining: progress.remaining })}</Text>
+          </>
+        )}
         {setting.presetMode === 'EXPLICIT' && presetsVerified && !selectedPreset ? <Text accessibilityLiveRegion="polite" accessibilityRole="alert" style={styles.problem}>선택한 프리셋이 삭제되었습니다. 다른 프리셋을 선택해 주세요.</Text> : null}
         <Pressable
           ref={(node) => {
@@ -532,11 +537,14 @@ export function BattleMapAutomationEditor({
           accessibilityLabel={`${setting.displayName} 프리셋 선택 열기`}
           accessibilityRole="button"
           accessibilityState={{ disabled: controlsDisabled }}
+          accessibilityValue={{ text: presetSummary }}
           disabled={controlsDisabled}
           onPress={() => openPresetPicker(identity)}
-          style={styles.choice}
+          style={[styles.choice, controlsDisabled && styles.disabled]}
         >
-          <Text style={styles.choiceText}>프리셋 변경</Text>
+          <Text style={styles.choiceLabel}>프리셋</Text>
+          <Text numberOfLines={1} style={styles.choiceText}>{presetSummary}</Text>
+          <ChevronRight color={theme.colors.textMuted} size={16} />
         </Pressable>
       </View>
     );
@@ -615,33 +623,30 @@ function serializeEntrySettings(entry: TypedAutomationEntryResponse): string {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, gap: theme.spacing.sm, padding: theme.spacing.lg },
+  screen: { flex: 1, gap: theme.spacing.xs, padding: theme.spacing.lg },
   header: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
   iconButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
   headerCopy: { flex: 1 },
   title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' },
   subtitle: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16, marginTop: 2 },
-  content: { gap: theme.spacing.lg, paddingBottom: theme.spacing.lg },
-  section: { gap: theme.spacing.sm },
+  content: { gap: 6, paddingBottom: theme.spacing.lg },
+  section: { gap: theme.spacing.xs },
   sectionTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '900' },
-  card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md + 4, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md },
+  card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md + 4, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.sm },
   completeCard: { borderColor: theme.colors.accentGreen },
   rowHeading: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },
   mapCopy: { flex: 1 },
   mapName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
   smallIcon: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
   targetInput: { borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.sm },
-  progressLabels: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between' },
-  progressPercent: { color: theme.colors.accentBlue, fontSize: 11, fontWeight: '900' },
-  progressTrack: { backgroundColor: theme.colors.surfaceAlt, borderRadius: 5, height: 10, overflow: 'hidden' },
-  progressFill: { backgroundColor: theme.colors.accentGreen, height: 10 },
-  capability: { color: theme.colors.accentBlue, fontSize: 11, fontWeight: '800' },
+  progressTrack: { backgroundColor: theme.colors.surfaceAlt, borderRadius: 2, height: 4, overflow: 'hidden' },
+  progressFill: { backgroundColor: theme.colors.accentGreen, height: 4 },
   batch: { color: theme.colors.text, fontSize: 11, fontWeight: '800' },
   complete: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '900' },
-  presetSummary: { gap: 2 },
-  choice: { borderColor: theme.colors.borderStrong, borderRadius: 14, borderWidth: 1, minHeight: 44, justifyContent: 'center', paddingHorizontal: theme.spacing.sm },
+  choice: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: 14, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: 44, paddingHorizontal: theme.spacing.sm },
   choiceActive: { borderColor: theme.colors.accentGreen },
-  choiceText: { color: theme.colors.text, fontSize: 11, fontWeight: '700' },
+  choiceLabel: { color: theme.colors.textMuted, fontSize: 10, fontWeight: '700' },
+  choiceText: { color: theme.colors.text, flex: 1, fontSize: 11, fontWeight: '700' },
   search: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: 46, paddingHorizontal: theme.spacing.md },
   warningRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between' },
   secondaryButton: { borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, minHeight: 44, justifyContent: 'center', paddingHorizontal: theme.spacing.md },

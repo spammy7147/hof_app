@@ -7,6 +7,7 @@ import { theme } from '../../../styles/theme';
 import type {
   TypedAutomationAggregateResponse,
   AutomationType,
+  TypedAutomationCurrentActionResponse,
   TypedAutomationEntryResponse,
   UnifiedAutomationAction,
 } from '../../../types/api';
@@ -57,8 +58,7 @@ export function UnifiedAutomationDashboard({
                 : '자동화를 안전하게 계속할 수 없어 중지되었습니다.'}
             </Text>
             {runtime.lastError ? <Text style={styles.stopReason}>{runtime.lastError}</Text> : null}
-            {current ? <Text style={styles.currentTitle}>{automationTypeLabel(current.source)} · {current.title}</Text> : null}
-            {current?.battleTotal != null ? <Text style={styles.battleDetail}>전투 {current.battleCurrent ?? 1}/{current.battleTotal}</Text> : null}
+            {current ? <CurrentAction current={current} /> : null}
           </>
         ) : waitingCaptcha ? (
           <>
@@ -72,12 +72,7 @@ export function UnifiedAutomationDashboard({
         ) : (
           <>
             <Text style={styles.currentLabel}>현재 작업</Text>
-            <Text style={styles.currentTitle}>
-              {current ? `${automationTypeLabel(current.source)} · ${current.title}` : '다음 실행 작업을 확인하고 있어요'}
-            </Text>
-            {current?.battleTotal != null ? (
-              <Text style={styles.battleDetail}>전투 {current.battleCurrent ?? 1}/{current.battleTotal}</Text>
-            ) : null}
+            <CurrentAction current={current} />
           </>
         )}
 
@@ -114,6 +109,35 @@ export function UnifiedAutomationDashboard({
           <EntryRow key={entry.id} entry={entry} onPress={() => onOpenModule(entry.id)} />
         ))}
       </View>
+    </View>
+  );
+}
+
+function CurrentAction({ current }: { current: TypedAutomationCurrentActionResponse | null }) {
+  const nextWorkFallback = '다음 실행 작업을 확인하고 있어요';
+  if (current == null) {
+    return <Text style={styles.actionLabel}>{nextWorkFallback}</Text>;
+  }
+
+  const hasNamedContext = current.questName != null || current.missionLabel != null || current.mapName != null;
+  const actionLabel = current.kind.includes('BATTLE') && !hasNamedContext
+    ? '전투 진행 중'
+    : current.actionLabel.trim() || nextWorkFallback;
+
+  return (
+    <View style={styles.currentAction}>
+      <Text style={styles.actionLabel}>{actionLabel}</Text>
+      {current.questName ? <Text style={styles.currentTitle}>{current.questName}</Text> : null}
+      {current.missionLabel ? (
+        <Text style={styles.actionMeta}>
+          {current.missionLabel}
+          {current.missionCurrent != null && current.missionRequired != null
+            ? ` · ${current.missionCurrent}/${current.missionRequired}`
+            : ''}
+        </Text>
+      ) : null}
+      {current.mapName ? <Text style={styles.actionMeta}>{current.mapName}</Text> : null}
+      {current.battleCount != null ? <Text style={styles.battleDetail}>{current.battleCount}회 전투 진행 중</Text> : null}
     </View>
   );
 }
@@ -212,7 +236,10 @@ const styles = StyleSheet.create({
   dangerText: { color: theme.colors.danger },
   warningText: { color: theme.colors.accentAmber, fontSize: 12, fontWeight: '700' },
   currentLabel: { color: theme.colors.textMuted, fontSize: 12, marginTop: 5 },
+  currentAction: { gap: 3 },
+  actionLabel: { color: theme.colors.text, fontSize: 17, fontWeight: '900', lineHeight: 24 },
   currentTitle: { color: theme.colors.text, fontSize: 19, fontWeight: '900', lineHeight: 27 },
+  actionMeta: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18 },
   battleDetail: { color: theme.colors.accentBlue, fontSize: 13, fontWeight: '800' },
   stopTitle: { color: theme.colors.text, fontSize: 17, fontWeight: '900', lineHeight: 24, marginTop: 5 },
   stopReason: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18 },

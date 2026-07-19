@@ -57,11 +57,11 @@ describe('automationProfiles', () => {
     ];
 
     assert.deepEqual(
-      toggleAutomationProfileMap(selectedMaps, battleMap({ mapCode: null, resolved: false })),
+      toggleAutomationProfileMap(selectedMaps, battleMap({ mapCode: null, resolved: false, keyMode: 'UNKNOWN' })),
       selectedMaps,
     );
     assert.deepEqual(
-      toggleAutomationProfileMap(selectedMaps, battleMap({ mapCode: 'pending', resolved: false })),
+      toggleAutomationProfileMap(selectedMaps, battleMap({ mapCode: 'pending', resolved: false, keyMode: 'UNKNOWN' })),
       selectedMaps,
     );
   });
@@ -147,6 +147,7 @@ describe('automationProfiles', () => {
       winCount: null,
       cooldownRemainingText: null,
       cooldownRemainingSeconds: null,
+      keyMode: 'UNKNOWN',
       keyCount: null,
       requiredTime: null,
       supportsThreeBattles: false,
@@ -186,7 +187,7 @@ describe('automationProfiles', () => {
         groupName: '대충산 위험지역',
         recommendedLevel: 'Lv 40-60',
       }),
-      battleMap({ mapCode: null, resolved: false, name: '코드 확인 중' }),
+      battleMap({ mapCode: null, resolved: false, name: '코드 확인 중', keyMode: 'UNKNOWN' }),
     ];
 
     assert.deepEqual(filterAutomationProfileMaps(maps, '리치').map((map) => map.mapCode), ['snow22']);
@@ -240,6 +241,7 @@ function battleMap(overrides: Partial<BattleMapResponse>): BattleMapResponse {
     winCount: null,
     cooldownRemainingText: null,
     cooldownRemainingSeconds: null,
+    keyMode: 'NOT_REQUIRED',
     keyCount: null,
     requiredTime: null,
     resolved: true,

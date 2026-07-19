@@ -35,7 +35,7 @@ export function BattleMapCatalogCategoryRow({
       style={styles.category}
     >
       <View style={styles.rowContent}>
-        <Text style={styles.categoryName}>{category.label}</Text>
+        <Text numberOfLines={2} style={styles.categoryName}>{category.label}</Text>
         {category.description ? <Text style={styles.description}>{category.description}</Text> : null}
       </View>
       <View style={styles.trailing}>
@@ -74,7 +74,7 @@ export function BattleMapCatalogGroupRow({ group, expanded, interactionDisabled 
       style={styles.group}
     >
       <View style={styles.rowContent}>
-        <Text style={styles.groupName}>{group.name}</Text>
+        <Text numberOfLines={2} style={styles.groupName}>{group.name}</Text>
         <Text style={styles.meta}>{details}</Text>
       </View>
       {expanded
@@ -97,18 +97,17 @@ export function BattleMapCatalogMapRow({ map, selected, disabled, onPress }: Bat
 
   return (
     <Pressable
-      accessibilityLabel={`${name} 맵 선택`}
-      accessibilityRole="checkbox"
-      accessibilityState={{ checked: selected, disabled }}
+      accessibilityLabel={`${name} 맵 ${selected ? '선택 해제' : '선택'}`}
+      accessibilityRole="button"
+      accessibilityState={{ disabled, selected }}
       disabled={disabled}
       onPress={() => { if (!disabled) onPress(); }}
       style={[styles.map, selected && styles.mapSelected, disabled && styles.disabled]}
     >
       <View style={styles.rowContent}>
-        <Text style={styles.mapName}>{name}</Text>
+        <Text numberOfLines={2} style={styles.mapName}>{name}</Text>
         {meta ? <Text style={styles.meta}>{meta}</Text> : null}
       </View>
-      {selected ? <Text style={styles.selected}>선택됨</Text> : null}
     </Pressable>
   );
 }
@@ -161,8 +160,8 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: theme.spacing.sm,
-    minHeight: 52,
+    gap: theme.spacing.xs,
+    minHeight: 60,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
   },
@@ -178,10 +177,11 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.sm,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: theme.spacing.sm,
+    gap: theme.spacing.xs,
     marginLeft: theme.spacing.lg,
-    minHeight: 48,
+    minHeight: 52,
     paddingHorizontal: theme.spacing.md,
+    paddingVertical: 6,
   },
   groupName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
   map: {
@@ -191,9 +191,9 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md,
     borderWidth: 1,
     flexDirection: 'row',
-    gap: theme.spacing.sm,
+    gap: theme.spacing.xs,
     marginLeft: theme.spacing.xl,
-    minHeight: 44,
+    minHeight: 48,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
   },
@@ -203,7 +203,6 @@ const styles = StyleSheet.create({
   retry: { justifyContent: 'center', minHeight: 44, paddingHorizontal: theme.spacing.sm },
   retryText: { color: theme.colors.accentGreen, fontSize: 12, fontWeight: '900' },
   rowContent: { flex: 1 },
-  selected: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '900' },
   state: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, minHeight: 44, paddingHorizontal: theme.spacing.xl },
   stateText: { color: theme.colors.textMuted, fontSize: 12 },
   trailing: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },

@@ -22,10 +22,29 @@ describe('adventure map automation domain', () => {
   it('describes cooldown, daily complete, missing key, runnable, and unlimited repeat states', () => {
     assert.equal(describeAdventureMapState(map('cooldown', { cooldownRemainingSeconds: 90, cooldownRemainingText: '1분 30초' })).label, '쿨다운 1분 30초');
     assert.equal(describeAdventureMapState(map('daily', { attemptCount: 0 })).label, '오늘 횟수 완료');
-    assert.equal(describeAdventureMapState(map('key', { keyCount: 0 })).label, '열쇠 부족');
-    assert.equal(describeAdventureMapState(map('ready', { keyCount: 2, attemptCount: 3 })).label, '실행 가능');
-    assert.equal(describeAdventureMapState(map('unlimited')).label, '횟수 제한 없음 · 반복 실행');
+    assert.equal(describeAdventureMapState(map('key', { keyMode: 'LIMITED', keyCount: 0 })).label, '열쇠 부족');
+    assert.equal(describeAdventureMapState(map('ready', { keyMode: 'LIMITED', keyCount: 2, attemptCount: 3 })).label, '실행 가능');
+    assert.equal(describeAdventureMapState(map('unlimited', { keyMode: 'UNLIMITED' })).label, '횟수 제한 없음 · 반복 실행');
     assert.equal(describeAdventureMapState(map('disabled', { enabled: false })).label, '현재 실행 불가');
+  });
+
+  it('trusts unlimited key mode over a stray zero key count', () => {
+    const unlimited = map('unlimited-stray-count', { keyMode: 'UNLIMITED', keyCount: 0 });
+
+    assert.notEqual(describeAdventureMapState(unlimited).kind, 'MISSING_KEY');
+    assert.deepEqual(describeAdventureMapConstraints(unlimited), [{ key: 'KEY', label: '영구 키' }]);
+  });
+
+  it('treats a limited key with an unknown count as unavailable', () => {
+    const limited = map('limited-unknown-count', { keyMode: 'LIMITED', keyCount: null });
+
+    assert.equal(describeAdventureMapState(limited).kind, 'MISSING_KEY');
+  });
+
+  it('describes a limited key with an unknown count as unobserved', () => {
+    const limited = map('limited-unknown-count', { keyMode: 'LIMITED', keyCount: null });
+
+    assert.deepEqual(describeAdventureMapConstraints(limited), [{ key: 'KEY', label: '키 상태 미확인' }]);
   });
 
   it('keeps unavailable maps selectable, ordered, and serializes exact preset modes', () => {
@@ -70,31 +89,60 @@ describe('adventure map automation domain', () => {
     assert.equal(formatAdventureDailyRefresh(undefined), '오늘 초기화 대기');
   });
 
-  it('describes every observed constraint independently even when several apply together', () => {
+  it('describes only a finite key count when no other constraints apply', () => {
+    assert.deepEqual(describeAdventureMapConstraints(map('limited', {
+      keyMode: 'LIMITED',
+      keyCount: 114,
+    })), [{ key: 'KEY', label: '키 114개' }]);
+  });
+
+  it('describes an unlimited key without repeating absent constraints', () => {
+    assert.deepEqual(describeAdventureMapConstraints(map('unlimited', {
+      keyMode: 'UNLIMITED',
+      keyCount: null,
+    })), [{ key: 'KEY', label: '영구 키' }]);
+  });
+
+  it('uses one unrestricted fallback when a map needs no key and has no dynamic constraints', () => {
+    assert.deepEqual(describeAdventureMapConstraints(map('open', {
+      keyMode: 'NOT_REQUIRED',
+    })), [{ key: 'UNLIMITED', label: '제한 없음' }]);
+  });
+
+  it('describes an unknown key state without inventing other constraints', () => {
+    assert.deepEqual(describeAdventureMapConstraints(map('unknown', {
+      keyMode: 'UNKNOWN',
+      keyCount: null,
+    })), [{ key: 'KEY', label: '키 상태 미확인' }]);
+  });
+
+  it('describes each meaningful dynamic constraint exactly once', () => {
     assert.deepEqual(describeAdventureMapConstraints(map('combined', {
       availableCount: 4,
       attemptCount: 2,
       winCount: 1,
       cooldownRemainingSeconds: 90,
       cooldownRemainingText: '1분 30초',
+      keyMode: 'LIMITED',
       keyCount: 0,
-    })).map(({ label }) => label), [
-      '쿨다운 · 1분 30초',
-      '열쇠 · 0개',
-      '가능 횟수 · 4회',
-      '도전 잔여 · 2회',
-      '승리 잔여 · 1회',
+    })), [
+      { key: 'COOLDOWN', label: '쿨다운 1분 30초' },
+      { key: 'KEY', label: '키 0개' },
+      { key: 'AVAILABLE', label: '가능 4회' },
+      { key: 'ATTEMPT', label: '도전 2회' },
+      { key: 'WIN', label: '승리 1회' },
     ]);
   });
 
-  it('marks each constraint unknown when a stored map has no successful observation', () => {
-    assert.deepEqual(describeAdventureMapConstraints(null).map(({ label }) => label), [
-      '쿨다운 · 미확인',
-      '열쇠 · 미확인',
-      '가능 횟수 · 미확인',
-      '도전 잔여 · 미확인',
-      '승리 잔여 · 미확인',
-    ]);
+  it('uses one unknown-status fallback when a stored map has no successful observation', () => {
+    assert.deepEqual(describeAdventureMapConstraints(null), [{ key: 'STATE', label: '상태 미확인' }]);
+  });
+
+  it('does not repeat a finite key count as observed remaining state detail', () => {
+    assert.equal(describeAdventureMapState(map('limited', {
+      keyMode: 'LIMITED',
+      keyCount: 114,
+    })).detail, null);
   });
 });
 
@@ -127,6 +175,7 @@ function map(mapCode: string, overrides: Partial<BattleMapResponse> = {}): Battl
     winCount: null,
     cooldownRemainingText: null,
     cooldownRemainingSeconds: null,
+    keyMode: 'NOT_REQUIRED',
     keyCount: null,
     requiredTime: null,
     supportsThreeBattles: false,

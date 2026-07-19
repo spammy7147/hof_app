@@ -38,6 +38,8 @@ export type BattleCategoryResponse = {
   enabled: boolean;
 };
 
+export type BattleMapKeyMode = 'NOT_REQUIRED' | 'LIMITED' | 'UNLIMITED' | 'UNKNOWN';
+
 export type BattleMapResponse = {
   categoryId: string;
   mapCode: string | null;
@@ -51,6 +53,7 @@ export type BattleMapResponse = {
   winCount: number | null;
   cooldownRemainingText: string | null;
   cooldownRemainingSeconds: number | null;
+  keyMode: BattleMapKeyMode;
   keyCount: number | null;
   requiredTime: number | null;
   /** 서버가 해당 맵의 실제 전투 폼에서 관측한 3회 전투 지원 여부다. */
@@ -297,9 +300,13 @@ export type TypedAutomationRuntimeResponse = {
 export type TypedAutomationCurrentActionResponse = {
   source: AutomationType;
   kind: string;
-  title: string;
-  battleCurrent: number | null;
-  battleTotal: number | null;
+  actionLabel: string;
+  questName: string | null;
+  missionLabel: string | null;
+  missionCurrent: number | null;
+  missionRequired: number | null;
+  mapName: string | null;
+  battleCount: number | null;
 };
 
 export type AdventureDailyRefreshResponse = {

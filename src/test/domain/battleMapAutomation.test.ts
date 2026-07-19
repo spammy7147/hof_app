@@ -98,7 +98,7 @@ describe('battle map automation domain', () => {
     const disabledCatalog = buildBattleMapAutomationDraft(stored, [map('battle', 'a', 'Disabled Alpha', { enabled: false })]);
     assert.equal(disabledCatalog.maps[0]?.displayName, 'Disabled Alpha');
     assert.equal(disabledCatalog.maps[0]?.resolved, true);
-    const unresolvedCatalog = buildBattleMapAutomationDraft(stored, [map('battle', 'a', 'Unresolved Alpha', { resolved: false })]);
+    const unresolvedCatalog = buildBattleMapAutomationDraft(stored, [map('battle', 'a', 'Unresolved Alpha', { resolved: false, keyMode: 'UNKNOWN' })]);
     assert.equal(unresolvedCatalog.maps[0]?.displayName, 'a');
     assert.equal(unresolvedCatalog.maps[0]?.resolved, false);
   });
@@ -119,7 +119,7 @@ describe('battle map automation domain', () => {
     const catalog = [
       map('battle', 'b', 'Beta', { groupName: 'Forest', groupOrder: 1, mapOrder: 2, recommendedLevel: 'Lv 20' }),
       map('battle', 'a', 'Alpha', { groupName: 'Forest', groupOrder: 1, mapOrder: 1, recommendedLevel: 'Lv 10' }),
-      map('battle', 'x', 'Hidden', { resolved: false }),
+      map('battle', 'x', 'Hidden', { resolved: false, keyMode: 'UNKNOWN' }),
     ];
     assert.deepEqual(filterBattleMapCatalog(catalog, 'forest').map(({ mapCode }) => mapCode), ['a', 'b']);
     assert.deepEqual(filterBattleMapCatalog(catalog, '20').map(({ mapCode }) => mapCode), ['b']);
@@ -147,6 +147,7 @@ describe('battle map automation domain', () => {
       attemptCount: 0,
       winCount: 0,
       cooldownRemainingSeconds: 3_600,
+      keyMode: 'LIMITED',
       keyCount: 0,
     });
     assert.deepEqual(filterBattleMapCatalog([unavailableNow], '').map(({ mapCode }) => mapCode), ['later']);
@@ -181,7 +182,7 @@ function map(categoryId: string, mapCode: string, name: string, overrides: Parti
   return {
     categoryId, mapCode, name, groupName: null, groupOrder: 0, mapOrder: 0, recommendedLevel: null,
     availableCount: null, attemptCount: null, winCount: null, cooldownRemainingText: null,
-    cooldownRemainingSeconds: null, keyCount: null, requiredTime: null, enabled: true, resolved: true,
+    cooldownRemainingSeconds: null, keyMode: 'NOT_REQUIRED', keyCount: null, requiredTime: null, enabled: true, resolved: true,
     iconUrl: null, rawHref: '', ...overrides, supportsThreeBattles: overrides.supportsThreeBattles ?? false,
   };
 }
