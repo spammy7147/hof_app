@@ -520,7 +520,7 @@ const styles = StyleSheet.create({
   refreshBand: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md, gap: 2, padding: theme.spacing.md },
   refreshTitle: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '700' },
   refreshText: { color: theme.colors.accentGreen, fontSize: 13, fontWeight: '900' },
-  content: { gap: theme.spacing.md, paddingBottom: theme.spacing.lg },
+  content: { gap: 6, paddingBottom: theme.spacing.lg },
   sectionTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '900', marginTop: theme.spacing.sm },
   search: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: 46, paddingHorizontal: theme.spacing.md },
   card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md + 4, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md },

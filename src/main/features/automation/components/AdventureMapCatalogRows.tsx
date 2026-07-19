@@ -67,13 +67,11 @@ export function AdventureMapCatalogMapRow({
 }: AdventureMapCatalogMapRowProps) {
   const state = describeAdventureMapState(map);
   const constraints = describeAdventureMapConstraints(map);
-  const stateDetail = state.detail?.trim();
   const metadata = [
     map.recommendedLevel?.trim() || null,
     ...constraints
       .filter(({ key, label }) => label !== state.label && !(key === 'UNLIMITED' && state.kind === 'UNLIMITED'))
       .map(({ label }) => label),
-    stateDetail && stateDetail !== state.label ? stateDetail : null,
   ].filter((detail, index, details): detail is string => Boolean(detail) && details.indexOf(detail) === index).join(' · ');
 
   return (

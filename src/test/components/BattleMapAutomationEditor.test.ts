@@ -582,7 +582,9 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
 
   it('uses one virtualized list without nesting a scroll view', async () => {
     const renderer = await renderEditor({ maps: [catalogMap('a', 'Alpha')] });
-    assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'FlatList').length, 1);
+    const lists = renderer.root.findAll((node) => (node.type as unknown) === 'FlatList');
+    assert.equal(lists.length, 1);
+    assert.equal(flattenStyle(lists[0]!.props.contentContainerStyle).gap, 6);
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'ScrollView').length, 0);
   });
 

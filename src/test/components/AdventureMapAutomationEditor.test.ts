@@ -129,6 +129,13 @@ describe('AdventureMapAutomationEditor', () => {
       onSave: async (request) => { saves.push(request); return true; },
     });
 
+    const lists = renderer.root.findAll((node) => (
+      (node.type as unknown) === 'FlatList'
+      && Array.isArray(node.props.data)
+      && node.props.data.some((item: { key?: string }) => item.key === 'catalog-title')
+    ));
+    assert.equal(lists.length, 1);
+    assert.equal(flattenStyle(lists[0]!.props.contentContainerStyle).gap, 6);
     assert.equal(hasText(renderer.root, '오늘 초기화 완료 · 오전 12:03'), true);
     await openAdventureGroup(renderer, '기타');
     const cooldown = renderer.root.findByProps({ accessibilityLabel: '쿨다운 맵 모험맵 선택' });
@@ -745,7 +752,8 @@ describe('AdventureMapAutomationEditor', () => {
     });
     await openAdventureGroup(renderer, '기타');
     assert.equal(hasText(renderer.root, '쿨다운 1분 30초'), true);
-    assert.equal(hasText(renderer.root, '키 0개 · 가능 4회 · 도전 2회 · 승리 1회 · 쿨다운이 끝난 뒤 자동으로 다시 확인합니다.'), true);
+    assert.equal(hasText(renderer.root, '키 0개 · 가능 4회 · 도전 2회 · 승리 1회'), true);
+    assert.equal(hasText(renderer.root, '쿨다운이 끝난 뒤 자동으로 다시 확인합니다.'), false);
   });
 });
 

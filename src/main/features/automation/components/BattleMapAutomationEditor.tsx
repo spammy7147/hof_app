@@ -621,7 +621,7 @@ const styles = StyleSheet.create({
   headerCopy: { flex: 1 },
   title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' },
   subtitle: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16, marginTop: 2 },
-  content: { gap: theme.spacing.lg, paddingBottom: theme.spacing.lg },
+  content: { gap: 6, paddingBottom: theme.spacing.lg },
   section: { gap: theme.spacing.sm },
   sectionTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '900' },
   card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md + 4, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md },
