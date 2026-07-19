@@ -105,6 +105,9 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(categoryButton.props.accessibilityRole, 'button');
     assert.equal(categoryButton.props.accessibilityState.expanded, false);
     const categoryStyle = flattenStyle(categoryButton.props.style);
+    assert.equal(categoryStyle.minHeight, 60);
+    assert.equal(categoryStyle.paddingHorizontal, 12);
+    assert.equal(categoryStyle.paddingVertical, 8);
     assert.notEqual(categoryStyle.backgroundColor, theme.colors.accentGreen);
     assert.notEqual(categoryStyle.borderColor, theme.colors.accentGreen);
     const expandedCategoryStyle = flattenStyle(renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 닫기' }).props.style);
@@ -114,14 +117,22 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(groupButton.props.accessibilityRole, 'button');
     assert.equal(groupButton.props.accessibilityState.expanded, true);
     const groupStyle = flattenStyle(groupButton.props.style);
+    assert.equal(groupStyle.minHeight, 52);
+    assert.equal(groupStyle.paddingHorizontal, 12);
+    assert.equal(groupStyle.paddingVertical, 6);
     assert.notEqual(groupStyle.backgroundColor, theme.colors.accentGreen);
     assert.notEqual(groupStyle.borderColor, theme.colors.accentGreen);
     const collapsedGroupStyle = flattenStyle(renderer.root.findByProps({ accessibilityLabel: '저택 서관 그룹 열기' }).props.style);
     assert.notEqual(collapsedGroupStyle.backgroundColor, theme.colors.accentGreen);
     assert.notEqual(collapsedGroupStyle.borderColor, theme.colors.accentGreen);
     const mapButton = () => renderer.root.findByProps({ accessibilityLabel: '저택 서관(놀이방) 맵 선택' });
-    assert.equal(mapButton().props.accessibilityRole, 'checkbox');
-    assert.equal(mapButton().props.accessibilityState.checked, false);
+    assert.equal(mapButton().props.accessibilityRole, 'button');
+    assert.deepEqual(mapButton().props.accessibilityState, { disabled: false, selected: false });
+    const mapStyle = flattenStyle(mapButton().props.style);
+    assert.equal(mapStyle.minHeight, 48);
+    assert.equal(mapStyle.paddingHorizontal, 12);
+    assert.equal(mapStyle.paddingVertical, 8);
+    assert.equal(findTextNode(renderer.root, '저택 서관(놀이방)').props.numberOfLines, 2);
     assert.equal(flattenStyle(mapButton().props.style).backgroundColor, theme.colors.surfaceAlt);
     assert.equal(hasText(renderer.root, '저택 서관(놀이방)'), true);
     assert.equal(hasText(renderer.root, 'key 8 · Time 10'), true);
@@ -136,17 +147,19 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
 
     await act(async () => { mapButton().props.onPress(); });
     assert.equal(mapPresses, 1);
-    assert.equal(mapButton().props.accessibilityState.checked, true);
-    assert.equal(hasText(renderer.root, '선택됨'), true);
-    const selectedMapStyle = flattenStyle(mapButton().props.style);
+    const selectedMapButton = renderer.root.findByProps({ accessibilityLabel: '저택 서관(놀이방) 맵 선택 해제' });
+    assert.equal(selectedMapButton.props.accessibilityRole, 'button');
+    assert.deepEqual(selectedMapButton.props.accessibilityState, { disabled: false, selected: true });
+    assert.equal(hasText(renderer.root, '선택됨'), false);
+    assert.equal(selectedMapButton.findAll((node) => node.props.accessibilityRole === 'checkbox').length, 0);
+    const selectedMapStyle = flattenStyle(selectedMapButton.props.style);
     assert.notEqual(selectedMapStyle.backgroundColor, theme.colors.accentGreen);
     assert.equal(selectedMapStyle.backgroundColor, theme.colors.surface);
     assert.equal(selectedMapStyle.borderColor, theme.colors.accentGreen);
     assert.equal(flattenStyle(findTextNode(renderer.root, '저택 서관(놀이방)').props.style).color, theme.colors.text);
     assert.equal(flattenStyle(findTextNode(renderer.root, 'key 8 · Time 10').props.style).color, theme.colors.textMuted);
-    assert.equal(flattenStyle(findTextNode(renderer.root, '선택됨').props.style).color, theme.colors.accentGreen);
     const disabledMapButton = renderer.root.findByProps({ accessibilityLabel: '잠긴 맵 맵 선택' });
-    assert.equal(disabledMapButton.props.accessibilityState.disabled, true);
+    assert.deepEqual(disabledMapButton.props.accessibilityState, { disabled: true, selected: false });
     await act(async () => { disabledMapButton.props.onPress(); });
     assert.equal(disabledPresses, 0);
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투맵 맵 다시 불러오기' }).props.onPress(); });
@@ -245,7 +258,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(busy.root.findByProps({ accessibilityLabel: '전투 맵 검색' }).props.editable, true);
     assert.equal(busy.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' }).props.disabled, true);
     await openCatalogGroup(busy);
-    assert.equal(busy.root.findByProps({ accessibilityLabel: 'Alpha 맵 선택' }).props.disabled, true);
+    assert.equal(busy.root.findByProps({ accessibilityLabel: 'Alpha 맵 선택 해제' }).props.disabled, true);
   });
 
   it('fences retained catalog callbacks while an internal save is pending', async () => {
@@ -269,14 +282,14 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     await act(async () => { retainedBetaPress(); });
     assert.deepEqual(saves, [{ enabled: true, maps: [setting('a', 1, 0)] }]);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Beta 일일 목표' }).length, 0);
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Beta 맵 선택' }).props.accessibilityState.checked, false);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Beta 맵 선택' }).props.accessibilityState.selected, false);
 
     await act(async () => {
       saveResult.resolve(true);
       await pendingSave;
     });
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Beta 일일 목표' }).length, 0);
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Beta 맵 선택' }).props.accessibilityState.checked, false);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Beta 맵 선택' }).props.accessibilityState.selected, false);
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 뒤로' }).props.onPress(); });
     assert.equal(backs, 1);
     assert.equal(alertArguments, null);
@@ -340,7 +353,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.update(React.createElement(BattleMapAutomationEditor, { ...base, saving: true })); });
     await act(async () => { retainedMapPress(); });
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Alpha 일일 목표' }).length, 0);
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Alpha 맵 선택' }).props.accessibilityState.checked, false);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Alpha 맵 선택' }).props.accessibilityState.selected, false);
   });
 
   it('keeps intermediate target text, validates it without crashing, and saves the later valid integer', async () => {
@@ -662,7 +675,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     const map = renderer.root.findByProps({ accessibilityLabel: '재시도 맵 맵 선택' });
     assert.equal(map.props.accessibilityState.disabled, true);
     await act(async () => { map.props.onPress(); });
-    assert.equal(map.props.accessibilityState.checked, false);
+    assert.equal(map.props.accessibilityState.selected, false);
     assert.equal(hasText(renderer.root, '선택됨'), false);
   });
 
@@ -678,9 +691,14 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     });
     await openCatalogGroup(renderer, '전투맵', '가 그룹');
     await openCatalogGroup(renderer, '전투맵', '나 그룹');
-    const mapLabels = renderer.root.findAll((node) => (node.type as unknown) === 'Pressable' && node.props.accessibilityRole === 'checkbox')
+    const mapLabels = renderer.root.findAll((node) => (
+      (node.type as unknown) === 'Pressable'
+      && node.props.accessibilityRole === 'button'
+      && typeof node.props.accessibilityLabel === 'string'
+      && node.props.accessibilityLabel.endsWith(' 맵 선택 해제')
+    ))
       .map(({ props }) => props.accessibilityLabel);
-    assert.deepEqual(mapLabels, ['가 맵 맵 선택', '나 맵 맵 선택']);
+    assert.deepEqual(mapLabels, ['가 맵 맵 선택 해제', '나 맵 맵 선택 해제']);
 
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.onPress(); });
     assert.deepEqual(saves, [{ enabled: true, maps: [setting('later-group', 4, 0), setting('first-group', 5, 1)] }]);
@@ -750,7 +768,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     const supported = renderer.root.findByProps({ accessibilityLabel: 'Limited Supported 맵 선택' });
     assert.equal(supported.props.disabled, false);
     await act(async () => { supported.props.onPress(); });
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Limited Supported 맵 선택' }).props.accessibilityState.checked, true);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Limited Supported 맵 선택 해제' }).props.accessibilityState.selected, true);
   });
 
   it('keeps preset options out of every row and renders one shared searchable picker only after opening', async () => {
