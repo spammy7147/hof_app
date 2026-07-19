@@ -17,7 +17,6 @@ import { ChevronDown, ChevronRight } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
-  buildQuestMapCatalogGroupKey,
   buildQuestMapCatalogRows,
   type QuestMapCatalogRow,
 } from '../../../domain/questMapCatalog';
@@ -51,8 +50,8 @@ export function BattleMapPickerSheet({
 }: BattleMapPickerSheetProps) {
   const { bottom } = useSafeAreaInsets();
   const [query, setQuery] = useState('');
-  const [expandedCategoryIds, setExpandedCategoryIds] = useState<Set<string>>(() => defaultCategoryIds(maps));
-  const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<string>>(() => defaultGroupKeys(maps));
+  const [expandedCategoryIds, setExpandedCategoryIds] = useState<Set<string>>(() => new Set());
+  const [expandedGroupKeys, setExpandedGroupKeys] = useState<Set<string>>(() => new Set());
   const titleRef = useRef<ElementRef<typeof Text>>(null);
   const selectedIdentities = useMemo(() => new Set(selectedMapIdentities), [selectedMapIdentities]);
   const rows = useMemo(() => buildQuestMapCatalogRows({
@@ -69,8 +68,8 @@ export function BattleMapPickerSheet({
   useEffect(() => {
     if (!visible) return;
     setQuery('');
-    setExpandedCategoryIds(defaultCategoryIds(maps));
-    setExpandedGroupKeys(defaultGroupKeys(maps));
+    setExpandedCategoryIds(new Set());
+    setExpandedGroupKeys(new Set());
   }, [visible]);
 
   function handleShow() {
@@ -248,18 +247,6 @@ function renderMapCard(
   );
 }
 
-function defaultCategoryIds(maps: readonly BattleMapResponse[]): Set<string> {
-  return new Set(maps.filter(isSupportedMap).map(({ categoryId }) => categoryId));
-}
-
-function defaultGroupKeys(maps: readonly BattleMapResponse[]): Set<string> {
-  return new Set(maps.filter(isSupportedMap).map(buildQuestMapCatalogGroupKey));
-}
-
-function isSupportedMap(map: BattleMapResponse): boolean {
-  return map.resolved && (map.categoryId === 'battle_map' || map.categoryId === 'adventure_map');
-}
-
 function toggleSetValue(current: Set<string>, value: string): Set<string> {
   const next = new Set(current);
   if (next.has(value)) next.delete(value);
@@ -287,10 +274,10 @@ const styles = StyleSheet.create({
   categoryName: { color: theme.colors.text, flex: 1, fontSize: 14, fontWeight: '900' },
   trailing: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },
   count: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '700' },
-  groupRow: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.border, borderRadius: theme.radius.sm, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, marginLeft: theme.spacing.md, minHeight: 48, paddingHorizontal: theme.spacing.md, paddingVertical: 5 },
+  groupRow: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.border, borderRadius: theme.radius.sm, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, marginLeft: 14, minHeight: 48, paddingHorizontal: theme.spacing.md, paddingVertical: 5 },
   rowCopy: { flex: 1, minWidth: 0 },
   groupName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
-  mapRow: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, marginLeft: theme.spacing.lg, minHeight: 46, paddingHorizontal: theme.spacing.md, paddingVertical: 7 },
+  mapRow: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, marginLeft: 28, minHeight: 46, paddingHorizontal: theme.spacing.md, paddingVertical: 7 },
   mapRowSelected: { backgroundColor: theme.colors.surface, borderColor: theme.colors.accentGreen, marginLeft: 0 },
   mapName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
   meta: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 15, marginTop: 2 },

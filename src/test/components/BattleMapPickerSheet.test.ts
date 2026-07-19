@@ -114,6 +114,12 @@ describe('BattleMapPickerSheet', () => {
 
     assert.equal(hasText(renderer.root, '전투맵 변경'), true);
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투맵 변경' }).props.accessibilityRole, 'header');
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 열기' }).props.onPress();
+    });
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: 'Castle 그룹 열기' }).props.onPress();
+    });
     assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Maid Hall 맵 선택' }).props.accessibilityRole, 'button');
     assert.equal(hasText(renderer.root, '변경'), false);
   });
@@ -183,21 +189,86 @@ describe('BattleMapPickerSheet', () => {
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투맵 선택' }));
   });
 
-  it('expands and collapses category and group rows without filter chips', async () => {
+  it('starts collapsed and expands and collapses category and group rows without filter chips', async () => {
     const renderer = await renderSheet({ maps: [
       map('battle_map', 'maid-hall', 'Maid Hall'),
       map('adventure_map', 'sky-tower', 'Sky Tower'),
     ] });
 
     assert.equal(renderer.root.findAllByProps({ accessibilityRole: 'radio' }).length, 0);
-    const category = renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 닫기' });
-    assert.deepEqual(category.props.accessibilityState, { expanded: true });
+    const category = renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 열기' });
+    assert.deepEqual(category.props.accessibilityState, { expanded: false });
+    assert.equal(hasText(renderer.root, 'Castle'), false);
+    assert.equal(hasText(renderer.root, 'Maid Hall'), false);
+
     await act(async () => { category.props.onPress(); });
-    assert.equal(hasText(renderer.root, 'Maid Hall'), false);
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 열기' }).props.onPress(); });
-    const group = renderer.root.findByProps({ accessibilityLabel: 'Castle 그룹 닫기' });
+    const group = renderer.root.findByProps({ accessibilityLabel: 'Castle 그룹 열기' });
+    assert.deepEqual(group.props.accessibilityState, { expanded: false });
     await act(async () => { group.props.onPress(); });
+    assert.equal(hasText(renderer.root, 'Maid Hall'), true);
+
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: 'Castle 그룹 닫기' }).props.onPress();
+    });
     assert.equal(hasText(renderer.root, 'Maid Hall'), false);
+  });
+
+  it('auto-expands matching search results and restores manual expansion when cleared', async () => {
+    const renderer = await renderSheet({ maps: [
+      map('battle_map', 'maid-hall', 'Maid Hall'),
+      map('adventure_map', 'sky-tower', 'Sky Tower'),
+    ] });
+
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 열기' }).props.onPress();
+    });
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '전투맵 검색' }).props.onChangeText('Sky');
+    });
+
+    const searchCategory = renderer.root.findByProps({ accessibilityLabel: '모험맵 카테고리 검색 결과' });
+    const searchGroup = renderer.root.findByProps({ accessibilityLabel: '기타 그룹 검색 결과' });
+    assert.deepEqual(searchCategory.props.accessibilityState, { disabled: true, expanded: true });
+    assert.deepEqual(searchGroup.props.accessibilityState, { disabled: true, expanded: true });
+    assert.equal(hasText(renderer.root, 'Sky Tower'), true);
+
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '전투맵 검색' }).props.onChangeText('');
+    });
+    assert.deepEqual(
+      renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 닫기' }).props.accessibilityState,
+      { expanded: true },
+    );
+    assert.deepEqual(
+      renderer.root.findByProps({ accessibilityLabel: '모험맵 카테고리 열기' }).props.accessibilityState,
+      { expanded: false },
+    );
+  });
+
+  it('indents groups and unselected maps while keeping selected maps flush', async () => {
+    const selected = map('battle_map', 'selected', 'Selected Map');
+    const available = map('battle_map', 'available', 'Available Map');
+    const renderer = await renderSheet({
+      maps: [selected, available],
+      selectedMapIdentities: ['battle_map\u0000selected'],
+    });
+
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 열기' }).props.onPress();
+    });
+    const group = renderer.root.findByProps({ accessibilityLabel: 'Castle 그룹 열기' });
+    await act(async () => { group.props.onPress(); });
+
+    const groupStyle = flattenStyle(group.props.style({ pressed: false }));
+    const availableStyle = flattenStyle(
+      renderer.root.findByProps({ accessibilityLabel: 'Available Map 맵 선택' }).props.style({ pressed: false }),
+    );
+    const selectedStyle = flattenStyle(
+      renderer.root.findByProps({ accessibilityLabel: 'Selected Map 맵 선택 해제' }).props.style({ pressed: false }),
+    );
+    assert.equal(groupStyle.marginLeft, 14);
+    assert.equal(availableStyle.marginLeft, 28);
+    assert.equal(selectedStyle.marginLeft, 0);
   });
 
   it('searches Sky and calls onToggle exactly once while keeping the sheet open', async () => {
@@ -220,7 +291,7 @@ describe('BattleMapPickerSheet', () => {
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투맵 선택' }));
   });
 
-  it('resets the query and expansion state when reopened', async () => {
+  it('resets the query and collapses categories and groups when reopened', async () => {
     const props = sheetProps({ maps: [
       map('battle_map', 'maid-hall', 'Maid Hall'),
       map('adventure_map', 'sky-tower', 'Sky Tower'),
@@ -228,15 +299,30 @@ describe('BattleMapPickerSheet', () => {
     const renderer = await renderElement(React.createElement(BattleMapPickerSheet, props));
 
     await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 열기' }).props.onPress();
+    });
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: 'Castle 그룹 열기' }).props.onPress();
+    });
+    await act(async () => {
       renderer.root.findByProps({ accessibilityLabel: '전투맵 검색' }).props.onChangeText('Sky');
     });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '모험맵 카테고리 검색 결과' }).props.onPress(); });
-    await act(async () => { renderer.update(withSafeArea(React.createElement(BattleMapPickerSheet, { ...props, visible: false }))); });
-    await act(async () => { renderer.update(withSafeArea(React.createElement(BattleMapPickerSheet, props))); });
+    assert.equal(hasText(renderer.root, 'Sky Tower'), true);
+
+    await act(async () => {
+      renderer.update(withSafeArea(React.createElement(BattleMapPickerSheet, { ...props, visible: false })));
+    });
+    await act(async () => {
+      renderer.update(withSafeArea(React.createElement(BattleMapPickerSheet, props)));
+    });
 
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투맵 검색' }).props.value, '');
-    assert.equal(hasText(renderer.root, 'Maid Hall'), true);
-    assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 닫기' }).props.accessibilityState, { expanded: true });
+    assert.deepEqual(
+      renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 열기' }).props.accessibilityState,
+      { expanded: false },
+    );
+    assert.equal(hasText(renderer.root, 'Castle'), false);
+    assert.equal(hasText(renderer.root, 'Maid Hall'), false);
   });
 
   it('renders loading, error retry, and empty states without stale actions', async () => {
@@ -264,6 +350,9 @@ describe('BattleMapPickerSheet', () => {
       map('other_category', 'union', 'Union Map'),
     ] });
 
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '전투맵 검색' }).props.onChangeText('battle_map');
+    });
     assert.equal(hasText(renderer.root, 'Maid Hall'), true);
     const noCode = renderer.root.findByProps({ accessibilityLabel: 'No Code Map 맵 선택' });
     assert.deepEqual(noCode.props.accessibilityState, { disabled: true, selected: false });
