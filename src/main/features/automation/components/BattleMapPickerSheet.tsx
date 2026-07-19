@@ -134,7 +134,7 @@ export function BattleMapPickerSheet({
       );
     }
 
-    return renderMapCard(item.map, item.kind === 'SELECTED_MAP', loading, onToggle);
+    return renderMapCard(item.map, item.kind === 'SELECTED_MAP', loading, onToggle, onClose);
   }
 
   return (
@@ -221,6 +221,7 @@ function renderMapCard(
   selected: boolean,
   loading: boolean,
   onToggle: (map: BattleMapResponse) => void,
+  onClose: () => void,
 ) {
   const selectable = Boolean(map.mapCode?.trim());
   const disabled = loading || !selectable;
@@ -233,7 +234,11 @@ function renderMapCard(
       accessibilityRole="button"
       accessibilityState={{ disabled, selected }}
       disabled={disabled}
-      onPress={() => { if (!disabled) onToggle(map); }}
+      onPress={() => {
+        if (disabled) return;
+        onToggle(map);
+        if (!selected) onClose();
+      }}
       style={({ pressed }) => [
         styles.mapRow,
         selected && styles.mapRowSelected,

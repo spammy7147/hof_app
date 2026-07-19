@@ -174,9 +174,11 @@ describe('BattleMapPickerSheet', () => {
   it('toggles a selected Maid Hall card and leaves the sheet open', async () => {
     const maid = map('battle_map', 'maid-hall', 'Maid Hall');
     const toggled: BattleMapResponse[] = [];
+    let closes = 0;
     const renderer = await renderSheet({
       maps: [maid],
       selectedMapIdentities: ['battle_map\u0000maid-hall'],
+      onClose: () => { closes += 1; },
       onToggle: (item) => { toggled.push(item); },
     });
     const button = renderer.root.findByProps({ accessibilityLabel: 'Maid Hall 맵 선택 해제' });
@@ -186,6 +188,7 @@ describe('BattleMapPickerSheet', () => {
     assert.deepEqual(button.props.accessibilityState, { disabled: false, selected: true });
     button.props.onPress();
     assert.deepEqual(toggled, [maid]);
+    assert.equal(closes, 0);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투맵 선택' }));
   });
 
@@ -271,24 +274,27 @@ describe('BattleMapPickerSheet', () => {
     assert.equal(selectedStyle.marginLeft, 0);
   });
 
-  it('searches Sky and calls onToggle exactly once while keeping the sheet open', async () => {
+  it('auto-expands search and closes after toggling a newly selected map', async () => {
     const skyTower = map('adventure_map', 'sky-tower', 'Sky Tower');
-    const selected: BattleMapResponse[] = [];
+    const events: string[] = [];
     const renderer = await renderSheet({
       maps: [map('battle_map', 'maid-hall', 'Maid Hall'), skyTower],
-      onToggle: (item) => { selected.push(item); },
+      onClose: () => { events.push('close'); },
+      onToggle: (item) => { events.push(`toggle:${item.mapCode}`); },
     });
 
     await act(async () => {
       renderer.root.findByProps({ accessibilityLabel: '전투맵 검색' }).props.onChangeText('Sky');
     });
     assert.equal(hasText(renderer.root, 'Maid Hall'), false);
-    assert.equal(hasText(renderer.root, '모험맵'), true);
+    assert.deepEqual(
+      renderer.root.findByProps({ accessibilityLabel: '모험맵 카테고리 검색 결과' }).props.accessibilityState,
+      { disabled: true, expanded: true },
+    );
     await act(async () => {
       renderer.root.findByProps({ accessibilityLabel: 'Sky Tower 맵 선택' }).props.onPress();
     });
-    assert.deepEqual(selected, [skyTower]);
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투맵 선택' }));
+    assert.deepEqual(events, ['toggle:sky-tower', 'close']);
   });
 
   it('resets the query and collapses categories and groups when reopened', async () => {
