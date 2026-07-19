@@ -100,3 +100,32 @@ Work in small deletion/consolidation batches. After every batch, run the affecte
 - Rewriting production architecture solely to make tests shorter.
 - Removing recent regression tests simply because they are narrowly focused.
 - Introducing snapshots that hide large, hard-to-review output changes.
+
+## Measured Results
+
+### App
+
+- Test files: 49 to 35 (`-14`, `-28.6%`).
+- Declared test cases: 425 to 340 (`-85`, `-20.0%`).
+- Test lines: 10,977 to 9,602 (`-1,375`, `-12.5%`).
+- Full-suite wall time: approximately 11.05 seconds to 6.40 seconds (`-42.1%`).
+- Source-reading test files: 15 to 3. The retained files protect the current captcha retry regression, Metro native-module resolution, and Android push/security configuration.
+- Verification: 340/340 tests passed, TypeScript typecheck passed, and `src/main` has no branch diff.
+
+### Backend
+
+- Test classes: 100 to 91 (`-9`, `-9.0%`).
+- Direct `@Test` declarations: 514 to 493 (`-21`, `-4.1%`).
+- Test lines: 18,337 to 17,760 (`-577`, `-3.1%`).
+- Full suite: passed in 57.66 seconds in the final warm-build verification.
+- New `fastTest` suite: 268 tests passed in 9.20 seconds without starting Spring or JPA contexts.
+- Full-suite XML reported 502 executed cases after consolidation.
+- Verification: full and fast suites passed, and `src/main` has no branch diff.
+
+### Combined
+
+- Test files/classes: 149 to 126 (`-23`, `-15.4%`).
+- Counted test lines: 29,314 to 27,362 (`-1,952`, `-6.7%`).
+- App cases plus backend direct test declarations: 939 to 833 (`-106`, `-11.3%`).
+
+The initial 25% line-reduction target was intentionally not reached. Continuing to that number required deleting or obscuring fixture-backed parsers, persistence and transaction tests, security boundaries, or the recent stale-callback and async-ownership regressions protected by this design. The implementation stopped at the point where further mechanical consolidation reduced diagnostic clarity more than maintenance cost.
