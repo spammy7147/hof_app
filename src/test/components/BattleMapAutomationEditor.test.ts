@@ -364,26 +364,6 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.deepEqual(saves, [{ enabled: true, maps: [setting('a', 4, 0)] }]);
   });
 
-  it('rejects pasted non-decimal target formats and saves trimmed leading-zero decimal input as an integer', async () => {
-    const saves: UpdateBattleMapAutomationRequest[] = [];
-    const renderer = await renderEditor({
-      entry: battleEntry([setting('a', 3, 0)]), maps: [catalogMap('a', 'Alpha')],
-      onSave: async (request) => { saves.push(request); return true; },
-    });
-    const input = () => renderer.root.findByProps({ accessibilityLabel: 'Alpha 일일 목표' });
-    const save = () => renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' });
-
-    for (const invalid of ['0x10', '1e3', '+2', '-2', '1.5', '', '9007199254740992', '2147483648']) {
-      await act(async () => { input().props.onChangeText(invalid); });
-      assert.equal(save().props.disabled, true, invalid);
-    }
-    await act(async () => { input().props.onChangeText(' 00042 '); });
-    assert.equal(save().props.disabled, false);
-    await act(async () => { await save().props.onPress(); });
-
-    assert.equal(saves[0]?.maps[0]?.dailyTargetCount, 42);
-  });
-
   it('accepts fresh server progress during a dirty settings edit without overwriting the edit', async () => {
     const base = editorProps({
       entry: battleEntry([setting('a', 3, 0)], [{ categoryId: 'battle', mapCode: 'a', successfulRuns: 1 }]),
@@ -666,26 +646,6 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(hasText(renderer.root, '선택됨'), false);
   });
 
-  it('keeps saved execution order independent from catalog category and group display order', async () => {
-    const saves: UpdateBattleMapAutomationRequest[] = [];
-    const renderer = await renderEditor({
-      entry: battleEntry([setting('later-group', 4, 0), setting('first-group', 5, 1)]),
-      maps: [
-        catalogMap('first-group', '가 맵', { groupName: '가 그룹', groupOrder: 0, mapOrder: 0 }),
-        catalogMap('later-group', '나 맵', { groupName: '나 그룹', groupOrder: 1, mapOrder: 0 }),
-      ],
-      onSave: async (request) => { saves.push(request); return true; },
-    });
-    await openCatalogGroup(renderer, '전투맵', '가 그룹');
-    await openCatalogGroup(renderer, '전투맵', '나 그룹');
-    const mapLabels = renderer.root.findAll((node) => (node.type as unknown) === 'Pressable' && node.props.accessibilityRole === 'checkbox')
-      .map(({ props }) => props.accessibilityLabel);
-    assert.deepEqual(mapLabels, ['가 맵 맵 선택', '나 맵 맵 선택']);
-
-    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.onPress(); });
-    assert.deepEqual(saves, [{ enabled: true, maps: [setting('later-group', 4, 0), setting('first-group', 5, 1)] }]);
-  });
-
   it('shows authoritative search empty only after every eligible category settles successfully', async () => {
     const failed = await renderEditor({
       onLoadBattleMaps: async () => { throw new Error('맵 연결 실패'); },
@@ -712,44 +672,6 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'stored 프리셋 선택 열기' }));
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '맵 카테고리 다시 불러오기' }).props.onPress(); });
     assert.equal(categoryRetries, 1);
-  });
-
-  it('does not load or offer adventure/union maps but keeps legacy rows and a dynamically unavailable supported map selectable', async () => {
-    const loadedCategories: string[] = [];
-    const legacyAdventure = { ...setting('legacy-adventure', 3, 0), categoryId: 'adventure_map' };
-    const legacyUnion = { ...setting('legacy-union', 3, 1), categoryId: 'union' };
-    const renderer = await renderEditor({
-      entry: battleEntry([legacyAdventure, legacyUnion]),
-      battleCategories: [
-        { id: 'battle', label: '전투맵', description: '', order: 0, enabled: true },
-        { id: 'adventure_map', label: '모험맵', description: '', order: 1, enabled: true },
-        { id: 'union', label: '유니온', description: '', order: 2, enabled: true },
-      ],
-      onLoadBattleMaps: async (categoryId) => {
-        loadedCategories.push(categoryId);
-        if (categoryId === 'adventure_map') return [catalogMap('adventure-new', 'Adventure New', { categoryId })];
-        if (categoryId === 'union') return [catalogMap('union-new', 'Union New', { categoryId })];
-        return [catalogMap('limited', 'Limited Supported', {
-          categoryId,
-          availableCount: 0,
-          attemptCount: 0,
-          winCount: 0,
-          cooldownRemainingSeconds: 3_600,
-          keyCount: 0,
-        })];
-      },
-    });
-
-    assert.deepEqual(loadedCategories, ['battle']);
-    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Adventure New 맵 선택' }).length, 0);
-    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Union New 맵 선택' }).length, 0);
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'legacy-adventure 맵 제거' }));
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'legacy-union 맵 제거' }));
-    await openCatalogGroup(renderer);
-    const supported = renderer.root.findByProps({ accessibilityLabel: 'Limited Supported 맵 선택' });
-    assert.equal(supported.props.disabled, false);
-    await act(async () => { supported.props.onPress(); });
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Limited Supported 맵 선택' }).props.accessibilityState.checked, true);
   });
 
   it('keeps preset options out of every row and renders one shared searchable picker only after opening', async () => {

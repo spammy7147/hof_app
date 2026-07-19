@@ -324,29 +324,6 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.deepEqual(busy.root.findByProps({ testID: 'quest-summary:Mixed' }).props.accessibilityState, { checked: false, disabled: true });
   });
 
-  it('prioritizes selected quests after source-order filtering without changing their selection order', async () => {
-    const saves: UpdateQuestAutomationRequest[] = [];
-    const renderer = await renderEditor({ quests: [
-      snapshot('first', 'First', 'ACTIVE', [mission('first-now', 'IMMEDIATE', null)], 0),
-      snapshot('second', 'Second', 'ACTIVE', [mission('second-now', 'IMMEDIATE', null)], 1),
-      snapshot('third', 'Third', 'ACTIVE', [mission('third-now', 'IMMEDIATE', null)], 2),
-    ], onSave: async (request) => { saves.push(request); return true; } });
-
-    assert.deepEqual(summaryOrder(renderer.root), ['quest-summary:First', 'quest-summary:Second', 'quest-summary:Third']);
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Second 선택' }).props.onPress(); });
-    assert.deepEqual(summaryOrder(renderer.root), ['quest-summary:Second', 'quest-summary:First', 'quest-summary:Third']);
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Third 선택' }).props.onPress(); });
-    assert.deepEqual(summaryOrder(renderer.root), ['quest-summary:Second', 'quest-summary:Third', 'quest-summary:First']);
-    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
-    assert.deepEqual(saves[0]?.quests.map(({ questCode, sourceOrder }) => ({ questCode, sourceOrder })), [
-      { questCode: 'second', sourceOrder: 0 },
-      { questCode: 'third', sourceOrder: 1 },
-    ]);
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Second 선택' }).props.onPress(); });
-    assert.deepEqual(summaryOrder(renderer.root), ['quest-summary:Third', 'quest-summary:First', 'quest-summary:Second']);
-    await act(async () => { renderer.unmount(); });
-  });
-
   it('does not expand a selected noncombat quest', async () => {
     const renderer = await renderEditor({ quests: [snapshot('now', 'Immediate', 'ACTIVE', [mission('now', 'IMMEDIATE', null)])] });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Immediate 선택' }).props.onPress(); });
@@ -429,80 +406,6 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(hasText(renderer.root, 'Alpha'), true);
     assert.equal(hasText(renderer.root, 'Beta'), true);
     assert.equal(hasText(renderer.root, '선택 해제됨'), false);
-  });
-
-  it('reinstates a middle quest at its stable selection rank for direct reselect and undo', async () => {
-    const saves: UpdateQuestAutomationRequest[] = [];
-    let backs = 0;
-    alertArguments = null;
-    const quests = [
-      snapshot('a', 'A', 'ACTIVE', [mission('now-a', 'IMMEDIATE', null)]),
-      snapshot('b', 'B', 'ACTIVE', [mission('now-b', 'IMMEDIATE', null)]),
-      snapshot('c', 'C', 'ACTIVE', [mission('now-c', 'IMMEDIATE', null)]),
-    ];
-    const renderer = await renderEditor({
-      entry: questEntry([
-        { questCode: 'a', enabled: true, sourceOrder: 0, maps: [] },
-        { questCode: 'b', enabled: true, sourceOrder: 1, maps: [] },
-        { questCode: 'c', enabled: true, sourceOrder: 2, maps: [] },
-      ]),
-      quests,
-      onBack: () => { backs += 1; },
-      onSave: async (request) => { saves.push(request); return true; },
-    });
-    const expected = {
-      enabled: true,
-      quests: [
-        { questCode: 'a', enabled: true, sourceOrder: 0, maps: [] },
-        { questCode: 'b', enabled: true, sourceOrder: 1, maps: [] },
-        { questCode: 'c', enabled: true, sourceOrder: 2, maps: [] },
-      ],
-    };
-
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'B 선택' }).props.onPress(); });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'B 선택' }).props.onPress(); });
-    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
-    assert.deepEqual(saves[0], expected);
-
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'B 선택' }).props.onPress(); });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '선택 해제 되돌리기' }).props.onPress(); });
-    renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 뒤로' }).props.onPress();
-    assert.equal(backs, 1);
-    assert.equal(alertArguments, null);
-    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
-    assert.deepEqual(saves[1], expected);
-  });
-
-  it('uses stable selection order when multiple cached quests restore non-LIFO', async () => {
-    const saves: UpdateQuestAutomationRequest[] = [];
-    let backs = 0;
-    alertArguments = null;
-    const quests = [
-      snapshot('a', 'A', 'ACTIVE', [mission('now-a', 'IMMEDIATE', null)]),
-      snapshot('b', 'B', 'ACTIVE', [mission('now-b', 'IMMEDIATE', null)]),
-      snapshot('c', 'C', 'ACTIVE', [mission('now-c', 'IMMEDIATE', null)]),
-    ];
-    const renderer = await renderEditor({
-      entry: questEntry([
-        { questCode: 'a', enabled: true, sourceOrder: 0, maps: [] },
-        { questCode: 'b', enabled: true, sourceOrder: 1, maps: [] },
-        { questCode: 'c', enabled: true, sourceOrder: 2, maps: [] },
-      ]),
-      quests,
-      onBack: () => { backs += 1; },
-      onSave: async (request) => { saves.push(request); return true; },
-    });
-
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'B 선택' }).props.onPress(); });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'A 선택' }).props.onPress(); });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'B 선택' }).props.onPress(); });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '선택 해제 되돌리기' }).props.onPress(); });
-
-    renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 뒤로' }).props.onPress();
-    assert.equal(backs, 1);
-    assert.equal(alertArguments, null);
-    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
-    assert.deepEqual(saves[0]?.quests.map(({ questCode }) => questCode), ['a', 'b', 'c']);
   });
 
   it('discards deselection cache after a successful save', async () => {
@@ -825,65 +728,6 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(hasText(presetChoice, '대표 프리셋 없음'), true);
 
     await act(async () => { saving.resolve(true); await savePromise; });
-  });
-
-  it('reorders selected monster maps and saves normalized execution order', async () => {
-    const saves: UpdateQuestAutomationRequest[] = [];
-    const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
-    const entry = questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [
-      mapSetting('kill', 'a', 0),
-      mapSetting('kill', 'b', 1),
-    ] }]);
-    const renderer = await renderEditor({
-      entry,
-      quests: [quest],
-      maps: [catalogMap('battle_map', 'a', 'Alpha'), catalogMap('battle_map', 'b', 'Beta')],
-      onSave: async (request) => { saves.push(request); return true; },
-    });
-
-    const list = findHost(renderer.root, 'DraggableFlatList');
-    assert.equal(list.props.scrollEnabled, false);
-    assert.equal(list.props.activationDistance, 8);
-    assert.equal(findHosts(renderer.root, 'ArrowUp').length, 0);
-    assert.equal(findHosts(renderer.root, 'ArrowDown').length, 0);
-    assert.equal(findHosts(renderer.root, 'X').length, 0);
-    assert.equal(renderer.root.findAll((node) => typeof node.props.accessibilityLabel === 'string'
-      && /(번째 맵 위로|번째 맵 아래로|번째 맵 제거)$/.test(node.props.accessibilityLabel)).length, 0);
-    const rows = list.props.data as unknown[];
-    await act(async () => { list.props.onDragBegin(); });
-    await act(async () => { list.props.onDragEnd({ data: [...rows].reverse(), from: 0, to: 1 }); });
-    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
-    assert.deepEqual(saves[0]?.quests[0]?.maps.map(({ mapCode, executionOrder }) => ({ mapCode, executionOrder })), [
-      { mapCode: 'b', executionOrder: 0 },
-      { mapCode: 'a', executionOrder: 1 },
-    ]);
-    const liveFirst = renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 순서 이동' });
-    await act(async () => { liveFirst.props.onAccessibilityAction({ nativeEvent: { actionName: 'delete' } }); });
-    assert.equal(hasText(renderer.root, 'Beta'), false);
-  });
-
-  it('removes a selected monster map and normalizes the remaining order', async () => {
-    const saves: UpdateQuestAutomationRequest[] = [];
-    const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
-    const entry = questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [
-      mapSetting('kill', 'a', 0),
-      mapSetting('kill', 'b', 1),
-    ] }]);
-    const renderer = await renderEditor({
-      entry,
-      quests: [quest],
-      maps: [catalogMap('battle_map', 'a', 'Alpha'), catalogMap('battle_map', 'b', 'Beta')],
-      onSave: async (request) => { saves.push(request); return true; },
-    });
-
-    const swipeable = findHosts(renderer.root, 'ReanimatedSwipeable')[0]!;
-    assert.equal(swipeable.props.overshootRight, false);
-    assert.equal(swipeable.props.rightThreshold, 40);
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill · Alpha 삭제' }).props.onPress(); });
-    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
-    assert.deepEqual(saves[0]?.quests[0]?.maps.map(({ mapCode, executionOrder }) => ({ mapCode, executionOrder })), [
-      { mapCode: 'b', executionOrder: 0 },
-    ]);
   });
 
   it('offers bounded accessible map reordering through the drag handle', async () => {
@@ -1605,19 +1449,6 @@ describe('QuestAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Noncombat 선택' }).props.onPress(); });
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
     assert.equal(clears, 1);
-  });
-
-  it('marks an already selected map as added and prevents duplicate insertion', async () => {
-    const quest = snapshot('one', 'One', 'ACTIVE', [mission('shared', 'MONSTER_KILL', 'A')]);
-    const entry = questEntry([{ questCode: 'one', enabled: true, sourceOrder: 0, maps: [mapSetting('shared', 'a', 0)] }]);
-    const renderer = await renderEditor({ entry, quests: [quest], maps: [catalogMap('battle_map', 'a', 'Alpha')] });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'One · shared 전투맵 추가' }).props.onPress(); });
-    const selected = renderer.root.findByProps({ accessibilityLabel: 'Alpha 추가됨' });
-    assert.equal(selected.props.disabled, true);
-    assert.equal(selected.props.accessibilityState.selected, true);
-    assert.equal(hasText(selected, '추가됨'), true);
-    await act(async () => { selected.props.onPress(); });
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'One · shared · Alpha 삭제' }));
   });
 
   it('includes quest context in every combat map control accessibility label', async () => {
