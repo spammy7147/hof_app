@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -119,82 +120,88 @@ export function CaptchaChallengeModal({
             )}
           </View>
 
-          {isLoading ? (
-            <View style={styles.statePanel}>
-              <ActivityIndicator color={theme.colors.accentGreen} />
-              <Text style={styles.mutedText}>캡차 확인 중</Text>
-            </View>
-          ) : null}
+          <ScrollView
+            contentContainerStyle={styles.modalContent}
+            keyboardShouldPersistTaps="handled"
+            style={styles.modalScroll}
+          >
+            {isLoading ? (
+              <View style={styles.statePanel}>
+                <ActivityIndicator color={theme.colors.accentGreen} />
+                <Text style={styles.mutedText}>캡차 확인 중</Text>
+              </View>
+            ) : null}
 
-          {!isLoading && captcha ? (
-            <View style={styles.body}>
-              <Text style={styles.promptText}>{captcha.prompt}</Text>
-              {imageSource ? (
-                <>
-                  <View style={styles.imageFrame}>
-                    <Image
-                      cachePolicy="none"
-                      contentFit="contain"
-                      onError={handleImageError}
-                      onLoad={() => setImageErrorMessage(null)}
-                      source={imageSource}
-                      style={styles.captchaImage}
-                    />
-                  </View>
-                  {imageErrorMessage ? <Text style={styles.errorText}>{imageErrorMessage}</Text> : null}
-                </>
-              ) : (
-                <Text style={styles.mutedText}>캡차 이미지 주소가 없습니다.</Text>
-              )}
-              <TextInput
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!isSubmitting}
-                onChangeText={setAnswer}
-                onSubmitEditing={() => {
-                  void submit();
-                }}
-                placeholder="보안문자 입력"
-                placeholderTextColor={theme.colors.textMuted}
-                returnKeyType="done"
-                style={styles.input}
-                value={answer}
-              />
-              <View style={styles.actionRow}>
+            {!isLoading && captcha ? (
+              <View style={styles.body}>
+                <Text style={styles.promptText}>{captcha.prompt}</Text>
+                {imageSource ? (
+                  <>
+                    <View style={styles.imageFrame}>
+                      <Image
+                        cachePolicy="none"
+                        contentFit="contain"
+                        onError={handleImageError}
+                        onLoad={() => setImageErrorMessage(null)}
+                        source={imageSource}
+                        style={styles.captchaImage}
+                      />
+                    </View>
+                    {imageErrorMessage ? <Text style={styles.errorText}>{imageErrorMessage}</Text> : null}
+                  </>
+                ) : (
+                  <Text style={styles.mutedText}>캡차 이미지 주소가 없습니다.</Text>
+                )}
+                <TextInput
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!isSubmitting}
+                  onChangeText={setAnswer}
+                  onSubmitEditing={() => {
+                    void submit();
+                  }}
+                  placeholder="보안문자 입력"
+                  placeholderTextColor={theme.colors.textMuted}
+                  returnKeyType="done"
+                  style={styles.input}
+                  value={answer}
+                />
+                <View style={styles.actionRow}>
+                  <PrimaryButton
+                    label="새로고침"
+                    variant="secondary"
+                    loading={isLoading}
+                    onPress={onRefresh}
+                    style={styles.actionButton}
+                  />
+                  <PrimaryButton
+                    label="제출"
+                    loading={isSubmitting}
+                    disabled={trimmedAnswer.length === 0}
+                    onPress={() => {
+                      void submit();
+                    }}
+                    style={styles.actionButton}
+                  />
+                </View>
+              </View>
+            ) : null}
+
+            {!isLoading && !captcha ? (
+              <View style={styles.statePanel}>
+                <Text style={styles.mutedText}>{message ?? fallbackMessage}</Text>
                 <PrimaryButton
-                  label="새로고침"
+                  label="다시 확인"
                   variant="secondary"
                   loading={isLoading}
                   onPress={onRefresh}
-                  style={styles.actionButton}
-                />
-                <PrimaryButton
-                  label="제출"
-                  loading={isSubmitting}
-                  disabled={trimmedAnswer.length === 0}
-                  onPress={() => {
-                    void submit();
-                  }}
-                  style={styles.actionButton}
                 />
               </View>
-            </View>
-          ) : null}
+            ) : null}
 
-          {!isLoading && !captcha ? (
-            <View style={styles.statePanel}>
-              <Text style={styles.mutedText}>{message ?? fallbackMessage}</Text>
-              <PrimaryButton
-                label="다시 확인"
-                variant="secondary"
-                loading={isLoading}
-                onPress={onRefresh}
-              />
-            </View>
-          ) : null}
-
-          {message && captcha ? <Text style={styles.messageText}>{message}</Text> : null}
-          {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+            {message && captcha ? <Text style={styles.messageText}>{message}</Text> : null}
+            {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+          </ScrollView>
         </View>
       </View>
     </Modal>
@@ -219,6 +226,7 @@ const styles = StyleSheet.create({
   modalCard: {
     width: '100%',
     maxWidth: 420,
+    maxHeight: '90%',
     gap: theme.spacing.md,
     borderWidth: 1,
     borderColor: theme.colors.borderStrong,
@@ -226,6 +234,12 @@ const styles = StyleSheet.create({
     borderCurve: 'continuous',
     backgroundColor: theme.colors.surface,
     padding: theme.spacing.md,
+  },
+  modalScroll: {
+    flexShrink: 1,
+  },
+  modalContent: {
+    gap: theme.spacing.md,
   },
   modalHeader: {
     minHeight: 38,
