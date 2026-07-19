@@ -328,6 +328,7 @@ function map(categoryId: string, mapCode: string | null, name: string): BattleMa
     winCount: null,
     cooldownRemainingText: null,
     cooldownRemainingSeconds: null,
+    keyMode: mapCode == null ? 'UNKNOWN' : 'NOT_REQUIRED',
     keyCount: null,
     requiredTime: null,
     supportsThreeBattles: false,

@@ -22,9 +22,9 @@ describe('adventure map automation domain', () => {
   it('describes cooldown, daily complete, missing key, runnable, and unlimited repeat states', () => {
     assert.equal(describeAdventureMapState(map('cooldown', { cooldownRemainingSeconds: 90, cooldownRemainingText: '1분 30초' })).label, '쿨다운 1분 30초');
     assert.equal(describeAdventureMapState(map('daily', { attemptCount: 0 })).label, '오늘 횟수 완료');
-    assert.equal(describeAdventureMapState(map('key', { keyCount: 0 })).label, '열쇠 부족');
-    assert.equal(describeAdventureMapState(map('ready', { keyCount: 2, attemptCount: 3 })).label, '실행 가능');
-    assert.equal(describeAdventureMapState(map('unlimited')).label, '횟수 제한 없음 · 반복 실행');
+    assert.equal(describeAdventureMapState(map('key', { keyMode: 'LIMITED', keyCount: 0 })).label, '열쇠 부족');
+    assert.equal(describeAdventureMapState(map('ready', { keyMode: 'LIMITED', keyCount: 2, attemptCount: 3 })).label, '실행 가능');
+    assert.equal(describeAdventureMapState(map('unlimited', { keyMode: 'UNLIMITED' })).label, '횟수 제한 없음 · 반복 실행');
     assert.equal(describeAdventureMapState(map('disabled', { enabled: false })).label, '현재 실행 불가');
   });
 
@@ -77,6 +77,7 @@ describe('adventure map automation domain', () => {
       winCount: 1,
       cooldownRemainingSeconds: 90,
       cooldownRemainingText: '1분 30초',
+      keyMode: 'LIMITED',
       keyCount: 0,
     })).map(({ label }) => label), [
       '쿨다운 · 1분 30초',
@@ -127,6 +128,7 @@ function map(mapCode: string, overrides: Partial<BattleMapResponse> = {}): Battl
     winCount: null,
     cooldownRemainingText: null,
     cooldownRemainingSeconds: null,
+    keyMode: 'NOT_REQUIRED',
     keyCount: null,
     requiredTime: null,
     supportsThreeBattles: false,

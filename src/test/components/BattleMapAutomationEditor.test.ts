@@ -77,7 +77,7 @@ moduleWithLoader._load = originalLoad;
 describe('BattleMapAutomationEditor mounted behavior', () => {
   it('renders accessible catalog rows and changes map selection through the row callback', async () => {
     const catalogCategory = { id: 'battle', label: '전투맵', description: '전투할 맵을 고르세요.', order: 0, enabled: true };
-    const catalogMapRow = catalogMap('mansion', "Noble's Mansion- 저택 서관(놀이방)", { keyCount: 8, requiredTime: 10 });
+    const catalogMapRow = catalogMap('mansion', "Noble's Mansion- 저택 서관(놀이방)", { keyMode: 'LIMITED', keyCount: 8, requiredTime: 10 });
     const catalogGroup = { key: 'battle:0:저택 서관', name: '저택 서관', groupOrder: 0, recommendedLevel: '50-60', maps: [catalogMapRow] };
     let mapPresses = 0;
     let disabledPresses = 0;
@@ -735,6 +735,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
           attemptCount: 0,
           winCount: 0,
           cooldownRemainingSeconds: 3_600,
+          keyMode: 'LIMITED',
           keyCount: 0,
         })];
       },
@@ -1000,7 +1001,7 @@ function setting(mapCode: string, dailyTargetCount: number, executionOrder: numb
   return { categoryId: 'battle', mapCode, dailyTargetCount, executionOrder, presetMode: 'PRIMARY' as const, partyPresetId: null };
 }
 function catalogMap(mapCode: string, name: string, overrides: Partial<BattleMapResponse> = {}): BattleMapResponse {
-  return { categoryId: 'battle', mapCode, name, groupName: '기타', groupOrder: 0, mapOrder: 0, recommendedLevel: null, availableCount: null, attemptCount: null, winCount: null, cooldownRemainingText: null, cooldownRemainingSeconds: null, keyCount: null, requiredTime: null, enabled: true, resolved: true, iconUrl: null, rawHref: '', ...overrides, supportsThreeBattles: overrides.supportsThreeBattles ?? false };
+  return { categoryId: 'battle', mapCode, name, groupName: '기타', groupOrder: 0, mapOrder: 0, recommendedLevel: null, availableCount: null, attemptCount: null, winCount: null, cooldownRemainingText: null, cooldownRemainingSeconds: null, keyMode: 'NOT_REQUIRED', keyCount: null, requiredTime: null, enabled: true, resolved: true, iconUrl: null, rawHref: '', ...overrides, supportsThreeBattles: overrides.supportsThreeBattles ?? false };
 }
 async function openCatalogGroup(renderer: ReactTestRenderer, categoryLabel = '전투맵', groupName = '기타'): Promise<void> {
   const category = renderer.root.findAllByProps({ accessibilityLabel: `${categoryLabel} 카테고리 열기` })[0];

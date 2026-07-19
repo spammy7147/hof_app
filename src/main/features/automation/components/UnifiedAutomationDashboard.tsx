@@ -57,8 +57,7 @@ export function UnifiedAutomationDashboard({
                 : '자동화를 안전하게 계속할 수 없어 중지되었습니다.'}
             </Text>
             {runtime.lastError ? <Text style={styles.stopReason}>{runtime.lastError}</Text> : null}
-            {current ? <Text style={styles.currentTitle}>{automationTypeLabel(current.source)} · {current.title}</Text> : null}
-            {current?.battleTotal != null ? <Text style={styles.battleDetail}>전투 {current.battleCurrent ?? 1}/{current.battleTotal}</Text> : null}
+            {current ? <Text style={styles.currentTitle}>{automationTypeLabel(current.source)} · {current.actionLabel}</Text> : null}
           </>
         ) : waitingCaptcha ? (
           <>
@@ -73,11 +72,8 @@ export function UnifiedAutomationDashboard({
           <>
             <Text style={styles.currentLabel}>현재 작업</Text>
             <Text style={styles.currentTitle}>
-              {current ? `${automationTypeLabel(current.source)} · ${current.title}` : '다음 실행 작업을 확인하고 있어요'}
+              {current ? `${automationTypeLabel(current.source)} · ${current.actionLabel}` : '다음 실행 작업을 확인하고 있어요'}
             </Text>
-            {current?.battleTotal != null ? (
-              <Text style={styles.battleDetail}>전투 {current.battleCurrent ?? 1}/{current.battleTotal}</Text>
-            ) : null}
           </>
         )}
 

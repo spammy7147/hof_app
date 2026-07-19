@@ -60,7 +60,7 @@ describe('AdventureMapAutomationEditor', () => {
     const renderer = await renderEditor({
       maps: [
         map('cooldown', '쿨다운 맵', { cooldownRemainingSeconds: 60, cooldownRemainingText: '1분', enabled: false }),
-        map('free', '무제한 맵'),
+        map('free', '무제한 맵', { keyMode: 'UNLIMITED' }),
       ],
       onSave: async (request) => { saves.push(request); return true; },
     });
@@ -577,6 +577,7 @@ describe('AdventureMapAutomationEditor', () => {
       first.resolve([map('stored', '저장된 맵', {
         cooldownRemainingSeconds: 60,
         cooldownRemainingText: '1분',
+        keyMode: 'LIMITED',
         keyCount: 2,
         attemptCount: 3,
       })]);
@@ -671,6 +672,7 @@ describe('AdventureMapAutomationEditor', () => {
       maps: [map('combined', '복합 제한 맵', {
         cooldownRemainingSeconds: 90,
         cooldownRemainingText: '1분 30초',
+        keyMode: 'LIMITED',
         keyCount: 0,
         availableCount: 4,
         attemptCount: 2,
@@ -754,7 +756,7 @@ function entry(adventureMaps: TypedAutomationEntryResponse['adventureMaps'] = []
   return { id: 15, type: 'ADVENTURE_MAP', enabled: true, priority: 2, ready: true, warnings: [], quests: [], battleMaps: [], battleMapProgress: [], adventureMaps };
 }
 function map(mapCode: string, name: string, overrides: Partial<BattleMapResponse> = {}): BattleMapResponse {
-  return { categoryId: 'adventure_map', mapCode, name, groupName: null, groupOrder: 0, mapOrder: 0, recommendedLevel: null, availableCount: null, attemptCount: null, winCount: null, cooldownRemainingText: null, cooldownRemainingSeconds: null, keyCount: null, requiredTime: null, supportsThreeBattles: false, enabled: true, resolved: true, iconUrl: null, rawHref: '', ...overrides };
+  return { categoryId: 'adventure_map', mapCode, name, groupName: null, groupOrder: 0, mapOrder: 0, recommendedLevel: null, availableCount: null, attemptCount: null, winCount: null, cooldownRemainingText: null, cooldownRemainingSeconds: null, keyMode: 'NOT_REQUIRED', keyCount: null, requiredTime: null, supportsThreeBattles: false, enabled: true, resolved: true, iconUrl: null, rawHref: '', ...overrides };
 }
 function setting(
   mapCode: string,

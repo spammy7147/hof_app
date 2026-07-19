@@ -44,7 +44,7 @@ describe('battle map automation catalog rows', () => {
       catalog: [
         map('battle_map', 'g1', '약한 고블린', '고블린 부락', 0, 0),
         map('scenario_ocean', 's1', '폭풍 항로', '대해', 0, 0),
-        map('raid', 'unresolved', '숨김', '레이드', 0, 0, { resolved: false, mapCode: null }),
+        map('raid', 'unresolved', '숨김', '레이드', 0, 0, { resolved: false, mapCode: null, keyMode: 'UNKNOWN' }),
         map('adventure_map', 'daily', '폭풍 모험', '모험', 0, 0),
         map('union', 'union-map', '폭풍 유니온', '유니온', 0, 0),
       ],
@@ -264,7 +264,7 @@ function map(
     categoryId, mapCode, name, groupName, groupOrder, mapOrder,
     recommendedLevel: '1-20', availableCount: null, attemptCount: null,
     winCount: null, cooldownRemainingText: null, cooldownRemainingSeconds: null,
-    keyCount: null, requiredTime: 10, enabled: true, resolved: true,
+    keyMode: 'NOT_REQUIRED', keyCount: null, requiredTime: 10, enabled: true, resolved: true,
     supportsThreeBattles: false, iconUrl: null, rawHref: '', ...overrides,
   };
 }

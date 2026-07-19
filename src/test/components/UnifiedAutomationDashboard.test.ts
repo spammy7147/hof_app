@@ -95,7 +95,17 @@ function networkStopped(): TypedAutomationAggregateResponse {
       nextAttemptAt: null,
       warnings: ['missing', 'another'],
       lastError: 'connection refused',
-      currentAction: { source: 'BATTLE_MAP', kind: 'BATTLE_MAP', title: 'Castle202', battleCurrent: 1, battleTotal: 3 },
+      currentAction: {
+        source: 'BATTLE_MAP',
+        kind: 'BATTLE_MAP',
+        actionLabel: '전투맵 실행',
+        questName: null,
+        missionLabel: null,
+        missionCurrent: null,
+        missionRequired: null,
+        mapName: 'Castle202',
+        battleCount: 3,
+      },
       dailyRefresh: { status: 'COMPLETE', refreshDate: '2026-07-16', refreshedAt: '2026-07-15T15:03:00Z' },
     },
   };
