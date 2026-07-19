@@ -2,7 +2,6 @@ import { Platform } from 'react-native';
 
 import { normalizeHofAssetUrl } from '../domain/hofAssets';
 import type {
-  AutomationProfileResponse,
   BattleCategoryResponse,
   BattleLogResponse,
   BattleMapResponse,
@@ -13,7 +12,6 @@ import type {
   CharacterSyncEventType,
   CharacterSyncJobResponse,
   CreateAutomationEntryRequest,
-  CreateAutomationProfileRequest,
   CreatePartyPresetRequest,
   HofCharacter,
   HofCharacterDetail,
@@ -30,7 +28,6 @@ import type {
   UnifiedAutomationAction,
   TypedAutomationAggregateResponse,
   UpdateAdventureMapAutomationRequest,
-  UpdateAutomationProfileRequest,
   UpdateBattleMapAutomationRequest,
   UpdatePartyPresetRequest,
   UpdateQuestAutomationRequest,
@@ -286,47 +283,6 @@ export class BackendApiClient {
     return this.request('/api/push/android/targets', {
       method: 'POST',
       body: JSON.stringify(request),
-    });
-  }
-
-  /**
-   * 홈 화면 자동전투 카드 목록을 조회한다.
-   */
-  listAutomationProfiles(): Promise<AutomationProfileResponse[]> {
-    return this.request('/api/automation/profiles');
-  }
-
-  /**
-   * 새 자동전투 카드를 저장한다.
-   */
-  createAutomationProfile(
-    request: CreateAutomationProfileRequest,
-  ): Promise<AutomationProfileResponse> {
-    return this.request('/api/automation/profiles', {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
-  }
-
-  /**
-   * 기존 자동전투 카드의 이름, 모드, 맵 설정을 수정한다.
-   */
-  updateAutomationProfile(
-    profileId: number,
-    request: UpdateAutomationProfileRequest,
-  ): Promise<AutomationProfileResponse> {
-    return this.request(`/api/automation/profiles/${profileId}`, {
-      method: 'PATCH',
-      body: JSON.stringify(request),
-    });
-  }
-
-  /**
-   * 자동전투 카드를 삭제한다.
-   */
-  deleteAutomationProfile(profileId: number): Promise<null> {
-    return this.request(`/api/automation/profiles/${profileId}`, {
-      method: 'DELETE',
     });
   }
 

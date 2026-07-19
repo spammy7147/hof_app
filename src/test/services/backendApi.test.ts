@@ -359,65 +359,6 @@ describe('BackendApiClient', () => {
     assert.equal(job.characters[0]?.imageUrl, 'http://sic.zerosic.com/ZeroHOF/image/char/sknight02.gif');
   });
 
-  it('uses automation profile endpoints for reusable home cards', async () => {
-    const { BackendApiClient } = await loadBackendApi();
-    const requests: CapturedRequest[] = [];
-    mockFetchWithCapture(
-      [
-        {
-          id: 4,
-          accountId: 1,
-          name: '새 자동전투',
-          mode: 'TIME_BURN',
-          maps: [],
-          enabled: true,
-          createdAt: '2026-07-10T00:00:00Z',
-          updatedAt: '2026-07-10T00:00:00Z',
-        },
-      ],
-      requests,
-    );
-    const client = new BackendApiClient('http://backend.test');
-
-    const profiles = await client.listAutomationProfiles();
-
-    assert.equal(profiles[0]?.name, '새 자동전투');
-    assert.equal(requests[0]?.url, 'http://backend.test/api/automation/profiles');
-
-    mockFetchWithCapture(profiles[0], requests);
-    await client.createAutomationProfile({
-      name: '새 자동전투',
-      mode: 'TIME_BURN',
-      maps: [],
-    });
-
-    assert.equal(requests[1]?.url, 'http://backend.test/api/automation/profiles');
-    assert.equal(requests[1]?.init.method, 'POST');
-    assert.equal(requests[1]?.init.body, '{"name":"새 자동전투","mode":"TIME_BURN","maps":[]}');
-
-    mockFetchWithCapture({ ...profiles[0], name: '고급 던전' }, requests);
-    await client.updateAutomationProfile(4, {
-      name: '고급 던전',
-      mode: 'LIMITED_DUNGEON',
-      maps: [
-        {
-          categoryId: 'battle_map',
-          mapCode: 'snow22',
-          partyPresetId: 7,
-          executionOrder: 0,
-        },
-      ],
-      enabled: true,
-    });
-
-    assert.equal(requests[2]?.url, 'http://backend.test/api/automation/profiles/4');
-    assert.equal(requests[2]?.init.method, 'PATCH');
-    assert.equal(
-      requests[2]?.init.body,
-      '{"name":"고급 던전","mode":"LIMITED_DUNGEON","maps":[{"categoryId":"battle_map","mapCode":"snow22","partyPresetId":7,"executionOrder":0}],"enabled":true}',
-    );
-  });
-
   it('uses the exact typed automation aggregate, settings, lifecycle, and quest endpoints', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const requests: CapturedRequest[] = [];
