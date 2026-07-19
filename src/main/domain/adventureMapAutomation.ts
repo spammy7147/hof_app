@@ -204,13 +204,18 @@ export function describeAdventureMapState(map: BattleMapResponse): AdventureMapS
   if ([map.availableCount, map.attemptCount, map.winCount].some((value) => value != null && value <= 0)) {
     return { kind: 'DAILY_COMPLETE', label: '오늘 횟수 완료', detail: '다음 한국 날짜 초기화 전까지 건너뜁니다.' };
   }
-  if (map.keyCount != null && map.keyCount <= 0) {
+  if (map.keyMode === 'LIMITED' && (map.keyCount == null || map.keyCount <= 0)) {
     return { kind: 'MISSING_KEY', label: '열쇠 부족', detail: '열쇠를 확보할 때까지 건너뜁니다.' };
   }
   if (!map.resolved || !map.enabled) {
     return { kind: 'UNAVAILABLE', label: '현재 실행 불가', detail: '상태가 바뀌면 자동으로 다시 확인합니다.' };
   }
-  const limits = [map.availableCount, map.attemptCount, map.winCount, map.keyCount];
+  const limits = [
+    map.availableCount,
+    map.attemptCount,
+    map.winCount,
+    map.keyMode === 'LIMITED' ? map.keyCount : null,
+  ];
   if (limits.every((value) => value == null)) {
     return { kind: 'UNLIMITED', label: '횟수 제한 없음 · 반복 실행', detail: null };
   }
@@ -233,8 +238,11 @@ export function describeAdventureMapConstraints(
   }
   if (map.keyMode === 'UNLIMITED') {
     constraints.push({ key: 'KEY', label: '영구 키' });
-  } else if (map.keyMode === 'LIMITED' && map.keyCount != null) {
-    constraints.push({ key: 'KEY', label: `키 ${map.keyCount.toLocaleString('ko-KR')}개` });
+  } else if (map.keyMode === 'LIMITED') {
+    constraints.push({
+      key: 'KEY',
+      label: map.keyCount == null ? '키 상태 미확인' : `키 ${map.keyCount.toLocaleString('ko-KR')}개`,
+    });
   } else if (map.keyMode === 'UNKNOWN') {
     constraints.push({ key: 'KEY', label: '키 상태 미확인' });
   }

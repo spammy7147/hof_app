@@ -28,6 +28,25 @@ describe('adventure map automation domain', () => {
     assert.equal(describeAdventureMapState(map('disabled', { enabled: false })).label, '현재 실행 불가');
   });
 
+  it('trusts unlimited key mode over a stray zero key count', () => {
+    const unlimited = map('unlimited-stray-count', { keyMode: 'UNLIMITED', keyCount: 0 });
+
+    assert.notEqual(describeAdventureMapState(unlimited).kind, 'MISSING_KEY');
+    assert.deepEqual(describeAdventureMapConstraints(unlimited), [{ key: 'KEY', label: '영구 키' }]);
+  });
+
+  it('treats a limited key with an unknown count as unavailable', () => {
+    const limited = map('limited-unknown-count', { keyMode: 'LIMITED', keyCount: null });
+
+    assert.equal(describeAdventureMapState(limited).kind, 'MISSING_KEY');
+  });
+
+  it('describes a limited key with an unknown count as unobserved', () => {
+    const limited = map('limited-unknown-count', { keyMode: 'LIMITED', keyCount: null });
+
+    assert.deepEqual(describeAdventureMapConstraints(limited), [{ key: 'KEY', label: '키 상태 미확인' }]);
+  });
+
   it('keeps unavailable maps selectable, ordered, and serializes exact preset modes', () => {
     const unavailable = map('later', { availableCount: 0, enabled: false });
     let draft = buildAdventureMapAutomationDraft(entry(), [unavailable, map('always')]);
