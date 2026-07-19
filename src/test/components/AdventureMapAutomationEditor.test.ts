@@ -187,7 +187,8 @@ describe('AdventureMapAutomationEditor', () => {
     assert.deepEqual(late.props.accessibilityState, { checked: false, disabled: false });
     assert.equal(late.findAll((node) => ['Checkbox', 'Square', 'CheckSquare', 'Image'].includes(String(node.type))).length, 0);
     assert.equal(hasText(late, '횟수 제한 없음 · 반복 실행'), true);
-    assert.equal(hasText(late, '40-60 · 앞 순서에 있으면 계속 반복될 수 있습니다.'), true);
+    assert.equal(hasText(late, '40-60'), true);
+    assert.equal(hasText(late, '앞 순서에 있으면 계속 반복될 수 있습니다.'), false);
 
     await act(async () => { late.props.onPress(); });
     late = renderer.root.findByProps({ accessibilityLabel: '후순위 맵 모험맵 선택' });
@@ -584,7 +585,7 @@ describe('AdventureMapAutomationEditor', () => {
       await first.promise;
     });
     assert.equal(hasText(renderer.root, '쿨다운 1분'), true);
-    assert.equal(hasText(renderer.root, '열쇠 · 2개'), true);
+    assert.equal(hasText(renderer.root, '키 2개'), true);
 
     await act(async () => {
       renderer.update(React.createElement(AdventureMapAutomationEditor, {
@@ -599,8 +600,7 @@ describe('AdventureMapAutomationEditor', () => {
     });
 
     assert.equal(hasText(renderer.root, '현재 상태 확인 불가'), true);
-    assert.equal(hasText(renderer.root, '쿨다운 · 미확인'), true);
-    assert.equal(hasText(renderer.root, '열쇠 · 미확인'), true);
+    assert.equal(hasText(renderer.root, '상태 미확인'), true);
     assert.equal(hasText(renderer.root, '쿨다운 1분'), false);
   });
 
@@ -630,7 +630,7 @@ describe('AdventureMapAutomationEditor', () => {
     });
 
     assert.equal(hasText(renderer.root, '쿨다운 1분'), true);
-    assert.equal(hasText(renderer.root, '가능 횟수 · 2회'), true);
+    assert.equal(hasText(renderer.root, '가능 횟수 2회'), true);
   });
 
   it('keeps mutations disabled while categories are still loading and does not finalize a missing category', async () => {
@@ -684,11 +684,11 @@ describe('AdventureMapAutomationEditor', () => {
     assert.equal(hasText(renderer.root, '쿨다운이 끝난 뒤 자동으로 다시 확인합니다.'), true);
 
     for (const label of [
-      '쿨다운 · 1분 30초',
-      '열쇠 · 0개',
-      '가능 횟수 · 4회',
-      '도전 잔여 · 2회',
-      '승리 잔여 · 1회',
+      '쿨다운 1분 30초',
+      '키 0개',
+      '가능 횟수 4회',
+      '도전 잔여 2회',
+      '승리 잔여 1회',
     ]) {
       assert.equal(hasText(renderer.root, label), true);
     }
