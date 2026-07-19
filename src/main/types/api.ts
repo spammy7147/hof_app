@@ -167,39 +167,6 @@ export type SubmitCaptchaAnswerRequest = {
   answer: string;
 };
 
-export type AutomationProfileMode = 'TIME_BURN' | 'BASIC_ADVENTURE' | 'LIMITED_DUNGEON';
-
-export type AutomationProfileMap = {
-  categoryId: string;
-  mapCode: string;
-  partyPresetId: number | null;
-  executionOrder: number;
-};
-
-export type CreateAutomationProfileRequest = {
-  name: string;
-  mode: AutomationProfileMode;
-  maps: AutomationProfileMap[];
-};
-
-export type UpdateAutomationProfileRequest = {
-  name: string;
-  mode: AutomationProfileMode;
-  maps: AutomationProfileMap[];
-  enabled: boolean;
-};
-
-export type AutomationProfileResponse = {
-  id: number;
-  accountId: number;
-  name: string;
-  mode: AutomationProfileMode;
-  maps: AutomationProfileMap[];
-  enabled: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
-
 /** 저장 가능한 자동화는 백엔드가 소유하는 세 가지 singleton 유형으로 제한된다. */
 export type AutomationType = 'QUEST' | 'BATTLE_MAP' | 'ADVENTURE_MAP';
 
