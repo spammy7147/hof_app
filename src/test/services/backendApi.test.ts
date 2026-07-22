@@ -51,6 +51,27 @@ describe('BackendApiClient', () => {
     assert.equal(normalizeBackendBaseUrl('http://10.0.2.2:8080/', false), 'http://10.0.2.2:8080');
   });
 
+  it('uses the public HOF API as the production default', async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalConfiguredUrl = process.env.EXPO_PUBLIC_HOF_BACKEND_URL;
+    process.env.NODE_ENV = 'production';
+    delete process.env.EXPO_PUBLIC_HOF_BACKEND_URL;
+
+    try {
+      const { BackendApiClient } = await loadBackendApi();
+      const client = new BackendApiClient(undefined, memoryTokenStorage());
+
+      assert.equal(client.baseUrl, 'https://api.hof.spammy.app');
+    } finally {
+      process.env.NODE_ENV = originalNodeEnv;
+      if (originalConfiguredUrl === undefined) {
+        delete process.env.EXPO_PUBLIC_HOF_BACKEND_URL;
+      } else {
+        process.env.EXPO_PUBLIC_HOF_BACKEND_URL = originalConfiguredUrl;
+      }
+    }
+  });
+
   it('stores only the native refresh token and sends the access token as Bearer authorization', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const storage = memoryTokenStorage();

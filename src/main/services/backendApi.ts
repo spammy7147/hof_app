@@ -563,11 +563,13 @@ const CHARACTER_SYNC_EVENT_TYPES: CharacterSyncEventType[] = [
 /**
  * 앱이 호출할 백엔드 기본 주소를 결정한다.
  *
- * 환경변수 EXPO_PUBLIC_HOF_BACKEND_URL이 있으면 우선 사용하고, 없으면 Android 에뮬레이터와 로컬 실행 환경의 기본 주소를 나눈다.
+ * 환경변수 EXPO_PUBLIC_HOF_BACKEND_URL이 있으면 우선 사용하고, 운영 빌드는 공개 API를 사용한다.
+ * 개발 빌드는 Android 에뮬레이터와 로컬 실행 환경의 기본 주소를 나눈다.
  */
 function resolveBackendBaseUrl(): string {
   const configuredUrl = process.env.EXPO_PUBLIC_HOF_BACKEND_URL?.trim();
   if (configuredUrl) return configuredUrl;
+  if (process.env.NODE_ENV === 'production') return 'https://api.hof.spammy.app';
 
   return Platform.OS === 'android' ? 'http://10.0.2.2:8080' : 'http://localhost:8080';
 }
