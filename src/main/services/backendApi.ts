@@ -569,7 +569,7 @@ const CHARACTER_SYNC_EVENT_TYPES: CharacterSyncEventType[] = [
 function resolveBackendBaseUrl(): string {
   const configuredUrl = process.env.EXPO_PUBLIC_HOF_BACKEND_URL?.trim();
   if (configuredUrl) return configuredUrl;
-  if (process.env.NODE_ENV === 'production') return 'https://api.hof.spammy.app';
+  if (process.env.NODE_ENV === 'production') return 'https://api-hof.spammy.app';
 
   return Platform.OS === 'android' ? 'http://10.0.2.2:8080' : 'http://localhost:8080';
 }

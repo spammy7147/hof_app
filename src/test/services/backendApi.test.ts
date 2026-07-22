@@ -61,7 +61,7 @@ describe('BackendApiClient', () => {
       const { BackendApiClient } = await loadBackendApi();
       const client = new BackendApiClient(undefined, memoryTokenStorage());
 
-      assert.equal(client.baseUrl, 'https://api.hof.spammy.app');
+      assert.equal(client.baseUrl, 'https://api-hof.spammy.app');
     } finally {
       process.env.NODE_ENV = originalNodeEnv;
       if (originalConfiguredUrl === undefined) {
