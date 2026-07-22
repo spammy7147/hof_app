@@ -12,7 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Save, Trash2 } from 'lucide-react-native';
+import { ArrowLeft, ChevronRight, Save, Trash2 } from 'lucide-react-native';
 
 import {
   adventureMapIdentity,
@@ -45,6 +45,7 @@ import type {
   UpdateAdventureMapAutomationRequest,
 } from '../../../types/api';
 import { BattleMapPresetPickerModal } from './BattleMapPresetPickerModal';
+import { AutomationMapOrderList } from './AutomationMapOrderList';
 import {
   AdventureMapCatalogGroupRow,
   AdventureMapCatalogMapRow,
@@ -73,7 +74,7 @@ type PresetSession = { generation: number; identity: string };
 type ListItem =
   | { key: string; kind: 'HEADING'; title: string }
   | { key: string; kind: 'EMPTY' }
-  | { key: string; kind: 'SELECTED'; setting: AdventureMapAutomationDraft['maps'][number]; index: number }
+  | { key: string; kind: 'SELECTED_LIST' }
   | { key: string; kind: 'SEARCH' }
   | { key: string; kind: 'NO_RESULTS' }
   | AdventureMapCatalogRow;
@@ -296,12 +297,7 @@ export function AdventureMapAutomationEditor({
     { key: 'selected-title', kind: 'HEADING', title: '선택한 모험맵 · 실행 순서' },
     ...(draft.maps.length === 0
       ? [{ key: 'empty', kind: 'EMPTY' } as const]
-      : draft.maps.map((setting, index) => ({
-        key: `selected:${adventureMapIdentity(setting)}`,
-        kind: 'SELECTED' as const,
-        setting,
-        index,
-      }))),
+      : [{ key: 'selected-list', kind: 'SELECTED_LIST' } as const]),
     { key: 'catalog-title', kind: 'HEADING', title: '모험맵 찾기' },
     { key: 'search', kind: 'SEARCH' },
     ...catalogRows.rows,
@@ -423,6 +419,52 @@ export function AdventureMapAutomationEditor({
     }
   }
 
+  const deleteSelectedMap = useCallback((identity: string) => {
+    updateEditableDraft((current) => {
+      const index = current.maps.findIndex((map) => adventureMapIdentity(map) === identity);
+      return index < 0 ? current : removeAdventureMapSetting(current, index);
+    });
+  }, [updateEditableDraft]);
+
+  const moveSelectedMap = useCallback((identity: string, offset: -1 | 1) => {
+    updateEditableDraft((current) => {
+      const index = current.maps.findIndex((map) => adventureMapIdentity(map) === identity);
+      return index < 0 ? current : moveAdventureMapSetting(current, index, index + offset);
+    });
+  }, [updateEditableDraft]);
+
+  const reorderSelectedMaps = useCallback((orderedIds: string[]) => {
+    updateEditableDraft((current) => reorderAdventureDraft(current, orderedIds));
+  }, [updateEditableDraft]);
+
+  const renderSelectedMap = useCallback((setting: AdventureMapAutomationDraft['maps'][number], { disabled }: { disabled: boolean }) => {
+    const identity = adventureMapIdentity(setting);
+    const presetLabel = formatAutomationPresetSelection(setting, presets);
+    return (
+      <>
+        <Text ellipsizeMode="tail" numberOfLines={1} style={styles.mapName}>{setting.displayName}</Text>
+        <Text ellipsizeMode="tail" numberOfLines={1} style={styles.compactSummary}>{buildAdventureCardSummary(setting)}</Text>
+        <Pressable
+          ref={(node) => {
+            if (node) presetTriggerNodesRef.current.set(identity, node);
+            else presetTriggerNodesRef.current.delete(identity);
+          }}
+          accessibilityLabel={`${setting.displayName} 프리셋 선택 열기`}
+          accessibilityRole="button"
+          accessibilityState={{ disabled }}
+          accessibilityValue={{ text: presetLabel }}
+          disabled={disabled}
+          onPress={() => openPresetPicker(identity)}
+          style={[styles.choice, disabled && styles.disabled]}
+        >
+          <Text style={styles.choiceLabel}>프리셋</Text>
+          <Text numberOfLines={1} style={styles.choiceText}>{presetLabel}</Text>
+          <ChevronRight color={theme.colors.textMuted} size={16} />
+        </Pressable>
+      </>
+    );
+  }, [openPresetPicker, presets]);
+
   const renderItem = useCallback(({ item }: { item: ListItem }) => {
     if (item.kind === 'HEADING') return <Text style={styles.sectionTitle}>{item.title}</Text>;
     if (item.kind === 'EMPTY') return <Text style={styles.muted}>아래 목록에서 실행할 모험맵을 추가해 주세요.</Text>;
@@ -456,69 +498,19 @@ export function AdventureMapAutomationEditor({
         />
       );
     }
-    const { setting, index } = item;
-    const settingIdentity = adventureMapIdentity(setting);
-    const state = setting.observed == null
-      ? { kind: 'UNAVAILABLE' as const, label: '현재 상태 확인 불가', detail: '저장된 설정은 유지되며 목록 갱신 후 다시 확인합니다.' }
-      : describeAdventureMapState(setting.observed);
-    const presetLabel = formatAutomationPresetSelection(setting, presets);
-    const constraints = describeAdventureMapConstraints(setting.observed);
-    const stateHeading = state.kind === 'UNLIMITED' ? '반복 실행' : state.label;
-    const groupName = setting.groupName?.trim() || null;
-    const constraintLabels = constraints
-      .filter(({ key, label }) => key !== 'STATE' && key !== 'UNLIMITED' && label !== state.label)
-      .map(({ label }) => label);
-    const constraintSummary = setting.observed == null
-      ? null
-      : constraintLabels.length > 0 ? constraintLabels.join(' · ') : '추가 조건 없음';
-    const actionableDetail = state.detail != null
-      && state.detail !== stateHeading
-      && !constraintLabels.includes(state.detail)
-      ? state.detail
-      : null;
     return (
-      <View style={styles.card}>
-        <View style={styles.rowHeading}>
-          <View style={styles.copy}>
-            <Text style={styles.mapName}>{setting.displayName}</Text>
-            <Text style={styles.state}>{stateHeading}</Text>
-          </View>
-          <Pressable accessibilityLabel={`${setting.displayName} 위로`} disabled={controlsDisabled || index === 0} onPress={() => updateEditableDraft((current) => {
-            const liveIndex = current.maps.findIndex((map) => adventureMapIdentity(map) === settingIdentity);
-            return liveIndex < 0 ? current : moveAdventureMapSetting(current, liveIndex, liveIndex - 1);
-          })} style={styles.iconButton}><ArrowUp color={theme.colors.textMuted} size={16} /></Pressable>
-          <Pressable accessibilityLabel={`${setting.displayName} 아래로`} disabled={controlsDisabled || index === draft.maps.length - 1} onPress={() => updateEditableDraft((current) => {
-            const liveIndex = current.maps.findIndex((map) => adventureMapIdentity(map) === settingIdentity);
-            return liveIndex < 0 ? current : moveAdventureMapSetting(current, liveIndex, liveIndex + 1);
-          })} style={styles.iconButton}><ArrowDown color={theme.colors.textMuted} size={16} /></Pressable>
-          <Pressable accessibilityLabel={`${setting.displayName} 제거`} disabled={controlsDisabled} onPress={() => updateEditableDraft((current) => {
-            const liveIndex = current.maps.findIndex((map) => adventureMapIdentity(map) === settingIdentity);
-            return liveIndex < 0 ? current : removeAdventureMapSetting(current, liveIndex);
-          })} style={styles.iconButton}><Trash2 color={theme.colors.danger} size={16} /></Pressable>
-        </View>
-        {groupName ? <Text ellipsizeMode="tail" numberOfLines={1} style={styles.groupMetadata}>{groupName}</Text> : null}
-        {constraintSummary ? <Text style={styles.constraintMetadata}>{constraintSummary}</Text> : null}
-        {actionableDetail ? <Text style={styles.muted}>{actionableDetail}</Text> : null}
-        <Pressable
-          ref={(node) => {
-            if (node) presetTriggerNodesRef.current.set(settingIdentity, node);
-            else presetTriggerNodesRef.current.delete(settingIdentity);
-          }}
-          accessibilityLabel={`${setting.displayName} 프리셋 선택 열기`}
-          accessibilityRole="button"
-          accessibilityState={{ disabled: controlsDisabled }}
-          accessibilityValue={{ text: presetLabel }}
-          disabled={controlsDisabled}
-          onPress={() => openPresetPicker(settingIdentity)}
-          style={[styles.choice, controlsDisabled && styles.disabled]}
-        >
-          <Text style={styles.choiceLabel}>프리셋</Text>
-          <Text numberOfLines={1} style={styles.choiceText}>{presetLabel}</Text>
-          <ChevronRight color={theme.colors.textMuted} size={16} />
-        </Pressable>
-      </View>
+      <AutomationMapOrderList
+        data={draft.maps}
+        disabled={controlsDisabled}
+        getId={adventureMapIdentity}
+        getLabel={adventureMapLabel}
+        onDelete={deleteSelectedMap}
+        onMove={moveSelectedMap}
+        onReorder={reorderSelectedMaps}
+        renderContent={renderSelectedMap}
+      />
     );
-  }, [controlsDisabled, draft.maps, openPresetPicker, presets, query, searching, toggleCatalogGroup, updateEditableDraft]);
+  }, [controlsDisabled, deleteSelectedMap, draft.maps, moveSelectedMap, query, renderSelectedMap, reorderSelectedMaps, searching, toggleCatalogGroup, updateEditableDraft]);
 
   return (
     <View style={styles.screen}>
@@ -583,6 +575,32 @@ function isSamePresetSession(left: PresetSession | null, right: PresetSession | 
     && left.generation === right.generation
     && left.identity === right.identity;
 }
+function adventureMapLabel(setting: AdventureMapAutomationDraft['maps'][number]): string {
+  return setting.displayName;
+}
+function reorderAdventureDraft(
+  draft: AdventureMapAutomationDraft,
+  orderedIds: readonly string[],
+): AdventureMapAutomationDraft {
+  if (orderedIds.length !== draft.maps.length || new Set(orderedIds).size !== orderedIds.length) return draft;
+  const byIdentity = new Map(draft.maps.map((map) => [adventureMapIdentity(map), map]));
+  const maps = orderedIds.map((identity) => byIdentity.get(identity));
+  if (maps.some((map) => map == null)) return draft;
+  return { ...draft, maps: maps.map((map, executionOrder) => ({ ...map!, executionOrder })) };
+}
+function buildAdventureCardSummary(setting: AdventureMapAutomationDraft['maps'][number]): string {
+  const state = setting.observed == null
+    ? { kind: 'UNAVAILABLE' as const, label: '현재 상태 확인 불가' }
+    : describeAdventureMapState(setting.observed);
+  const stateLabel = state.kind === 'UNLIMITED' ? '반복 실행' : state.label;
+  const constraintLabels = describeAdventureMapConstraints(setting.observed)
+    .filter(({ key, label }) => key !== 'STATE' && key !== 'UNLIMITED' && label !== state.label)
+    .map(({ label }) => label);
+  const constraintSummary = setting.observed == null
+    ? null
+    : constraintLabels.length > 0 ? constraintLabels.join(' · ') : '추가 조건 없음';
+  return [setting.groupName?.trim() || null, stateLabel, constraintSummary].filter(Boolean).join(' · ');
+}
 
 const styles = StyleSheet.create({
   screen: { flex: 1, gap: theme.spacing.xs, padding: theme.spacing.lg },
@@ -596,13 +614,8 @@ const styles = StyleSheet.create({
   content: { gap: 6, paddingBottom: theme.spacing.lg },
   sectionTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '900', marginTop: theme.spacing.xs },
   search: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: 46, paddingHorizontal: theme.spacing.md },
-  card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md + 4, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.sm },
-  rowHeading: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },
   mapName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
-  state: { color: theme.colors.accentAmber, fontSize: 11, fontWeight: '800' },
-  runnable: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '800' },
-  groupMetadata: { color: theme.colors.textMuted, fontSize: 10, lineHeight: 14 },
-  constraintMetadata: { color: theme.colors.textMuted, fontSize: 10, fontWeight: '700', lineHeight: 14 },
+  compactSummary: { color: theme.colors.textMuted, fontSize: 10, lineHeight: 14, marginTop: 2 },
   muted: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
   problem: { color: theme.colors.accentAmber, fontSize: 11, lineHeight: 16 },
   iconButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
