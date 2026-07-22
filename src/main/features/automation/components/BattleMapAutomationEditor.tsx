@@ -12,7 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { ArrowDown, ArrowLeft, ArrowUp, ChevronRight, Save, Trash2 } from 'lucide-react-native';
+import { ArrowLeft, ChevronRight, Save, Trash2 } from 'lucide-react-native';
 
 import {
   battleMapIdentity,
@@ -47,6 +47,7 @@ import {
   BattleMapCatalogMapRow,
   BattleMapCatalogStateRow,
 } from './BattleMapCatalogRows';
+import { AutomationMapOrderList } from './AutomationMapOrderList';
 
 type Props = {
   entry: TypedAutomationEntryResponse;
@@ -69,7 +70,7 @@ type ResourceState = { loading: boolean; error: string | null };
 type EditorListItem =
   | { key: string; kind: 'HEADING'; title: string }
   | { key: string; kind: 'SELECTED_EMPTY' }
-  | { key: string; kind: 'SELECTED'; setting: BattleMapAutomationDraft['maps'][number]; index: number }
+  | { key: string; kind: 'SELECTED_LIST' }
   | { key: string; kind: 'CATALOG_SEARCH' }
   | { key: string; kind: 'CATALOG_EMPTY' }
   | { key: string; kind: 'CATALOG_ROW'; row: BattleMapCatalogRow };
@@ -379,12 +380,7 @@ export function BattleMapAutomationEditor({
     { key: 'selected-heading', kind: 'HEADING', title: '선택한 맵 · 실행 순서' },
     ...(draft.maps.length === 0
       ? [{ key: 'selected-empty', kind: 'SELECTED_EMPTY' } as const]
-      : draft.maps.map((setting, index) => ({
-        key: `selected:${battleMapIdentity(setting)}`,
-        kind: 'SELECTED' as const,
-        setting,
-        index,
-      }))),
+      : [{ key: 'selected-list', kind: 'SELECTED_LIST' } as const]),
     { key: 'catalog-heading', kind: 'HEADING', title: '맵 찾기' },
     { key: 'catalog-search', kind: 'CATALOG_SEARCH' },
     ...catalogResult.rows.map((row) => ({
@@ -445,6 +441,79 @@ export function BattleMapAutomationEditor({
     }
   }
 
+  const deleteSelectedMap = useCallback((identity: string) => {
+    updateEditableDraft((current) => {
+      const index = current.maps.findIndex((map) => battleMapIdentity(map) === identity);
+      return index < 0 ? current : removeBattleMapSetting(current, index);
+    });
+  }, [updateEditableDraft]);
+
+  const moveSelectedMap = useCallback((identity: string, offset: -1 | 1) => {
+    updateEditableDraft((current) => {
+      const index = current.maps.findIndex((map) => battleMapIdentity(map) === identity);
+      return index < 0 ? current : moveBattleMapSetting(current, index, index + offset);
+    });
+  }, [updateEditableDraft]);
+
+  const reorderSelectedMaps = useCallback((orderedIds: string[]) => {
+    updateEditableDraft((current) => reorderBattleDraft(current, orderedIds));
+  }, [updateEditableDraft]);
+
+  const renderSelectedMap = useCallback((setting: BattleMapAutomationDraft['maps'][number], { disabled }: { disabled: boolean }) => {
+    const identity = battleMapIdentity(setting);
+    const successes = draft.dailyProgress[identity]?.successfulRuns ?? 0;
+    const dailyTarget = validBattleDailyTarget(setting.dailyTargetCount);
+    const progress = dailyTarget == null ? null : buildBattleProgress({ target: dailyTarget, successes });
+    const selectedPreset = setting.presetMode === 'EXPLICIT'
+      ? presets.find(({ id }) => id === setting.partyPresetId)
+      : null;
+    const presetSummary = presetState.loading
+      ? '프리셋 확인 중'
+      : presetState.error
+        ? '프리셋 확인 불가'
+        : formatAutomationPresetSelection(setting, presets);
+    const progressSummary = buildBattleProgressSummary(setting, successes, dailyTarget, progress?.remaining ?? null);
+    return (
+      <>
+        <Text ellipsizeMode="tail" numberOfLines={1} style={styles.mapName}>{setting.displayName}</Text>
+        <View accessibilityLabel={`${setting.displayName} 오늘 진행 요약`} style={styles.progressRow}>
+          <Text ellipsizeMode="tail" numberOfLines={1} style={[styles.progressSummary, progress?.complete && styles.complete]}>{progressSummary}</Text>
+          <TextInput
+            accessibilityLabel={`${setting.displayName} 일일 목표`}
+            editable={!disabled}
+            keyboardType="number-pad"
+            onChangeText={(value) => updateEditableDraft((current) => ({
+              ...current,
+              maps: current.maps.map((map) => battleMapIdentity(map) === identity
+                ? { ...map, dailyTargetCount: value }
+                : map),
+            }))}
+            style={styles.compactTargetInput}
+            value={String(setting.dailyTargetCount)}
+          />
+        </View>
+        {setting.presetMode === 'EXPLICIT' && presetsVerified && !selectedPreset ? <Text accessibilityLiveRegion="polite" accessibilityRole="alert" style={styles.problem}>선택한 프리셋이 삭제되었습니다. 다른 프리셋을 선택해 주세요.</Text> : null}
+        <Pressable
+          ref={(node) => {
+            if (node) presetTriggerNodesRef.current.set(identity, node);
+            else presetTriggerNodesRef.current.delete(identity);
+          }}
+          accessibilityLabel={`${setting.displayName} 프리셋 선택 열기`}
+          accessibilityRole="button"
+          accessibilityState={{ disabled }}
+          accessibilityValue={{ text: presetSummary }}
+          disabled={disabled}
+          onPress={() => openPresetPicker(identity)}
+          style={[styles.choice, disabled && styles.disabled]}
+        >
+          <Text style={styles.choiceLabel}>프리셋</Text>
+          <Text numberOfLines={1} style={styles.choiceText}>{presetSummary}</Text>
+          <ChevronRight color={theme.colors.textMuted} size={16} />
+        </Pressable>
+      </>
+    );
+  }, [draft.dailyProgress, openPresetPicker, presets, presetsVerified, presetState.error, presetState.loading, updateEditableDraft]);
+
   const renderListItem = useCallback(({ item }: { item: EditorListItem }) => {
     if (item.kind === 'HEADING') return <Text style={styles.sectionTitle}>{item.title}</Text>;
     if (item.kind === 'SELECTED_EMPTY') {
@@ -484,71 +553,19 @@ export function BattleMapAutomationEditor({
       }} selected={selected} />;
     }
 
-    const { setting, index } = item;
-    const identity = battleMapIdentity(setting);
-    const successes = draft.dailyProgress[identity]?.successfulRuns ?? 0;
-    const parsedDailyTarget = parseBattleDailyTarget(setting.dailyTargetCount);
-    const dailyTarget = parsedDailyTarget != null
-      && parsedDailyTarget > 0
-      && parsedDailyTarget <= MAX_BATTLE_DAILY_TARGET
-      ? parsedDailyTarget
-      : null;
-    const progress = dailyTarget == null ? null : buildBattleProgress({ target: dailyTarget, successes });
-    const selectedPreset = setting.presetMode === 'EXPLICIT'
-      ? presets.find(({ id }) => id === setting.partyPresetId)
-      : null;
-    const presetSummary = presetState.loading
-        ? '프리셋 확인 중'
-        : presetState.error
-          ? '프리셋 확인 불가'
-          : formatAutomationPresetSelection(setting, presets);
     return (
-      <View style={[styles.card, progress?.complete && styles.completeCard]}>
-        <View style={styles.rowHeading}>
-          <View style={styles.mapCopy}>
-            <Text style={styles.mapName}>{setting.displayName}</Text>
-            {!setting.resolved ? <Text style={styles.problem}>현재 맵 목록에 없음 · 저장된 설정</Text> : null}
-          </View>
-          <Pressable accessibilityLabel={`${setting.displayName} 맵 위로`} accessibilityRole="button" accessibilityState={{ disabled: controlsDisabled || index === 0 }} disabled={controlsDisabled || index === 0} onPress={() => updateEditableDraft((current) => moveBattleMapSetting(current, index, index - 1))} style={styles.smallIcon}><ArrowUp color={theme.colors.textMuted} size={16} /></Pressable>
-          <Pressable accessibilityLabel={`${setting.displayName} 맵 아래로`} accessibilityRole="button" accessibilityState={{ disabled: controlsDisabled || index === draft.maps.length - 1 }} disabled={controlsDisabled || index === draft.maps.length - 1} onPress={() => updateEditableDraft((current) => moveBattleMapSetting(current, index, index + 1))} style={styles.smallIcon}><ArrowDown color={theme.colors.textMuted} size={16} /></Pressable>
-          <Pressable accessibilityLabel={`${setting.displayName} 맵 제거`} accessibilityRole="button" accessibilityState={{ disabled: controlsDisabled }} disabled={controlsDisabled} onPress={() => updateEditableDraft((current) => removeBattleMapSetting(current, index))} style={styles.smallIcon}><Trash2 color={theme.colors.danger} size={16} /></Pressable>
-        </View>
-        <TextInput accessibilityLabel={`${setting.displayName} 일일 목표`} editable={!controlsDisabled} keyboardType="number-pad" onChangeText={(value) => updateEditableDraft((current) => ({ ...current, maps: current.maps.map((map) => battleMapIdentity(map) === identity ? { ...map, dailyTargetCount: value } : map) }))} style={styles.targetInput} value={String(setting.dailyTargetCount)} />
-        {progress == null ? (
-          <>
-            <Text style={styles.muted}>오늘 {successes}회 성공 · 목표 확인 필요</Text>
-            <Text style={styles.batch}>목표 확인 후 실행</Text>
-          </>
-        ) : (
-          <>
-            <Text style={styles.muted}>오늘 {successes}/{dailyTarget} · {progress.remaining}회 남음</Text>
-            <View accessibilityLabel={`${setting.displayName} 오늘 진행률`} accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: Math.round(progress.percent) }} style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${progress.percent}%` }]} />
-            </View>
-            <Text style={progress.complete ? styles.complete : styles.batch}>{describeBattleBatch({ supportsThreeBattles: setting.supportsThreeBattles, remaining: progress.remaining })}</Text>
-          </>
-        )}
-        {setting.presetMode === 'EXPLICIT' && presetsVerified && !selectedPreset ? <Text accessibilityLiveRegion="polite" accessibilityRole="alert" style={styles.problem}>선택한 프리셋이 삭제되었습니다. 다른 프리셋을 선택해 주세요.</Text> : null}
-        <Pressable
-          ref={(node) => {
-            if (node) presetTriggerNodesRef.current.set(identity, node);
-            else presetTriggerNodesRef.current.delete(identity);
-          }}
-          accessibilityLabel={`${setting.displayName} 프리셋 선택 열기`}
-          accessibilityRole="button"
-          accessibilityState={{ disabled: controlsDisabled }}
-          accessibilityValue={{ text: presetSummary }}
-          disabled={controlsDisabled}
-          onPress={() => openPresetPicker(identity)}
-          style={[styles.choice, controlsDisabled && styles.disabled]}
-        >
-          <Text style={styles.choiceLabel}>프리셋</Text>
-          <Text numberOfLines={1} style={styles.choiceText}>{presetSummary}</Text>
-          <ChevronRight color={theme.colors.textMuted} size={16} />
-        </Pressable>
-      </View>
+      <AutomationMapOrderList
+        data={draft.maps}
+        disabled={controlsDisabled}
+        getId={battleMapIdentity}
+        getLabel={battleMapLabel}
+        onDelete={deleteSelectedMap}
+        onMove={moveSelectedMap}
+        onReorder={reorderSelectedMaps}
+        renderContent={renderSelectedMap}
+      />
     );
-  }, [controlsDisabled, draft, loadCategoryMaps, openPresetPicker, presets, presetsVerified, presetState.error, presetState.loading, query, toggleCatalogCategory, toggleCatalogGroup, updateDraft, updateEditableDraft]);
+  }, [controlsDisabled, deleteSelectedMap, draft.maps, loadCategoryMaps, moveSelectedMap, query, renderSelectedMap, reorderSelectedMaps, toggleCatalogCategory, toggleCatalogGroup, updateDraft]);
 
   return (
     <View style={styles.screen}>
@@ -608,6 +625,38 @@ function updatePreset(draft: BattleMapAutomationDraft, identity: string, presetI
   };
 }
 
+function validBattleDailyTarget(value: string | number): number | null {
+  const parsed = parseBattleDailyTarget(value);
+  return parsed != null && parsed > 0 && parsed <= MAX_BATTLE_DAILY_TARGET ? parsed : null;
+}
+
+function buildBattleProgressSummary(
+  setting: BattleMapAutomationDraft['maps'][number],
+  successes: number,
+  dailyTarget: number | null,
+  remaining: number | null,
+): string {
+  const availability = setting.resolved ? '' : '현재 맵 목록에 없음 · ';
+  if (dailyTarget == null || remaining == null) {
+    return `${availability}오늘 ${successes}회 성공 · 목표 확인 필요 · 목표 확인 후 실행`;
+  }
+  return `${availability}오늘 ${successes}/${dailyTarget} · ${remaining}회 남음 · ${describeBattleBatch({ supportsThreeBattles: setting.supportsThreeBattles, remaining })}`;
+}
+
+function battleMapLabel(setting: BattleMapAutomationDraft['maps'][number]): string {
+  return setting.displayName;
+}
+
+function reorderBattleDraft(draft: BattleMapAutomationDraft, orderedIds: string[]): BattleMapAutomationDraft {
+  if (orderedIds.length !== draft.maps.length || new Set(orderedIds).size !== orderedIds.length) return draft;
+  const byId = new Map(draft.maps.map((setting) => [battleMapIdentity(setting), setting]));
+  const maps = orderedIds.map((identity, executionOrder) => {
+    const setting = byId.get(identity);
+    return setting == null ? null : { ...setting, executionOrder };
+  });
+  return maps.some((setting) => setting == null) ? draft : { ...draft, maps: maps as BattleMapAutomationDraft['maps'] };
+}
+
 function editorListKey(item: EditorListItem): string { return item.key; }
 
 function serializeEditableDraft(draft: BattleMapAutomationDraft): string {
@@ -632,16 +681,10 @@ const styles = StyleSheet.create({
   content: { gap: 6, paddingBottom: theme.spacing.lg },
   section: { gap: theme.spacing.xs },
   sectionTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '900' },
-  card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md + 4, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.sm },
-  completeCard: { borderColor: theme.colors.accentGreen },
-  rowHeading: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },
-  mapCopy: { flex: 1 },
   mapName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
-  smallIcon: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
-  targetInput: { borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.sm },
-  progressTrack: { backgroundColor: theme.colors.surfaceAlt, borderRadius: 2, height: 4, overflow: 'hidden' },
-  progressFill: { backgroundColor: theme.colors.accentGreen, height: 4 },
-  batch: { color: theme.colors.text, fontSize: 11, fontWeight: '800' },
+  progressRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },
+  progressSummary: { color: theme.colors.textMuted, flex: 1, fontSize: 11, lineHeight: 16 },
+  compactTargetInput: { borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.xs, textAlign: 'center', width: 64 },
   complete: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '900' },
   choice: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: 14, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: 44, paddingHorizontal: theme.spacing.sm },
   choiceActive: { borderColor: theme.colors.accentGreen },
