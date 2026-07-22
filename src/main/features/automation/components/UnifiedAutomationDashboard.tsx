@@ -37,20 +37,23 @@ export function UnifiedAutomationDashboard({
   const networkStopped = stoppedWithReason && (runtime.stopReason === 'NETWORK' || runtime.stopReason === 'FATAL');
   const waitingCaptcha = stoppedWithReason && runtime.stopReason === 'CAPTCHA';
   const waitingLogin = stoppedWithReason && runtime.stopReason === 'AUTHENTICATION';
+  const waitingForHof = running && runtime.nextAttemptAt != null;
   const current = runtime.currentAction;
   const warningCount = new Set(runtime.warnings).size;
 
   return (
     <View style={styles.stack}>
-      <View style={[styles.hero, (networkStopped || waitingCaptcha || waitingLogin) && styles.warningHero]}>
+      <View style={[styles.hero, (networkStopped || waitingCaptcha || waitingLogin || waitingForHof) && styles.warningHero]}>
         <View style={styles.heroHeader}>
-          <View style={[styles.statusDot, networkStopped && styles.dangerDot, (waitingCaptcha || waitingLogin) && styles.warningDot]} />
-          <Text style={[styles.statusLabel, networkStopped && styles.dangerText, (waitingCaptcha || waitingLogin) && styles.warningText]}>
+          <View style={[styles.statusDot, networkStopped && styles.dangerDot, (waitingCaptcha || waitingLogin || waitingForHof) && styles.warningDot]} />
+          <Text style={[styles.statusLabel, networkStopped && styles.dangerText, (waitingCaptcha || waitingLogin || waitingForHof) && styles.warningText]}>
             {statusLabel(aggregate)}
           </Text>
         </View>
 
-        {networkStopped ? (
+        {waitingForHof ? (
+          <Text style={styles.stopTitle}>잠시 후 자동으로 다시 시도합니다.</Text>
+        ) : networkStopped ? (
           <>
             <Text style={styles.stopTitle}>
               {runtime.stopReason === 'NETWORK'
@@ -207,6 +210,7 @@ function ActionButton({
 
 function statusLabel(aggregate: TypedAutomationAggregateResponse): string {
   const { runtime } = aggregate;
+  if (runtime.lifecycle === 'RUNNING' && runtime.nextAttemptAt != null) return 'HOF 서버 연결 대기 중';
   if (runtime.lifecycle === 'RUNNING') return '실행 중';
   if (runtime.lifecycle === 'PAUSED') return '일시정지';
   if (runtime.stopReason === 'NETWORK' || runtime.stopReason === 'FATAL') return '완전 중지';

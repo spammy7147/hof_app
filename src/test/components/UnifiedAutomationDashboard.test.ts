@@ -66,6 +66,21 @@ describe('UnifiedAutomationDashboard', () => {
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '중지된 자동화 재개' }).length, 0);
   });
 
+  it('shows a friendly automatic retry state while a running runtime is cooling down', async () => {
+    const aggregate = networkStopped();
+    aggregate.runtime.lifecycle = 'RUNNING';
+    aggregate.runtime.stopReason = null;
+    aggregate.runtime.nextAttemptAt = '2026-07-23T00:03:00Z';
+    aggregate.runtime.lastError = 'HOF automation requests are deferred until 2026-07-23T00:03:00Z';
+
+    const renderer = await renderDashboard(aggregate, () => undefined);
+
+    assert.equal(hasText(renderer.root, 'HOF 서버 연결 대기 중'), true);
+    assert.equal(hasText(renderer.root, '잠시 후 자동으로 다시 시도합니다.'), true);
+    assert.equal(treeText(renderer.root).includes('deferred until'), false);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '중지된 자동화 재개' }).length, 0);
+  });
+
   it('shows structured quest battle context without raw code or fake fraction', async () => {
     const aggregate = runtimeWithCurrentAction({
       source: 'QUEST',
