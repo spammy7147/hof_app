@@ -24,6 +24,7 @@ import type {
   HofStatusResponse,
   LoadPatternResponse,
   PartyPresetResponse,
+  ReorderPartyPresetsRequest,
   RunBattleRequest,
   UpdatePartyPresetRequest,
 } from './types/api';
@@ -182,6 +183,10 @@ export default function App() {
     presetId: number,
   ): Promise<PartyPresetResponse> => api.makePartyPresetPrimary(presetId), [api]);
 
+  const reorderPartyPresets = useCallback((
+    request: ReorderPartyPresetsRequest,
+  ): Promise<PartyPresetResponse[]> => api.reorderPartyPresets(request), [api]);
+
   const deletePartyPreset = useCallback((
     presetId: number,
   ): Promise<null> => api.deletePartyPreset(presetId), [api]);
@@ -337,6 +342,7 @@ export default function App() {
         onCreatePartyPreset={createPartyPreset}
         onUpdatePartyPreset={updatePartyPreset}
         onMakePartyPresetPrimary={makePartyPresetPrimary}
+        onReorderPartyPresets={reorderPartyPresets}
         onDeletePartyPreset={deletePartyPreset}
         onLoadCharacterDetail={loadCharacterDetail}
         onLoadPattern={loadCharacterPattern}

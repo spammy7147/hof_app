@@ -17,6 +17,7 @@ import type {
   CreatePartyPresetRequest,
   HofCharacter,
   PartyPresetResponse,
+  ReorderPartyPresetsRequest,
   UpdatePartyPresetRequest,
 } from '../types/api';
 
@@ -32,6 +33,7 @@ type PartyPresetListProps = {
     request: UpdatePartyPresetRequest,
   ) => Promise<PartyPresetResponse>;
   onMakePartyPresetPrimary: (presetId: number) => Promise<PartyPresetResponse>;
+  onReorderPartyPresets: (request: ReorderPartyPresetsRequest) => Promise<PartyPresetResponse[]>;
   onDeletePartyPreset: (presetId: number) => Promise<null>;
 };
 

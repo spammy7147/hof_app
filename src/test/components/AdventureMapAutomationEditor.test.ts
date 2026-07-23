@@ -1095,7 +1095,7 @@ function setting(
   return { categoryId: 'adventure_map', mapCode, executionOrder, presetMode, partyPresetId };
 }
 function preset(id: number, name: string, isPrimary: boolean): PartyPresetResponse {
-  return { id, accountId: 1, name, isPrimary, members: [], createdAt: '', updatedAt: '' };
+  return { id, accountId: 1, name, displayOrder: id, isPrimary, members: [], createdAt: '', updatedAt: '' };
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;

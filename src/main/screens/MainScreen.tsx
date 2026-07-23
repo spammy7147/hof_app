@@ -25,6 +25,7 @@ import type {
   HofStatusResponse,
   LoadPatternResponse,
   PartyPresetResponse,
+  ReorderPartyPresetsRequest,
   RunBattleRequest,
   UpdatePartyPresetRequest,
 } from '../types/api';
@@ -66,6 +67,7 @@ type MainScreenProps = {
     request: UpdatePartyPresetRequest,
   ) => Promise<PartyPresetResponse>;
   onMakePartyPresetPrimary: (presetId: number) => Promise<PartyPresetResponse>;
+  onReorderPartyPresets: (request: ReorderPartyPresetsRequest) => Promise<PartyPresetResponse[]>;
   onDeletePartyPreset: (presetId: number) => Promise<null>;
   onLoadCharacterDetail: (hofCharacterId: string) => Promise<HofCharacterDetail>;
   onLoadPattern: (hofCharacterId: string, slot: number) => Promise<LoadPatternResponse>;
@@ -100,6 +102,7 @@ export function MainScreen({
   onCreatePartyPreset,
   onUpdatePartyPreset,
   onMakePartyPresetPrimary,
+  onReorderPartyPresets,
   onDeletePartyPreset,
   onLoadCharacterDetail,
   onLoadPattern,
@@ -214,6 +217,7 @@ export function MainScreen({
           onCreatePartyPreset,
           onUpdatePartyPreset,
           onMakePartyPresetPrimary,
+          onReorderPartyPresets,
           onDeletePartyPreset,
           onLoadPattern,
           onSyncCharacters: handleSyncCharacters,
@@ -270,6 +274,7 @@ type RenderActiveTabArgs = {
     request: UpdatePartyPresetRequest,
   ) => Promise<PartyPresetResponse>;
   onMakePartyPresetPrimary: (presetId: number) => Promise<PartyPresetResponse>;
+  onReorderPartyPresets: (request: ReorderPartyPresetsRequest) => Promise<PartyPresetResponse[]>;
   onDeletePartyPreset: (presetId: number) => Promise<null>;
   onLoadPattern: (hofCharacterId: string, slot: number) => Promise<LoadPatternResponse>;
   onSyncCharacters: () => void;
@@ -310,6 +315,7 @@ function renderActiveTab({
   onCreatePartyPreset,
   onUpdatePartyPreset,
   onMakePartyPresetPrimary,
+  onReorderPartyPresets,
   onDeletePartyPreset,
   onLoadPattern,
   onSyncCharacters,
@@ -410,6 +416,7 @@ function renderActiveTab({
               onCreatePartyPreset={onCreatePartyPreset}
               onUpdatePartyPreset={onUpdatePartyPreset}
               onMakePartyPresetPrimary={onMakePartyPresetPrimary}
+              onReorderPartyPresets={onReorderPartyPresets}
               onDeletePartyPreset={onDeletePartyPreset}
             />
           )}

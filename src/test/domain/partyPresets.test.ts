@@ -253,6 +253,7 @@ function makePreset(overrides: Partial<PartyPresetResponse> = {}): PartyPresetRe
     id: 1,
     accountId: 1,
     name: '고블린 범용 파티',
+    displayOrder: 0,
     isPrimary: false,
     members: [],
     createdAt: '2026-07-11T00:00:00Z',
