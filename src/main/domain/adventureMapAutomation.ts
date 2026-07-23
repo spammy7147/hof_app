@@ -68,7 +68,7 @@ export function buildAdventureMapAutomationDraft(
         return {
           ...setting,
           executionOrder,
-          displayName: observed?.name || setting.mapCode,
+          displayName: observed?.name || setting.displayName?.trim() || '모험맵 이름 확인 불가',
           groupName: observed?.groupName ?? null,
           recommendedLevel: observed?.recommendedLevel ?? null,
           resolved: observed != null,

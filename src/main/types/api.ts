@@ -229,7 +229,10 @@ export type BattleMapDailyProgressResponse = {
   mapCode: string;
   successfulRuns: number;
 };
-export type AdventureMapSettingResponse = AdventureMapSettingRequest;
+export type AdventureMapSettingResponse = AdventureMapSettingRequest & {
+  /** 저장된 맵이 현재 라이브 목록에 없어도 내부 코드를 노출하지 않기 위한 카탈로그 이름이다. */
+  displayName?: string | null;
+};
 
 export type TypedAutomationEntryResponse = {
   id: number;

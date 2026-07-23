@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { GripVertical, Trash2 } from 'lucide-react-native';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
-import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist';
+import DraggableFlatList, {
+  type DraggableFlatListProps,
+  type RenderItemParams,
+} from 'react-native-draggable-flatlist';
 
 import { theme } from '../../../styles/theme';
 
@@ -15,6 +18,7 @@ export type AutomationMapOrderListProps<T extends object> = {
   onMove: (id: string, offset: -1 | 1) => void;
   onReorder: (orderedIds: string[]) => void;
   renderContent: (item: T, context: { disabled: boolean; index: number }) => ReactNode;
+  simultaneousHandlers?: DraggableFlatListProps<Row<T>>['simultaneousHandlers'];
 };
 
 type Row<T> = { id: string; item: T };
@@ -28,6 +32,7 @@ export function AutomationMapOrderList<T extends object>({
   onMove,
   onReorder,
   renderContent,
+  simultaneousHandlers,
 }: AutomationMapOrderListProps<T>) {
   const [dragging, setDragging] = useState(false);
   const disabledRef = useRef(disabled);
@@ -157,34 +162,34 @@ export function AutomationMapOrderList<T extends object>({
     );
   }
 
-  return (
-    <DraggableFlatList
-      activationDistance={8}
-      data={rows}
-      keyExtractor={({ id }) => id}
-      onDragBegin={() => {
-        if (disabledRef.current || renderInteractionGeneration !== interactionGenerationRef.current) return;
-        closeOpenSwipeable();
-        activeDragGenerationRef.current = renderInteractionGeneration;
-        draggingRef.current = true;
-        setDragging(true);
-      }}
-      onDragEnd={({ data: orderedRows, from, to }) => {
-        closeOpenSwipeable();
-        const activeDragGeneration = activeDragGenerationRef.current;
-        activeDragGenerationRef.current = null;
-        draggingRef.current = false;
-        setDragging(false);
-        if (disabledRef.current
-          || activeDragGeneration !== renderInteractionGeneration
-          || renderInteractionGeneration !== interactionGenerationRef.current
-          || from === to) return;
-        onReorder(orderedRows.map(({ id }) => id));
-      }}
-      renderItem={renderRow}
-      scrollEnabled={false}
-    />
-  );
+  const listProps = {
+    activationDistance: 8,
+    data: rows,
+    keyExtractor: ({ id }: Row<T>) => id,
+    onDragBegin: () => {
+      if (disabledRef.current || renderInteractionGeneration !== interactionGenerationRef.current) return;
+      closeOpenSwipeable();
+      activeDragGenerationRef.current = renderInteractionGeneration;
+      draggingRef.current = true;
+      setDragging(true);
+    },
+    onDragEnd: ({ data: orderedRows, from, to }: { data: Row<T>[]; from: number; to: number }) => {
+      closeOpenSwipeable();
+      const activeDragGeneration = activeDragGenerationRef.current;
+      activeDragGenerationRef.current = null;
+      draggingRef.current = false;
+      setDragging(false);
+      if (disabledRef.current
+        || activeDragGeneration !== renderInteractionGeneration
+        || renderInteractionGeneration !== interactionGenerationRef.current
+        || from === to) return;
+      onReorder(orderedRows.map(({ id }) => id));
+    },
+    renderItem: renderRow,
+    scrollEnabled: false,
+    simultaneousHandlers,
+  };
+  return <DraggableFlatList {...listProps} />;
 }
 
 const styles = StyleSheet.create({

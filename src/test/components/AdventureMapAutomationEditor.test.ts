@@ -19,15 +19,20 @@ const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>
   React.useImperativeHandle(ref, () => nodeRef.current, []);
   return React.createElement(name, props, props.children as React.ReactNode);
 });
-const flatList = React.forwardRef<unknown, Record<string, unknown>>((props, ref) => React.createElement(
-  'FlatList',
-  { ...props, ref },
-  (props.data as unknown[]).map((item, index) => React.createElement(
-    React.Fragment,
-    { key: (props.keyExtractor as (value: unknown, index: number) => string)(item, index) },
-    (props.renderItem as (value: { item: unknown; index: number }) => React.ReactNode)({ item, index }),
-  )),
-));
+const flatList = React.forwardRef<Record<string, unknown>, Record<string, unknown>>((props, ref) => {
+  const nodeRef = React.useRef<Record<string, unknown>>({});
+  Object.assign(nodeRef.current, props);
+  React.useImperativeHandle(ref, () => nodeRef.current, []);
+  return React.createElement(
+    'FlatList',
+    props,
+    (props.data as unknown[]).map((item, index) => React.createElement(
+      React.Fragment,
+      { key: (props.keyExtractor as (value: unknown, index: number) => string)(item, index) },
+      (props.renderItem as (value: { item: unknown; index: number }) => React.ReactNode)({ item, index }),
+    )),
+  );
+});
 const dragCalls: unknown[] = [];
 const draggableFlatList = (props: Record<string, unknown>) => React.createElement(
   'DraggableFlatList',
@@ -89,6 +94,7 @@ moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') return reactNativeMock;
   if (request === 'lucide-react-native') return iconsMock;
   if (request === 'react-native-draggable-flatlist') return { __esModule: true, default: draggableFlatList };
+  if (request === 'react-native-gesture-handler') return { FlatList: flatList };
   if (request === 'react-native-gesture-handler/ReanimatedSwipeable') {
     return { __esModule: true, default: reanimatedSwipeable };
   }
@@ -108,6 +114,22 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('AdventureMapAutomationEditor', () => {
+  it('shares the gesture-handler list with the draggable cards so card gestures can scroll vertically', async () => {
+    const renderer = await renderEditor({
+      entry: entry([setting('first', 0, 'PRIMARY', null)]),
+      maps: [map('first', '첫 맵')],
+    });
+
+    const list = renderer.root.find((node) => (
+      (node.type as unknown) === 'FlatList'
+      && Array.isArray(node.props.data)
+      && node.props.data.some((item: { key?: string }) => item.key === 'catalog-title')
+    ));
+    const draggable = renderer.root.find((node) => (node.type as unknown) === 'DraggableFlatList');
+    assert.ok(draggable.props.simultaneousHandlers);
+    assert.equal(draggable.props.simultaneousHandlers.current.data, list.props.data);
+  });
+
   it('mounts compact full-card catalog rows with selected button semantics', async () => {
     const catalogMap = { ...map('compact', '긴 모험맵 이름', {
       groupName: '이벤트',
@@ -1089,10 +1111,10 @@ function setting(
   partyPresetId: number | null,
 ): AdventureMapSettingResponse {
   if (presetMode === 'PRIMARY') {
-    return { categoryId: 'adventure_map', mapCode, executionOrder, presetMode, partyPresetId: null };
+    return { categoryId: 'adventure_map', mapCode, displayName: mapCode, executionOrder, presetMode, partyPresetId: null };
   }
   if (partyPresetId == null) throw new Error('EXPLICIT test setting requires a preset id.');
-  return { categoryId: 'adventure_map', mapCode, executionOrder, presetMode, partyPresetId };
+  return { categoryId: 'adventure_map', mapCode, displayName: mapCode, executionOrder, presetMode, partyPresetId };
 }
 function preset(id: number, name: string, isPrimary: boolean): PartyPresetResponse {
   return { id, accountId: 1, name, isPrimary, members: [], createdAt: '', updatedAt: '' };

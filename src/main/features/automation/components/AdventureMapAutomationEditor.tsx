@@ -4,7 +4,6 @@ import {
   ActivityIndicator,
   Alert,
   findNodeHandle,
-  FlatList,
   Pressable,
   StyleSheet,
   Switch,
@@ -13,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { ArrowLeft, ChevronRight, Save, Trash2 } from 'lucide-react-native';
+import { FlatList } from 'react-native-gesture-handler';
 
 import {
   adventureMapIdentity,
@@ -122,6 +122,7 @@ export function AdventureMapAutomationEditor({
   const invokingPresetTriggerRef = useRef<{ identity: string; nodeHandle: ReturnType<typeof findNodeHandle> } | null>(null);
   const presetFocusGenerationRef = useRef(0);
   const restorePresetFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollContainerRef = useRef<FlatList<ListItem>>(null);
 
   const updateDraft = useCallback((updater: (current: AdventureMapAutomationDraft) => AdventureMapAutomationDraft) => {
     const next = updater(draftRef.current);
@@ -508,6 +509,7 @@ export function AdventureMapAutomationEditor({
         onMove={moveSelectedMap}
         onReorder={reorderSelectedMaps}
         renderContent={renderSelectedMap}
+        simultaneousHandlers={scrollContainerRef}
       />
     );
   }, [controlsDisabled, deleteSelectedMap, draft.maps, moveSelectedMap, query, renderSelectedMap, reorderSelectedMaps, searching, toggleCatalogGroup, updateEditableDraft]);
@@ -530,7 +532,7 @@ export function AdventureMapAutomationEditor({
       {battleCategoriesError ? <ResourceWarning label="맵 카테고리" onRetry={onLoadBattleCategories} /> : null}
       {mapState.error ? <ResourceWarning label="모험맵" onRetry={loadMaps} /> : null}
       {presetState.error ? <ResourceWarning label="프리셋" onRetry={loadPresets} /> : presetState.loading ? <Text style={styles.muted}>프리셋 불러오는 중</Text> : null}
-      <FlatList contentContainerStyle={styles.content} data={items} initialNumToRender={12} keyboardShouldPersistTaps="handled" keyExtractor={(item) => item.key} renderItem={renderItem} windowSize={7} />
+      <FlatList contentContainerStyle={styles.content} data={items} initialNumToRender={12} keyboardShouldPersistTaps="handled" keyExtractor={(item) => item.key} ref={scrollContainerRef} renderItem={renderItem} windowSize={7} />
       <BattleMapPresetPickerModal
         disabled={controlsDisabled}
         mapName={activePresetSetting?.displayName ?? ''}

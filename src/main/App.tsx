@@ -65,6 +65,15 @@ export default function App() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const describeError = useCallback((error: unknown): string => toUserFacingErrorMessage(error), []);
+
+  /** 전역 안내가 화면을 영구 점유하지 않도록 잠시 보여준 뒤 자동으로 닫는다. */
+  useEffect(() => {
+    if (notice == null) return undefined;
+
+    const timer = setTimeout(() => setNotice(null), NOTICE_DURATION_MS);
+    return () => clearTimeout(timer);
+  }, [notice]);
+
   const {
     characters,
     characterSyncLabel,
@@ -371,6 +380,8 @@ export default function App() {
     </AppProviders>
   );
 }
+
+const NOTICE_DURATION_MS = 5_000;
 
 const styles = StyleSheet.create({
   container: {

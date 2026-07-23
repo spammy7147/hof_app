@@ -65,6 +65,23 @@ describe('adventure map automation domain', () => {
     });
   });
 
+  it('uses the stored display name when the selected map is absent from the live catalog', () => {
+    const stored = entry();
+    stored.adventureMaps = [{
+      categoryId: 'adventure_map',
+      mapCode: 'festival01',
+      displayName: 'Arena- 천년제 무투회',
+      presetMode: 'PRIMARY',
+      partyPresetId: null,
+      executionOrder: 0,
+    }];
+
+    const draft = buildAdventureMapAutomationDraft(stored, []);
+
+    assert.equal(draft.maps[0]?.displayName, 'Arena- 천년제 무투회');
+    assert.equal(draft.maps[0]?.resolved, false);
+  });
+
   it('dynamically relabels PRIMARY selections while explicit selections stay fixed', () => {
     const primary = { presetMode: 'PRIMARY' as const, partyPresetId: null };
     const explicit = { presetMode: 'EXPLICIT' as const, partyPresetId: 9 };
