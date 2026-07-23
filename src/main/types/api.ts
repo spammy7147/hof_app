@@ -27,6 +27,9 @@ export type HofStatusResponse = {
   timeMax: number | null;
   work: string;
   auction: string;
+  totalCharacterCount: number;
+  synchronizedCharacterCount: number;
+  characterSyncRequired: boolean;
   observedAt: string;
 };
 
@@ -446,6 +449,8 @@ export type LoadPatternResponse = {
   slot: number;
   loaded: boolean;
   message: string;
+  characterSynchronized: boolean;
+  character: HofCharacterDetail | null;
 };
 
 export type CharacterSyncJobStatus = 'pending' | 'running' | 'completed' | 'failed';

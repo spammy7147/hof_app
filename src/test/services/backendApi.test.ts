@@ -402,6 +402,24 @@ describe('BackendApiClient', () => {
     assert.equal(job.characters[0]?.imageUrl, 'http://sic.zerosic.com/ZeroHOF/image/char/sknight02.gif');
   });
 
+  it('normalizes the refreshed character returned by pattern load', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    mockFetch({
+      accountId: 1,
+      hofCharacterId: 'char-1',
+      slot: 0,
+      loaded: true,
+      message: '패턴 로드 완료',
+      characterSynchronized: true,
+      character: makeHofCharacterDetail(1, { imageUrl: 'image/char/sknight02.gif' }),
+    });
+
+    const response = await new BackendApiClient('http://backend.test').loadCharacterPattern('char-1', 0);
+
+    assert.equal(response.characterSynchronized, true);
+    assert.equal(response.character?.imageUrl, 'http://sic.zerosic.com/ZeroHOF/image/char/sknight02.gif');
+  });
+
   it('uses the exact typed automation aggregate, settings, lifecycle, and quest endpoints', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const requests: CapturedRequest[] = [];
