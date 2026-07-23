@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { RefreshCw } from 'lucide-react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomTabBar } from '../components/BottomTabBar';
@@ -72,7 +71,6 @@ type MainScreenProps = {
   onDeletePartyPreset: (presetId: number) => Promise<null>;
   onLoadCharacterDetail: (hofCharacterId: string) => Promise<HofCharacterDetail>;
   onLoadPattern: (hofCharacterId: string, slot: number) => Promise<LoadPatternResponse>;
-  onSyncCharacters: () => Promise<void>;
   onLogout: () => void;
   onOpenLogin: () => void;
 };
@@ -107,7 +105,6 @@ export function MainScreen({
   onDeletePartyPreset,
   onLoadCharacterDetail,
   onLoadPattern,
-  onSyncCharacters,
   onLogout,
   onOpenLogin,
 }: MainScreenProps) {
@@ -117,10 +114,8 @@ export function MainScreen({
   const [selectedCharacterDetail, setSelectedCharacterDetail] = useState<HofCharacterDetail | null>(null);
   const [isCharacterDetailLoading, setIsCharacterDetailLoading] = useState(false);
   const [characterDetailError, setCharacterDetailError] = useState<string | null>(null);
-  const [isCharacterSyncStarting, setIsCharacterSyncStarting] = useState(false);
   const [automationEditorOpen, setAutomationEditorOpen] = useState(false);
   const isCharacterDetailOpen = activeTabId === 'characters' && selectedCharacter != null;
-  const isCharacterSyncing = characterSyncLabel != null;
   const showGlobalChrome = !automationEditorOpen;
 
   /**
@@ -176,20 +171,12 @@ export function MainScreen({
     };
   }, [onLoadCharacterDetail, selectedCharacter?.hofCharacterId, session?.loggedIn]);
 
-  /**
-   * 캐릭터 탭의 재동기화 버튼에서 호출된다.
-   *
-   * 로그인되지 않았거나 SSE 동기화가 진행 중이면 중복 시작 요청을 막는다.
-   */
-  async function handleSyncCharacters() {
-    if (!session?.loggedIn || isCharacterSyncing || isCharacterSyncStarting) return;
-
-    setIsCharacterSyncStarting(true);
-    try {
-      await onSyncCharacters();
-    } finally {
-      setIsCharacterSyncStarting(false);
+  async function handleLoadPattern(hofCharacterId: string, slot: number): Promise<LoadPatternResponse> {
+    const response = await onLoadPattern(hofCharacterId, slot);
+    if (response.character?.hofCharacterId === selectedCharacter?.hofCharacterId) {
+      setSelectedCharacterDetail(response.character);
     }
+    return response;
   }
 
   return (
@@ -207,8 +194,6 @@ export function MainScreen({
           battleCategoriesError,
           characters,
           characterSyncLabel,
-          isCharacterSyncing,
-          isCharacterSyncStarting,
           onLoadBattleCategories,
           onLoadBattleMaps,
           onRunBattle,
@@ -222,8 +207,7 @@ export function MainScreen({
           onMakePartyPresetPrimary,
           onReorderPartyPresets,
           onDeletePartyPreset,
-          onLoadPattern,
-          onSyncCharacters: handleSyncCharacters,
+          onLoadPattern: handleLoadPattern,
           onLogout,
           characterDetailError,
           isCharacterDetailLoading,
@@ -260,8 +244,6 @@ type RenderActiveTabArgs = {
   battleCategoriesError: string | null;
   characters: HofCharacter[];
   characterSyncLabel: string | null;
-  isCharacterSyncing: boolean;
-  isCharacterSyncStarting: boolean;
   onLoadBattleCategories: () => void;
   onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
   onRunBattle: (request: RunBattleRequest) => Promise<BattleResultResponse>;
@@ -281,7 +263,6 @@ type RenderActiveTabArgs = {
   onReorderPartyPresets: (request: ReorderPartyPresetsRequest) => Promise<PartyPresetResponse[]>;
   onDeletePartyPreset: (presetId: number) => Promise<null>;
   onLoadPattern: (hofCharacterId: string, slot: number) => Promise<LoadPatternResponse>;
-  onSyncCharacters: () => void;
   onLogout: () => void;
   characterDetailError: string | null;
   isCharacterDetailLoading: boolean;
@@ -307,8 +288,6 @@ function renderActiveTab({
   battleCategoriesError,
   characters,
   characterSyncLabel,
-  isCharacterSyncing,
-  isCharacterSyncStarting,
   onLoadBattleCategories,
   onLoadBattleMaps,
   onRunBattle,
@@ -323,7 +302,6 @@ function renderActiveTab({
   onReorderPartyPresets,
   onDeletePartyPreset,
   onLoadPattern,
-  onSyncCharacters,
   onLogout,
   characterDetailError,
   isCharacterDetailLoading,
@@ -394,11 +372,6 @@ function renderActiveTab({
             <Text style={styles.sectionTitle}>캐릭터</Text>
             <View style={styles.sectionActions}>
               <Text style={styles.sectionMeta}>{characterSyncLabel ?? `${characters.length}명`}</Text>
-              <SyncCharactersButton
-                disabled={!authenticated || isCharacterSyncing}
-                loading={isCharacterSyncStarting}
-                onPress={onSyncCharacters}
-              />
             </View>
           </View>
           <View style={styles.characterSubTabs}>
@@ -454,42 +427,6 @@ function renderActiveTab({
         </TabScrollContainer>
       );
   }
-}
-
-/**
- * 캐릭터 목록을 다시 동기화하는 버튼이다.
- *
- * 동기화 시작 요청 중에는 스피너를 보여주고, 실제 동기화 진행 중에는 상위 상태로 disabled 처리된다.
- */
-function SyncCharactersButton({
-  disabled,
-  loading,
-  onPress,
-}: {
-  disabled: boolean;
-  loading: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityLabel="캐릭터 재동기화"
-      accessibilityRole="button"
-      disabled={disabled || loading}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.syncButton,
-        (disabled || loading) && styles.syncButtonDisabled,
-        pressed && !disabled && !loading && styles.syncButtonPressed,
-      ]}
-    >
-      {loading ? (
-        <ActivityIndicator color={theme.colors.text} size="small" />
-      ) : (
-        <RefreshCw color={theme.colors.text} size={16} strokeWidth={2.5} />
-      )}
-      <Text style={styles.syncButtonText}>재동기화</Text>
-    </Pressable>
-  );
 }
 
 /**
@@ -683,29 +620,6 @@ const styles = StyleSheet.create({
   },
   activeCharacterSubTabText: {
     color: theme.colors.accentAmber,
-  },
-  syncButton: {
-    minHeight: 30,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.xs,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.surfaceAlt,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: theme.spacing.xs,
-  },
-  syncButtonDisabled: {
-    opacity: 0.45,
-  },
-  syncButtonPressed: {
-    opacity: 0.82,
-  },
-  syncButtonText: {
-    color: theme.colors.text,
-    fontSize: 11,
-    fontWeight: '800',
   },
   settingsPanel: {
     gap: theme.spacing.lg,
