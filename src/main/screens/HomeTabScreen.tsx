@@ -29,6 +29,7 @@ type HomeTabScreenProps = {
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
   automationController: UnifiedAutomationController;
   onOpenCaptcha: () => void;
+  onDetailModeChange?: (active: boolean) => void;
 };
 
 type HomeRoute = 'dashboard' | 'settings' | 'editor';
@@ -50,6 +51,7 @@ export function HomeTabScreen({
   onListPartyPresets,
   automationController,
   onOpenCaptcha,
+  onDetailModeChange,
 }: HomeTabScreenProps) {
   const [route, setRoute] = useState<HomeRoute>('dashboard');
   const [typedEditorEntry, setTypedEditorEntry] = useState<TypedAutomationEntryResponse | null>(null);
@@ -72,6 +74,10 @@ export function HomeTabScreen({
   useEffect(() => {
     if (!authenticated) automationController.reset();
   }, [authenticated, automationController]);
+
+  useEffect(() => () => {
+    onDetailModeChange?.(false);
+  }, [onDetailModeChange]);
 
   useEffect(() => {
     if (!authenticated || route !== 'dashboard') return undefined;
@@ -106,6 +112,7 @@ export function HomeTabScreen({
       }
       setTypedEditorEntry(entry);
       automationController.clearMessage();
+      onDetailModeChange?.(true);
       setRoute('editor');
       return;
     }
@@ -124,8 +131,9 @@ export function HomeTabScreen({
   const closeEditor = useCallback(() => {
     setTypedEditorEntry(null);
     automationController.clearMessage();
+    onDetailModeChange?.(false);
     setRoute('settings');
-  }, [automationController]);
+  }, [automationController, onDetailModeChange]);
 
   const fetchQuestSnapshots = useCallback(
     () => automationController.fetchQuests(),

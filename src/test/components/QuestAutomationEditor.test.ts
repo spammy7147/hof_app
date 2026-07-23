@@ -1310,6 +1310,10 @@ describe('HomeTabScreen mounted typed editor routing', () => {
     const saves: UpdateQuestAutomationRequest[] = [];
     const battleSaves: UpdateBattleMapAutomationRequest[] = [];
     const adventureSaves: UpdateAdventureMapAutomationRequest[] = [];
+    const detailModeChanges: boolean[] = [];
+    const onDetailModeChange = (active: boolean) => {
+      if (detailModeChanges.at(-1) !== active) detailModeChanges.push(active);
+    };
     let battleSaveResult = true;
     const controller = {
       subscribe: () => () => undefined,
@@ -1342,49 +1346,68 @@ describe('HomeTabScreen mounted typed editor routing', () => {
       onLoadBattleMaps: async () => [],
       onListPartyPresets: async () => [],
       onOpenCaptcha: () => undefined,
+      onDetailModeChange,
     };
 
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(React.createElement(HomeTabScreen, props)); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '설정 열기' }).props.onPress(); });
+    detailModeChanges.length = 0;
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'QUEST 상세 열기' }).props.onPress(); });
+    assert.deepEqual(detailModeChanges, [true]);
     const questEditor = renderer.root.find((node) => (node.type as unknown) === 'QuestAutomationEditor');
     assert.equal(questEditor.props.mutationMessage, 'mutation failed');
     const request: UpdateQuestAutomationRequest = { enabled: true, quests: [] };
     await act(async () => { await questEditor.props.onSave(request); });
     assert.deepEqual(saves, [request]);
+    assert.deepEqual(detailModeChanges, [true, false]);
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'QuestAutomationEditor').length, 0);
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'UnifiedAutomationSettings').length, 1);
 
     await act(async () => { renderer = create(React.createElement(HomeTabScreen, props)); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '설정 열기' }).props.onPress(); });
+    detailModeChanges.length = 0;
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'BATTLE_MAP 상세 열기' }).props.onPress(); });
+    assert.deepEqual(detailModeChanges, [true]);
     const battleEditor = renderer.root.find((node) => (node.type as unknown) === 'BattleMapAutomationEditor');
     const battleRequest: UpdateBattleMapAutomationRequest = { enabled: true, maps: [] };
     await act(async () => { await battleEditor.props.onSave(battleRequest); });
     assert.deepEqual(battleSaves, [battleRequest]);
+    assert.deepEqual(detailModeChanges, [true, false]);
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'BattleMapAutomationEditor').length, 0);
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'UnifiedAutomationSettings').length, 1);
 
     battleSaveResult = false;
     await act(async () => { renderer = create(React.createElement(HomeTabScreen, props)); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '설정 열기' }).props.onPress(); });
+    detailModeChanges.length = 0;
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'BATTLE_MAP 상세 열기' }).props.onPress(); });
     const failedBattleEditor = renderer.root.find((node) => (node.type as unknown) === 'BattleMapAutomationEditor');
     await act(async () => { await failedBattleEditor.props.onSave(battleRequest); });
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'BattleMapAutomationEditor').length, 1);
     assert.equal(failedBattleEditor.props.mutationMessage, 'mutation failed');
+    assert.deepEqual(detailModeChanges, [true]);
     battleSaveResult = true;
 
     await act(async () => { renderer = create(React.createElement(HomeTabScreen, props)); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '설정 열기' }).props.onPress(); });
+    detailModeChanges.length = 0;
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'ADVENTURE_MAP 상세 열기' }).props.onPress(); });
+    assert.deepEqual(detailModeChanges, [true]);
     const adventureEditor = renderer.root.find((node) => (node.type as unknown) === 'AdventureMapAutomationEditor');
     const adventureRequest: UpdateAdventureMapAutomationRequest = { enabled: true, maps: [] };
     await act(async () => { await adventureEditor.props.onSave(adventureRequest); });
     assert.deepEqual(adventureSaves, [adventureRequest]);
+    assert.deepEqual(detailModeChanges, [true, false]);
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'AdventureMapAutomationEditor').length, 0);
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'UnifiedAutomationSettings').length, 1);
+
+    await act(async () => { renderer = create(React.createElement(HomeTabScreen, props)); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '설정 열기' }).props.onPress(); });
+    detailModeChanges.length = 0;
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'QUEST 상세 열기' }).props.onPress(); });
+    await act(async () => { renderer.unmount(); });
+    assert.deepEqual(detailModeChanges, [true, false]);
   });
 });
 
