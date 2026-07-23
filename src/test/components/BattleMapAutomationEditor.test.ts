@@ -279,6 +279,15 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
 
     assert.equal(hasText(renderer.root, '오늘 3/5 · 2회 남음 · 다음 3회 전투'), true);
     assert.equal(hasText(renderer.root, 'missing'), true);
+    assert.equal(renderer.root.findAll((node) => (
+      (node.type as unknown) === 'TextInput'
+      && node.props.accessibilityLabel === '전투 맵 검색'
+    )).length, 1);
+    const editorList = renderer.root.find((node) => (node.type as unknown) === 'FlatList');
+    assert.equal(
+      (editorList.props.data as Array<{ key: string }>).some(({ key }) => key === 'catalog-search'),
+      false,
+    );
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투 맵 검색' }).props.onChangeText('forest'); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 맵 선택' }).props.onPress(); });

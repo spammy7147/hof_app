@@ -71,7 +71,6 @@ type EditorListItem =
   | { key: string; kind: 'HEADING'; title: string }
   | { key: string; kind: 'SELECTED_EMPTY' }
   | { key: string; kind: 'SELECTED_LIST' }
-  | { key: string; kind: 'CATALOG_SEARCH' }
   | { key: string; kind: 'CATALOG_EMPTY' }
   | { key: string; kind: 'CATALOG_ROW'; row: BattleMapCatalogRow };
 
@@ -382,7 +381,6 @@ export function BattleMapAutomationEditor({
       ? [{ key: 'selected-empty', kind: 'SELECTED_EMPTY' } as const]
       : [{ key: 'selected-list', kind: 'SELECTED_LIST' } as const]),
     { key: 'catalog-heading', kind: 'HEADING', title: '맵 찾기' },
-    { key: 'catalog-search', kind: 'CATALOG_SEARCH' },
     ...catalogResult.rows.map((row) => ({
       key: `catalog:${row.key}`,
       kind: 'CATALOG_ROW' as const,
@@ -519,12 +517,6 @@ export function BattleMapAutomationEditor({
     if (item.kind === 'SELECTED_EMPTY') {
       return <Text style={styles.muted}>아래 목록에서 실행할 맵을 선택해 주세요.</Text>;
     }
-    if (item.kind === 'CATALOG_SEARCH') {
-      return <TextInput accessibilityLabel="전투 맵 검색" editable onChangeText={(value) => {
-        queryRef.current = value;
-        setQuery(value);
-      }} placeholder="맵 이름, 그룹, 추천 레벨 검색" placeholderTextColor={theme.colors.textMuted} style={styles.search} value={query} />;
-    }
     if (item.kind === 'CATALOG_EMPTY') return <Text style={styles.muted}>검색 가능한 맵이 없습니다.</Text>;
     if (item.kind === 'CATALOG_ROW') {
       const { row } = item;
@@ -585,6 +577,11 @@ export function BattleMapAutomationEditor({
       {categoryLoading ? <Text style={styles.muted}>맵 카테고리 불러오는 중</Text> : null}
       {battleCategoriesError ? <ResourceWarning label="맵 카테고리" retryLabel="맵 카테고리 다시 불러오기" onRetry={onLoadBattleCategories} /> : null}
       {presetState.error ? <ResourceWarning label="프리셋" retryLabel="프리셋 다시 불러오기" onRetry={loadPresets} /> : presetState.loading ? <Text style={styles.muted}>프리셋 불러오는 중</Text> : null}
+
+      <TextInput accessibilityLabel="전투 맵 검색" editable onChangeText={(value) => {
+        queryRef.current = value;
+        setQuery(value);
+      }} placeholder="추가할 맵 이름, 그룹, 추천 레벨 검색" placeholderTextColor={theme.colors.textMuted} style={styles.search} value={query} />
 
       <FlatList contentContainerStyle={styles.content} data={listItems} initialNumToRender={12} keyboardShouldPersistTaps="handled" keyExtractor={editorListKey} renderItem={renderListItem} windowSize={7} />
 
