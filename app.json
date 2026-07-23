@@ -11,6 +11,7 @@
     },
     "android": {
       "package": "app.spammy.hof",
+      "softwareKeyboardLayoutMode": "resize",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",

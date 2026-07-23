@@ -58,9 +58,9 @@ export function useCaptchaGate({ authenticated, api, describeError }: UseCaptcha
     pending?.reject(error);
   }, []);
 
-  /** 현재 계정의 pending challenge를 읽고, 필요하면 사용자가 닫을 수 없는 blocking 모달로 연다. */
+  /** 인증 시작 시 최신 캡차 snapshot을 준비하고, 필요하면 닫을 수 없는 blocking 모달로 연다. */
   const open = useCallback(async (options?: { blocking?: boolean }) => {
-    const nextBlocking = options?.blocking === true;
+    const nextBlocking = options?.blocking === true || pendingResumeRef.current !== null;
     setVisible(true);
     setBlocking((current) => current || nextBlocking);
     setMessage(null);
@@ -79,23 +79,10 @@ export function useCaptchaGate({ authenticated, api, describeError }: UseCaptcha
 
     setIsLoading(true);
     try {
-      const loadedCaptcha = await api.fetchCurrentCaptcha();
-      setCaptcha(loadedCaptcha);
-      if (loadedCaptcha) return;
-
-      const error = new Error('전투를 계속할 캡차 정보를 찾지 못했습니다.');
-      setMessage('대기 중인 캡차가 없습니다.');
-      if (nextBlocking) {
-        setBlocking(false);
-        setErrorMessage(error.message);
-        rejectPending(error);
-      }
+      const preparedCaptcha = await api.prepareCurrentCaptcha();
+      setCaptcha(preparedCaptcha);
     } catch (error) {
       setErrorMessage(describeError(error));
-      if (nextBlocking) {
-        setBlocking(false);
-        rejectPending(error);
-      }
     } finally {
       setIsLoading(false);
     }
@@ -134,7 +121,10 @@ export function useCaptchaGate({ authenticated, api, describeError }: UseCaptcha
     setMessage(null);
     setErrorMessage(null);
     try {
-      const response = await api.submitCaptchaAnswer(captcha.id, { answer: trimmedAnswer });
+      const response = await api.submitCaptchaAnswer(captcha.id, {
+        answer: trimmedAnswer,
+        preparationVersion: captcha.preparationVersion,
+      });
       if (isCaptchaPending(response)) {
         setCaptcha(response);
         setMessage('캡차 인증이 아직 완료되지 않았습니다. 다시 입력하세요.');
