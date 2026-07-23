@@ -15,7 +15,7 @@ const waitForCaptcha = async () => undefined;
 
 class BackendApiClientMock {
   async restoreSession() {}
-  async fetchStatus() { return null; }
+  async fetchStatus() { return { characterSyncRequired: false }; }
 }
 
 class UnifiedAutomationControllerMock {
@@ -50,8 +50,9 @@ moduleWithLoader._load = (request, parent, isMain) => {
         return {
           characters: [],
           characterSyncLabel: null,
-          syncCharacters,
-          manualSyncCharacters: syncCharacters,
+          loadSavedCharacters: syncCharacters,
+          startAutomaticSyncIfRequired: syncCharacters,
+          upsertCharacter: () => undefined,
           resetCharacterSync: () => undefined,
         };
       },

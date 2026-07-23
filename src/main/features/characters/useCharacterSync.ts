@@ -12,6 +12,7 @@ import type {
   CharacterSyncJobResponse,
   HofCharacter,
 } from '../../types/api';
+import { shouldStartAutomaticCharacterSync } from '../../domain/characterSyncPolicy';
 
 type UseCharacterSyncOptions = {
   api: BackendApiClient;
@@ -30,6 +31,7 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
   const [characterSyncLabel, setCharacterSyncLabel] = useState<string | null>(null);
   const subscriptionRef = useRef<SseSubscription | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const automaticSyncEvaluatedRef = useRef(false);
 
   /** 현재 SSE와 예약된 재연결을 함께 닫아 로그아웃·unmount 이후 event 반영을 막는다. */
   const closeSubscription = useCallback(() => {
@@ -107,26 +109,30 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
     openSubscription(job.jobId);
   }, [api, closeSubscription, openSubscription]);
 
-  /** 저장 snapshot을 즉시 표시한 뒤 새 SSE job을 시작하는 로그인·수동 동기화 공통 진입점이다. */
-  const syncCharacters = useCallback(async () => {
+  const loadSavedCharacters = useCallback(async () => {
     setCharacters(await api.listCharacters());
-    await startJob();
-  }, [api, startJob]);
+  }, [api]);
 
-  const manualSyncCharacters = useCallback(async () => {
-    onNotice(null);
-    try {
-      await syncCharacters();
-    } catch (error) {
-      onNotice(describeError(error));
-    }
-  }, [describeError, onNotice, syncCharacters]);
+  const startAutomaticSyncIfRequired = useCallback(async (required: boolean) => {
+    if (!shouldStartAutomaticCharacterSync(required, automaticSyncEvaluatedRef.current)) return;
+    automaticSyncEvaluatedRef.current = true;
+    await startJob();
+  }, [startJob]);
+
+  const upsertCharacter = useCallback((incoming: HofCharacter) => {
+    setCharacters((current) => {
+      const index = current.findIndex((item) => item.hofCharacterId === incoming.hofCharacterId);
+      if (index < 0) return [...current, incoming];
+      return current.map((item, itemIndex) => itemIndex === index ? incoming : item);
+    });
+  }, []);
 
   /** 로그아웃에서 화면 목록, 진행 표시와 연결을 원자적으로 초기화한다. */
   const resetCharacterSync = useCallback(() => {
     closeSubscription();
     setCharacters([]);
     setCharacterSyncLabel(null);
+    automaticSyncEvaluatedRef.current = false;
   }, [closeSubscription]);
 
   useEffect(() => closeSubscription, [closeSubscription]);
@@ -134,8 +140,9 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
   return {
     characters,
     characterSyncLabel,
-    syncCharacters,
-    manualSyncCharacters,
+    loadSavedCharacters,
+    startAutomaticSyncIfRequired,
+    upsertCharacter,
     resetCharacterSync,
   };
 }

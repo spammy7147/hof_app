@@ -78,8 +78,9 @@ export default function App() {
   const {
     characters,
     characterSyncLabel,
-    syncCharacters,
-    manualSyncCharacters,
+    loadSavedCharacters,
+    startAutomaticSyncIfRequired,
+    upsertCharacter,
     resetCharacterSync,
   } = useCharacterSync({ api, describeError, onNotice: setNotice });
   const {
@@ -115,6 +116,7 @@ export default function App() {
   const refreshStatus = useCallback(async () => {
     const nextStatus = await api.fetchStatus();
     setStatus(nextStatus);
+    return nextStatus;
   }, [api]);
 
   /**
@@ -199,7 +201,10 @@ export default function App() {
   const loadCharacterPattern = useCallback((
     hofCharacterId: string,
     slot: number,
-  ): Promise<LoadPatternResponse> => api.loadCharacterPattern(hofCharacterId, slot), [api]);
+  ): Promise<LoadPatternResponse> => api.loadCharacterPattern(hofCharacterId, slot).then((response) => {
+    if (response.character) upsertCharacter(response.character);
+    return response;
+  }), [api, upsertCharacter]);
 
   /**
    * 로그인 직후 필요한 초기 데이터들을 병렬로 불러온다.
@@ -207,14 +212,19 @@ export default function App() {
   const hydrateAfterLogin = useCallback(async () => {
     const results = await Promise.allSettled([
       refreshStatus(),
-      syncCharacters(),
+      loadSavedCharacters(),
     ]);
 
     const failed = results.find((result) => result.status === 'rejected');
     if (failed?.status === 'rejected') {
       setNotice(describeError(failed.reason));
+      return;
     }
-  }, [describeError, refreshStatus, syncCharacters]);
+    const statusResult = results[0];
+    if (statusResult.status === 'fulfilled') {
+      await startAutomaticSyncIfRequired(statusResult.value.characterSyncRequired);
+    }
+  }, [describeError, loadSavedCharacters, refreshStatus, startAutomaticSyncIfRequired]);
 
   /**
    * HOF 로그인 요청부터 저장 여부 처리, 초기 데이터 로딩까지 한 번에 수행한다.
@@ -347,7 +357,6 @@ export default function App() {
         onDeletePartyPreset={deletePartyPreset}
         onLoadCharacterDetail={loadCharacterDetail}
         onLoadPattern={loadCharacterPattern}
-        onSyncCharacters={manualSyncCharacters}
         onLogout={handleLogout}
         onOpenLogin={() => setMode('login')}
       />
