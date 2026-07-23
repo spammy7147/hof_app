@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  addUserQuestMap,
   applyAutoMatchedMap,
   applyManualMapOverride,
   appendMissionMap,
@@ -18,6 +19,7 @@ import {
   matchMapClearMission,
   moveMissionMap,
   prioritizeSelectedQuests,
+  removeQuestMap,
   removeMissionMap,
   reorderMissionMaps,
   replaceMissionMap,
@@ -96,6 +98,93 @@ describe('quest automation domain', () => {
     assert.equal(buildQuestMapIdentity(catalogMap('battle_map', null, 'Unresolved')), 'battle_map\u0000');
   });
 
+  it('deduplicates automatic matches into one quest map pool', () => {
+    const quest = snapshot('q', 'Quest', 'ACTIVE', 0, [
+      mission('clear-a', 'MAP_CLEAR', 'Shared'),
+      mission('clear-b', 'MAP_CLEAR', 'Shared'),
+      mission('kill', 'MONSTER_KILL', 'Monster'),
+    ]);
+    const draft = buildQuestAutomationDraft(
+      questEntry([{ questCode: 'q', enabled: true, sourceOrder: 0, maps: [] }]),
+      [quest],
+      [catalogMap('battle_map', 'shared', 'Shared')],
+    );
+
+    assert.equal(draft.quests[0]?.mapMode, 'AUTO');
+    assert.deepEqual(draft.quests[0]?.maps.map(({ mapCode }) => mapCode), ['shared']);
+  });
+
+  it('uses manual rows from any mission and discards every automatic row', () => {
+    const stored = [
+      { ...mapSetting('clear', 'auto', 0), manuallyOverridden: false },
+      { ...mapSetting('clear', 'manual', 0), manuallyOverridden: true },
+      { ...mapSetting('kill', 'manual', 0), manuallyOverridden: true },
+    ];
+    const draft = buildQuestAutomationDraft(
+      questEntry([{ questCode: 'q', enabled: true, sourceOrder: 0, maps: stored }]),
+      [snapshot('q', 'Quest', 'ACTIVE', 0, [
+        mission('clear', 'MAP_CLEAR', 'Auto'),
+        mission('kill', 'MONSTER_KILL', 'Monster'),
+      ])],
+      [catalogMap('battle_map', 'auto', 'Auto')],
+    );
+
+    assert.equal(draft.quests[0]?.mapMode, 'MANUAL');
+    assert.deepEqual(draft.quests[0]?.maps.map(({ mapCode }) => mapCode), ['manual']);
+  });
+
+  it('replaces every automatic map with the first user map', () => {
+    const quest = snapshot('q', 'Quest', 'ACTIVE', 0, [
+      mission('clear-a', 'MAP_CLEAR', 'Auto A'),
+      mission('clear-b', 'MAP_CLEAR', 'Auto B'),
+    ]);
+    const draft = buildQuestAutomationDraft(
+      questEntry([{ questCode: 'q', enabled: true, sourceOrder: 0, maps: [] }]),
+      [quest],
+      [catalogMap('battle_map', 'auto-a', 'Auto A'), catalogMap('battle_map', 'auto-b', 'Auto B')],
+    );
+
+    const next = addUserQuestMap(draft.quests[0]!, catalogMap('battle_map', 'manual', 'Manual'));
+
+    assert.equal(next.mapMode, 'MANUAL');
+    assert.deepEqual(next.maps.map(({ mapCode }) => mapCode), ['manual']);
+  });
+
+  it('restores automatic matches after deleting the final user map', () => {
+    const quest = snapshot('q', 'Quest', 'ACTIVE', 0, [mission('clear', 'MAP_CLEAR', 'Automatic')]);
+    const manual = { ...mapSetting('clear', 'manual', 0), manuallyOverridden: true };
+    const draft = buildQuestAutomationDraft(
+      questEntry([{ questCode: 'q', enabled: true, sourceOrder: 0, maps: [manual] }]),
+      [quest],
+      [catalogMap('battle_map', 'automatic', 'Automatic')],
+    );
+
+    const next = removeQuestMap(draft.quests[0]!, 0, [catalogMap('battle_map', 'automatic', 'Automatic')]);
+
+    assert.equal(next.mapMode, 'AUTO');
+    assert.deepEqual(next.maps.map(({ mapCode }) => mapCode), ['automatic']);
+  });
+
+  it('expands one manual pool across every combat mission', () => {
+    const quest = snapshot('q', 'Quest', 'ACTIVE', 0, [
+      mission('clear', 'MAP_CLEAR', 'Target'),
+      mission('kill', 'MONSTER_KILL', 'Monster'),
+    ]);
+    const manual = { ...mapSetting('clear', 'manual', 0), manuallyOverridden: true };
+    const draft = buildQuestAutomationDraft(
+      questEntry([{ questCode: 'q', enabled: true, sourceOrder: 0, maps: [manual] }]),
+      [quest],
+      [],
+    );
+
+    assert.deepEqual(
+      buildQuestAutomationRequest(draft, []).quests[0]?.maps.map(({ missionKey, mapCode, manuallyOverridden }) => (
+        [missionKey, mapCode, manuallyOverridden]
+      )),
+      [['clear', 'manual', true], ['kill', 'manual', true]],
+    );
+  });
+
   it('appends only a unique resolved map with contiguous manual primary defaults', () => {
     const initial = [{ ...mapSetting('old', 'a', 7), executionOrder: 7 }];
     const selected = catalogMap('adventure_map', 'b', 'B');
@@ -124,43 +213,54 @@ describe('quest automation domain', () => {
     ]);
     const cached = {
       questCode: 'q1', name: 'Old', section: 'ACTIVE' as const, sourceOrder: 1, enabled: false, missing: true,
+      mapMode: 'MANUAL' as const,
+      maps: [{ ...questMap('battle_map', 'a', 0) }],
+      storedMaps: [],
       missions: [
-        { ...mission('same', 'MONSTER_KILL', 'Maid'), maps: [{ ...mapSetting('same', 'a', 9), executionOrder: 9 }] },
+        { ...mission('same', 'MONSTER_KILL', 'Maid'), maps: [{ ...mapSetting('same', 'a', 9), executionOrder: 9, manuallyOverridden: true }] },
         { ...mission('gone', 'MONSTER_KILL', 'Gone'), maps: [mapSetting('gone', 'gone', 0)] },
         { ...mission('item', 'ITEM_TURN_IN', 'Horn'), maps: [mapSetting('item', 'wrong', 0)] },
       ],
     };
     const restored = restoreQuestSelection(current, cached);
 
-    assert.deepEqual(restored, {
-      questCode: 'q1', name: 'Current', section: 'AVAILABLE', sourceOrder: 12, enabled: false, missing: false,
-      missions: [
-        { ...current.missions[0]!, maps: [{ ...mapSetting('same', 'a', 0), executionOrder: 0 }] },
-        { ...current.missions[1]!, maps: [] },
-        { ...current.missions[2]!, maps: [] },
-      ],
-    });
+    assert.equal(restored.name, 'Current');
+    assert.equal(restored.section, 'AVAILABLE');
+    assert.equal(restored.sourceOrder, 12);
+    assert.equal(restored.enabled, false);
+    assert.equal(restored.missing, false);
+    assert.equal(restored.mapMode, 'MANUAL');
+    assert.deepEqual(restored.maps, [questMap('battle_map', 'a', 0)]);
+    assert.deepEqual(restored.missions.map(({ key }) => key), ['same', 'new', 'item']);
   });
 
-  it('restores cached automatic map-clear settings without re-matching them against the current catalog', () => {
+  it('recomputes cached automatic maps against the current catalog', () => {
     const current = snapshot('q1', 'Current', 'AVAILABLE', 12, [mission('clear', 'MAP_CLEAR', 'Target')]);
     const automatic = { ...mapSetting('clear', 'cached-map', 4), executionOrder: 4, manuallyOverridden: false };
     const cached = {
       questCode: 'q1', name: 'Old', section: 'ACTIVE' as const, sourceOrder: 1, enabled: true, missing: false,
+      mapMode: 'AUTO' as const,
+      maps: [questMap('battle_map', 'cached-map', 0)],
+      storedMaps: [],
       missions: [{ ...mission('clear', 'MAP_CLEAR', 'Target'), maps: [automatic] }],
     };
 
     assert.deepEqual(restoreQuestSelection(current, cached, [
       catalogMap('battle_map', 'a', 'Target'),
       catalogMap('adventure_map', 'b', 'Target'),
-    ]).missions[0]?.maps, [{ ...automatic, executionOrder: 0 }]);
-    assert.deepEqual(restoreQuestSelection(current, cached).missions[0]?.maps, [{ ...automatic, executionOrder: 0 }]);
+    ]).maps, []);
+    assert.deepEqual(restoreQuestSelection(current, cached, [
+      catalogMap('battle_map', 'a', 'Target'),
+    ]).maps.map(({ mapCode }) => mapCode), ['a']);
   });
 
-  it('restores only the first ordered cached map for a map-clear mission', () => {
+  it('restores every ordered cached manual map into the shared pool', () => {
     const current = snapshot('q1', 'Current', 'AVAILABLE', 12, [mission('clear', 'MAP_CLEAR', 'Target')]);
     const cached = {
       questCode: 'q1', name: 'Old', section: 'ACTIVE' as const, sourceOrder: 1, enabled: true, missing: false,
+      mapMode: 'MANUAL' as const,
+      maps: [questMap('battle_map', 'first', 4), questMap('battle_map', 'second', 5)],
+      storedMaps: [],
       missions: [{
         ...mission('clear', 'MAP_CLEAR', 'Target'),
         maps: [
@@ -170,10 +270,9 @@ describe('quest automation domain', () => {
       }],
     };
 
-    assert.deepEqual(restoreQuestSelection(current, cached).missions[0]?.maps, [{
-      ...mapSetting('clear', 'first', 0),
-      manuallyOverridden: true,
-    }]);
+    assert.deepEqual(restoreQuestSelection(current, cached).maps.map(({ mapCode, executionOrder }) => [mapCode, executionOrder]), [
+      ['first', 0], ['second', 1],
+    ]);
   });
 
   it('keeps a selected repeated quest and its config when the latest snapshot disappears', () => {
@@ -350,28 +449,24 @@ describe('quest automation domain', () => {
     assert.match(validateQuestAutomationDraft(draft, [9]).join(' '), /맵 설정 필요/);
     assert.equal(getMissionReadiness(draft.quests[0]!.missions[0]!, [9]), '맵 설정 필요');
 
-    draft.quests[0]!.missions[0]!.maps = [{ ...mapSetting('kill', 'a', 0), presetMode: 'EXPLICIT', partyPresetId: 999 }];
+    draft.quests[0]!.maps = [{ ...questMap('battle_map', 'a', 0), presetMode: 'EXPLICIT', partyPresetId: 999 }];
     assert.match(validateQuestAutomationDraft(draft, [9]).join(' '), /프리셋 설정 필요/);
-    assert.equal(getMissionReadiness(draft.quests[0]!.missions[0]!, [9]), '프리셋 설정 필요');
 
-    draft.quests[0]!.missions[0]!.maps = [mapSetting('kill', 'a', 0), mapSetting('kill', 'a', 1)];
+    draft.quests[0]!.maps = [questMap('battle_map', 'a', 0), questMap('battle_map', 'a', 1)];
     assert.match(validateQuestAutomationDraft(draft, [9]).join(' '), /중복/);
-    draft.quests[0]!.missions[1]!.maps = [mapSetting('item', 'should-not-save', 0)];
-    draft.quests[0]!.missions[0]!.maps = [{ ...mapSetting('kill', 'a', 0), manuallyOverridden: true }];
-    assert.equal(getMissionReadiness(draft.quests[0]!.missions[0]!, [9]), '사용자 변경');
+    draft.quests[0]!.mapMode = 'MANUAL';
+    draft.quests[0]!.maps = [questMap('battle_map', 'a', 0)];
     assert.deepEqual(buildQuestAutomationRequest(draft, [9]).quests[0]?.maps.map(({ missionKey }) => missionKey), ['kill']);
   });
 
-  it('requires exactly one map for map-clear missions', () => {
+  it('allows multiple maps for a map-clear mission through the shared quest pool', () => {
     const quest = snapshot('clear', 'Clear', 'ACTIVE', 0, [mission('clear-key', 'MAP_CLEAR', 'Target')]);
     const draft = selectQuest(buildQuestAutomationDraft(questEntry([]), [quest]), quest, true);
-    draft.quests[0]!.missions[0]!.maps = [
-      { ...mapSetting('clear-key', 'a', 0), manuallyOverridden: true },
-      { ...mapSetting('clear-key', 'b', 1), manuallyOverridden: true },
-    ];
+    draft.quests[0]!.mapMode = 'MANUAL';
+    draft.quests[0]!.maps = [questMap('battle_map', 'a', 0), questMap('battle_map', 'b', 1)];
 
-    assert.match(validateQuestAutomationDraft(draft, []).join(' '), /하나/);
-    assert.throws(() => buildQuestAutomationRequest(draft, []), /하나/);
+    assert.deepEqual(validateQuestAutomationDraft(draft, []), []);
+    assert.deepEqual(buildQuestAutomationRequest(draft, []).quests[0]?.maps.map(({ mapCode }) => mapCode), ['a', 'b']);
   });
 
   it('coalesces repeated semantic mission instances into one UI setting and one request map list', () => {
@@ -379,7 +474,10 @@ describe('quest automation domain', () => {
       mission('kill-key', 'MONSTER_KILL', 'Killer Maid'),
       mission('kill-key', 'MONSTER_KILL', 'Killer Maid'),
     ]);
-    const storedMaps = [mapSetting('kill-key', 'a', 0), mapSetting('kill-key', 'b', 1)];
+    const storedMaps = [
+      { ...mapSetting('kill-key', 'a', 0), manuallyOverridden: true },
+      { ...mapSetting('kill-key', 'b', 1), manuallyOverridden: true },
+    ];
     const draft = buildQuestAutomationDraft(
       questEntry([{ questCode: 'repeat', enabled: true, sourceOrder: 0, maps: storedMaps }]),
       [repeated],
@@ -389,11 +487,11 @@ describe('quest automation domain', () => {
     assert.deepEqual(buildQuestAutomationRequest(draft, []).quests[0]?.maps, storedMaps);
   });
 
-  it('validates duplicate semantic mission map identities across the whole quest', () => {
+  it('validates duplicate identities in the shared quest map pool', () => {
     const quest = snapshot('repeat', 'Repeated', 'ACTIVE', 0, [mission('kill-key', 'MONSTER_KILL', 'Killer Maid')]);
     const draft = selectQuest(buildQuestAutomationDraft(questEntry([]), [quest]), quest, true);
-    const duplicated = { ...draft.quests[0]!.missions[0]!, maps: [mapSetting('kill-key', 'a', 0)] };
-    draft.quests[0]!.missions = [duplicated, structuredClone(duplicated)];
+    draft.quests[0]!.mapMode = 'MANUAL';
+    draft.quests[0]!.maps = [questMap('battle_map', 'a', 0), questMap('battle_map', 'a', 1)];
 
     assert.match(validateQuestAutomationDraft(draft, []).join(' '), /중복/);
     assert.throws(() => buildQuestAutomationRequest(draft, []), /중복/);
@@ -424,6 +522,10 @@ function snapshot(questId: string, name: string, section: QuestSnapshot['section
 
 function mapSetting(missionKey: string, mapCode: string, executionOrder: number) {
   return { missionKey, categoryId: 'battle_map', mapCode, executionOrder, manuallyOverridden: false, presetMode: 'PRIMARY' as const, partyPresetId: null };
+}
+
+function questMap(categoryId: string, mapCode: string, executionOrder: number) {
+  return { categoryId, mapCode, executionOrder, presetMode: 'PRIMARY' as const, partyPresetId: null };
 }
 
 function questEntry(quests: TypedAutomationEntryResponse['quests']): TypedAutomationEntryResponse {
