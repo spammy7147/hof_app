@@ -9,6 +9,7 @@ import type {
 import {
   formatAutomationPresetSelection as formatPresetSelection,
 } from './partyPresets';
+import { findBundledAdventureMapName } from './adventureMapNames';
 
 export type AdventureMapDraftSetting = {
   categoryId: string;
@@ -68,7 +69,10 @@ export function buildAdventureMapAutomationDraft(
         return {
           ...setting,
           executionOrder,
-          displayName: observed?.name || setting.displayName?.trim() || '모험맵 이름 확인 불가',
+          displayName: observed?.name
+            || setting.displayName?.trim()
+            || findBundledAdventureMapName(setting.mapCode)
+            || '모험맵 이름 확인 불가',
           groupName: observed?.groupName ?? null,
           recommendedLevel: observed?.recommendedLevel ?? null,
           resolved: observed != null,

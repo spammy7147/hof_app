@@ -82,6 +82,21 @@ describe('adventure map automation domain', () => {
     assert.equal(draft.maps[0]?.resolved, false);
   });
 
+  it('uses the bundled catalog name when an older server omits the stored display name', () => {
+    const stored = entry();
+    stored.adventureMaps = [{
+      categoryId: 'adventure_map',
+      mapCode: 'sion00',
+      presetMode: 'PRIMARY',
+      partyPresetId: null,
+      executionOrder: 0,
+    }];
+
+    const draft = buildAdventureMapAutomationDraft(stored, []);
+
+    assert.equal(draft.maps[0]?.displayName, 'Castle In The Sky- 천공성(외곽)');
+  });
+
   it('dynamically relabels PRIMARY selections while explicit selections stay fixed', () => {
     const primary = { presetMode: 'PRIMARY' as const, partyPresetId: null };
     const explicit = { presetMode: 'EXPLICIT' as const, partyPresetId: 9 };

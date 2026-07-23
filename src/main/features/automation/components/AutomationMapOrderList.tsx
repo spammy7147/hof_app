@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { GripVertical, Trash2 } from 'lucide-react-native';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import DraggableFlatList, {
-  type DraggableFlatListProps,
+  NestableDraggableFlatList,
   type RenderItemParams,
 } from 'react-native-draggable-flatlist';
 
@@ -18,7 +18,7 @@ export type AutomationMapOrderListProps<T extends object> = {
   onMove: (id: string, offset: -1 | 1) => void;
   onReorder: (orderedIds: string[]) => void;
   renderContent: (item: T, context: { disabled: boolean; index: number }) => ReactNode;
-  simultaneousHandlers?: DraggableFlatListProps<Row<T>>['simultaneousHandlers'];
+  nested?: boolean;
 };
 
 type Row<T> = { id: string; item: T };
@@ -32,7 +32,7 @@ export function AutomationMapOrderList<T extends object>({
   onMove,
   onReorder,
   renderContent,
-  simultaneousHandlers,
+  nested = false,
 }: AutomationMapOrderListProps<T>) {
   const [dragging, setDragging] = useState(false);
   const disabledRef = useRef(disabled);
@@ -165,6 +165,7 @@ export function AutomationMapOrderList<T extends object>({
   const listProps = {
     activationDistance: 8,
     data: rows,
+    ItemSeparatorComponent: MapRowSeparator,
     keyExtractor: ({ id }: Row<T>) => id,
     onDragBegin: () => {
       if (disabledRef.current || renderInteractionGeneration !== interactionGenerationRef.current) return;
@@ -187,9 +188,14 @@ export function AutomationMapOrderList<T extends object>({
     },
     renderItem: renderRow,
     scrollEnabled: false,
-    simultaneousHandlers,
   };
-  return <DraggableFlatList {...listProps} />;
+  return nested
+    ? <NestableDraggableFlatList {...listProps} />
+    : <DraggableFlatList {...listProps} />;
+}
+
+function MapRowSeparator() {
+  return <View style={styles.separator} />;
 }
 
 const styles = StyleSheet.create({
@@ -214,5 +220,6 @@ const styles = StyleSheet.create({
   },
   deleteAction: { alignItems: 'center', backgroundColor: theme.colors.danger, justifyContent: 'center', width: 72 },
   deleteText: { color: theme.colors.buttonText, fontSize: 11, fontWeight: '900', marginTop: 2 },
+  separator: { height: theme.spacing.sm },
   pressed: { opacity: 0.72 },
 });

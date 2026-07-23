@@ -90,6 +90,16 @@ describe('AutomationMapOrderList', () => {
     assert.deepEqual(reorders, [['b', 'a']]);
   });
 
+  it('keeps visible breathing room between adjacent cards', async () => {
+    const renderer = await renderList();
+    const draggable = findHost(renderer.root, 'DraggableFlatList');
+    const Separator = draggable.props.ItemSeparatorComponent as () => React.ReactElement;
+
+    assert.ok(Separator);
+    const separator = Separator() as React.ReactElement<{ style: { height?: number } }>;
+    assert.equal(separator.props.style.height, 8);
+  });
+
   it('offers bounded accessible movement and deletion from the drag handle', async () => {
     const moves: Array<[string, -1 | 1]> = [];
     const deletes: string[] = [];

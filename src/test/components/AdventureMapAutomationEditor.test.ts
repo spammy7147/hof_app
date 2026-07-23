@@ -53,6 +53,16 @@ const draggableFlatList = (props: Record<string, unknown>) => React.createElemen
     }),
   )),
 );
+const nestableDraggableFlatList = (props: Record<string, unknown>) => React.createElement(
+  'NestableDraggableFlatList',
+  props,
+  draggableFlatList(props).props.children as React.ReactNode,
+);
+const nestableScrollContainer = (props: Record<string, unknown>) => React.createElement(
+  'NestableScrollContainer',
+  props,
+  props.children as React.ReactNode,
+);
 type SwipeableMockMethods = { close: () => void; closeCalls: number };
 const reanimatedSwipeable = React.forwardRef<SwipeableMockMethods, Record<string, unknown>>((props, ref) => {
   const methods = React.useMemo<SwipeableMockMethods>(() => ({
@@ -93,7 +103,12 @@ const originalLoad = moduleWithLoader._load;
 moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') return reactNativeMock;
   if (request === 'lucide-react-native') return iconsMock;
-  if (request === 'react-native-draggable-flatlist') return { __esModule: true, default: draggableFlatList };
+  if (request === 'react-native-draggable-flatlist') return {
+    __esModule: true,
+    default: draggableFlatList,
+    NestableDraggableFlatList: nestableDraggableFlatList,
+    NestableScrollContainer: nestableScrollContainer,
+  };
   if (request === 'react-native-gesture-handler') return { FlatList: flatList };
   if (request === 'react-native-gesture-handler/ReanimatedSwipeable') {
     return { __esModule: true, default: reanimatedSwipeable };
@@ -114,20 +129,14 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('AdventureMapAutomationEditor', () => {
-  it('shares the gesture-handler list with the draggable cards so card gestures can scroll vertically', async () => {
+  it('uses the library nested-scroll pair so card gestures scroll the editor vertically', async () => {
     const renderer = await renderEditor({
       entry: entry([setting('first', 0, 'PRIMARY', null)]),
       maps: [map('first', '첫 맵')],
     });
 
-    const list = renderer.root.find((node) => (
-      (node.type as unknown) === 'FlatList'
-      && Array.isArray(node.props.data)
-      && node.props.data.some((item: { key?: string }) => item.key === 'catalog-title')
-    ));
-    const draggable = renderer.root.find((node) => (node.type as unknown) === 'DraggableFlatList');
-    assert.ok(draggable.props.simultaneousHandlers);
-    assert.equal(draggable.props.simultaneousHandlers.current.data, list.props.data);
+    assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'NestableScrollContainer').length, 1);
+    assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'NestableDraggableFlatList').length, 1);
   });
 
   it('mounts compact full-card catalog rows with selected button semantics', async () => {
@@ -215,11 +224,7 @@ describe('AdventureMapAutomationEditor', () => {
     assert.equal(textCount(presetChoice, '대표 · 대표 프리셋'), 1);
     assert.equal(presetChoice.findAll((node) => (node.type as unknown) === 'ChevronRight').length, 1);
 
-    const list = renderer.root.find((node) => (
-      (node.type as unknown) === 'FlatList'
-      && Array.isArray(node.props.data)
-      && node.props.data.some((item: { key?: string }) => item.key === 'catalog-title')
-    ));
+    const list = renderer.root.find((node) => (node.type as unknown) === 'NestableScrollContainer');
     assert.equal(flattenStyle(list.props.contentContainerStyle).gap, 6);
   });
 
@@ -261,7 +266,7 @@ describe('AdventureMapAutomationEditor', () => {
       maps: [map('first', '첫 맵'), map('second', '둘째 맵')],
       onSave: async (request) => { saves.push(request); return true; },
     });
-    const draggable = renderer.root.find((node) => (node.type as unknown) === 'DraggableFlatList');
+    const draggable = renderer.root.find((node) => (node.type as unknown) === 'NestableDraggableFlatList');
     const rows = draggable.props.data as unknown[];
 
     await act(async () => {
@@ -322,11 +327,7 @@ describe('AdventureMapAutomationEditor', () => {
       onSave: async (request) => { saves.push(request); return true; },
     });
 
-    const lists = renderer.root.findAll((node) => (
-      (node.type as unknown) === 'FlatList'
-      && Array.isArray(node.props.data)
-      && node.props.data.some((item: { key?: string }) => item.key === 'catalog-title')
-    ));
+    const lists = renderer.root.findAll((node) => (node.type as unknown) === 'NestableScrollContainer');
     assert.equal(lists.length, 1);
     assert.equal(flattenStyle(lists[0]!.props.contentContainerStyle).gap, 6);
     assert.equal(hasText(renderer.root, '오늘 초기화 완료 · 오전 12:03'), true);
