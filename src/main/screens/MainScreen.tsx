@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { RefreshCw } from 'lucide-react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomTabBar } from '../components/BottomTabBar';
 import { CharacterDetail } from '../components/CharacterDetail';
@@ -117,8 +118,10 @@ export function MainScreen({
   const [isCharacterDetailLoading, setIsCharacterDetailLoading] = useState(false);
   const [characterDetailError, setCharacterDetailError] = useState<string | null>(null);
   const [isCharacterSyncStarting, setIsCharacterSyncStarting] = useState(false);
+  const [automationEditorOpen, setAutomationEditorOpen] = useState(false);
   const isCharacterDetailOpen = activeTabId === 'characters' && selectedCharacter != null;
   const isCharacterSyncing = characterSyncLabel != null;
+  const showGlobalChrome = !automationEditorOpen;
 
   /**
    * SSE 동기화로 characters 배열이 갱신되면 현재 선택된 캐릭터 객체도 최신 값으로 교체한다.
@@ -190,8 +193,8 @@ export function MainScreen({
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <GameStatusBar status={status} />
+    <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
+      {showGlobalChrome ? <GameStatusBar status={status} /> : null}
 
       <View style={styles.content}>
         {renderSystemMessage(session, notice, onOpenLogin)}
@@ -229,6 +232,7 @@ export function MainScreen({
           characterSubTabId,
           setCharacterSubTabId,
           setSelectedCharacter,
+          onAutomationEditorModeChange: setAutomationEditorOpen,
         })}
       </View>
 
@@ -242,7 +246,7 @@ export function MainScreen({
         </View>
       ) : null}
 
-      <BottomTabBar activeTabId={activeTabId} onChangeTab={setActiveTabId} />
+      {showGlobalChrome ? <BottomTabBar activeTabId={activeTabId} onChangeTab={setActiveTabId} /> : null}
     </SafeAreaView>
   );
 }
@@ -286,6 +290,7 @@ type RenderActiveTabArgs = {
   characterSubTabId: CharacterSubTabId;
   setCharacterSubTabId: (tabId: CharacterSubTabId) => void;
   setSelectedCharacter: (character: HofCharacter | null) => void;
+  onAutomationEditorModeChange: (active: boolean) => void;
 };
 
 /**
@@ -327,6 +332,7 @@ function renderActiveTab({
   characterSubTabId,
   setCharacterSubTabId,
   setSelectedCharacter,
+  onAutomationEditorModeChange,
 }: RenderActiveTabArgs) {
   switch (activeTabId) {
     case 'home':
@@ -342,6 +348,7 @@ function renderActiveTab({
           onListPartyPresets={onListPartyPresets}
           automationController={automationController}
           onOpenCaptcha={onOpenCaptcha}
+          onDetailModeChange={onAutomationEditorModeChange}
         />
       );
     case 'battle':
