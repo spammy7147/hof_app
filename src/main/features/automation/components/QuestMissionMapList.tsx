@@ -9,6 +9,8 @@ import {
   moveMissionMap,
   removeMissionMap,
   reorderMissionMaps,
+  type QuestMapDraft,
+  type QuestMapMode,
 } from '../../../domain/questAutomation';
 import { formatAutomationPresetSelection } from '../../../domain/partyPresets';
 import { theme } from '../../../styles/theme';
@@ -16,6 +18,7 @@ import type { BattleMapResponse, PartyPresetResponse, QuestMapSettingRequest } f
 import { BattleMapPresetPickerModal } from './BattleMapPresetPickerModal';
 
 export type QuestMissionMapListProps = {
+  allowMapMutations?: boolean;
   catalog: BattleMapResponse[];
   disabled: boolean;
   maps: QuestMapSettingRequest[];
@@ -50,6 +53,7 @@ function buildMissionMapRows(maps: readonly QuestMapSettingRequest[]): MissionMa
 }
 
 export function QuestMissionMapList({
+  allowMapMutations = true,
   catalog,
   disabled,
   maps,
@@ -63,6 +67,7 @@ export function QuestMissionMapList({
   const mountedRef = useRef(false);
   const disabledRef = useRef(disabled);
   const draggingRef = useRef(dragging);
+  const allowMapMutationsRef = useRef(allowMapMutations);
   const interactionGenerationRef = useRef(0);
   const interactionContextRef = useRef({ disabled, maps, missionKey });
   const activeDragGenerationRef = useRef<number | null>(null);
@@ -78,6 +83,7 @@ export function QuestMissionMapList({
 
   disabledRef.current = disabled;
   draggingRef.current = dragging;
+  allowMapMutationsRef.current = allowMapMutations;
   mapsRef.current = maps;
   const previousInteractionContext = interactionContextRef.current;
   if (
@@ -234,7 +240,7 @@ export function QuestMissionMapList({
   }
 
   function moveRow(rowKey: string, capturedMap: QuestMapSettingRequest, generation: number, offset: -1 | 1) {
-    if (disabledRef.current || draggingRef.current) return;
+    if (!allowMapMutationsRef.current || disabledRef.current || draggingRef.current) return;
     const liveRow = findCurrentRow(rowKey, capturedMap, generation);
     if (!liveRow) return;
     const targetIndex = liveRow.index + offset;
@@ -243,7 +249,7 @@ export function QuestMissionMapList({
   }
 
   function deleteRow(rowKey: string, capturedMap: QuestMapSettingRequest, generation: number) {
-    if (disabledRef.current || draggingRef.current) return;
+    if (!allowMapMutationsRef.current || disabledRef.current || draggingRef.current) return;
     const liveRow = findCurrentRow(rowKey, capturedMap, generation);
     if (!liveRow) return;
     closeOpenSwipeable();
@@ -251,7 +257,7 @@ export function QuestMissionMapList({
   }
 
   function beginDrag(rowKey: string, capturedMap: QuestMapSettingRequest, generation: number, drag: () => void) {
-    if (disabledRef.current || draggingRef.current) return;
+    if (!allowMapMutationsRef.current || disabledRef.current || draggingRef.current) return;
     if (!findCurrentRow(rowKey, capturedMap, generation)) return;
     const rowSwipeable = swipeableNodesRef.current.get(rowKey) ?? null;
     if (rowSwipeable !== openSwipeableRef.current) rowSwipeable?.close();
@@ -273,11 +279,12 @@ export function QuestMissionMapList({
     const index = getIndex() ?? rowsRef.current.find((row) => row.rowKey === rowKey)?.index ?? -1;
     const mapName = resolved?.name ?? (map.mapCode || '맵을 선택해 주세요');
     const interactionDisabled = disabled || dragging || isActive;
-    const accessibilityActions = [
+    const accessibilityActions = allowMapMutations ? [
       ...(index > 0 ? [{ name: 'decrement' as const, label: '위로 이동' }] : []),
       ...(index >= 0 && index < rows.length - 1 ? [{ name: 'increment' as const, label: '아래로 이동' }] : []),
       { name: 'delete' as const, label: '삭제' },
-    ];
+    ] : [];
+    const accessibilityPrefix = missionKey ? `${questContext} · ${missionKey}` : questContext;
 
     return (
       <ReanimatedSwipeable
@@ -286,7 +293,7 @@ export function QuestMissionMapList({
           else swipeableNodesRef.current.delete(rowKey);
         }}
         containerStyle={styles.swipeContainer}
-        enabled={!interactionDisabled}
+        enabled={allowMapMutations && !interactionDisabled}
         friction={2}
         onSwipeableWillOpen={() => {
           if (findCurrentRow(rowKey, map, renderInteractionGeneration)) {
@@ -294,9 +301,9 @@ export function QuestMissionMapList({
           }
         }}
         overshootRight={false}
-        renderRightActions={() => (
+        renderRightActions={allowMapMutations ? () => (
           <Pressable
-            accessibilityLabel={`${questContext} · ${missionKey} · ${mapName} 삭제`}
+            accessibilityLabel={`${accessibilityPrefix} · ${mapName} 삭제`}
             accessibilityRole="button"
             accessibilityState={{ disabled: interactionDisabled }}
             disabled={interactionDisabled}
@@ -306,14 +313,14 @@ export function QuestMissionMapList({
             <Trash2 color={theme.colors.buttonText} size={18} />
             <Text style={styles.deleteActionText}>삭제</Text>
           </Pressable>
-        )}
+        ) : undefined}
         rightThreshold={40}
       >
         <View style={[styles.mapCard, isActive && styles.mapCardActive]}>
-          <Pressable
+          {allowMapMutations ? <Pressable
             accessibilityActions={accessibilityActions}
             accessibilityHint="길게 누르거나 접근성 동작으로 순서를 바꾸세요"
-            accessibilityLabel={`${questContext} · ${missionKey} ${index + 1}번째 맵 순서 이동`}
+            accessibilityLabel={`${accessibilityPrefix} ${index + 1}번째 맵 순서 이동`}
             accessibilityRole="adjustable"
             accessibilityState={{ disabled: interactionDisabled }}
             delayLongPress={120}
@@ -327,7 +334,7 @@ export function QuestMissionMapList({
             style={({ pressed }) => [styles.dragHandle, pressed && !interactionDisabled && styles.pressed]}
           >
             <GripVertical color={theme.colors.textMuted} size={18} />
-          </Pressable>
+          </Pressable> : null}
           <View style={styles.mapBody}>
             <View style={styles.mapCopy}>
               <Text style={styles.mapName}>{mapName}</Text>
@@ -339,7 +346,7 @@ export function QuestMissionMapList({
                   if (node) presetTriggerNodesRef.current.set(rowKey, node);
                   else presetTriggerNodesRef.current.delete(rowKey);
                 }}
-                accessibilityLabel={`${questContext} · ${missionKey} ${index + 1}번째 맵 프리셋 선택`}
+                accessibilityLabel={`${accessibilityPrefix} ${index + 1}번째 맵 프리셋 선택`}
                 accessibilityRole="button"
                 accessibilityState={{ disabled: interactionDisabled }}
                 accessibilityValue={{ text: presetLabel }}
@@ -367,7 +374,7 @@ export function QuestMissionMapList({
         data={rows}
         keyExtractor={(row) => `${missionKey}:${row.rowKey}`}
         onDragBegin={() => {
-          if (renderInteractionGeneration !== interactionGenerationRef.current || disabledRef.current) return;
+          if (!allowMapMutationsRef.current || renderInteractionGeneration !== interactionGenerationRef.current || disabledRef.current) return;
           closeOpenSwipeable();
           activeDragGenerationRef.current = renderInteractionGeneration;
           draggingRef.current = true;
@@ -380,6 +387,8 @@ export function QuestMissionMapList({
           draggingRef.current = false;
           setDragging(false);
           if (
+            !allowMapMutationsRef.current
+            ||
             activeDragGeneration !== renderInteractionGeneration
             || renderInteractionGeneration !== interactionGenerationRef.current
             || disabledRef.current
@@ -400,6 +409,50 @@ export function QuestMissionMapList({
         visible={activePresetMap != null && !disabled}
       />
     </>
+  );
+}
+
+export type QuestMapListProps = {
+  catalog: BattleMapResponse[];
+  disabled: boolean;
+  maps: QuestMapDraft[];
+  mode: QuestMapMode;
+  presets: PartyPresetResponse[];
+  questContext: string;
+  onRemove?: (index: number) => void;
+  onUpdate: (maps: QuestMapDraft[]) => void;
+};
+
+export function QuestMapList({ catalog, disabled, maps, mode, presets, questContext, onRemove, onUpdate }: QuestMapListProps) {
+  const missionMaps = maps.map<QuestMapSettingRequest>((map) => ({
+    ...map,
+    missionKey: '',
+    manuallyOverridden: mode === 'MANUAL',
+  }));
+  return (
+    <QuestMissionMapList
+      allowMapMutations={mode === 'MANUAL'}
+      catalog={catalog}
+      disabled={disabled}
+      maps={missionMaps}
+      missionKey=""
+      presets={presets}
+      questContext={questContext}
+      onUpdate={(updated) => {
+        if (onRemove && updated.length < maps.length) {
+          const updatedIdentities = new Set(updated.map(buildQuestMapIdentity));
+          const removedIndex = maps.findIndex((map) => !updatedIdentities.has(buildQuestMapIdentity(map)));
+          if (removedIndex >= 0) {
+            onRemove(removedIndex);
+            return;
+          }
+        }
+        onUpdate(updated.map((map) => {
+          const { missionKey: _missionKey, manuallyOverridden: _manuallyOverridden, ...questMap } = map;
+          return questMap;
+        }));
+      }}
+    />
   );
 }
 

@@ -13,14 +13,17 @@ import {
 import { ArrowLeft, Save, Trash2 } from 'lucide-react-native';
 
 import {
+  addUserQuestMap,
   buildQuestAutomationDraft,
   buildQuestAutomationRequest,
   filterQuests,
-  hydrateAutoMatchedMapClearMissions,
   isCombatMission,
   prioritizeSelectedQuests,
+  refreshAutomaticQuestMaps,
+  removeQuestMap,
   restoreQuestSelection,
   selectQuest,
+  updateQuestMaps,
   validateQuestAutomationDraft,
   type QuestAutomationDraft,
   type QuestSelectionDraft,
@@ -32,13 +35,11 @@ import type {
   BattleCategoryResponse,
   BattleMapResponse,
   PartyPresetResponse,
-  QuestMapSettingRequest,
   QuestSection,
   QuestSnapshot,
   TypedAutomationEntryResponse,
   UpdateQuestAutomationRequest,
 } from '../../../types/api';
-import { CombatMissionEditor } from './CombatMissionEditor';
 import { QuestSummaryCard } from './QuestSummaryCard';
 
 type VisibleSection = Extract<QuestSection, 'ACTIVE' | 'AVAILABLE' | 'WAITING'>;
@@ -105,7 +106,6 @@ export function QuestAutomationEditor({
   const baselineDraftRef = useRef<QuestAutomationDraft | null>(null);
   const draftRef = useRef<QuestAutomationDraft | null>(null);
   const draftSourceRef = useRef('');
-  const removedAutoMissionsRef = useRef(new Set<string>());
   const mountedGenerationRef = useRef(0);
   const questGenerationRef = useRef(0);
   const presetGenerationRef = useRef(0);
@@ -300,7 +300,6 @@ export function QuestAutomationEditor({
     const current = draftRef.current;
     if (current == null) {
       selectionOrderRef.current = nextDraft.quests.map(({ questCode }) => questCode);
-      removedAutoMissionsRef.current.clear();
       draftSourceRef.current = source;
       baselineDraftRef.current = nextDraft;
       baselineRef.current = serializeDraft(nextDraft);
@@ -315,7 +314,6 @@ export function QuestAutomationEditor({
         deselectedCacheRef.current = {};
         selectionOrderRef.current = nextDraft.quests.map(({ questCode }) => questCode);
         clearUndo();
-        removedAutoMissionsRef.current.clear();
         baselineDraftRef.current = nextDraft;
         baselineRef.current = serializeDraft(nextDraft);
         draftRef.current = nextDraft;
@@ -323,9 +321,7 @@ export function QuestAutomationEditor({
         setRefreshWarning(false);
         return;
       }
-      const hydrated = hydrateAutoMatchedMapClearMissions(current, catalog, (questCode, missionKey) => (
-        removedAutoMissionsRef.current.has(buildMissionIdentity(questCode, missionKey))
-      ));
+      const hydrated = refreshAutomaticQuestMaps(current, catalog);
       baselineDraftRef.current = nextDraft;
       baselineRef.current = serializeDraft(nextDraft);
       if (hydrated !== current) {
@@ -335,12 +331,10 @@ export function QuestAutomationEditor({
       setRefreshWarning(true);
       return;
     }
-    const hydrated = hydrateAutoMatchedMapClearMissions(current, catalog, (questCode, missionKey) => (
-      removedAutoMissionsRef.current.has(buildMissionIdentity(questCode, missionKey))
-    ));
+    const hydrated = refreshAutomaticQuestMaps(current, catalog);
     const baseline = baselineDraftRef.current == null
       ? null
-      : hydrateAutoMatchedMapClearMissions(baselineDraftRef.current, catalog);
+      : refreshAutomaticQuestMaps(baselineDraftRef.current, catalog);
     if (baseline) {
       baselineDraftRef.current = baseline;
       baselineRef.current = serializeDraft(baseline);
@@ -367,17 +361,15 @@ export function QuestAutomationEditor({
   const dirty = draft != null && serializeDraft(draft) !== baselineRef.current;
   const busy = saving || localBusy;
   const editingDisabled = busy || draft == null;
-  const combatMissions = draft?.quests.flatMap(({ missions }) => missions.filter(isCombatMission)) ?? [];
-  const hasExplicitPreset = combatMissions.some(({ maps }) => maps.some(({ presetMode }) => presetMode === 'EXPLICIT'));
-  const hasMissingCombatMap = combatMissions.some(({ maps }) => maps.length === 0 || maps.some(({ categoryId, mapCode }) => !categoryId || !mapCode));
+  const combatSelections = draft?.quests.filter(({ missing, missions }) => !missing && missions.some(isCombatMission)) ?? [];
+  const hasExplicitPreset = combatSelections.some(({ maps }) => maps.some(({ presetMode }) => presetMode === 'EXPLICIT'));
+  const hasMissingCombatMap = combatSelections.some(({ maps }) => maps.length === 0 || maps.some(({ categoryId, mapCode }) => !categoryId || !mapCode));
   const mapErrors = eligibleCategories.filter(({ id }) => mapResources[id]?.error);
-  const needsFullCatalog = hasMissingCombatMap || combatMissions.some((mission) => (
-    mission.type === 'MAP_CLEAR' && mission.maps.every(({ manuallyOverridden }) => !manuallyOverridden)
-  ));
+  const needsFullCatalog = hasMissingCombatMap || combatSelections.some(({ mapMode }) => mapMode === 'AUTO');
   const categoryLoading = isBattleCategoriesLoading || (!areBattleCategoriesLoaded && battleCategories.length === 0 && !battleCategoriesError && categoryRequested);
   const catalogLoading = categoryLoading || eligibleCategories.some(({ id }) => mapResources[id]?.loading);
   const catalogError = mapErrors.length > 0 || battleCategoriesError ? '전투맵을 불러오지 못했어요.' : null;
-  const supportingResourcesBlockSave = combatMissions.length > 0 && (
+  const supportingResourcesBlockSave = combatSelections.length > 0 && (
     (needsFullCatalog && (
       categoryLoading ||
       (battleCategories.length === 0 && battleCategoriesError != null) ||
@@ -442,15 +434,8 @@ export function QuestAutomationEditor({
     clearUndo();
   }, [clearUndo]);
 
-  const updateUserMissionMaps = useCallback((questCode: string, missionKey: string, maps: QuestMapSettingRequest[]) => {
-    const previous = draftRef.current?.quests
-      .find((quest) => quest.questCode === questCode)?.missions
-      .find((mission) => mission.key === missionKey)?.maps;
-    if (!previous) return;
-    const identity = buildMissionIdentity(questCode, missionKey);
-    if (previous.length > 0 && maps.length === 0) removedAutoMissionsRef.current.add(identity);
-    if (maps.length > 0) removedAutoMissionsRef.current.delete(identity);
-    updateDraft((current) => updateMissionMaps(current, questCode, missionKey, maps));
+  const updateQuest = useCallback((questCode: string, transform: (selection: QuestSelectionDraft) => QuestSelectionDraft) => {
+    updateDraft((current) => updateQuestSelection(current, questCode, transform));
   }, [updateDraft]);
 
   const retryCatalog = useCallback(() => {
@@ -477,10 +462,12 @@ export function QuestAutomationEditor({
         snapshot={item}
         onRetryCatalog={retryCatalog}
         onToggle={() => toggleQuestSelection(item)}
-        onUpdateMission={(missionKey, maps) => updateUserMissionMaps(item.questId, missionKey, maps)}
+        onAddMap={(map) => updateQuest(item.questId, (selection) => addUserQuestMap(selection, map))}
+        onRemoveMap={(index) => updateQuest(item.questId, (selection) => removeQuestMap(selection, index, catalogRef.current))}
+        onUpdateMaps={(maps) => updateQuest(item.questId, (selection) => updateQuestMaps(selection, maps))}
       />
     );
-  }, [catalog, catalogError, catalogLoading, draft, editingDisabled, presets, retryCatalog, toggleQuestSelection, updateUserMissionMaps]);
+  }, [catalog, catalogError, catalogLoading, draft, editingDisabled, presets, retryCatalog, toggleQuestSelection, updateQuest]);
 
   const missingSelections = draft?.quests.filter(({ missing }) => missing) ?? [];
 
@@ -621,7 +608,6 @@ export function QuestAutomationEditor({
               deselectedCacheRef.current = {};
               selectionOrderRef.current = nextDraft.quests.map(({ questCode }) => questCode);
               clearUndo();
-              removedAutoMissionsRef.current.clear();
               draftSourceRef.current = serializeDraftSource(entry, snapshots);
               baselineDraftRef.current = nextDraft;
               baselineRef.current = serializeDraft(nextDraft);
@@ -661,11 +647,7 @@ export function QuestAutomationEditor({
               {missingSelections.map((selection) => (
                 <MissingSelectionCard
                   key={selection.questCode}
-                  catalog={catalog}
-                  catalogError={catalogError}
-                  catalogLoading={catalogLoading}
                   disabled={editingDisabled}
-                  presets={presets}
                   selection={selection}
                   onRemove={() => {
                     delete deselectedCacheRef.current[selection.questCode];
@@ -676,8 +658,6 @@ export function QuestAutomationEditor({
                       quests: current.quests.filter(({ questCode }) => questCode !== selection.questCode),
                     }));
                   }}
-                  onRetryCatalog={retryCatalog}
-                  onUpdateMission={(missionKey, maps) => updateUserMissionMaps(selection.questCode, missionKey, maps)}
                 />
               ))}
             </View>
@@ -736,18 +716,11 @@ function ResourceWarning({ label, retryLabel, onRetry }: { label: string; retryL
 
 type MissingSelectionCardProps = {
   selection: QuestAutomationDraft['quests'][number];
-  catalog: BattleMapResponse[];
-  presets: PartyPresetResponse[];
   disabled: boolean;
-  catalogLoading: boolean;
-  catalogError: string | null;
   onRemove: () => void;
-  onRetryCatalog: () => void;
-  onUpdateMission: (missionKey: string, maps: QuestMapSettingRequest[]) => void;
 };
 
-function MissingSelectionCard({ selection, catalog, presets, disabled, catalogLoading, catalogError, onRemove, onRetryCatalog, onUpdateMission }: MissingSelectionCardProps) {
-  const presetIds = presets.map(({ id }) => id);
+function MissingSelectionCard({ selection, disabled, onRemove }: MissingSelectionCardProps) {
   return (
     <View style={[styles.questCard, styles.missingCard]}>
       <View style={styles.questHeading}>
@@ -766,23 +739,6 @@ function MissingSelectionCard({ selection, catalog, presets, disabled, catalogLo
           <Trash2 color={theme.colors.danger} size={17} />
         </Pressable>
       </View>
-      {selection.missions.map((mission) => (
-        <View key={mission.key} style={styles.missionBlock}>
-          <Text style={styles.missionBadge}>저장된 전투 설정 · {mission.key}</Text>
-          <CombatMissionEditor
-            catalog={catalog}
-            catalogError={catalogError}
-            catalogLoading={catalogLoading}
-            disabled={disabled}
-            mission={mission}
-            presetIds={presetIds}
-            presets={presets}
-            questContext={selection.questCode}
-            onRetryCatalog={onRetryCatalog}
-            onUpdate={(maps) => onUpdateMission(mission.key, maps)}
-          />
-        </View>
-      ))}
     </View>
   );
 }
@@ -818,17 +774,16 @@ function reinsertCachedQuestSelection(
   };
 }
 
-function updateMissionMaps(draft: QuestAutomationDraft, questCode: string, missionKey: string, maps: QuestMapSettingRequest[]): QuestAutomationDraft {
+function updateQuestSelection(
+  draft: QuestAutomationDraft,
+  questCode: string,
+  transform: (selection: QuestSelectionDraft) => QuestSelectionDraft,
+): QuestAutomationDraft {
   return {
     ...draft,
-    quests: draft.quests.map((quest) => quest.questCode !== questCode ? quest : {
-      ...quest,
-      missions: quest.missions.map((mission) => mission.key === missionKey ? { ...mission, maps } : mission),
-    }),
+    quests: draft.quests.map((quest) => quest.questCode === questCode ? transform(quest) : quest),
   };
 }
-
-function buildMissionIdentity(questCode: string, missionKey: string): string { return `${questCode}\u0000${missionKey}`; }
 function serializeDraft(draft: QuestAutomationDraft): string { return JSON.stringify(draft); }
 function serializeDraftSource(entry: TypedAutomationEntryResponse, snapshots: readonly QuestSnapshot[]): string { return JSON.stringify([entry, snapshots]); }
 function sectionLabel(section: QuestSection): string { return TABS.find((tab) => tab.section === section)?.label ?? '완료'; }
@@ -861,8 +816,6 @@ const styles = StyleSheet.create({
   questHeading: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
   questCopy: { flex: 1 },
   questName: { color: theme.colors.text, fontSize: 14, fontWeight: '900' },
-  missionBlock: { borderTopColor: theme.colors.border, borderTopWidth: 1, gap: theme.spacing.sm, paddingTop: theme.spacing.sm },
-  missionBadge: { color: theme.colors.text, flex: 1, fontSize: 12, fontWeight: '700' },
   undoSnackbar: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between', minHeight: 52, paddingHorizontal: theme.spacing.md },
   undoText: { color: theme.colors.text, fontSize: 12, fontWeight: '800' },
   undoButton: { alignItems: 'center', justifyContent: 'center', minHeight: 44, paddingHorizontal: theme.spacing.sm },

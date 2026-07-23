@@ -402,6 +402,7 @@ export function validateQuestAutomationDraft(
   for (const quest of draft.quests) {
     if (questCodes.has(quest.questCode)) errors.push(`${quest.name}: 중복 선택된 퀘스트입니다.`);
     questCodes.add(quest.questCode);
+    if (quest.missing) continue;
     const combatMissions = quest.missions.filter(isCombatMission);
     if (combatMissions.length > 0 && quest.maps.length === 0) errors.push(`${quest.name}: 맵 설정 필요`);
     const identities = new Set<string>();

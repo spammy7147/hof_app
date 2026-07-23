@@ -5,10 +5,11 @@ import {
   buildQuestRewardSummary,
   isCombatMission,
   type QuestSelectionDraft,
+  type QuestMapDraft,
 } from '../../../domain/questAutomation';
 import { theme } from '../../../styles/theme';
-import type { BattleMapResponse, PartyPresetResponse, QuestMapSettingRequest, QuestSnapshot } from '../../../types/api';
-import { CombatMissionEditor } from './CombatMissionEditor';
+import type { BattleMapResponse, PartyPresetResponse, QuestSnapshot } from '../../../types/api';
+import { QuestMapEditor } from './QuestMapEditor';
 
 export type QuestSummaryCardProps = {
   snapshot: QuestSnapshot;
@@ -21,7 +22,9 @@ export type QuestSummaryCardProps = {
   catalogError: string | null;
   onRetryCatalog: () => void;
   onToggle: () => void;
-  onUpdateMission: (missionKey: string, maps: QuestMapSettingRequest[]) => void;
+  onAddMap: (map: BattleMapResponse) => void;
+  onRemoveMap: (index: number) => void;
+  onUpdateMaps: (maps: QuestMapDraft[]) => void;
 };
 
 export function QuestSummaryCard({
@@ -35,9 +38,10 @@ export function QuestSummaryCard({
   catalogError,
   onRetryCatalog,
   onToggle,
-  onUpdateMission,
+  onAddMap,
+  onRemoveMap,
+  onUpdateMaps,
 }: QuestSummaryCardProps) {
-  const presetIds = presets.map(({ id }) => id);
   const combatMissions = selected?.missions.filter(isCombatMission) ?? [];
 
   return (
@@ -64,22 +68,22 @@ export function QuestSummaryCard({
           <Text style={styles.reward}>{buildQuestRewardSummary(snapshot.rewards)}</Text>
         </View>
       </Pressable>
-      {combatMissions.map((mission) => (
-        <View key={mission.key} style={styles.missionBlock}>
-          <CombatMissionEditor
+      {selected && combatMissions.length > 0 ? (
+        <View style={styles.mapSection}>
+          <QuestMapEditor
             catalog={catalog}
             catalogError={catalogError}
             catalogLoading={catalogLoading}
             disabled={disabled}
-            mission={mission}
-            presetIds={presetIds}
             presets={presets}
-            questContext={snapshot.name || snapshot.questId}
+            quest={selected}
+            onAddMap={onAddMap}
+            onRemoveMap={onRemoveMap}
             onRetryCatalog={onRetryCatalog}
-            onUpdate={(maps) => onUpdateMission(mission.key, maps)}
+            onUpdateMaps={onUpdateMaps}
           />
         </View>
-      ))}
+      ) : null}
     </View>
   );
 }
@@ -96,5 +100,5 @@ const styles = StyleSheet.create({
   section: { color: theme.colors.textMuted, fontSize: 10, fontWeight: '700' },
   summary: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
   reward: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
-  missionBlock: { borderTopColor: theme.colors.border, borderTopWidth: 1, marginTop: theme.spacing.xs, paddingTop: theme.spacing.sm },
+  mapSection: { borderTopColor: theme.colors.border, borderTopWidth: 1, marginTop: theme.spacing.xs, paddingTop: theme.spacing.sm },
 });
