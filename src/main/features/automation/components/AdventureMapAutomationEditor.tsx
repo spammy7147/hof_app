@@ -75,7 +75,6 @@ type ListItem =
   | { key: string; kind: 'HEADING'; title: string }
   | { key: string; kind: 'EMPTY' }
   | { key: string; kind: 'SELECTED_LIST' }
-  | { key: string; kind: 'SEARCH' }
   | { key: string; kind: 'NO_RESULTS' }
   | AdventureMapCatalogRow;
 
@@ -299,7 +298,6 @@ export function AdventureMapAutomationEditor({
       ? [{ key: 'empty', kind: 'EMPTY' } as const]
       : [{ key: 'selected-list', kind: 'SELECTED_LIST' } as const]),
     { key: 'catalog-title', kind: 'HEADING', title: '모험맵 찾기' },
-    { key: 'search', kind: 'SEARCH' },
     ...catalogRows.rows,
     ...(searching && !mapState.loading && mapState.error == null && battleCategoriesError == null && catalogRows.matchCount === 0
       ? [{ key: 'catalog-no-results', kind: 'NO_RESULTS' } as const]
@@ -468,9 +466,6 @@ export function AdventureMapAutomationEditor({
   const renderItem = useCallback(({ item }: { item: ListItem }) => {
     if (item.kind === 'HEADING') return <Text style={styles.sectionTitle}>{item.title}</Text>;
     if (item.kind === 'EMPTY') return <Text style={styles.muted}>아래 목록에서 실행할 모험맵을 추가해 주세요.</Text>;
-    if (item.kind === 'SEARCH') {
-      return <TextInput accessibilityLabel="모험맵 검색" editable={!controlsDisabled} onChangeText={(nextQuery) => { queryRef.current = nextQuery; setQuery(nextQuery); }} placeholder="맵 이름, 그룹, 추천 레벨 검색" placeholderTextColor={theme.colors.textMuted} style={styles.search} value={query} />;
-    }
     if (item.kind === 'NO_RESULTS') return <Text style={styles.muted}>검색 가능한 모험맵이 없습니다.</Text>;
     if (item.kind === 'GROUP') {
       return (
@@ -531,6 +526,7 @@ export function AdventureMapAutomationEditor({
       {battleCategoriesError ? <ResourceWarning label="맵 카테고리" onRetry={onLoadBattleCategories} /> : null}
       {mapState.error ? <ResourceWarning label="모험맵" onRetry={loadMaps} /> : null}
       {presetState.error ? <ResourceWarning label="프리셋" onRetry={loadPresets} /> : presetState.loading ? <Text style={styles.muted}>프리셋 불러오는 중</Text> : null}
+      <TextInput accessibilityLabel="모험맵 검색" editable={!controlsDisabled} onChangeText={(nextQuery) => { queryRef.current = nextQuery; setQuery(nextQuery); }} placeholder="추가할 모험맵 이름, 그룹, 추천 레벨 검색" placeholderTextColor={theme.colors.textMuted} style={styles.search} value={query} />
       <NestableScrollContainer contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" style={styles.scroller}>
         {items.map((item) => <Fragment key={item.key}>{renderItem({ item })}</Fragment>)}
       </NestableScrollContainer>

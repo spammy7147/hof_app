@@ -487,6 +487,15 @@ describe('AdventureMapAutomationEditor', () => {
     });
     await openAdventureGroup(renderer, '수동 그룹');
     const retainedManualPress = renderer.root.findByProps({ accessibilityLabel: '수동 그룹 그룹 닫기' }).props.onPress as () => void;
+    assert.equal(renderer.root.findAll((node) => (
+      (node.type as unknown) === 'TextInput'
+      && node.props.accessibilityLabel === '모험맵 검색'
+    )).length, 1);
+    const scrollContent = renderer.root.find((node) => (node.type as unknown) === 'NestableScrollContainer');
+    assert.equal(scrollContent.findAll((node) => (
+      (node.type as unknown) === 'TextInput'
+      && node.props.accessibilityLabel === '모험맵 검색'
+    )).length, 0);
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '모험맵 검색' }).props.onChangeText('바늘'); });
     await act(async () => { retainedManualPress(); });
