@@ -592,6 +592,7 @@ export function QuestAutomationEditor({
         <ResourceWarning
           key={category.id}
           label={`${category.label} 맵`}
+          message={mapResources[category.id]?.error ?? null}
           retryLabel={`${category.label} 맵 다시 불러오기`}
           onRetry={() => loadCategoryMaps(category)}
         />
@@ -703,10 +704,21 @@ export function QuestAutomationEditor({
   );
 }
 
-function ResourceWarning({ label, retryLabel, onRetry }: { label: string; retryLabel: string; onRetry: () => void | Promise<unknown> }) {
+function ResourceWarning({
+  label,
+  message,
+  retryLabel,
+  onRetry,
+}: {
+  label: string;
+  message?: string | null;
+  retryLabel: string;
+  onRetry: () => void | Promise<unknown>;
+}) {
+  const copy = message?.trim() || `${label}을 불러오지 못했어요.`;
   return (
     <View style={styles.warningRow}>
-      <Text accessibilityLiveRegion="polite" style={styles.problem}>{label}을 불러오지 못했어요.</Text>
+      <Text accessibilityLiveRegion="polite" style={styles.problem}>{copy}</Text>
       <Pressable accessibilityLabel={retryLabel} accessibilityRole="button" onPress={() => { void onRetry(); }} style={styles.secondaryButton}>
         <Text style={styles.secondaryButtonText}>다시 시도</Text>
       </Pressable>

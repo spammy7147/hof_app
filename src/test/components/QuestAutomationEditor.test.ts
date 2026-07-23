@@ -1175,15 +1175,17 @@ describe('QuestAutomationEditor mounted behavior', () => {
   it('keeps quests visible across independent preset/map failures and targeted retries', async () => {
     let presetAttempts = 0;
     let mapAttempts = 0;
+    const hofUnavailable = 'HOF 서버 연결이 일시적으로 원활하지 않습니다. 잠시 후 다시 시도해 주세요.';
     const quest = snapshot('noncombat', 'Noncombat', 'ACTIVE', [mission('now', 'IMMEDIATE', null)]);
     const renderer = await renderEditor({
       quests: [quest],
       onListPartyPresets: async () => { presetAttempts += 1; if (presetAttempts === 1) throw new Error('preset down'); return []; },
-      onLoadBattleMaps: async () => { mapAttempts += 1; if (mapAttempts === 1) throw new Error('map down'); return []; },
+      onLoadBattleMaps: async () => { mapAttempts += 1; if (mapAttempts === 1) throw new Error(hofUnavailable); return []; },
     });
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Noncombat 선택' }));
     assert.equal(hasText(renderer.root, '프리셋을 불러오지 못했어요.'), true);
-    assert.equal(hasText(renderer.root, '전투맵 맵을 불러오지 못했어요.'), true);
+    assert.equal(hasText(renderer.root, hofUnavailable), true);
+    assert.equal(hasText(renderer.root, '전투맵 맵을 불러오지 못했어요.'), false);
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '프리셋 다시 불러오기' }).props.onPress(); });
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '전투맵 맵 다시 불러오기' }).props.onPress(); });
     assert.equal(presetAttempts, 2);
