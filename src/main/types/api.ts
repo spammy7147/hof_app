@@ -159,12 +159,14 @@ export type CaptchaChallengeResponse = {
   prompt: string;
   imageUrl: string | null;
   sourceUrl: string;
+  preparationVersion: number;
   createdAt: string;
   answeredAt: string | null;
 };
 
 export type SubmitCaptchaAnswerRequest = {
   answer: string;
+  preparationVersion: number;
 };
 
 /** 저장 가능한 자동화는 백엔드가 소유하는 세 가지 singleton 유형으로 제한된다. */

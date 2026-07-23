@@ -198,6 +198,15 @@ export class BackendApiClient {
     return normalizeCaptchaChallenge(captcha, this.baseUrl);
   }
 
+  /** 사용자가 인증을 시작하는 순간 최신 HOF 캡차 form과 이미지를 준비한다. */
+  async prepareCurrentCaptcha(): Promise<CaptchaChallengeResponse> {
+    const captcha = await this.request<CaptchaChallengeResponse>(
+      '/api/captcha/current/prepare',
+      { method: 'POST' },
+    );
+    return normalizeCaptchaChallenge(captcha, this.baseUrl);
+  }
+
   /**
    * 사용자가 입력한 캡차 답을 백엔드로 제출한다.
    */

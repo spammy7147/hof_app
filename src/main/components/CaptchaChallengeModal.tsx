@@ -2,7 +2,9 @@ import { Image, type ImageSource } from 'expo-image';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -63,7 +65,7 @@ export function CaptchaChallengeModal({
 
     setAnswer('');
     setImageErrorMessage(null);
-  }, [captcha?.id, visible]);
+  }, [captcha?.id, captcha?.preparationVersion, visible]);
 
   const handleImageError = useCallback(() => {
     setImageErrorMessage('캡차 이미지를 불러오지 못했습니다. 새로고침해 주세요.');
@@ -103,14 +105,19 @@ export function CaptchaChallengeModal({
       transparent
       visible={visible}
     >
-      <View style={styles.modalRoot}>
-        <Pressable
-          accessibilityRole="button"
-          disabled={blocking}
-          onPress={requestClose}
-          style={styles.modalBackdrop}
-        />
-        <View style={styles.modalCard}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}
+        style={styles.keyboardAvoider}
+      >
+        <View style={styles.modalRoot}>
+          <Pressable
+            accessibilityRole="button"
+            disabled={blocking}
+            onPress={requestClose}
+            style={styles.modalBackdrop}
+          />
+          <View style={styles.modalCard}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>캡차 입력</Text>
             {blocking ? null : (
@@ -121,6 +128,7 @@ export function CaptchaChallengeModal({
           </View>
 
           <ScrollView
+            automaticallyAdjustKeyboardInsets
             contentContainerStyle={styles.modalContent}
             keyboardShouldPersistTaps="handled"
             style={styles.modalScroll}
@@ -202,13 +210,17 @@ export function CaptchaChallengeModal({
             {message && captcha ? <Text style={styles.messageText}>{message}</Text> : null}
             {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
           </ScrollView>
+          </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardAvoider: {
+    flex: 1,
+  },
   modalRoot: {
     flex: 1,
     alignItems: 'center',

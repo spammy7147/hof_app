@@ -59,11 +59,13 @@ describe('captcha gate utilities', () => {
     assert.equal(isCaptchaRequiredError(null), false);
   });
 
-  it('detects pending captcha challenges case-insensitively', async () => {
+  it('treats detected and ready captcha challenges as active case-insensitively', async () => {
     const { isCaptchaPending } = await loadCaptchaGate();
 
     assert.equal(isCaptchaPending(makeCaptchaChallenge({ status: 'PENDING' })), true);
     assert.equal(isCaptchaPending(makeCaptchaChallenge({ status: 'pending' })), true);
+    assert.equal(isCaptchaPending(makeCaptchaChallenge({ status: 'DETECTED' })), true);
+    assert.equal(isCaptchaPending(makeCaptchaChallenge({ status: 'ready' })), true);
     assert.equal(isCaptchaPending(makeCaptchaChallenge({ status: 'ANSWERED' })), false);
     assert.equal(isCaptchaPending(null), false);
   });

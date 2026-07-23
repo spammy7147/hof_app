@@ -2,7 +2,7 @@ import { BackendApiError } from '../services/backendApi';
 import type { CaptchaChallengeResponse } from '../types/api';
 
 const CAPTCHA_REQUIRED_CODE = 'CAPTCHA_REQUIRED';
-const CAPTCHA_PENDING_STATUS = 'PENDING';
+const CAPTCHA_ACTIVE_STATUSES = new Set(['DETECTED', 'READY', 'PENDING']);
 
 /**
  * 백엔드 에러가 캡차 우선 처리 대상인지 판단한다.
@@ -18,7 +18,7 @@ export function isCaptchaRequiredError(error: unknown): boolean {
  * 현재 캡차가 아직 사용자 입력을 기다리는 상태인지 확인한다.
  */
 export function isCaptchaPending(challenge: CaptchaChallengeResponse | null): boolean {
-  return challenge?.status.toUpperCase() === CAPTCHA_PENDING_STATUS;
+  return challenge != null && CAPTCHA_ACTIVE_STATUSES.has(challenge.status.toUpperCase());
 }
 
 /**

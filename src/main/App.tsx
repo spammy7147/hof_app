@@ -157,19 +157,11 @@ export default function App() {
       const resumePromise = waitForCaptchaResolution().catch((resumeError: unknown) => {
         throw resumeError;
       });
-      await openCaptchaModal({ blocking: true });
       await resumePromise;
 
-      try {
-        return await api.runBattle(request);
-      } catch (retryError) {
-        if (isCaptchaRequiredError(retryError)) {
-          void openCaptchaModal();
-        }
-        throw retryError;
-      }
+      return await api.runBattle(request);
     }
-  }, [api, openCaptchaModal, waitForCaptchaResolution]);
+  }, [api, waitForCaptchaResolution]);
 
   const loadBattleLogs = useCallback((limit?: number): Promise<BattleLogResponse[]> => (
     api.fetchBattleLogs(limit)

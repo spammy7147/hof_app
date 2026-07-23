@@ -85,10 +85,11 @@ export function makeCaptchaChallenge(
   return {
     id: 3,
     accountId: 1,
-    status: 'pending',
+    status: 'DETECTED',
     prompt: 'Enter captcha',
     imageUrl: null,
     sourceUrl: 'https://hof.example/captcha',
+    preparationVersion: 0,
     createdAt: '2026-07-10T00:00:00Z',
     answeredAt: null,
     ...overrides,

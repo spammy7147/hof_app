@@ -9,6 +9,7 @@ describe('captcha challenge modal', () => {
     'utf8',
   );
   const appSource = readFileSync(resolve(process.cwd(), 'src/main/App.tsx'), 'utf8');
+  const appConfig = readFileSync(resolve(process.cwd(), 'app.json'), 'utf8');
 
   it('renders the authenticated image source supplied by the API client', () => {
     assert.match(appSource, /api\.getAuthenticatedImageSource\(currentCaptcha\.imageUrl\)/);
@@ -21,9 +22,17 @@ describe('captcha challenge modal', () => {
     assert.match(modalSource, /캡차 이미지를 불러오지 못했습니다/);
   });
 
+  it('clears the old answer when the same challenge receives a newer snapshot', () => {
+    assert.match(modalSource, /\[captcha\?\.id, captcha\?\.preparationVersion, visible\]/);
+  });
+
   it('keeps the retry input reachable when captcha content is taller than the screen', () => {
+    assert.match(modalSource, /\bKeyboardAvoidingView\b/);
+    assert.match(modalSource, /behavior=\{Platform\.OS === 'ios' \? 'padding' : undefined\}/);
     assert.match(modalSource, /\bScrollView\b/);
+    assert.match(modalSource, /automaticallyAdjustKeyboardInsets/);
     assert.match(modalSource, /keyboardShouldPersistTaps="handled"/);
     assert.match(modalSource, /maxHeight:\s*'90%'/);
+    assert.match(appConfig, /"softwareKeyboardLayoutMode"\s*:\s*"resize"/);
   });
 });
