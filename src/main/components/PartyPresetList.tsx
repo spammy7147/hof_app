@@ -402,6 +402,7 @@ export function PartyPresetList({
         </View>
       ) : (
         <DraggableFlatList
+          containerStyle={styles.list}
           contentContainerStyle={styles.listContent}
           contentInsetAdjustmentBehavior="automatic"
           data={presets}

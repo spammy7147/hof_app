@@ -17,24 +17,28 @@ const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>
   return React.createElement(name, props, props.children as React.ReactNode);
 });
 const draggableFlatList = (props: Record<string, unknown>) => React.createElement(
-  'DraggableFlatList',
-  props,
-  props.ListHeaderComponent as React.ReactNode,
-  (props.data as PartyPresetResponse[]).map((item, index) => React.createElement(
-    React.Fragment,
-    { key: (props.keyExtractor as (value: PartyPresetResponse) => string)(item) },
-    (props.renderItem as (value: {
-      item: PartyPresetResponse;
-      drag: () => void;
-      getIndex: () => number;
-      isActive: boolean;
-    }) => React.ReactNode)({
-      item,
-      drag: () => { dragCalls.push(item); },
-      getIndex: () => index,
-      isActive: false,
-    }),
-  )),
+  'DraggableFlatListContainer',
+  { style: props.containerStyle },
+  React.createElement(
+    'DraggableFlatList',
+    props,
+    props.ListHeaderComponent as React.ReactNode,
+    (props.data as PartyPresetResponse[]).map((item, index) => React.createElement(
+      React.Fragment,
+      { key: (props.keyExtractor as (value: PartyPresetResponse) => string)(item) },
+      (props.renderItem as (value: {
+        item: PartyPresetResponse;
+        drag: () => void;
+        getIndex: () => number;
+        isActive: boolean;
+      }) => React.ReactNode)({
+        item,
+        drag: () => { dragCalls.push(item); },
+        getIndex: () => index,
+        isActive: false,
+      }),
+    )),
+  ),
 );
 const reanimatedSwipeable = React.forwardRef<SwipeableMockMethods, Record<string, unknown>>((props, ref) => {
   const methods = React.useMemo<SwipeableMockMethods>(() => ({
@@ -82,6 +86,13 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('PartyPresetList', () => {
+  it('gives the draggable list container the remaining screen height', async () => {
+    const renderer = await renderList();
+
+    const container = findHost(renderer.root, 'DraggableFlatListContainer');
+    assert.deepEqual(container.props.style, { flex: 1 });
+  });
+
   it('shows one plus and selects a primary preset from the star without expanding the card', async () => {
     const primaryCalls: number[] = [];
     const renderer = await renderList({
