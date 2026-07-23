@@ -39,6 +39,9 @@ yarn-error.*
 # IDE
 .idea/
 
+# Local isolated worktrees
+.worktrees/
+
 # typescript
 *.tsbuildinfo
 
