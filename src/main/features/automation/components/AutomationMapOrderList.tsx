@@ -163,7 +163,7 @@ export function AutomationMapOrderList<T extends object>({
   }
 
   const listProps = {
-    activationDistance: 8,
+    activationDistance: nested ? 20 : 8,
     data: rows,
     ItemSeparatorComponent: MapRowSeparator,
     keyExtractor: ({ id }: Row<T>) => id,

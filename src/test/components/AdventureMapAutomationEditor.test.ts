@@ -129,14 +129,15 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('AdventureMapAutomationEditor', () => {
-  it('uses the library nested-scroll pair so card gestures scroll the editor vertically', async () => {
+  it('uses the library nested-scroll pair and preserves its parent-scroll activation threshold', async () => {
     const renderer = await renderEditor({
       entry: entry([setting('first', 0, 'PRIMARY', null)]),
       maps: [map('first', '첫 맵')],
     });
 
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'NestableScrollContainer').length, 1);
-    assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'NestableDraggableFlatList').length, 1);
+    const nestedList = renderer.root.find((node) => (node.type as unknown) === 'NestableDraggableFlatList');
+    assert.equal(nestedList.props.activationDistance, 20);
   });
 
   it('mounts compact full-card catalog rows with selected button semantics', async () => {
