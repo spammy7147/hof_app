@@ -99,6 +99,7 @@ function preset(id: number): PartyPresetResponse {
     id,
     accountId: 1,
     name: `preset-${id}`,
+    displayOrder: id,
     isPrimary: false,
     members: [],
     createdAt: '2026-07-15T00:00:00.000Z',

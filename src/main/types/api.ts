@@ -343,10 +343,15 @@ export type UpdatePartyPresetRequest = {
   members: PartyPresetMember[];
 };
 
+export type ReorderPartyPresetsRequest = {
+  presetIds: number[];
+};
+
 export type PartyPresetResponse = {
   id: number;
   accountId: number;
   name: string;
+  displayOrder: number;
   isPrimary: boolean;
   members: PartyPresetMember[];
   createdAt: string;

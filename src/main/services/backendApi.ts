@@ -23,6 +23,7 @@ import type {
   PartyPresetResponse,
   RunBattleRequest,
   RegisterAndroidPushTargetRequest,
+  ReorderPartyPresetsRequest,
   SubmitCaptchaAnswerRequest,
   DevicePushTargetResponse,
   UnifiedAutomationAction,
@@ -322,6 +323,16 @@ export class BackendApiClient {
   makePartyPresetPrimary(presetId: number): Promise<PartyPresetResponse> {
     return this.request(`/api/party-presets/${presetId}/primary`, {
       method: 'POST',
+    });
+  }
+
+  /** 현재 계정의 모든 프리셋을 요청 배열 순서로 저장한다. */
+  reorderPartyPresets(
+    request: ReorderPartyPresetsRequest,
+  ): Promise<PartyPresetResponse[]> {
+    return this.request('/api/party-presets/order', {
+      method: 'PUT',
+      body: JSON.stringify(request),
     });
   }
 

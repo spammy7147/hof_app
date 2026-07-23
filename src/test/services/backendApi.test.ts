@@ -488,6 +488,7 @@ describe('BackendApiClient', () => {
       id: 7,
       accountId: 1,
       name: '고블린 범용 파티',
+      displayOrder: 0,
       isPrimary: false,
       members: [
         { slotIndex: 0, characterId: 'char-1', patternSlot: 0 },
@@ -535,11 +536,18 @@ describe('BackendApiClient', () => {
     assert.equal(requests[3]?.url, 'http://backend.test/api/party-presets/7/primary');
     assert.equal(requests[3]?.init.method, 'POST');
 
+    mockFetchWithCapture([preset], requests);
+    await client.reorderPartyPresets({ presetIds: [7] });
+
+    assert.equal(requests[4]?.url, 'http://backend.test/api/party-presets/order');
+    assert.equal(requests[4]?.init.method, 'PUT');
+    assert.equal(requests[4]?.init.body, '{"presetIds":[7]}');
+
     mockFetchWithCapture(null, requests);
     await client.deletePartyPreset(7);
 
-    assert.equal(requests[4]?.url, 'http://backend.test/api/party-presets/7');
-    assert.equal(requests[4]?.init.method, 'DELETE');
+    assert.equal(requests[5]?.url, 'http://backend.test/api/party-presets/7');
+    assert.equal(requests[5]?.init.method, 'DELETE');
   });
 });
 
