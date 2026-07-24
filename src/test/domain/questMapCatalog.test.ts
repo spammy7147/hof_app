@@ -60,6 +60,26 @@ describe('quest map catalog rows', () => {
     ]);
   });
 
+  it('keeps disabled resolved maps selectable and hides unresolved maps', () => {
+    const historical = map('adventure_map', 'sion04', 'Castle In The Sky- 천공성(제 2탑)', {
+      enabled: false,
+    });
+    const unresolved = map('adventure_map', null, '코드 미확인', {
+      enabled: false,
+      resolved: false,
+    });
+    const rows = buildQuestMapCatalogRows({
+      maps: [unresolved, historical],
+      selectedIdentities: new Set(),
+      expandedCategoryIds: new Set(['adventure_map']),
+      expandedGroupKeys: new Set([buildQuestMapCatalogGroupKey(historical)]),
+      query: '',
+    });
+
+    assert.deepEqual(rows.filter(isMapRow).map(({ map: item }) => item.mapCode), ['sion04']);
+    assert.equal(rows.find(isMapRow)?.map.enabled, false);
+  });
+
   it('keeps selected rows during search while filtering and excluding them below', () => {
     const selected = map('battle_map', 'selected', '선택 맵');
     const matching = map('adventure_map', 'needle-code', '다른 이름', {
