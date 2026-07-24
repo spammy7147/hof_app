@@ -38,8 +38,8 @@ const flatList = React.forwardRef<unknown, Record<string, unknown>>((props, ref)
 )),
 ));
 const dragCalls: unknown[] = [];
-const draggableFlatList = (props: Record<string, unknown>) => React.createElement(
-  'DraggableFlatList',
+const draggableFlatList = (hostName: string) => (props: Record<string, unknown>) => React.createElement(
+  hostName,
   props,
   (props.data as unknown[]).map((item, index) => React.createElement(
     React.Fragment,
@@ -57,6 +57,9 @@ const draggableFlatList = (props: Record<string, unknown>) => React.createElemen
     }),
   )),
 );
+const nestableScrollContainer = React.forwardRef<unknown, Record<string, unknown>>((props, ref) => (
+  React.createElement('NestableScrollContainer', { ...props, ref }, props.children as React.ReactNode)
+));
 type SwipeableMockMethods = { close: () => void; closeCalls: number };
 const reanimatedSwipeable = React.forwardRef<SwipeableMockMethods, Record<string, unknown>>((props, ref) => {
   const methods = React.useMemo<SwipeableMockMethods>(() => ({
@@ -92,7 +95,12 @@ const originalLoad = moduleWithLoader._load;
 moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') return reactNativeMock;
   if (request === 'lucide-react-native') return iconsMock;
-  if (request === 'react-native-draggable-flatlist') return { __esModule: true, default: draggableFlatList };
+  if (request === 'react-native-draggable-flatlist') return {
+    __esModule: true,
+    default: draggableFlatList('DraggableFlatList'),
+    NestableDraggableFlatList: draggableFlatList('NestableDraggableFlatList'),
+    NestableScrollContainer: nestableScrollContainer,
+  };
   if (request === 'react-native-gesture-handler/ReanimatedSwipeable') {
     return { __esModule: true, default: reanimatedSwipeable };
   }
@@ -217,7 +225,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     });
 
     const presetChoice = renderer.root.findByProps({ accessibilityLabel: '압축 전투 프리셋 선택 열기' });
-    assert.equal(flattenStyle(presetChoice.props.style).minHeight, 44);
+    assert.equal(flattenStyle(presetChoice.props.style).minHeight, 32);
     assert.equal(hasText(presetChoice, '프리셋'), true);
     assert.equal(textCount(renderer.root, '대표 · 대표 프리셋'), 1);
     assert.equal(presetChoice.findAll((node) => (node.type as unknown) === 'ChevronRight').length, 1);
@@ -226,7 +234,10 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(hasText(renderer.root, '프리셋 변경'), false);
     const progressSummary = renderer.root.findByProps({ accessibilityLabel: '압축 전투 오늘 진행 요약' });
     assert.equal(hasText(progressSummary, '오늘 2/10 · 8회 남음 · 다음 3회 전투'), true);
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: '압축 전투 일일 목표' }).props.value, '10');
+    const targetInput = renderer.root.findByProps({ accessibilityLabel: '압축 전투 일일 목표' });
+    assert.equal(targetInput.props.value, '10');
+    assert.equal(flattenStyle(targetInput.props.style).minHeight, 32);
+    assert.equal(flattenStyle(targetInput.props.style).width, 44);
     assert.equal(hasText(renderer.root, '20%'), false);
     assert.equal(hasText(renderer.root, '3회 전투 지원'), false);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '압축 전투 오늘 진행률' }).length, 0);
@@ -234,12 +245,10 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '압축 전투 삭제' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 삭제' }));
 
-    const list = renderer.root.find((node) => (
-      (node.type as unknown) === 'FlatList'
-      && Array.isArray(node.props.data)
-      && node.props.data.some((item: { key?: string }) => item.key === 'catalog-heading')
-    ));
-    assert.equal(flattenStyle(list.props.contentContainerStyle).gap, 6);
+    const scroller = renderer.root.find((node) => (node.type as unknown) === 'NestableScrollContainer');
+    assert.equal(flattenStyle(scroller.props.contentContainerStyle).gap, 6);
+    const nestedList = renderer.root.find((node) => (node.type as unknown) === 'NestableDraggableFlatList');
+    assert.equal(nestedList.props.activationDistance, 20);
   });
 
   it('saves the identity order produced by a selected-map drag', async () => {
@@ -250,7 +259,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
       maps: [catalogMap('a', 'Alpha'), catalogMap('b', 'Beta', { mapOrder: 1 })],
       onSave: async (request) => { saves.push(request); return true; },
     });
-    const draggable = renderer.root.find((node) => (node.type as unknown) === 'DraggableFlatList');
+    const draggable = renderer.root.find((node) => (node.type as unknown) === 'NestableDraggableFlatList');
     const rows = draggable.props.data as unknown[];
 
     await act(async () => {
@@ -283,12 +292,6 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
       (node.type as unknown) === 'TextInput'
       && node.props.accessibilityLabel === '전투 맵 검색'
     )).length, 1);
-    const editorList = renderer.root.find((node) => (node.type as unknown) === 'FlatList');
-    assert.equal(
-      (editorList.props.data as Array<{ key: string }>).some(({ key }) => key === 'catalog-search'),
-      false,
-    );
-
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투 맵 검색' }).props.onChangeText('forest'); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 맵 선택' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 일일 목표' }).props.onChangeText('4'); });
@@ -670,12 +673,15 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.disabled, true);
   });
 
-  it('uses one virtualized list without nesting a scroll view', async () => {
-    const renderer = await renderEditor({ maps: [catalogMap('a', 'Alpha')] });
-    const lists = renderer.root.findAll((node) => (node.type as unknown) === 'FlatList');
-    assert.equal(lists.length, 1);
-    assert.equal(flattenStyle(lists[0]!.props.contentContainerStyle).gap, 6);
-    assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'ScrollView').length, 0);
+  it('uses the library nested-scroll pair so selected-card gestures scroll the editor vertically', async () => {
+    const renderer = await renderEditor({
+      entry: battleEntry([setting('a', 3, 0)]),
+      maps: [catalogMap('a', 'Alpha')],
+    });
+
+    assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'NestableScrollContainer').length, 1);
+    const nestedList = renderer.root.find((node) => (node.type as unknown) === 'NestableDraggableFlatList');
+    assert.equal(nestedList.props.activationDistance, 20);
   });
 
   it('retries only an expanded failed category and leaves expansion operable while saving', async () => {
