@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
   Alert,
   findNodeHandle,
-  FlatList,
   Pressable,
   StyleSheet,
   Switch,
@@ -13,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { ArrowLeft, ChevronRight, Save, Trash2 } from 'lucide-react-native';
+import { NestableScrollContainer } from 'react-native-draggable-flatlist';
 
 import {
   battleMapIdentity,
@@ -555,6 +555,7 @@ export function BattleMapAutomationEditor({
         onMove={moveSelectedMap}
         onReorder={reorderSelectedMaps}
         renderContent={renderSelectedMap}
+        nested
       />
     );
   }, [controlsDisabled, deleteSelectedMap, draft.maps, loadCategoryMaps, moveSelectedMap, query, renderSelectedMap, reorderSelectedMaps, toggleCatalogCategory, toggleCatalogGroup, updateDraft]);
@@ -583,7 +584,9 @@ export function BattleMapAutomationEditor({
         setQuery(value);
       }} placeholder="추가할 맵 이름, 그룹, 추천 레벨 검색" placeholderTextColor={theme.colors.textMuted} style={styles.search} value={query} />
 
-      <FlatList contentContainerStyle={styles.content} data={listItems} initialNumToRender={12} keyboardShouldPersistTaps="handled" keyExtractor={editorListKey} renderItem={renderListItem} windowSize={7} />
+      <NestableScrollContainer contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" style={styles.scroller}>
+        {listItems.map((item) => <Fragment key={item.key}>{renderListItem({ item })}</Fragment>)}
+      </NestableScrollContainer>
 
       <BattleMapPresetPickerModal
         disabled={controlsDisabled}
@@ -654,8 +657,6 @@ function reorderBattleDraft(draft: BattleMapAutomationDraft, orderedIds: string[
   return maps.some((setting) => setting == null) ? draft : { ...draft, maps: maps as BattleMapAutomationDraft['maps'] };
 }
 
-function editorListKey(item: EditorListItem): string { return item.key; }
-
 function serializeEditableDraft(draft: BattleMapAutomationDraft): string {
   return JSON.stringify([
     draft.enabled,
@@ -670,6 +671,7 @@ function serializeEntrySettings(entry: TypedAutomationEntryResponse): string {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, gap: theme.spacing.xs, padding: theme.spacing.lg },
+  scroller: { flex: 1 },
   header: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
   iconButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
   headerCopy: { flex: 1 },
