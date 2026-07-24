@@ -422,14 +422,18 @@ export class BackendApiClient {
   /**
    * 캐릭터의 저장 패턴 슬롯을 HOF 원본 세션에 로드한다.
    */
-  loadCharacterPattern(
+  async loadCharacterPattern(
     hofCharacterId: string,
     slot: number,
   ): Promise<LoadPatternResponse> {
-    return this.request(
+    const response = await this.request<LoadPatternResponse>(
       `/api/characters/${encodeURIComponent(hofCharacterId)}/patterns/${slot}/load`,
       { method: 'POST' },
     );
+    return {
+      ...response,
+      character: response.character ? normalizeCharacter(response.character) : null,
+    };
   }
 
   /**

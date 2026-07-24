@@ -70,7 +70,6 @@ describe('MainScreen automation editor chrome', () => {
       onDeletePartyPreset: async () => null,
       onLoadCharacterDetail: async () => ({}) as never,
       onLoadPattern: async () => ({}) as never,
-      onSyncCharacters: async () => undefined,
       onLogout: () => undefined,
       onOpenLogin: () => undefined,
     };
