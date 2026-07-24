@@ -66,19 +66,90 @@ describe('UnifiedAutomationDashboard', () => {
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '중지된 자동화 재개' }).length, 0);
   });
 
-  it('shows a friendly automatic retry state while a running runtime is cooling down', async () => {
+  it('shows normal waiting without claiming HOF is unavailable', async () => {
     const aggregate = networkStopped();
     aggregate.runtime.lifecycle = 'RUNNING';
     aggregate.runtime.stopReason = null;
-    aggregate.runtime.nextAttemptAt = '2026-07-23T00:03:00Z';
-    aggregate.runtime.lastError = 'HOF automation requests are deferred until 2026-07-23T00:03:00Z';
+    aggregate.runtime.nextAttemptAt = '2026-07-23T00:30:00Z';
+    aggregate.runtime.waitReason = 'SCHEDULED';
+    aggregate.runtime.lastError = null;
+    aggregate.runtime.currentAction = null;
 
     const renderer = await renderDashboard(aggregate, () => undefined);
 
-    assert.equal(hasText(renderer.root, 'HOF 서버 연결 대기 중'), true);
-    assert.equal(hasText(renderer.root, '잠시 후 자동으로 다시 시도합니다.'), true);
-    assert.equal(treeText(renderer.root).includes('deferred until'), false);
+    assert.equal(hasText(renderer.root, '자동화 대기 중'), true);
+    assert.equal(hasText(renderer.root, '현재 진행할 작업이 없습니다. 실행 가능한 작업이 생기면 자동으로 계속합니다.'), true);
+    assert.equal(treeText(renderer.root).includes('HOF 서버 연결'), false);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '중지된 자동화 재개' }).length, 0);
+  });
+
+  it('shows a friendly timed retry only for HOF connection waits', async () => {
+    const aggregate = networkStopped();
+    aggregate.runtime.lifecycle = 'RUNNING';
+    aggregate.runtime.stopReason = null;
+    aggregate.runtime.nextAttemptAt = '2026-07-23T00:01:00Z';
+    aggregate.runtime.waitReason = 'HOF_CONNECTION';
+    aggregate.runtime.lastError = 'raw 503';
+    aggregate.runtime.currentAction = null;
+
+    const renderer = await renderDashboard(
+      aggregate,
+      () => undefined,
+      undefined,
+      Date.parse('2026-07-23T00:00:00Z'),
+    );
+
+    assert.equal(hasText(renderer.root, 'HOF 서버 연결 대기 중'), true);
+    assert.equal(hasText(renderer.root, 'HOF 서버 연결이 원활하지 않습니다. 1분 후 자동으로 다시 시도합니다.'), true);
+    assert.equal(treeText(renderer.root).includes('raw 503'), false);
+  });
+
+  it('uses a soon fallback for elapsed or invalid HOF retry timestamps', async () => {
+    for (const nextAttemptAt of ['2026-07-22T23:59:59Z', 'not-a-timestamp']) {
+      const aggregate = networkStopped();
+      aggregate.runtime.lifecycle = 'RUNNING';
+      aggregate.runtime.stopReason = null;
+      aggregate.runtime.nextAttemptAt = nextAttemptAt;
+      aggregate.runtime.waitReason = 'HOF_CONNECTION';
+      aggregate.runtime.currentAction = null;
+
+      const renderer = await renderDashboard(
+        aggregate,
+        () => undefined,
+        undefined,
+        Date.parse('2026-07-23T00:00:00Z'),
+      );
+
+      assert.equal(hasText(renderer.root, 'HOF 서버 연결이 원활하지 않습니다. 곧 자동으로 다시 시도합니다.'), true);
+    }
+  });
+
+  it('shows a current action instead of stale wait metadata', async () => {
+    const aggregate = networkStopped();
+    aggregate.runtime.lifecycle = 'RUNNING';
+    aggregate.runtime.stopReason = null;
+    aggregate.runtime.nextAttemptAt = '2026-07-23T00:01:00Z';
+    aggregate.runtime.waitReason = 'HOF_CONNECTION';
+
+    const renderer = await renderDashboard(aggregate, () => undefined);
+
+    assert.equal(hasText(renderer.root, '실행 중'), true);
+    assert.equal(hasText(renderer.root, '전투맵 실행'), true);
+    assert.equal(treeText(renderer.root).includes('서버 연결 대기'), false);
+  });
+
+  it('treats an omitted wait reason as normal scheduled waiting', async () => {
+    const aggregate = networkStopped();
+    aggregate.runtime.lifecycle = 'RUNNING';
+    aggregate.runtime.stopReason = null;
+    aggregate.runtime.nextAttemptAt = '2026-07-23T00:30:00Z';
+    aggregate.runtime.currentAction = null;
+    delete aggregate.runtime.waitReason;
+
+    const renderer = await renderDashboard(aggregate, () => undefined);
+
+    assert.equal(hasText(renderer.root, '자동화 대기 중'), true);
+    assert.equal(treeText(renderer.root).includes('HOF 서버 연결'), false);
   });
 
   it('shows structured quest battle context without raw code or fake fraction', async () => {
@@ -151,6 +222,7 @@ async function renderDashboard(
   aggregate: TypedAutomationAggregateResponse,
   onChangeState: (action: UnifiedAutomationAction) => void,
   onOpenCaptcha = () => undefined,
+  nowMs?: number,
 ): Promise<ReactTestRenderer> {
   let renderer!: ReactTestRenderer;
   await act(async () => {
@@ -161,6 +233,7 @@ async function renderDashboard(
       onOpenCaptcha,
       onOpenModule: () => undefined,
       onOpenSettings: () => undefined,
+      nowMs,
     }));
   });
   return renderer;
@@ -186,6 +259,7 @@ function networkStopped(): TypedAutomationAggregateResponse {
       lifecycle: 'STOPPED',
       stopReason: 'NETWORK',
       nextAttemptAt: null,
+      waitReason: null,
       warnings: ['missing', 'another'],
       lastError: 'connection refused',
       currentAction: {

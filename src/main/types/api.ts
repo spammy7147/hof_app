@@ -254,6 +254,7 @@ export type TypedAutomationEntryResponse = {
 };
 
 export type TypedAutomationLifecycle = 'RUNNING' | 'PAUSED' | 'STOPPED';
+export type AutomationWaitReason = 'SCHEDULED' | 'HOF_CONNECTION';
 export type AutomationStopReason =
   | 'AUTHENTICATION'
   | 'CAPTCHA'
@@ -266,6 +267,7 @@ export type TypedAutomationRuntimeResponse = {
   lifecycle: TypedAutomationLifecycle;
   stopReason: AutomationStopReason | null;
   nextAttemptAt: string | null;
+  waitReason?: AutomationWaitReason | null;
   warnings: string[];
   lastError: string | null;
   currentAction: TypedAutomationCurrentActionResponse | null;

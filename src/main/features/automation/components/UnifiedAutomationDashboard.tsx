@@ -19,7 +19,21 @@ type Props = {
   onOpenSettings: () => void;
   onOpenModule: (entryId: number) => void;
   onOpenCaptcha: () => void;
+  nowMs?: number;
 };
+
+export function hofRetryMessage(nextAttemptAt: string | null, nowMs = Date.now()): string {
+  const retryAtMs = nextAttemptAt == null ? Number.NaN : Date.parse(nextAttemptAt);
+  const remainingMs = retryAtMs - nowMs;
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) {
+    return 'HOF 서버 연결이 원활하지 않습니다. 곧 자동으로 다시 시도합니다.';
+  }
+  const remainingSeconds = Math.ceil(remainingMs / 1_000);
+  const delay = remainingSeconds < 60
+    ? `${remainingSeconds}초`
+    : `${Math.ceil(remainingSeconds / 60)}분`;
+  return `HOF 서버 연결이 원활하지 않습니다. ${delay} 후 자동으로 다시 시도합니다.`;
+}
 
 /** Typed automation aggregate만 사용해 실행/중지/설정 상태를 한 화면에 분리해 표시한다. */
 export function UnifiedAutomationDashboard({
@@ -29,16 +43,19 @@ export function UnifiedAutomationDashboard({
   onOpenSettings,
   onOpenModule,
   onOpenCaptcha,
+  nowMs,
 }: Props) {
   const { runtime } = aggregate;
+  const current = runtime.currentAction;
   const running = runtime.lifecycle === 'RUNNING';
   const paused = runtime.lifecycle === 'PAUSED';
   const stoppedWithReason = runtime.lifecycle === 'STOPPED' && runtime.stopReason != null;
   const networkStopped = stoppedWithReason && (runtime.stopReason === 'NETWORK' || runtime.stopReason === 'FATAL');
   const waitingCaptcha = stoppedWithReason && runtime.stopReason === 'CAPTCHA';
   const waitingLogin = stoppedWithReason && runtime.stopReason === 'AUTHENTICATION';
-  const waitingForHof = running && runtime.nextAttemptAt != null;
-  const current = runtime.currentAction;
+  const waiting = running && current == null && runtime.nextAttemptAt != null;
+  const waitingForHof = waiting && runtime.waitReason === 'HOF_CONNECTION';
+  const waitingForWork = waiting && !waitingForHof;
   const warningCount = new Set(runtime.warnings).size;
 
   return (
@@ -52,7 +69,9 @@ export function UnifiedAutomationDashboard({
         </View>
 
         {waitingForHof ? (
-          <Text style={styles.stopTitle}>잠시 후 자동으로 다시 시도합니다.</Text>
+          <Text style={styles.stopTitle}>{hofRetryMessage(runtime.nextAttemptAt, nowMs)}</Text>
+        ) : waitingForWork ? (
+          <Text style={styles.stopTitle}>현재 진행할 작업이 없습니다. 실행 가능한 작업이 생기면 자동으로 계속합니다.</Text>
         ) : networkStopped ? (
           <>
             <Text style={styles.stopTitle}>
@@ -83,7 +102,7 @@ export function UnifiedAutomationDashboard({
           <Text style={styles.metaText}>오늘 모험맵 {formatAdventureDailyRefresh(runtime.dailyRefresh).replace(/^오늘 /, '')}</Text>
           <Text style={warningCount > 0 ? styles.warningText : styles.metaText}>설정 경고 {warningCount}개</Text>
         </View>
-        {running ? <Text style={styles.reevaluate}>현재 행동이 끝나면 전체 우선순위를 다시 확인합니다.</Text> : null}
+        {running && current != null ? <Text style={styles.reevaluate}>현재 행동이 끝나면 전체 우선순위를 다시 확인합니다.</Text> : null}
       </View>
 
       <View style={styles.actionRow}>
@@ -210,7 +229,11 @@ function ActionButton({
 
 function statusLabel(aggregate: TypedAutomationAggregateResponse): string {
   const { runtime } = aggregate;
-  if (runtime.lifecycle === 'RUNNING' && runtime.nextAttemptAt != null) return 'HOF 서버 연결 대기 중';
+  const waiting = runtime.lifecycle === 'RUNNING'
+    && runtime.currentAction == null
+    && runtime.nextAttemptAt != null;
+  if (waiting && runtime.waitReason === 'HOF_CONNECTION') return 'HOF 서버 연결 대기 중';
+  if (waiting) return '자동화 대기 중';
   if (runtime.lifecycle === 'RUNNING') return '실행 중';
   if (runtime.lifecycle === 'PAUSED') return '일시정지';
   if (runtime.stopReason === 'NETWORK' || runtime.stopReason === 'FATAL') return '완전 중지';
