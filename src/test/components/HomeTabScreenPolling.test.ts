@@ -50,6 +50,32 @@ afterEach(() => {
 });
 
 describe('HomeTabScreen dashboard polling', () => {
+  it('publishes the latest status observation from an automation aggregate', async () => {
+    fakeTimeouts();
+    const observed = {
+      playerName: '공민이',
+      funds: 331_708_318,
+      timeCurrent: 5900,
+      timeMax: 6000,
+      work: 'Nothing',
+      auction: 'Nothing',
+      observedAt: '2026-07-24T10:00:01Z',
+    };
+    const received: unknown[] = [];
+    const controller = controllerStub(async () => undefined, undefined, observed);
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(React.createElement(HomeTabScreen, {
+        ...props(controller),
+        onStatusObserved: (status: unknown) => received.push(status),
+      }));
+    });
+
+    assert.deepEqual(received, [observed]);
+    await act(async () => { renderer.unmount(); });
+  });
+
   it('refreshes every three seconds without overlapping and stops outside the dashboard', async () => {
     const timers = fakeTimeouts();
     const first = deferred<void>();
@@ -106,7 +132,11 @@ describe('HomeTabScreen dashboard polling', () => {
   });
 });
 
-function controllerStub(load: () => Promise<void>, reset = () => undefined) {
+function controllerStub(
+  load: () => Promise<void>,
+  reset = () => undefined,
+  hofStatus?: TypedAutomationAggregateResponse['hofStatus'],
+) {
   const aggregate: TypedAutomationAggregateResponse = {
     entries: [],
     runtime: {
@@ -118,6 +148,7 @@ function controllerStub(load: () => Promise<void>, reset = () => undefined) {
       currentAction: null,
       dailyRefresh: { status: 'PENDING', refreshDate: null, refreshedAt: null },
     },
+    hofStatus,
   };
   const snapshot = {
     aggregate,
@@ -153,6 +184,7 @@ function props(automationController: never) {
     onLoadBattleMaps: async () => [],
     onListPartyPresets: async () => [],
     onOpenCaptcha: () => undefined,
+    onStatusObserved: () => undefined,
   };
 }
 

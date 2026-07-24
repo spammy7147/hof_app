@@ -15,6 +15,7 @@ import type {
   BattleMapResponse,
   AutomationType,
   PartyPresetResponse,
+  HofObservedStatusResponse,
   TypedAutomationEntryResponse,
 } from '../types/api';
 
@@ -29,6 +30,7 @@ type HomeTabScreenProps = {
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
   automationController: UnifiedAutomationController;
   onOpenCaptcha: () => void;
+  onStatusObserved?: (status: HofObservedStatusResponse) => void;
   onDetailModeChange?: (active: boolean) => void;
 };
 
@@ -51,6 +53,7 @@ export function HomeTabScreen({
   onListPartyPresets,
   automationController,
   onOpenCaptcha,
+  onStatusObserved,
   onDetailModeChange,
 }: HomeTabScreenProps) {
   const [route, setRoute] = useState<HomeRoute>('dashboard');
@@ -74,6 +77,10 @@ export function HomeTabScreen({
   useEffect(() => {
     if (!authenticated) automationController.reset();
   }, [authenticated, automationController]);
+
+  useEffect(() => {
+    if (aggregate?.hofStatus) onStatusObserved?.(aggregate.hofStatus);
+  }, [aggregate?.hofStatus, onStatusObserved]);
 
   useEffect(() => () => {
     onDetailModeChange?.(false);

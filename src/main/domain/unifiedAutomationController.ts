@@ -141,6 +141,7 @@ export class UnifiedAutomationController {
       const next: TypedAutomationAggregateResponse = {
         entries: this.entriesRevision === entriesAtStart || !current ? loaded.entries : current.entries,
         runtime: this.runtimeRevision === runtimeAtStart || !current ? loaded.runtime : current.runtime,
+        hofStatus: loaded.hofStatus,
       };
       if (this.entriesRevision === entriesAtStart) this.confirmedOrder = loaded.entries.map(({ id }) => id);
       this.applyAggregate({
@@ -222,7 +223,7 @@ export class UnifiedAutomationController {
         sequence,
         current?.entries ?? response.entries,
       );
-      this.applyAggregate({ entries, runtime: response.runtime });
+      this.applyAggregate({ entries, runtime: response.runtime, hofStatus: response.hofStatus });
     } catch (error) {
       if (this.generation === generation) this.setError(error);
     } finally {
@@ -341,8 +342,8 @@ export class UnifiedAutomationController {
       }
     }
     const withProgress = this.mergeBattleProgress(response, sequence, entries);
-    if (settingsMerged || withProgress !== entries) {
-      this.applyAggregate({ entries: withProgress, runtime: current.runtime });
+    if (settingsMerged || withProgress !== entries || response.hofStatus != null) {
+      this.applyAggregate({ entries: withProgress, runtime: current.runtime, hofStatus: response.hofStatus });
     }
   }
 
@@ -388,8 +389,8 @@ export class UnifiedAutomationController {
       structureMerged = true;
     }
     const withProgress = this.mergeBattleProgress(response, sequence, entries);
-    if (structureMerged || withProgress !== entries) {
-      this.applyAggregate({ entries: withProgress, runtime: current.runtime });
+    if (structureMerged || withProgress !== entries || response.hofStatus != null) {
+      this.applyAggregate({ entries: withProgress, runtime: current.runtime, hofStatus: response.hofStatus });
     }
   }
 
@@ -434,7 +435,9 @@ export class UnifiedAutomationController {
     }
     const withProgress = this.mergeBattleProgress(response, sequence, current.entries);
     if (sequence < this.orderRevision) {
-      if (withProgress !== current.entries) this.applyAggregate({ ...current, entries: withProgress });
+      if (withProgress !== current.entries || response.hofStatus != null) {
+        this.applyAggregate({ ...current, entries: withProgress, hofStatus: response.hofStatus });
+      }
       return;
     }
     const currentById = new Map(current.entries.map((entry) => [entry.id, entry]));
@@ -453,6 +456,7 @@ export class UnifiedAutomationController {
         result.map((entry, priority) => ({ ...entry, priority })),
       ),
       runtime: current.runtime,
+      hofStatus: response.hofStatus,
     });
   }
 
@@ -488,6 +492,7 @@ export class UnifiedAutomationController {
       this.applyAggregate({
         entries: this.mergeBattleProgress(loaded, sequence, entries),
         runtime: this.runtimeRevision === runtimeAtStart || !current ? loaded.runtime : current.runtime,
+        hofStatus: loaded.hofStatus,
       });
       if (this.entriesRevision === entriesAtStart) this.confirmedOrder = loaded.entries.map(({ id }) => id);
     } catch {
@@ -581,9 +586,19 @@ export class UnifiedAutomationController {
   }
 
   private applyAggregate(aggregate: TypedAutomationAggregateResponse): void {
+    const currentStatus = this.snapshot.aggregate?.hofStatus;
+    const incomingStatus = aggregate.hofStatus;
+    const currentObservedAt = currentStatus ? Date.parse(currentStatus.observedAt) : Number.NaN;
+    const incomingObservedAt = incomingStatus ? Date.parse(incomingStatus.observedAt) : Number.NaN;
+    const hofStatus = incomingStatus != null
+      && !Number.isNaN(incomingObservedAt)
+      && (Number.isNaN(currentObservedAt) || incomingObservedAt > currentObservedAt)
+      ? incomingStatus
+      : currentStatus;
+    const nextAggregate = { ...aggregate, hofStatus };
     this.patchSnapshot({
-      aggregate,
-      ...this.buildSavingState(aggregate),
+      aggregate: nextAggregate,
+      ...this.buildSavingState(nextAggregate),
     });
   }
 

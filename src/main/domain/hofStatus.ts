@@ -54,3 +54,17 @@ export function formatStatusBarStateValue(value: string | null | undefined): str
 export function formatActionTime(time: ActionTimeValue): string {
   return `${time.current}/${time.max}`;
 }
+
+/** 자동화가 관측한 더 최신 표시값만 전체 계정 상태에 병합한다. */
+export function mergeObservedHofStatus(
+  current: HofStatusResponse | null,
+  observed: HofObservedStatusResponse | null | undefined,
+): HofStatusResponse | null {
+  if (current == null || observed == null) return current;
+  const observedAt = Date.parse(observed.observedAt);
+  if (Number.isNaN(observedAt)) return current;
+  const currentAt = Date.parse(current.observedAt);
+  if (!Number.isNaN(currentAt) && observedAt <= currentAt) return current;
+  return { ...current, ...observed };
+}
+import type { HofObservedStatusResponse, HofStatusResponse } from '../types/api';

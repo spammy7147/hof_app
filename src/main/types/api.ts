@@ -33,6 +33,11 @@ export type HofStatusResponse = {
   observedAt: string;
 };
 
+export type HofObservedStatusResponse = Pick<
+  HofStatusResponse,
+  'playerName' | 'funds' | 'timeCurrent' | 'timeMax' | 'work' | 'auction' | 'observedAt'
+>;
+
 export type BattleCategoryResponse = {
   id: string;
   label: string;
@@ -295,6 +300,7 @@ export type AdventureDailyRefreshResponse = {
 export type TypedAutomationAggregateResponse = {
   entries: TypedAutomationEntryResponse[];
   runtime: TypedAutomationRuntimeResponse;
+  hofStatus?: HofObservedStatusResponse | null;
 };
 
 export type QuestState = 'AVAILABLE' | 'ACTIVE' | 'CLAIMABLE' | 'COMPLETED' | 'UNAVAILABLE';

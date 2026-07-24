@@ -11,6 +11,7 @@ import { useCharacterSync } from './features/characters/useCharacterSync';
 import { useCaptchaGate } from './features/captcha/useCaptchaGate';
 import { useAndroidPushRegistration } from './features/push/useAndroidPushRegistration';
 import { isCaptchaRequiredError } from './domain/captchaGate';
+import { mergeObservedHofStatus } from './domain/hofStatus';
 import { UnifiedAutomationController } from './domain/unifiedAutomationController';
 import { toUserFacingErrorMessage } from './domain/userFacingErrors';
 import type {
@@ -22,6 +23,7 @@ import type {
   CreatePartyPresetRequest,
   HofCharacterDetail,
   HofStatusResponse,
+  HofObservedStatusResponse,
   LoadPatternResponse,
   PartyPresetResponse,
   ReorderPartyPresetsRequest,
@@ -118,6 +120,10 @@ export default function App() {
     setStatus(nextStatus);
     return nextStatus;
   }, [api]);
+
+  const handleStatusObserved = useCallback((observed: HofObservedStatusResponse) => {
+    setStatus((current) => mergeObservedHofStatus(current, observed));
+  }, []);
 
   /**
    * 전투 탭에서 사용할 큰 카테고리 목록을 백엔드에서 불러온다.
@@ -348,6 +354,7 @@ export default function App() {
         onLoadBattleLogs={loadBattleLogs}
         onLoadBattleStats={loadBattleStats}
         onOpenCaptcha={handleOpenCaptchaModal}
+        onStatusObserved={handleStatusObserved}
         automationController={automationController}
         onListPartyPresets={listPartyPresets}
         onCreatePartyPreset={createPartyPreset}

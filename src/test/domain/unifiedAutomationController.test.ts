@@ -13,6 +13,20 @@ import type {
 } from '../../main/types/api';
 
 describe('typed unified automation controller', () => {
+  it('preserves the latest observed HOF status from aggregate responses', async () => {
+    const newer = observedStatus(5700, '2026-07-24T10:00:02Z');
+    const older = observedStatus(5900, '2026-07-24T10:00:01Z');
+    let calls = 0;
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => ({ ...aggregate([]), hofStatus: ++calls === 1 ? newer : older }),
+    }));
+
+    await controller.load();
+    await controller.load();
+
+    assert.deepEqual(controller.getSnapshot().aggregate?.hofStatus, newer);
+  });
+
   it('exposes typed quest discovery for the dedicated editor', async () => {
     const snapshots = [questSnapshot('quest-1', [mission('kill', 'MONSTER_KILL')])];
     const controller = new UnifiedAutomationController(apiStub({ fetchQuests: async () => snapshots }));
@@ -1064,6 +1078,18 @@ function aggregate(
       currentAction: null,
       dailyRefresh: { status: 'PENDING', refreshDate: null, refreshedAt: null },
     },
+  };
+}
+
+function observedStatus(timeCurrent: number, observedAt: string) {
+  return {
+    playerName: '공민이',
+    funds: 331_708_318,
+    timeCurrent,
+    timeMax: 6000,
+    work: 'Nothing',
+    auction: 'Nothing',
+    observedAt,
   };
 }
 

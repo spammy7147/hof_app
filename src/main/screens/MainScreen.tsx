@@ -22,6 +22,7 @@ import type {
   CreatePartyPresetRequest,
   HofCharacter,
   HofCharacterDetail,
+  HofObservedStatusResponse,
   HofStatusResponse,
   LoadPatternResponse,
   PartyPresetResponse,
@@ -57,6 +58,7 @@ type MainScreenProps = {
   onLoadBattleLogs: (limit?: number) => Promise<BattleLogResponse[]>;
   onLoadBattleStats: () => Promise<BattleStatsResponse>;
   onOpenCaptcha: () => void;
+  onStatusObserved?: (status: HofObservedStatusResponse) => void;
   automationController: UnifiedAutomationController;
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
   onCreatePartyPreset: (
@@ -96,6 +98,7 @@ export function MainScreen({
   onLoadBattleLogs,
   onLoadBattleStats,
   onOpenCaptcha,
+  onStatusObserved,
   automationController,
   onListPartyPresets,
   onCreatePartyPreset,
@@ -200,6 +203,7 @@ export function MainScreen({
           onLoadBattleLogs,
           onLoadBattleStats,
           onOpenCaptcha,
+          onStatusObserved,
           automationController,
           onListPartyPresets,
           onCreatePartyPreset,
@@ -250,6 +254,7 @@ type RenderActiveTabArgs = {
   onLoadBattleLogs: (limit?: number) => Promise<BattleLogResponse[]>;
   onLoadBattleStats: () => Promise<BattleStatsResponse>;
   onOpenCaptcha: () => void;
+  onStatusObserved?: (status: HofObservedStatusResponse) => void;
   automationController: UnifiedAutomationController;
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
   onCreatePartyPreset: (
@@ -294,6 +299,7 @@ function renderActiveTab({
   onLoadBattleLogs,
   onLoadBattleStats,
   onOpenCaptcha,
+  onStatusObserved,
   automationController,
   onListPartyPresets,
   onCreatePartyPreset,
@@ -326,6 +332,7 @@ function renderActiveTab({
           onListPartyPresets={onListPartyPresets}
           automationController={automationController}
           onOpenCaptcha={onOpenCaptcha}
+          onStatusObserved={onStatusObserved}
           onDetailModeChange={onAutomationEditorModeChange}
         />
       );

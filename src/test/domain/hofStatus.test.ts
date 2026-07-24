@@ -7,7 +7,9 @@ import {
   formatFunds,
   formatStatusBarFunds,
   formatStatusBarStateValue,
+  mergeObservedHofStatus,
 } from '../../main/domain/hofStatus';
+import type { HofObservedStatusResponse, HofStatusResponse } from '../../main/types/api';
 
 describe('hof status utilities', () => {
   it('estimates action time from the observed value without passing the maximum', () => {
@@ -38,4 +40,61 @@ describe('hof status utilities', () => {
     assert.equal(formatStatusBarStateValue(''), '-');
     assert.equal(formatStatusBarStateValue(null), '-');
   });
+
+  it('merges a newer observed display status without losing synchronization metadata', () => {
+    const current = fullStatus({ timeCurrent: 6000, observedAt: '2026-07-24T10:00:00Z' });
+    const observed = observedStatus({ timeCurrent: 5900, observedAt: '2026-07-24T10:00:01Z' });
+
+    const merged = mergeObservedHofStatus(current, observed);
+
+    assert.equal(merged?.timeCurrent, 5900);
+    assert.equal(merged?.characterSyncRequired, true);
+    assert.equal(merged?.totalCharacterCount, 63);
+  });
+
+  it('ignores a missing, invalid, or older status observation', () => {
+    const current = fullStatus({ observedAt: '2026-07-24T10:00:02Z' });
+
+    assert.strictEqual(mergeObservedHofStatus(current, null), current);
+    assert.strictEqual(
+      mergeObservedHofStatus(current, observedStatus({ observedAt: '2026-07-24T10:00:01Z' })),
+      current,
+    );
+    assert.strictEqual(
+      mergeObservedHofStatus(current, observedStatus({ observedAt: 'invalid' })),
+      current,
+    );
+  });
 });
+
+function fullStatus(overrides: Partial<HofStatusResponse> = {}): HofStatusResponse {
+  return {
+    accountId: 1,
+    playerName: '공민이',
+    funds: 331_708_318,
+    timeCurrent: 6000,
+    timeMax: 6000,
+    work: 'Nothing',
+    auction: 'Nothing',
+    totalCharacterCount: 63,
+    synchronizedCharacterCount: 63,
+    characterSyncRequired: true,
+    observedAt: '2026-07-24T10:00:00Z',
+    ...overrides,
+  };
+}
+
+function observedStatus(
+  overrides: Partial<HofObservedStatusResponse> = {},
+): HofObservedStatusResponse {
+  return {
+    playerName: '공민이',
+    funds: 331_708_318,
+    timeCurrent: 6000,
+    timeMax: 6000,
+    work: 'Nothing',
+    auction: 'Nothing',
+    observedAt: '2026-07-24T10:00:00Z',
+    ...overrides,
+  };
+}
