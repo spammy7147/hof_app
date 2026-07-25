@@ -1,5 +1,14 @@
 import type { BattleLogResponse, BattleStatsResponse } from '../types/api';
 
+const KOREA_LOG_TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Seoul',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
 /**
  * 서버가 0~1 사이 실수로 내려주는 승률을 화면용 퍼센트 문자열로 바꾼다.
  */
@@ -14,12 +23,24 @@ export function formatBattleLogTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '-';
 
-  const month = pad(date.getUTCMonth() + 1);
-  const day = pad(date.getUTCDate());
-  const hour = pad(date.getUTCHours());
-  const minute = pad(date.getUTCMinutes());
+  const parts = Object.fromEntries(
+    KOREA_LOG_TIME_FORMATTER.formatToParts(date).map((part) => [part.type, part.value]),
+  );
 
-  return `${month}-${day} ${hour}:${minute}`;
+  return `${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+export function formatBattleLogMap(log: Pick<BattleLogResponse, 'mapName' | 'mapCode'>): string {
+  return log.mapName.trim() || log.mapCode;
+}
+
+export function formatBattleLogFunds(log: Pick<BattleLogResponse, 'funds'>): string {
+  return log.funds == null ? 'Funds 없음' : `Funds ${log.funds.toLocaleString('en-US')}`;
+}
+
+export function formatBattleLogItems(log: Pick<BattleLogResponse, 'loots'>): string {
+  const items = log.loots.map(({ name }) => name.trim()).filter(Boolean);
+  return items.length === 0 ? '획득 아이템 없음' : `획득 아이템: ${items.join(', ')}`;
 }
 
 /**
@@ -34,8 +55,4 @@ export function formatBattleLogParty(log: Pick<BattleLogResponse, 'characterName
     .filter((name) => name.length > 0);
 
   return names.length > 0 ? names.join(', ') : '캐릭터 없음';
-}
-
-function pad(value: number): string {
-  return value.toString().padStart(2, '0');
 }

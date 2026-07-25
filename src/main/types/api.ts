@@ -132,6 +132,7 @@ export type BattleLogResponse = {
   accountId: number;
   categoryId: string;
   mapCode: string;
+  mapName: string;
   characterIds: string[];
   characterNames: string[];
   outcome: string;
