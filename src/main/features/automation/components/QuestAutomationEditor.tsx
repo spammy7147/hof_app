@@ -101,7 +101,7 @@ export function QuestAutomationEditor({
   const [mapResources, setMapResources] = useState<Record<string, { loading: boolean; error: string | null }>>({});
   const [refreshWarning, setRefreshWarning] = useState(false);
   const [localBusy, setLocalBusy] = useState(false);
-  const [undoQuestId, setUndoQuestId] = useState<string | null>(null);
+  const [undoQuestKey, setUndoQuestKey] = useState<string | null>(null);
   const baselineRef = useRef('');
   const baselineDraftRef = useRef<QuestAutomationDraft | null>(null);
   const draftRef = useRef<QuestAutomationDraft | null>(null);
@@ -116,7 +116,7 @@ export function QuestAutomationEditor({
   const requestedCategoriesRef = useRef(false);
   const deselectedCacheRef = useRef<Record<string, DeselectedQuestCacheEntry>>({});
   const selectionOrderRef = useRef<string[]>([]);
-  const undoQuestIdRef = useRef<string | null>(null);
+  const undoQuestKeyRef = useRef<string | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const undoGenerationRef = useRef(0);
   const snapshotsRef = useRef(snapshots);
@@ -135,25 +135,25 @@ export function QuestAutomationEditor({
   const clearUndo = useCallback(() => {
     undoGenerationRef.current += 1;
     cancelUndoTimer();
-    undoQuestIdRef.current = null;
-    if (isMountedRef.current) setUndoQuestId(null);
+    undoQuestKeyRef.current = null;
+    if (isMountedRef.current) setUndoQuestKey(null);
   }, [cancelUndoTimer]);
 
-  const clearUndoForQuest = useCallback((questId: string) => {
-    if (undoQuestIdRef.current === questId) clearUndo();
+  const clearUndoForQuest = useCallback((questKey: string) => {
+    if (undoQuestKeyRef.current === questKey) clearUndo();
   }, [clearUndo]);
 
-  const offerUndo = useCallback((questId: string) => {
+  const offerUndo = useCallback((questKey: string) => {
     cancelUndoTimer();
     const generation = ++undoGenerationRef.current;
-    undoQuestIdRef.current = questId;
-    if (isMountedRef.current) setUndoQuestId(questId);
+    undoQuestKeyRef.current = questKey;
+    if (isMountedRef.current) setUndoQuestKey(questKey);
     undoTimerRef.current = setTimeout(() => {
-      if (!isMountedRef.current || undoGenerationRef.current !== generation || undoQuestIdRef.current !== questId) return;
+      if (!isMountedRef.current || undoGenerationRef.current !== generation || undoQuestKeyRef.current !== questKey) return;
       undoGenerationRef.current += 1;
       undoTimerRef.current = null;
-      undoQuestIdRef.current = null;
-      setUndoQuestId(null);
+      undoQuestKeyRef.current = null;
+      setUndoQuestKey(null);
     }, 4000);
   }, [cancelUndoTimer]);
 
@@ -299,7 +299,7 @@ export function QuestAutomationEditor({
     const nextDraft = buildQuestAutomationDraft(entry, snapshots, catalog);
     const current = draftRef.current;
     if (current == null) {
-      selectionOrderRef.current = nextDraft.quests.map(({ questCode }) => questCode);
+      selectionOrderRef.current = nextDraft.quests.map(({ questKey }) => questKey);
       draftSourceRef.current = source;
       baselineDraftRef.current = nextDraft;
       baselineRef.current = serializeDraft(nextDraft);
@@ -312,7 +312,7 @@ export function QuestAutomationEditor({
       draftSourceRef.current = source;
       if (serializeDraft(current) === baselineRef.current) {
         deselectedCacheRef.current = {};
-        selectionOrderRef.current = nextDraft.quests.map(({ questCode }) => questCode);
+        selectionOrderRef.current = nextDraft.quests.map(({ questKey }) => questKey);
         clearUndo();
         baselineDraftRef.current = nextDraft;
         baselineRef.current = serializeDraft(nextDraft);
@@ -345,13 +345,13 @@ export function QuestAutomationEditor({
     }
   }, [areBattleCategoriesLoaded, battleCategories.length, battleCategoriesError, catalog, clearUndo, eligibleCategories, entry, isBattleCategoriesLoading, questLoaded, mapResources, snapshots]);
 
-  const selectedQuestIds = useMemo(
-    () => new Set(draft?.quests.map(({ questCode }) => questCode) ?? []),
+  const selectedQuestKeys = useMemo(
+    () => new Set(draft?.quests.map(({ questKey }) => questKey) ?? []),
     [draft],
   );
   const visibleQuests = useMemo(
-    () => prioritizeSelectedQuests(filterQuests(snapshots, section, query), selectedQuestIds),
-    [query, section, selectedQuestIds, snapshots],
+    () => prioritizeSelectedQuests(filterQuests(snapshots, section, query), selectedQuestKeys),
+    [query, section, selectedQuestKeys, snapshots],
   );
   const presetIds = useMemo(() => presets.map(({ id }) => id), [presets]);
   const validationErrors = useMemo(
@@ -391,23 +391,23 @@ export function QuestAutomationEditor({
   const toggleQuestSelection = useCallback((snapshot: QuestSnapshot) => {
     const current = draftRef.current;
     if (!current) return;
-    const existingIndex = current.quests.findIndex(({ questCode }) => questCode === snapshot.questId);
+    const existingIndex = current.quests.findIndex(({ questKey }) => questKey === snapshot.questKey);
     if (existingIndex >= 0) {
-      deselectedCacheRef.current[snapshot.questId] = {
+      deselectedCacheRef.current[snapshot.questKey] = {
         selection: current.quests[existingIndex]!,
       };
       const next = selectQuest(current, snapshot, false, catalogRef.current);
       draftRef.current = next;
       setDraft(next);
-      offerUndo(snapshot.questId);
+      offerUndo(snapshot.questKey);
       return;
     }
 
-    const cached = deselectedCacheRef.current[snapshot.questId];
+    const cached = deselectedCacheRef.current[snapshot.questKey];
     if (!cached) {
       selectionOrderRef.current = [
-        ...selectionOrderRef.current.filter((questCode) => questCode !== snapshot.questId),
-        snapshot.questId,
+        ...selectionOrderRef.current.filter((questKey) => questKey !== snapshot.questKey),
+        snapshot.questKey,
       ];
     }
     const next = cached
@@ -415,16 +415,16 @@ export function QuestAutomationEditor({
       : selectQuest(current, snapshot, true, catalogRef.current);
     draftRef.current = next;
     setDraft(next);
-    clearUndoForQuest(snapshot.questId);
+    clearUndoForQuest(snapshot.questKey);
   }, [clearUndoForQuest, offerUndo]);
 
   const undoDeselection = useCallback(() => {
-    const questId = undoQuestIdRef.current;
-    if (!questId) return;
+    const questKey = undoQuestKeyRef.current;
+    if (!questKey) return;
     const current = draftRef.current;
-    const snapshot = snapshotsRef.current.find(({ questId: candidate }) => candidate === questId);
-    const cached = deselectedCacheRef.current[questId];
-    if (!current || current.quests.some(({ questCode }) => questCode === questId) || !snapshot || !cached) {
+    const snapshot = snapshotsRef.current.find(({ questKey: candidate }) => candidate === questKey);
+    const cached = deselectedCacheRef.current[questKey];
+    if (!current || current.quests.some(({ questKey: candidate }) => candidate === questKey) || !snapshot || !cached) {
       clearUndo();
       return;
     }
@@ -434,8 +434,8 @@ export function QuestAutomationEditor({
     clearUndo();
   }, [clearUndo]);
 
-  const updateQuest = useCallback((questCode: string, transform: (selection: QuestSelectionDraft) => QuestSelectionDraft) => {
-    updateDraft((current) => updateQuestSelection(current, questCode, transform));
+  const updateQuest = useCallback((questKey: string, transform: (selection: QuestSelectionDraft) => QuestSelectionDraft) => {
+    updateDraft((current) => updateQuestSelection(current, questKey, transform));
   }, [updateDraft]);
 
   const retryCatalog = useCallback(() => {
@@ -449,7 +449,7 @@ export function QuestAutomationEditor({
   }, [battleCategoriesError, catalog.length, eligibleCategories, loadCategoryMaps, onLoadBattleCategories]);
 
   const renderQuest = useCallback(({ item }: { item: QuestSnapshot }) => {
-    const selection = draft?.quests.find(({ questCode }) => questCode === item.questId);
+    const selection = draft?.quests.find(({ questKey }) => questKey === item.questKey);
     return (
       <QuestSummaryCard
         catalog={catalog}
@@ -462,9 +462,9 @@ export function QuestAutomationEditor({
         snapshot={item}
         onRetryCatalog={retryCatalog}
         onToggle={() => toggleQuestSelection(item)}
-        onAddMap={(map) => updateQuest(item.questId, (selection) => addUserQuestMap(selection, map))}
-        onRemoveMap={(index) => updateQuest(item.questId, (selection) => removeQuestMap(selection, index, catalogRef.current))}
-        onUpdateMaps={(maps) => updateQuest(item.questId, (selection) => updateQuestMaps(selection, maps))}
+        onAddMap={(map) => updateQuest(item.questKey, (selection) => addUserQuestMap(selection, map))}
+        onRemoveMap={(index) => updateQuest(item.questKey, (selection) => removeQuestMap(selection, index, catalogRef.current))}
+        onUpdateMaps={(maps) => updateQuest(item.questKey, (selection) => updateQuestMaps(selection, maps))}
       />
     );
   }, [catalog, catalogError, catalogLoading, draft, editingDisabled, presets, retryCatalog, toggleQuestSelection, updateQuest]);
@@ -513,7 +513,7 @@ export function QuestAutomationEditor({
         baselineDraftRef.current = savedDraft;
         baselineRef.current = serializeDraft(savedDraft);
         deselectedCacheRef.current = {};
-        selectionOrderRef.current = savedDraft.quests.map(({ questCode }) => questCode);
+        selectionOrderRef.current = savedDraft.quests.map(({ questKey }) => questKey);
         clearUndo();
       }
     } finally {
@@ -607,7 +607,7 @@ export function QuestAutomationEditor({
             onPress={() => {
               const nextDraft = buildQuestAutomationDraft(entry, snapshots, catalog);
               deselectedCacheRef.current = {};
-              selectionOrderRef.current = nextDraft.quests.map(({ questCode }) => questCode);
+              selectionOrderRef.current = nextDraft.quests.map(({ questKey }) => questKey);
               clearUndo();
               draftSourceRef.current = serializeDraftSource(entry, snapshots);
               baselineDraftRef.current = nextDraft;
@@ -642,21 +642,21 @@ export function QuestAutomationEditor({
           data={visibleQuests}
           initialNumToRender={12}
           keyboardShouldPersistTaps="handled"
-          keyExtractor={({ questId }) => questId}
+          keyExtractor={({ questKey }) => questKey}
           ListHeaderComponent={missingSelections.length > 0 ? (
             <View style={styles.missingList}>
               {missingSelections.map((selection) => (
                 <MissingSelectionCard
-                  key={selection.questCode}
+                  key={selection.questKey}
                   disabled={editingDisabled}
                   selection={selection}
                   onRemove={() => {
-                    delete deselectedCacheRef.current[selection.questCode];
-                    selectionOrderRef.current = selectionOrderRef.current.filter((questCode) => questCode !== selection.questCode);
-                    clearUndoForQuest(selection.questCode);
+                    delete deselectedCacheRef.current[selection.questKey];
+                    selectionOrderRef.current = selectionOrderRef.current.filter((questKey) => questKey !== selection.questKey);
+                    clearUndoForQuest(selection.questKey);
                     updateDraft((current) => ({
                       ...current,
-                      quests: current.quests.filter(({ questCode }) => questCode !== selection.questCode),
+                      quests: current.quests.filter(({ questKey }) => questKey !== selection.questKey),
                     }));
                   }}
                 />
@@ -674,7 +674,7 @@ export function QuestAutomationEditor({
 
       {validationErrors.length > 0 ? <Text style={styles.problem}>{validationErrors[0]}</Text> : null}
 
-      {undoQuestId ? (
+      {undoQuestKey ? (
         <View accessibilityLiveRegion="polite" style={styles.undoSnackbar}>
           <Text style={styles.undoText}>선택 해제됨</Text>
           <Pressable
@@ -737,11 +737,11 @@ function MissingSelectionCard({ selection, disabled, onRemove }: MissingSelectio
     <View style={[styles.questCard, styles.missingCard]}>
       <View style={styles.questHeading}>
         <View style={styles.questCopy}>
-          <Text accessibilityLabel={`${selection.questCode} 저장된 선택`} accessibilityRole="header" style={styles.questName}>{selection.questCode}</Text>
+          <Text accessibilityLabel={`${selection.name} 저장된 선택`} accessibilityRole="header" style={styles.questName}>[{selection.displayCode}] {selection.name}</Text>
           <Text style={styles.problem}>저장된 반복 퀘스트 · 현재 목록에 없음</Text>
         </View>
         <Pressable
-          accessibilityLabel={`${selection.questCode} 저장된 선택 제거`}
+          accessibilityLabel={`${selection.name} 저장된 선택 제거`}
           accessibilityRole="button"
           accessibilityState={{ disabled }}
           disabled={disabled}
@@ -763,23 +763,23 @@ function reinsertCachedQuestSelection(
   selectionOrder: string[],
 ): QuestAutomationDraft {
   const quests = [
-    ...draft.quests.filter(({ questCode }) => questCode !== snapshot.questId),
+    ...draft.quests.filter(({ questKey }) => questKey !== snapshot.questKey),
     restoreQuestSelection(snapshot, cached.selection, catalog),
   ];
   const knownCodes = new Set(selectionOrder);
-  for (const { questCode } of quests) {
-    if (knownCodes.has(questCode)) continue;
-    knownCodes.add(questCode);
-    selectionOrder.push(questCode);
+  for (const { questKey } of quests) {
+    if (knownCodes.has(questKey)) continue;
+    knownCodes.add(questKey);
+    selectionOrder.push(questKey);
   }
-  const rank = new Map(selectionOrder.map((questCode, index) => [questCode, index]));
+  const rank = new Map(selectionOrder.map((questKey, index) => [questKey, index]));
   return {
     ...draft,
     quests: quests
       .map((selection, index) => ({ selection, index }))
       .sort((left, right) => (
-        (rank.get(left.selection.questCode) ?? Number.MAX_SAFE_INTEGER)
-        - (rank.get(right.selection.questCode) ?? Number.MAX_SAFE_INTEGER)
+        (rank.get(left.selection.questKey) ?? Number.MAX_SAFE_INTEGER)
+        - (rank.get(right.selection.questKey) ?? Number.MAX_SAFE_INTEGER)
         || left.index - right.index
       ))
       .map(({ selection }) => selection),
@@ -788,12 +788,12 @@ function reinsertCachedQuestSelection(
 
 function updateQuestSelection(
   draft: QuestAutomationDraft,
-  questCode: string,
+  questKey: string,
   transform: (selection: QuestSelectionDraft) => QuestSelectionDraft,
 ): QuestAutomationDraft {
   return {
     ...draft,
-    quests: draft.quests.map((quest) => quest.questCode === questCode ? transform(quest) : quest),
+    quests: draft.quests.map((quest) => quest.questKey === questKey ? transform(quest) : quest),
   };
 }
 function serializeDraft(draft: QuestAutomationDraft): string { return JSON.stringify(draft); }

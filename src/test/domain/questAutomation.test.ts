@@ -41,8 +41,8 @@ describe('quest automation domain', () => {
       snapshot('waiting', 'Killer request', 'WAITING', 0, [mission('other', 'OTHER', 'letter')]),
       snapshot('early', 'First', 'ACTIVE', 2, [mission('clear', 'MAP_CLEAR', 'KILLER FIELD')]),
     ];
-    assert.deepEqual(filterQuests(quests, 'ACTIVE', 'killer').map(({ questId }) => questId), ['early', 'late']);
-    assert.deepEqual(filterQuests(quests, 'WAITING', 'request').map(({ questId }) => questId), ['waiting']);
+    assert.deepEqual(filterQuests(quests, 'ACTIVE', 'killer').map(({ questKey }) => questKey), ['early', 'late']);
+    assert.deepEqual(filterQuests(quests, 'WAITING', 'request').map(({ questKey }) => questKey), ['waiting']);
   });
 
   it('prioritizes selected quests while preserving HOF order within each group', () => {
@@ -55,13 +55,13 @@ describe('quest automation domain', () => {
     const prioritized = prioritizeSelectedQuests(quests, new Set(['second-selected', 'first-selected']));
 
     assert.deepEqual(
-      prioritized.map(({ questId }) => questId),
+      prioritized.map(({ questKey }) => questKey),
       ['first-selected', 'second-selected', 'early', 'late'],
     );
     assert.notEqual(prioritized, quests);
-    assert.deepEqual(quests.map(({ questId }) => questId), ['late', 'first-selected', 'early', 'second-selected']);
+    assert.deepEqual(quests.map(({ questKey }) => questKey), ['late', 'first-selected', 'early', 'second-selected']);
     assert.deepEqual(
-      prioritizeSelectedQuests(quests, new Set()).map(({ questId }) => questId),
+      prioritizeSelectedQuests(quests, new Set()).map(({ questKey }) => questKey),
       ['early', 'first-selected', 'second-selected', 'late'],
     );
   });
@@ -105,7 +105,7 @@ describe('quest automation domain', () => {
       mission('kill', 'MONSTER_KILL', 'Monster'),
     ]);
     const draft = buildQuestAutomationDraft(
-      questEntry([{ questCode: 'q', enabled: true, sourceOrder: 0, maps: [] }]),
+      questEntry([{ questKey: 'q', enabled: true, sourceOrder: 0, maps: [] }]),
       [quest],
       [catalogMap('battle_map', 'shared', 'Shared')],
     );
@@ -121,7 +121,7 @@ describe('quest automation domain', () => {
       { ...mapSetting('kill', 'manual', 0), manuallyOverridden: true },
     ];
     const draft = buildQuestAutomationDraft(
-      questEntry([{ questCode: 'q', enabled: true, sourceOrder: 0, maps: stored }]),
+      questEntry([{ questKey: 'q', enabled: true, sourceOrder: 0, maps: stored }]),
       [snapshot('q', 'Quest', 'ACTIVE', 0, [
         mission('clear', 'MAP_CLEAR', 'Auto'),
         mission('kill', 'MONSTER_KILL', 'Monster'),
@@ -139,7 +139,7 @@ describe('quest automation domain', () => {
       mission('clear-b', 'MAP_CLEAR', 'Auto B'),
     ]);
     const draft = buildQuestAutomationDraft(
-      questEntry([{ questCode: 'q', enabled: true, sourceOrder: 0, maps: [] }]),
+      questEntry([{ questKey: 'q', enabled: true, sourceOrder: 0, maps: [] }]),
       [quest],
       [catalogMap('battle_map', 'auto-a', 'Auto A'), catalogMap('battle_map', 'auto-b', 'Auto B')],
     );
@@ -154,7 +154,7 @@ describe('quest automation domain', () => {
     const quest = snapshot('q', 'Quest', 'ACTIVE', 0, [mission('clear', 'MAP_CLEAR', 'Automatic')]);
     const manual = { ...mapSetting('clear', 'manual', 0), manuallyOverridden: true };
     const draft = buildQuestAutomationDraft(
-      questEntry([{ questCode: 'q', enabled: true, sourceOrder: 0, maps: [manual] }]),
+      questEntry([{ questKey: 'q', enabled: true, sourceOrder: 0, maps: [manual] }]),
       [quest],
       [catalogMap('battle_map', 'automatic', 'Automatic')],
     );
@@ -172,7 +172,7 @@ describe('quest automation domain', () => {
     ]);
     const manual = { ...mapSetting('clear', 'manual', 0), manuallyOverridden: true };
     const draft = buildQuestAutomationDraft(
-      questEntry([{ questCode: 'q', enabled: true, sourceOrder: 0, maps: [manual] }]),
+      questEntry([{ questKey: 'q', enabled: true, sourceOrder: 0, maps: [manual] }]),
       [quest],
       [],
     );
@@ -212,7 +212,7 @@ describe('quest automation domain', () => {
       mission('item', 'ITEM_TURN_IN', 'Horn'),
     ]);
     const cached = {
-      questCode: 'q1', name: 'Old', section: 'ACTIVE' as const, sourceOrder: 1, enabled: false, missing: true,
+      questKey: 'q1', displayCode: 'q1', name: 'Old', section: 'ACTIVE' as const, sourceOrder: 1, enabled: false, missing: true,
       mapMode: 'MANUAL' as const,
       maps: [{ ...questMap('battle_map', 'a', 0) }],
       storedMaps: [],
@@ -238,7 +238,7 @@ describe('quest automation domain', () => {
     const current = snapshot('q1', 'Current', 'AVAILABLE', 12, [mission('clear', 'MAP_CLEAR', 'Target')]);
     const automatic = { ...mapSetting('clear', 'cached-map', 4), executionOrder: 4, manuallyOverridden: false };
     const cached = {
-      questCode: 'q1', name: 'Old', section: 'ACTIVE' as const, sourceOrder: 1, enabled: true, missing: false,
+      questKey: 'q1', displayCode: 'q1', name: 'Old', section: 'ACTIVE' as const, sourceOrder: 1, enabled: true, missing: false,
       mapMode: 'AUTO' as const,
       maps: [questMap('battle_map', 'cached-map', 0)],
       storedMaps: [],
@@ -257,7 +257,7 @@ describe('quest automation domain', () => {
   it('restores every ordered cached manual map into the shared pool', () => {
     const current = snapshot('q1', 'Current', 'AVAILABLE', 12, [mission('clear', 'MAP_CLEAR', 'Target')]);
     const cached = {
-      questCode: 'q1', name: 'Old', section: 'ACTIVE' as const, sourceOrder: 1, enabled: true, missing: false,
+      questKey: 'q1', displayCode: 'q1', name: 'Old', section: 'ACTIVE' as const, sourceOrder: 1, enabled: true, missing: false,
       mapMode: 'MANUAL' as const,
       maps: [questMap('battle_map', 'first', 4), questMap('battle_map', 'second', 5)],
       storedMaps: [],
@@ -276,18 +276,40 @@ describe('quest automation domain', () => {
   });
 
   it('keeps a selected repeated quest and its config when the latest snapshot disappears', () => {
-    const entry = questEntry([{ questCode: 'repeat', enabled: true, sourceOrder: 7, maps: [mapSetting('kill', 'a', 0)] }]);
+    const entry = questEntry([{ questKey: 'repeat', enabled: true, sourceOrder: 7, maps: [mapSetting('kill', 'a', 0)] }]);
     const draft = buildQuestAutomationDraft(entry, []);
     assert.equal(draft.quests[0]?.missing, true);
     assert.deepEqual(buildQuestAutomationRequest(draft, [4]), {
       enabled: true,
-      quests: [{ questCode: 'repeat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }],
+      quests: [{ questKey: 'repeat', displayCode: 'repeat', questName: 'repeat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }],
     });
+  });
+
+  it('keeps the same saved quest when cooldown removes its action number', () => {
+    const questKey = 'q:stable-quest-key';
+    const active = { ...snapshot(questKey, '마을 지하 수로', 'ACTIVE', 0, []), displayCode: '0351', actionNo: '90210' };
+    const waiting = { ...snapshot(questKey, '마을 지하 수로', 'WAITING', 0, []), displayCode: '0351', actionNo: null };
+    const stored = questEntry([{
+      questKey,
+      displayCode: '0351',
+      questName: '마을 지하 수로',
+      enabled: true,
+      sourceOrder: 0,
+      maps: [],
+    }]);
+
+    const beforeCooldown = buildQuestAutomationDraft(stored, [active]).quests[0]!;
+    const duringCooldown = buildQuestAutomationDraft(stored, [waiting]).quests[0]!;
+
+    assert.equal(beforeCooldown.missing, false);
+    assert.equal(duringCooldown.missing, false);
+    assert.equal(duringCooldown.questKey, beforeCooldown.questKey);
+    assert.equal(duringCooldown.section, 'WAITING');
   });
 
   it('selects without disturbing existing config and deselection removes it from the request', () => {
     const quest = snapshot('q1', 'Quest', 'ACTIVE', 3, [mission('kill', 'MONSTER_KILL', 'Maid')]);
-    const stored = questEntry([{ questCode: 'q1', enabled: true, sourceOrder: 3, maps: [mapSetting('kill', 'a', 0)] }]);
+    const stored = questEntry([{ questKey: 'q1', enabled: true, sourceOrder: 3, maps: [mapSetting('kill', 'a', 0)] }]);
     const draft = buildQuestAutomationDraft(stored, [quest]);
     assert.deepEqual(selectQuest(draft, quest, true).quests[0]?.missions[0]?.maps, [mapSetting('kill', 'a', 0)]);
     assert.deepEqual(selectQuest(draft, quest, false).quests, []);
@@ -321,7 +343,7 @@ describe('quest automation domain', () => {
 
   it('clears a stale stored automatic map when current matching is missing or ambiguous', () => {
     const clearQuest = snapshot('q-clear', 'Clear', 'ACTIVE', 0, [mission('clear-key', 'MAP_CLEAR', 'Target')]);
-    const entry = questEntry([{ questCode: 'q-clear', enabled: true, sourceOrder: 0, maps: [mapSetting('clear-key', 'stale', 0)] }]);
+    const entry = questEntry([{ questKey: 'q-clear', enabled: true, sourceOrder: 0, maps: [mapSetting('clear-key', 'stale', 0)] }]);
 
     for (const catalog of [
       [catalogMap('battle_map', 'other', 'Other')],
@@ -339,7 +361,7 @@ describe('quest automation domain', () => {
     const clearQuest = snapshot('q-clear', 'Clear', 'ACTIVE', 0, [mission('clear-key', 'MAP_CLEAR', 'Missing')]);
     const manual = { ...mapSetting('clear-key', 'chosen', 0), manuallyOverridden: true };
     const draft = buildQuestAutomationDraft(
-      questEntry([{ questCode: 'q-clear', enabled: true, sourceOrder: 0, maps: [manual] }]),
+      questEntry([{ questKey: 'q-clear', enabled: true, sourceOrder: 0, maps: [manual] }]),
       [clearQuest],
       [],
     );
@@ -353,7 +375,7 @@ describe('quest automation domain', () => {
     const first = { ...mapSetting('clear-key', 'first', 0), manuallyOverridden: true };
     const second = { ...mapSetting('clear-key', 'second', 1), manuallyOverridden: true };
     const draft = buildQuestAutomationDraft(
-      questEntry([{ questCode: 'q-clear', enabled: true, sourceOrder: 0, maps: [first, second] }]),
+      questEntry([{ questKey: 'q-clear', enabled: true, sourceOrder: 0, maps: [first, second] }]),
       [clearQuest],
       [],
     );
@@ -371,7 +393,7 @@ describe('quest automation domain', () => {
       partyPresetId: 7,
     };
     const draft = buildQuestAutomationDraft(
-      questEntry([{ questCode: 'q-clear', enabled: true, sourceOrder: 0, maps: [automatic] }]),
+      questEntry([{ questKey: 'q-clear', enabled: true, sourceOrder: 0, maps: [automatic] }]),
       [clearQuest],
       [],
     );
@@ -402,7 +424,7 @@ describe('quest automation domain', () => {
     assert.equal(hydrateAutoMatchedMapClearMissions(
       removed,
       [catalogMap('battle_map', 'target', 'Target')],
-      (questCode, missionKey) => questCode === 'q-clear' && missionKey === 'clear-key',
+      (questKey, missionKey) => questKey === 'q-clear' && missionKey === 'clear-key',
     ), removed);
   });
 
@@ -479,7 +501,7 @@ describe('quest automation domain', () => {
       { ...mapSetting('kill-key', 'b', 1), manuallyOverridden: true },
     ];
     const draft = buildQuestAutomationDraft(
-      questEntry([{ questCode: 'repeat', enabled: true, sourceOrder: 0, maps: storedMaps }]),
+      questEntry([{ questKey: 'repeat', enabled: true, sourceOrder: 0, maps: storedMaps }]),
       [repeated],
     );
 
@@ -499,13 +521,13 @@ describe('quest automation domain', () => {
 
   it('emits contiguous unique source order in deterministic draft order', () => {
     const missing = questEntry([
-      { questCode: 'missing', enabled: true, sourceOrder: 4, maps: [] },
-      { questCode: 'live', enabled: true, sourceOrder: 4, maps: [] },
+      { questKey: 'missing', enabled: true, sourceOrder: 4, maps: [] },
+      { questKey: 'live', enabled: true, sourceOrder: 4, maps: [] },
     ]);
     const live = snapshot('live', 'Live', 'ACTIVE', 4, [mission('now', 'IMMEDIATE', null)]);
     const request = buildQuestAutomationRequest(buildQuestAutomationDraft(missing, [live]), []);
 
-    assert.deepEqual(request.quests.map(({ questCode, sourceOrder }) => [questCode, sourceOrder]), [
+    assert.deepEqual(request.quests.map(({ questKey, sourceOrder }) => [questKey, sourceOrder]), [
       ['missing', 0],
       ['live', 1],
     ]);
@@ -516,8 +538,8 @@ function mission(key: string, type: QuestMission['type'], target: string | null)
   return { key, type, target, progress: null, completable: false };
 }
 
-function snapshot(questId: string, name: string, section: QuestSnapshot['section'], sourceOrder: number, missions: QuestMission[]): QuestSnapshot {
-  return { questId, name, state: section === 'ACTIVE' ? 'ACTIVE' : section === 'AVAILABLE' ? 'AVAILABLE' : 'UNAVAILABLE', section, sourceOrder, missions, actionNo: null, rewards: [] };
+function snapshot(questKey: string, name: string, section: QuestSnapshot['section'], sourceOrder: number, missions: QuestMission[]): QuestSnapshot {
+  return { questKey, displayCode: questKey, name, state: section === 'ACTIVE' ? 'ACTIVE' : section === 'AVAILABLE' ? 'AVAILABLE' : 'UNAVAILABLE', section, sourceOrder, missions, actionNo: null, rewards: [] };
 }
 
 function mapSetting(missionKey: string, mapCode: string, executionOrder: number) {

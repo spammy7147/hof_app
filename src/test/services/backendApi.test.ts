@@ -268,7 +268,7 @@ describe('BackendApiClient', () => {
     const { BackendApiClient } = await loadBackendApi();
     mockFetch([
       {
-        questId: 'quest-without-rewards',
+        questKey: 'quest-without-rewards',
         name: 'Missing rewards',
         state: 'ACTIVE',
         section: 'ACTIVE',
@@ -277,7 +277,7 @@ describe('BackendApiClient', () => {
         actionNo: null,
       },
       {
-        questId: 'quest-with-malformed-rewards',
+        questKey: 'quest-with-malformed-rewards',
         name: 'Malformed rewards',
         state: 'AVAILABLE',
         section: 'AVAILABLE',
@@ -435,7 +435,7 @@ describe('BackendApiClient', () => {
     };
     const questRequest = {
       enabled: true,
-      quests: [{ questCode: 'daily', enabled: true, sourceOrder: 0, maps: [] }],
+      quests: [{ questKey: 'daily', enabled: true, sourceOrder: 0, maps: [] }],
     };
     const battleRequest = {
       enabled: true,

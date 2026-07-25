@@ -1115,10 +1115,11 @@ function mission(key: string, type: QuestSnapshot['missions'][number]['type']) {
   return { key, type, target: null, progress: null, completable: false };
 }
 
-function questSnapshot(questId: string, missions: QuestSnapshot['missions']): QuestSnapshot {
+function questSnapshot(questKey: string, missions: QuestSnapshot['missions']): QuestSnapshot {
   return {
-    questId,
-    name: questId,
+    questKey,
+    displayCode: questKey,
+    name: questKey,
     state: 'ACTIVE',
     section: 'ACTIVE',
     sourceOrder: 0,

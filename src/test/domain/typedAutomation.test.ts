@@ -68,13 +68,13 @@ describe('typed automation domain', () => {
 
   it('normalizes setting orders and keeps source/map orders unique', () => {
     const quest = buildQuestAutomationRequest(true, [{
-      questCode: 'daily', enabled: true, sourceOrder: 9,
+      questKey: 'daily', enabled: true, sourceOrder: 9,
       maps: [
         { missionKey: 'b', categoryId: 'battle_map', mapCode: 'gb2', executionOrder: 4, manuallyOverridden: false, ...buildPrimaryPresetSelection() },
         { missionKey: 'a', categoryId: 'battle_map', mapCode: 'gb1', executionOrder: 4, manuallyOverridden: true, ...buildExplicitPresetSelection(7) },
       ],
     }, {
-      questCode: 'weekly', enabled: false, sourceOrder: 9, maps: [],
+      questKey: 'weekly', enabled: false, sourceOrder: 9, maps: [],
     }]);
     const battle = buildBattleMapAutomationRequest(true, [
       { categoryId: 'battle_map', mapCode: 'gb2', dailyTargetCount: 2, executionOrder: 8, ...buildPrimaryPresetSelection() },

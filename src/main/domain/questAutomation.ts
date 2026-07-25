@@ -21,7 +21,8 @@ type QuestMapDraftFields<T> = T extends unknown ? Omit<T, 'missionKey' | 'manual
 export type QuestMapDraft = QuestMapDraftFields<QuestMapSettingRequest>;
 
 export type QuestSelectionDraft = {
-  questCode: string;
+  questKey: string;
+  displayCode: string;
   name: string;
   section: QuestSection | null;
   sourceOrder: number;
@@ -74,10 +75,10 @@ export function filterQuests(
 
 export function prioritizeSelectedQuests(
   quests: readonly QuestSnapshot[],
-  selectedQuestIds: ReadonlySet<string>,
+  selectedQuestKeys: ReadonlySet<string>,
 ): QuestSnapshot[] {
   return [...quests].sort((left, right) => {
-    const selectedDifference = Number(selectedQuestIds.has(right.questId)) - Number(selectedQuestIds.has(left.questId));
+    const selectedDifference = Number(selectedQuestKeys.has(right.questKey)) - Number(selectedQuestKeys.has(left.questKey));
     return selectedDifference || left.sourceOrder - right.sourceOrder;
   });
 }
@@ -232,11 +233,11 @@ export function buildQuestAutomationDraft(
   snapshots: readonly QuestSnapshot[],
   catalog: readonly QuestMapCatalogItem[] = [],
 ): QuestAutomationDraft {
-  const byQuestCode = new Map(snapshots.map((snapshot) => [snapshot.questId, snapshot]));
+  const byQuestKey = new Map(snapshots.map((snapshot) => [snapshot.questKey, snapshot]));
   return {
     enabled: entry.enabled,
     quests: entry.quests.map((selection) => {
-      const snapshot = byQuestCode.get(selection.questCode);
+      const snapshot = byQuestKey.get(selection.questKey);
       if (!snapshot) return buildMissingSelection(selection);
       return buildSelection(snapshot, selection, catalog);
     }),
@@ -249,9 +250,9 @@ export function selectQuest(
   selected: boolean,
   catalog: readonly QuestMapCatalogItem[] = [],
 ): QuestAutomationDraft {
-  const existingIndex = draft.quests.findIndex(({ questCode }) => questCode === snapshot.questId);
+  const existingIndex = draft.quests.findIndex(({ questKey }) => questKey === snapshot.questKey);
   if (!selected) {
-    return { ...draft, quests: draft.quests.filter(({ questCode }) => questCode !== snapshot.questId) };
+    return { ...draft, quests: draft.quests.filter(({ questKey }) => questKey !== snapshot.questKey) };
   }
   if (existingIndex >= 0) return draft;
   return {
@@ -302,7 +303,7 @@ export function applyManualMapOverride(
 export function hydrateAutoMatchedMapClearMissions(
   draft: QuestAutomationDraft,
   catalog: readonly QuestMapCatalogItem[],
-  isBlocked: (questCode: string, missionKey: string) => boolean = () => false,
+  isBlocked: (questKey: string, missionKey: string) => boolean = () => false,
 ): QuestAutomationDraft {
   let changed = false;
   const quests = draft.quests.map((quest) => {
@@ -313,7 +314,7 @@ export function hydrateAutoMatchedMapClearMissions(
       const normalized = normalizedMaps.length !== mission.maps.length
         || normalizedMaps.some((map, index) => map.executionOrder !== mission.maps[index]?.executionOrder);
       const normalizedMission = normalized ? { ...mission, maps: normalizedMaps } : mission;
-      if (isBlocked(quest.questCode, mission.key) || normalizedMaps.some(({ manuallyOverridden }) => manuallyOverridden)) {
+      if (isBlocked(quest.questKey, mission.key) || normalizedMaps.some(({ manuallyOverridden }) => manuallyOverridden)) {
         if (normalized) {
           changed = true;
           questChanged = true;
@@ -398,10 +399,10 @@ export function validateQuestAutomationDraft(
   validPresetIds: readonly number[],
 ): string[] {
   const errors: string[] = [];
-  const questCodes = new Set<string>();
+  const questKeys = new Set<string>();
   for (const quest of draft.quests) {
-    if (questCodes.has(quest.questCode)) errors.push(`${quest.name}: 중복 선택된 퀘스트입니다.`);
-    questCodes.add(quest.questCode);
+    if (questKeys.has(quest.questKey)) errors.push(`${quest.name}: 중복 선택된 퀘스트입니다.`);
+    questKeys.add(quest.questKey);
     if (quest.missing) continue;
     const combatMissions = quest.missions.filter(isCombatMission);
     if (combatMissions.length > 0 && quest.maps.length === 0) errors.push(`${quest.name}: 맵 설정 필요`);
@@ -426,7 +427,9 @@ export function buildQuestAutomationRequest(
   return {
     enabled: draft.enabled,
     quests: draft.quests.map((quest, sourceOrder) => ({
-      questCode: quest.questCode,
+      questKey: quest.questKey,
+      displayCode: quest.displayCode,
+      questName: quest.name,
       enabled: quest.enabled,
       sourceOrder,
       maps: quest.missing
@@ -469,7 +472,8 @@ function buildSelection(
     ? collapsed
     : { mode: 'AUTO' as const, maps: buildAutomaticQuestMaps(missions, catalog, collapsed.maps) };
   return {
-    questCode: snapshot.questId,
+    questKey: snapshot.questKey,
+    displayCode: snapshot.displayCode,
     name: snapshot.name,
     section: snapshot.section,
     sourceOrder: snapshot.sourceOrder,
@@ -485,8 +489,9 @@ function buildSelection(
 function buildMissingSelection(selection: TypedAutomationEntryResponse['quests'][number]): QuestSelectionDraft {
   const questMaps = collapseQuestMaps(selection.maps);
   return {
-    questCode: selection.questCode,
-    name: selection.questCode,
+    questKey: selection.questKey,
+    displayCode: selection.displayCode ?? selection.questKey,
+    name: selection.questName ?? selection.questKey,
     section: null,
     sourceOrder: selection.sourceOrder,
     enabled: selection.enabled,

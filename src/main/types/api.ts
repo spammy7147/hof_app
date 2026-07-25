@@ -197,7 +197,9 @@ export type QuestMapSettingRequest = PresetSelection & {
 };
 
 export type QuestSelectionRequest = {
-  questCode: string;
+  questKey: string;
+  displayCode?: string;
+  questName?: string;
   enabled: boolean;
   sourceOrder: number;
   maps: QuestMapSettingRequest[];
@@ -315,7 +317,8 @@ export type QuestMission = {
   completable: boolean;
 };
 export type QuestSnapshot = {
-  questId: string;
+  questKey: string;
+  displayCode: string;
   name: string;
   state: QuestState;
   section: QuestSection;

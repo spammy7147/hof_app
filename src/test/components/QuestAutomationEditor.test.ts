@@ -358,7 +358,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     const save = renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' });
     assert.equal(save.props.disabled, false);
     await act(async () => { await save.props.onPress(); });
-    assert.deepEqual(saves, [{ enabled: true, quests: [{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [{ missionKey: 'kill-key', categoryId: 'battle_map', mapCode: 'maid', executionOrder: 0, manuallyOverridden: true, presetMode: 'PRIMARY', partyPresetId: null }] }] }]);
+    assert.deepEqual(saves, [{ enabled: true, quests: [{ questKey: 'combat', displayCode: 'combat', questName: 'Combat', enabled: true, sourceOrder: 0, maps: [{ missionKey: 'kill-key', categoryId: 'battle_map', mapCode: 'maid', executionOrder: 0, manuallyOverridden: true, presetMode: 'PRIMARY', partyPresetId: null }] }] }]);
 
     const busy = await renderEditor({ saving: true, quests: [] });
     assert.equal(busy.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.disabled, true);
@@ -370,7 +370,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     const alpha = mapSetting('kill', 'a', 0);
     const beta = { ...mapSetting('kill', 'b', 1), presetMode: 'EXPLICIT' as const, partyPresetId: 7 };
     const renderer = await renderEditor({
-      entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [alpha, beta] }]),
+      entry: questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [alpha, beta] }]),
       quests: [quest],
       maps: [catalogMap('battle_map', 'a', 'Alpha'), catalogMap('battle_map', 'b', 'Beta')],
       presets: [preset(7, 'Explicit')],
@@ -396,14 +396,14 @@ describe('QuestAutomationEditor mounted behavior', () => {
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
     assert.deepEqual(saves, [{
       enabled: true,
-      quests: [{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [alpha, beta] }],
+      quests: [{ questKey: 'combat', displayCode: 'combat', questName: 'Combat', enabled: true, sourceOrder: 0, maps: [alpha, beta] }],
     }]);
   });
 
   it('undoes the latest deselection with the cached combat maps', async () => {
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
     const renderer = await renderEditor({
-      entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [
+      entry: questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [
         mapSetting('kill', 'a', 0), mapSetting('kill', 'b', 1),
       ] }]),
       quests: [quest],
@@ -423,7 +423,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     const saves: UpdateQuestAutomationRequest[] = [];
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
     const renderer = await renderEditor({
-      entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [
+      entry: questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [
         mapSetting('kill', 'a', 0), mapSetting('kill', 'b', 1),
       ] }]),
       quests: [quest],
@@ -445,7 +445,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
   it('retains deselection cache and undo after a failed save', async () => {
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
     const renderer = await renderEditor({
-      entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [
+      entry: questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [
         mapSetting('kill', 'a', 0), mapSetting('kill', 'b', 1),
       ] }]),
       quests: [quest],
@@ -485,7 +485,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     try {
       const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
       const renderer = await renderEditor({
-        entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]),
+        entry: questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]),
         quests: [quest],
         maps: [catalogMap('battle_map', 'a', 'Alpha')],
       });
@@ -537,7 +537,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
   it('guards map and preset controls with accessible state during a deferred save', async () => {
     const saving = deferred<boolean>();
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
-    const entry = questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [
+    const entry = questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [
       mapSetting('kill', 'a', 0),
       mapSetting('kill', 'b', 1),
     ] }]);
@@ -586,7 +586,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     const saves: UpdateQuestAutomationRequest[] = [];
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
     const renderer = await renderEditor({
-      entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [
+      entry: questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [
         mapSetting('kill', 'a', 0), mapSetting('kill', 'b', 1),
       ] }]),
       quests: [quest],
@@ -611,7 +611,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     dragCalls.length = 0;
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
     const base = editorProps({
-      entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [
+      entry: questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [
         mapSetting('kill', 'a', 0), mapSetting('kill', 'b', 1),
       ] }]),
       quests: [quest],
@@ -640,7 +640,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     swipeables[0]?.props.onSwipeableWillOpen();
     const changedBase = {
       ...base,
-      entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'b', 0)] }]),
+      entry: questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'b', 0)] }]),
     };
     await act(async () => { renderer.update(React.createElement(QuestAutomationEditor, changedBase)); });
     assert.ok(liveFirstMethods.closeCalls >= 1);
@@ -663,7 +663,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     dragCalls.length = 0;
     const saves: UpdateQuestAutomationRequest[] = [];
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
-    const entry = questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]);
+    const entry = questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]);
     const renderer = await renderEditor({
       entry,
       quests: [quest],
@@ -721,7 +721,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     let renderer!: ReactTestRenderer;
     try {
       renderer = await renderEditor({
-        entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [first, second] }]),
+        entry: questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [first, second] }]),
         quests: [quest],
         maps: [catalogMap('battle_map', 'a', 'Alpha')],
         presets: [preset(7, 'Safe'), preset(8, 'Speed')],
@@ -741,7 +741,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
   it('keeps PRIMARY available and shows an empty result for an unmatched preset search', async () => {
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
     const renderer = await renderEditor({
-      entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]),
+      entry: questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]),
       quests: [quest],
       maps: [catalogMap('battle_map', 'a', 'Alpha')],
       presets: [preset(7, 'Safe')],
@@ -758,7 +758,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     accessibilityFocusCalls.length = 0;
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
     const renderer = await renderEditor({
-      entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]),
+      entry: questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]),
       quests: [quest],
       maps: [catalogMap('battle_map', 'a', 'Alpha')],
       presets: [preset(7, 'Safe')],
@@ -780,7 +780,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
 
   it('fences stale quest preset focus after target removal, busy closure, newer invocation, and unmount', async () => {
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
-    const entry = questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [
+    const entry = questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [
       mapSetting('kill', 'a', 0), mapSetting('kill', 'b', 1),
     ] }]);
     const base = editorProps({
@@ -823,7 +823,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
   it('restores focus to the monster picker trigger after ordinary close and map selection', async () => {
     accessibilityFocusCalls.length = 0;
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
-    const entry = questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]);
+    const entry = questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]);
     const renderer = await renderEditor({
       entry,
       quests: [quest],
@@ -847,7 +847,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
 
   it('does not restore stale picker focus after busy closure, reopen, or unmount', async () => {
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
-    const entry = questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]);
+    const entry = questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]);
     const base = editorProps({ entry, quests: [quest], maps: [catalogMap('battle_map', 'a', 'Alpha')] });
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(React.createElement(QuestAutomationEditor, base)); });
@@ -875,7 +875,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
 
   it('closes an open monster picker when the editor becomes busy', async () => {
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
-    const entry = questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]);
+    const entry = questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]);
     const base = editorProps({ entry, quests: [quest], maps: [catalogMap('battle_map', 'a', 'Alpha')] });
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(React.createElement(QuestAutomationEditor, base)); });
@@ -890,7 +890,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
 
   it('disables and guards the picker trigger while saving', async () => {
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
-    const entry = questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [{
+    const entry = questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [{
       ...mapSetting('kill', '', 0), categoryId: '', manuallyOverridden: true,
     }] }]);
     const renderer = await renderEditor({
@@ -932,7 +932,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     const quest = snapshot('clear', 'Clear Quest', 'ACTIVE', [mission('clear-key', 'MAP_CLEAR', 'Target')]);
     const automatic = { ...mapSetting('clear-key', 'stale', 0), manuallyOverridden: false };
     const rendererPromise = renderEditor({
-      entry: questEntry([{ questCode: 'clear', enabled: true, sourceOrder: 0, maps: [automatic] }]),
+      entry: questEntry([{ questKey: 'clear', enabled: true, sourceOrder: 0, maps: [automatic] }]),
       quests: [quest],
       battleCategories: [
         { id: 'battle_map', label: '전투맵', description: '', order: 0, enabled: true },
@@ -960,7 +960,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     const automatic = { ...mapSetting('clear', 'target', 0), manuallyOverridden: false };
     const manual = { ...mapSetting('kill', 'manual', 0), manuallyOverridden: true };
     const renderer = await renderEditor({
-      entry: questEntry([{ questCode: 'mixed', enabled: true, sourceOrder: 0, maps: [automatic, manual] }]),
+      entry: questEntry([{ questKey: 'mixed', enabled: true, sourceOrder: 0, maps: [automatic, manual] }]),
       quests: [quest],
       maps: [catalogMap('battle_map', 'target', 'Target'), catalogMap('battle_map', 'manual', 'Manual')],
     });
@@ -977,7 +977,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     const quest = snapshot('clear', 'Clear Quest', 'ACTIVE', [mission('clear-key', 'MAP_CLEAR', 'Target')]);
     const automatic = { ...mapSetting('clear-key', 'target', 0), manuallyOverridden: false };
     const renderer = await renderEditor({
-      entry: questEntry([{ questCode: 'clear', enabled: true, sourceOrder: 0, maps: [automatic] }]),
+      entry: questEntry([{ questKey: 'clear', enabled: true, sourceOrder: 0, maps: [automatic] }]),
       quests: [quest],
       maps: [catalogMap('battle_map', 'target', 'Target'), catalogMap('battle_map', 'other', 'Other Field')],
     });
@@ -1000,7 +1000,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     const quest = snapshot('clear', 'Clear Quest', 'ACTIVE', [mission('clear-key', 'MAP_CLEAR', 'Target')]);
     const automatic = { ...mapSetting('clear-key', 'target', 0), manuallyOverridden: false };
     const renderer = await renderEditor({
-      entry: questEntry([{ questCode: 'clear', enabled: true, sourceOrder: 0, maps: [automatic] }]),
+      entry: questEntry([{ questKey: 'clear', enabled: true, sourceOrder: 0, maps: [automatic] }]),
       quests: [quest],
       maps: [catalogMap('battle_map', 'target', 'Target'), catalogMap('battle_map', 'other', 'Other Field')],
       onSave: async (request) => { saves.push(request); return true; },
@@ -1024,7 +1024,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
   it('keeps the MAP_CLEAR picker open after deselection and closes it after replacement', async () => {
     const quest = snapshot('clear', 'Clear Quest', 'ACTIVE', [mission('clear-key', 'MAP_CLEAR', 'Target')]);
     const renderer = await renderEditor({
-      entry: questEntry([{ questCode: 'clear', enabled: true, sourceOrder: 0, maps: [mapSetting('clear-key', 'target', 0)] }]),
+      entry: questEntry([{ questKey: 'clear', enabled: true, sourceOrder: 0, maps: [mapSetting('clear-key', 'target', 0)] }]),
       quests: [quest],
       maps: [catalogMap('battle_map', 'target', 'Target'), catalogMap('battle_map', 'other', 'Other Field')],
     });
@@ -1043,7 +1043,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
   it('toggles MONSTER_KILL map cards independently and keeps selected maps first', async () => {
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
     const renderer = await renderEditor({
-      entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'b', 0)] }]),
+      entry: questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'b', 0)] }]),
       quests: [quest],
       maps: [catalogMap('battle_map', 'a', 'Alpha'), catalogMap('battle_map', 'b', 'Beta')],
     });
@@ -1067,7 +1067,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
   it('fences a retained quest map card callback after the editor becomes busy', async () => {
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
     const base = editorProps({
-      entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]),
+      entry: questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]),
       quests: [quest],
       maps: [catalogMap('battle_map', 'a', 'Alpha'), catalogMap('battle_map', 'b', 'Beta')],
     });
@@ -1086,7 +1086,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
   it('opens the quest map picker after the editor changes from disabled to enabled', async () => {
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
     const base = editorProps({
-      entry: questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]),
+      entry: questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]),
       quests: [quest],
       maps: [catalogMap('battle_map', 'a', 'Alpha')],
       saving: true,
@@ -1111,7 +1111,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     let attempts = 0;
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
     const stored = mapSetting('kill', 'stored', 0);
-    const entry = questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [stored] }]);
+    const entry = questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [stored] }]);
     const enabled = [{ id: 'battle_map', label: '전투맵', description: '', order: 0, enabled: true }];
     const base = editorProps({
       entry,
@@ -1144,18 +1144,19 @@ describe('QuestAutomationEditor mounted behavior', () => {
   });
 
   it('renders missing saved selections and allows removal', async () => {
-    const entry = questEntry([{ questCode: 'missing', enabled: true, sourceOrder: 7, maps: [mapSetting('stored-key', 'a', 0)] }]);
+    const entry = questEntry([{ questKey: 'missing', displayCode: '0351', questName: '마을 지하 수로', enabled: true, sourceOrder: 7, maps: [mapSetting('stored-key', 'a', 0)] }]);
     const renderer = await renderEditor({ entry, quests: [], maps: [catalogMap('battle_map', 'a', 'Alpha')] });
 
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'missing 저장된 선택' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '마을 지하 수로 저장된 선택' }));
+    assert.equal(hasText(renderer.root, '[0351] 마을 지하 수로'), true);
     assert.equal(hasText(renderer.root, '저장된 반복 퀘스트 · 현재 목록에 없음'), true);
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'missing 저장된 선택 제거' }).props.onPress(); });
-    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'missing 저장된 선택' }).length, 0);
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '마을 지하 수로 저장된 선택 제거' }).props.onPress(); });
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '마을 지하 수로 저장된 선택' }).length, 0);
   });
 
   it('keeps a missing saved selection read-only and preserves its raw rows', async () => {
     const broken = { ...mapSetting('stored-key', 'a', 0), presetMode: 'EXPLICIT' as const, partyPresetId: 99 };
-    const entry = questEntry([{ questCode: 'missing', enabled: true, sourceOrder: 0, maps: [broken] }]);
+    const entry = questEntry([{ questKey: 'missing', enabled: true, sourceOrder: 0, maps: [broken] }]);
     const saves: UpdateQuestAutomationRequest[] = [];
     const renderer = await renderEditor({
       entry,
@@ -1196,7 +1197,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
 
   it('allows an already-valid manual combat config when catalog refresh fails', async () => {
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
-    const entry = questEntry([{ questCode: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'stored', 0)] }]);
+    const entry = questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'stored', 0)] }]);
     const renderer = await renderEditor({
       entry,
       quests: [quest],
@@ -1226,7 +1227,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
 
   it('marks an already selected map and toggles it off from the full card', async () => {
     const quest = snapshot('one', 'One', 'ACTIVE', [mission('shared', 'MONSTER_KILL', 'A')]);
-    const entry = questEntry([{ questCode: 'one', enabled: true, sourceOrder: 0, maps: [mapSetting('shared', 'a', 0)] }]);
+    const entry = questEntry([{ questKey: 'one', enabled: true, sourceOrder: 0, maps: [mapSetting('shared', 'a', 0)] }]);
     const renderer = await renderEditor({ entry, quests: [quest], maps: [catalogMap('battle_map', 'a', 'Alpha')] });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'One 전투맵 추가' }).props.onPress(); });
     const selected = renderer.root.findByProps({ accessibilityLabel: 'Alpha 맵 선택 해제' });
@@ -1244,9 +1245,9 @@ describe('QuestAutomationEditor mounted behavior', () => {
       snapshot('two', 'Two Quest', 'ACTIVE', [mission('shared', 'MONSTER_KILL', 'B')]),
     ];
     const entry = questEntry([
-      { questCode: 'one', enabled: true, sourceOrder: 0, maps: [mapSetting('shared', 'a', 0), mapSetting('shared', 'b', 1)] },
-      { questCode: 'two', enabled: true, sourceOrder: 1, maps: [{ ...mapSetting('shared', '', 0), categoryId: '' }] },
-      { questCode: 'missing-code', enabled: true, sourceOrder: 2, maps: [mapSetting('shared', 'a', 0)] },
+      { questKey: 'one', enabled: true, sourceOrder: 0, maps: [mapSetting('shared', 'a', 0), mapSetting('shared', 'b', 1)] },
+      { questKey: 'two', enabled: true, sourceOrder: 1, maps: [{ ...mapSetting('shared', '', 0), categoryId: '' }] },
+      { questKey: 'missing-code', enabled: true, sourceOrder: 2, maps: [mapSetting('shared', 'a', 0)] },
     ]);
     const renderer = await renderEditor({
       entry,
@@ -1530,7 +1531,7 @@ function focusedLabel(node: unknown): unknown {
     : undefined;
 }
 function mission(key: string, type: QuestMission['type'], target: string | null): QuestMission { return { key, type, target, progress: null, completable: false }; }
-function snapshot(questId: string, name: string, section: QuestSnapshot['section'], missions: QuestMission[], sourceOrder = 0): QuestSnapshot { return { questId, name, section, state: section === 'ACTIVE' ? 'ACTIVE' : section === 'AVAILABLE' ? 'AVAILABLE' : 'UNAVAILABLE', sourceOrder, missions, actionNo: null, rewards: [] }; }
+function snapshot(questKey: string, name: string, section: QuestSnapshot['section'], missions: QuestMission[], sourceOrder = 0): QuestSnapshot { return { questKey, displayCode: questKey, name, section, state: section === 'ACTIVE' ? 'ACTIVE' : section === 'AVAILABLE' ? 'AVAILABLE' : 'UNAVAILABLE', sourceOrder, missions, actionNo: null, rewards: [] }; }
 function questEntry(quests: TypedAutomationEntryResponse['quests'] = []): TypedAutomationEntryResponse { return { id: 1, type: 'QUEST', enabled: true, priority: 0, ready: true, warnings: [], quests, battleMaps: [], battleMapProgress: [], adventureMaps: [] }; }
 function mapSetting(missionKey: string, mapCode: string, executionOrder: number) { return { missionKey, categoryId: 'battle_map', mapCode, executionOrder, manuallyOverridden: true, presetMode: 'PRIMARY' as const, partyPresetId: null }; }
 function questMap(categoryId: string, mapCode: string, executionOrder: number) { return { categoryId, mapCode, executionOrder, presetMode: 'PRIMARY' as const, partyPresetId: null }; }

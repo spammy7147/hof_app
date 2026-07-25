@@ -45,7 +45,7 @@ export function QuestMapEditor({
   const invokingTriggerHandleRef = useRef<ReturnType<typeof findNodeHandle>>(null);
   const focusGenerationRef = useRef(0);
   const restoreFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const questContext = quest.name || quest.questCode;
+  const questContext = quest.name || quest.displayCode;
 
   disabledRef.current = disabled;
 
