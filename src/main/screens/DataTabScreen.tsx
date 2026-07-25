@@ -167,7 +167,7 @@ function BattleLogCard({ log }: { log: BattleLogResponse }) {
         {formatBattleLogParty(log)}
       </Text>
       <Text style={styles.logText}>{formatBattleLogFunds(log)}</Text>
-      <Text style={styles.logText}>{formatBattleLogItems(log)}</Text>
+      <Text style={styles.logText} numberOfLines={2}>{formatBattleLogItems(log)}</Text>
       {log.quest ? <Text style={styles.questText} numberOfLines={2}>{log.quest}</Text> : null}
     </View>
   );

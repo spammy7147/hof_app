@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import Module from 'node:module';
-import { describe, it } from 'node:test';
+import { afterEach, describe, it } from 'node:test';
 import React from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 
@@ -45,9 +45,19 @@ moduleWithLoader._load = originalLoad;
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+let mountedRenderer: ReactTestRenderer | null = null;
+
+afterEach(async () => {
+  if (!mountedRenderer) return;
+  const renderer = mountedRenderer;
+  mountedRenderer = null;
+  await act(async () => { renderer.unmount(); });
+});
+
 describe('DataTabScreen recent battle card', () => {
   it('renders the approved concise battle details', async () => {
-    const cardText = await renderBattleCardText();
+    const card = await renderBattleCard();
+    const cardText = flattenText(card);
     const expected = [
       '승리',
       '07-08 12:04',
@@ -59,17 +69,22 @@ describe('DataTabScreen recent battle card', () => {
     ];
 
     assert.deepEqual(expected.filter((text) => !cardText.includes(text)), []);
+    const itemText = card.find((node) => (
+      String(node.type) === 'Text'
+      && flattenChildren(node.props.children).join('') === '획득 아이템: Silver Ingot x 1, Bone x 1'
+    ));
+    assert.equal(itemText.props.numberOfLines, 2);
   });
 
   it('omits detailed battle-result rows from the recent card', async () => {
-    const cardText = await renderBattleCardText();
-    const forbidden = ['공민이은(는) 승리했다', '아군:', 'HP', '피해', '생존', '턴', '경험치 10,590'];
+    const cardText = flattenText(await renderBattleCard());
+    const forbidden = ['공민이은(는) 승리했다', '아군:', 'HP', '피해', '생존', '턴', '경험치'];
 
     assert.deepEqual(forbidden.filter((text) => cardText.some((line) => line.includes(text))), []);
   });
 });
 
-async function renderBattleCardText(): Promise<string[]> {
+async function renderBattleCard(): Promise<ReactTestInstance> {
   let renderer!: ReactTestRenderer;
   await act(async () => {
     renderer = create(React.createElement(DataTabScreen, {
@@ -78,6 +93,7 @@ async function renderBattleCardText(): Promise<string[]> {
       onLoadBattleStats: async () => emptyStats,
     }));
   });
+  mountedRenderer = renderer;
 
   const cards = renderer.root
     .findAll((node) => String(node.type) === 'View')
@@ -93,7 +109,7 @@ async function renderBattleCardText(): Promise<string[]> {
     }));
 
   assert.ok(card, 'recent battle card should render after loaders resolve');
-  return flattenText(card);
+  return card;
 }
 
 function flattenText(root: ReactTestInstance): string[] {
