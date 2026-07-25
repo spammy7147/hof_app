@@ -625,7 +625,7 @@ function entry(
 }
 
 function questSelection() {
-  return { questKey: 'daily', enabled: true, sourceOrder: 0, maps: [] };
+  return { questKey: 'daily', displayCode: 'daily', questName: 'Daily', enabled: true, sourceOrder: 0, maps: [] };
 }
 
 function deferred<T>() {

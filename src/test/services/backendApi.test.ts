@@ -435,7 +435,7 @@ describe('BackendApiClient', () => {
     };
     const questRequest = {
       enabled: true,
-      quests: [{ questKey: 'daily', enabled: true, sourceOrder: 0, maps: [] }],
+      quests: [{ questKey: 'daily', displayCode: 'daily', questName: 'Daily', enabled: true, sourceOrder: 0, maps: [] }],
     };
     const battleRequest = {
       enabled: true,

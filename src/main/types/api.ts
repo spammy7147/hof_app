@@ -198,8 +198,8 @@ export type QuestMapSettingRequest = PresetSelection & {
 
 export type QuestSelectionRequest = {
   questKey: string;
-  displayCode?: string;
-  questName?: string;
+  displayCode: string;
+  questName: string;
   enabled: boolean;
   sourceOrder: number;
   maps: QuestMapSettingRequest[];

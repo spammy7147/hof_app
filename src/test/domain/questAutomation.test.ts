@@ -550,8 +550,25 @@ function questMap(categoryId: string, mapCode: string, executionOrder: number) {
   return { categoryId, mapCode, executionOrder, presetMode: 'PRIMARY' as const, partyPresetId: null };
 }
 
-function questEntry(quests: TypedAutomationEntryResponse['quests']): TypedAutomationEntryResponse {
-  return { id: 1, type: 'QUEST', enabled: true, priority: 0, ready: true, warnings: [], quests, battleMaps: [], battleMapProgress: [], adventureMaps: [] };
+type QuestSelectionFixture = Omit<TypedAutomationEntryResponse['quests'][number], 'displayCode' | 'questName'>
+  & Partial<Pick<TypedAutomationEntryResponse['quests'][number], 'displayCode' | 'questName'>>;
+function questEntry(quests: QuestSelectionFixture[]): TypedAutomationEntryResponse {
+  return {
+    id: 1,
+    type: 'QUEST',
+    enabled: true,
+    priority: 0,
+    ready: true,
+    warnings: [],
+    quests: quests.map((quest) => ({
+      ...quest,
+      displayCode: quest.displayCode ?? quest.questKey,
+      questName: quest.questName ?? quest.questKey,
+    })),
+    battleMaps: [],
+    battleMapProgress: [],
+    adventureMaps: [],
+  };
 }
 
 function catalogMap(categoryId: string, mapCode: string | null, name: string): BattleMapResponse {

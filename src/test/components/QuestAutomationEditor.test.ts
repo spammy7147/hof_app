@@ -1154,6 +1154,37 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '마을 지하 수로 저장된 선택' }).length, 0);
   });
 
+  it('keeps a saved map attached when the quest moves to waiting and loses actionNo', async () => {
+    const questKey = 'q:stable-quest-key';
+    const waiting = {
+      ...snapshot(questKey, '마을 지하 수로', 'WAITING', [mission('kill', 'MONSTER_KILL', 'Maid')]),
+      displayCode: '0351',
+      actionNo: null,
+    };
+    const entry = questEntry([{
+      questKey,
+      displayCode: '0351',
+      questName: '마을 지하 수로',
+      enabled: true,
+      sourceOrder: 0,
+      maps: [mapSetting('kill', 'maid', 0)],
+    }]);
+    const renderer = await renderEditor({
+      entry,
+      quests: [waiting],
+      maps: [catalogMap('battle_map', 'maid', 'Maid Field')],
+    });
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '대기 중 탭' }).props.onPress(); });
+
+    assert.deepEqual(
+      renderer.root.findByProps({ testID: 'quest-summary:마을 지하 수로' }).props.accessibilityState,
+      { checked: true, disabled: false },
+    );
+    assert.equal(hasText(renderer.root, 'Maid Field'), true);
+    assert.equal(hasText(renderer.root, '저장된 반복 퀘스트 · 현재 목록에 없음'), false);
+  });
+
   it('keeps a missing saved selection read-only and preserves its raw rows', async () => {
     const broken = { ...mapSetting('stored-key', 'a', 0), presetMode: 'EXPLICIT' as const, partyPresetId: 99 };
     const entry = questEntry([{ questKey: 'missing', enabled: true, sourceOrder: 0, maps: [broken] }]);
@@ -1532,7 +1563,26 @@ function focusedLabel(node: unknown): unknown {
 }
 function mission(key: string, type: QuestMission['type'], target: string | null): QuestMission { return { key, type, target, progress: null, completable: false }; }
 function snapshot(questKey: string, name: string, section: QuestSnapshot['section'], missions: QuestMission[], sourceOrder = 0): QuestSnapshot { return { questKey, displayCode: questKey, name, section, state: section === 'ACTIVE' ? 'ACTIVE' : section === 'AVAILABLE' ? 'AVAILABLE' : 'UNAVAILABLE', sourceOrder, missions, actionNo: null, rewards: [] }; }
-function questEntry(quests: TypedAutomationEntryResponse['quests'] = []): TypedAutomationEntryResponse { return { id: 1, type: 'QUEST', enabled: true, priority: 0, ready: true, warnings: [], quests, battleMaps: [], battleMapProgress: [], adventureMaps: [] }; }
+type QuestSelectionFixture = Omit<TypedAutomationEntryResponse['quests'][number], 'displayCode' | 'questName'>
+  & Partial<Pick<TypedAutomationEntryResponse['quests'][number], 'displayCode' | 'questName'>>;
+function questEntry(quests: QuestSelectionFixture[] = []): TypedAutomationEntryResponse {
+  return {
+    id: 1,
+    type: 'QUEST',
+    enabled: true,
+    priority: 0,
+    ready: true,
+    warnings: [],
+    quests: quests.map((quest) => ({
+      ...quest,
+      displayCode: quest.displayCode ?? quest.questKey,
+      questName: quest.questName ?? quest.questKey,
+    })),
+    battleMaps: [],
+    battleMapProgress: [],
+    adventureMaps: [],
+  };
+}
 function mapSetting(missionKey: string, mapCode: string, executionOrder: number) { return { missionKey, categoryId: 'battle_map', mapCode, executionOrder, manuallyOverridden: true, presetMode: 'PRIMARY' as const, partyPresetId: null }; }
 function questMap(categoryId: string, mapCode: string, executionOrder: number) { return { categoryId, mapCode, executionOrder, presetMode: 'PRIMARY' as const, partyPresetId: null }; }
 function catalogMap(categoryId: string, mapCode: string, name: string): BattleMapResponse { return { categoryId, mapCode, name, groupName: null, groupOrder: 0, mapOrder: 0, recommendedLevel: null, availableCount: null, attemptCount: null, winCount: null, cooldownRemainingText: null, cooldownRemainingSeconds: null, keyMode: 'NOT_REQUIRED', keyCount: null, requiredTime: null, supportsThreeBattles: false, enabled: true, resolved: true, iconUrl: null, rawHref: '' }; }

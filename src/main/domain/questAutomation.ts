@@ -490,8 +490,8 @@ function buildMissingSelection(selection: TypedAutomationEntryResponse['quests']
   const questMaps = collapseQuestMaps(selection.maps);
   return {
     questKey: selection.questKey,
-    displayCode: selection.displayCode ?? selection.questKey,
-    name: selection.questName ?? selection.questKey,
+    displayCode: selection.displayCode,
+    name: selection.questName,
     section: null,
     sourceOrder: selection.sourceOrder,
     enabled: selection.enabled,
