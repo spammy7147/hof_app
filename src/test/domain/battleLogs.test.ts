@@ -32,6 +32,7 @@ describe('battle log utilities', () => {
   it('formats ISO timestamps for recent logs', () => {
     assert.equal(formatBattleLogTime('2026-07-08T03:04:05Z'), '07-08 12:04');
     assert.equal(formatBattleLogTime('2026-07-08T18:30:00Z'), '07-09 03:30');
+    assert.equal(formatBattleLogTime('not-a-date'), '-');
   });
 
   it('formats the map name with a map code fallback', () => {
@@ -48,6 +49,10 @@ describe('battle log utilities', () => {
     assert.equal(
       formatBattleLogItems({ loots: [{ name: 'Silver Ingot x 1' }, { name: 'Bone x 1' }] }),
       '획득 아이템: Silver Ingot x 1, Bone x 1',
+    );
+    assert.equal(
+      formatBattleLogItems({ loots: [{ name: '  Bone x 1  ' }, { name: '   ' }] }),
+      '획득 아이템: Bone x 1',
     );
     assert.equal(formatBattleLogItems({ loots: [] }), '획득 아이템 없음');
   });

@@ -2,8 +2,15 @@ import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-nativ
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { PrimaryButton } from '../components/PrimaryButton';
-import { formatBattleLogParty, formatBattleLogTime, formatWinRate } from '../domain/battleLogs';
-import { formatBattleOutcome, formatBattleReward, formatBattleSide } from '../domain/battleResults';
+import {
+  formatBattleLogFunds,
+  formatBattleLogItems,
+  formatBattleLogMap,
+  formatBattleLogParty,
+  formatBattleLogTime,
+  formatWinRate,
+} from '../domain/battleLogs';
+import { formatBattleOutcome } from '../domain/battleResults';
 import { theme } from '../styles/theme';
 import type { BattleLogResponse, BattleStatsResponse } from '../types/api';
 
@@ -146,7 +153,7 @@ function StatCard({ label, value, accent = false }: { label: string; value: stri
 }
 
 /**
- * 전투 기록 한 건의 결과, 시간, 참여 캐릭터, 보상, 아군 상태를 표시한다.
+ * 전투 기록 한 건의 결과, 시간, 맵, 참여 캐릭터, 보상을 표시한다.
  */
 function BattleLogCard({ log }: { log: BattleLogResponse }) {
   return (
@@ -155,12 +162,12 @@ function BattleLogCard({ log }: { log: BattleLogResponse }) {
         <Text style={styles.logOutcome}>{formatBattleOutcome(log.outcome)}</Text>
         <Text style={styles.logTime}>{formatBattleLogTime(log.createdAt)}</Text>
       </View>
-      <Text style={styles.logTitle} numberOfLines={2}>{log.title}</Text>
+      <Text style={styles.logTitle} numberOfLines={2}>{formatBattleLogMap(log)}</Text>
       <Text style={styles.logMeta} numberOfLines={1}>
         {formatBattleLogParty(log)}
       </Text>
-      <Text style={styles.logText}>{formatBattleReward(log)}</Text>
-      <Text style={styles.logText}>아군: {formatBattleSide(log.ally)}</Text>
+      <Text style={styles.logText}>{formatBattleLogFunds(log)}</Text>
+      <Text style={styles.logText}>{formatBattleLogItems(log)}</Text>
       {log.quest ? <Text style={styles.questText} numberOfLines={2}>{log.quest}</Text> : null}
     </View>
   );
