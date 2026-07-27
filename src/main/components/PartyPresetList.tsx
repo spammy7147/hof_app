@@ -1,7 +1,8 @@
 import { ChevronDown, ChevronUp, FolderCog, GripVertical, Pencil, Plus, Save, Star, Trash2 } from 'lucide-react-native';
 import type { ElementRef, ReactNode, Ref } from 'react';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, findNodeHandle, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import type { FlatList } from 'react-native-gesture-handler';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist';
 
@@ -52,6 +53,9 @@ type PartyPresetListProps = {
 
 type ExpandedPresetId = number | 'new' | null;
 type NewPresetDraft = { name: string; party: BattlePartyMember[]; folderId: number | null };
+type PickerInvocation =
+  | { kind: 'preset'; handle: ReturnType<typeof findNodeHandle> }
+  | { kind: 'folder'; folderId: number; handle: ReturnType<typeof findNodeHandle> };
 
 /** 캐릭터 탭의 저장 파티 프리셋을 편집하고 정렬한다. */
 export function PartyPresetList({
@@ -94,6 +98,9 @@ export function PartyPresetList({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const presetsRef = useRef(presets);
   const mutationPendingRef = useRef(false);
+  const authenticatedRef = useRef(authenticated);
+  const previousAuthenticatedRef = useRef(authenticated);
+  const accountGenerationRef = useRef(0);
   const mountedRef = useRef(true);
   const loadGenerationRef = useRef(0);
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
@@ -102,10 +109,15 @@ export function PartyPresetList({
   const folderMoveTriggerRefs = useRef(new Map<number, ElementRef<typeof Pressable>>());
   const presetDragRefs = useRef(new Map<number, () => void>());
   const folderDragRefs = useRef(new Map<number, () => void>());
-  const pickerReturnFocusHandleRef = useRef<ReturnType<typeof findNodeHandle>>(null);
+  const pickerInvocationRef = useRef<PickerInvocation | null>(null);
   const pickerVisibleRef = useRef(false);
   const pickerFocusGenerationRef = useRef(0);
   const pickerFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const presetListRef = useRef<FlatList<PartyPresetResponse>>(null);
+  const presetEditorNameInputRef = useRef<ElementRef<typeof TextInput>>(null);
+  const editorFocusGenerationRef = useRef(0);
+  const editorFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const presetScrollRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   pickerVisibleRef.current = folderPickerOpen || movingFolderId != null;
   presetsRef.current = presets;
   const catalogIndex = useMemo(() => indexPartyPresetCatalog({ folders, presets }), [folders, presets]);
@@ -135,6 +147,20 @@ export function PartyPresetList({
   ), [catalogIndex, folderParentId]);
   const folderParentAtMaxDepth = folderParentId != null
     && partyPresetFolderDepth(catalogIndex.foldersById, folderParentId) >= 5;
+
+  useLayoutEffect(() => {
+    authenticatedRef.current = authenticated;
+    if (previousAuthenticatedRef.current === authenticated) return;
+    previousAuthenticatedRef.current = authenticated;
+    accountGenerationRef.current += 1;
+    mutationPendingRef.current = false;
+  }, [authenticated]);
+
+  const isCurrentAccountGeneration = useCallback((generation: number) => (
+    mountedRef.current
+    && authenticatedRef.current
+    && accountGenerationRef.current === generation
+  ), []);
 
   const closeOpenSwipeable = useCallback(() => {
     openSwipeableRef.current?.close();
@@ -196,12 +222,54 @@ export function PartyPresetList({
       folderDragRefs.current.clear();
       pickerFocusGenerationRef.current += 1;
       if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
+      editorFocusGenerationRef.current += 1;
+      if (editorFocusTimerRef.current) clearTimeout(editorFocusTimerRef.current);
+      if (presetScrollRetryTimerRef.current) clearTimeout(presetScrollRetryTimerRef.current);
     };
   }, [closeOpenSwipeable, loadPresets]);
 
   useEffect(() => {
+    mutationPendingRef.current = false;
+    setIsSaving(false);
+    setExpandedPresetId(null);
+    setNewDraft(null);
+    setCatalogQuery('');
+    setExpandedFolderPath([]);
+    setFolderPickerOpen(false);
+    setFolderEditMode(false);
+    setFolderParentId(null);
+    setMovingFolderId(null);
+    setRenamingFolderId(null);
+    setFolderNameDraft('');
+    setNewFolderName('');
+    setDeleteConfirmFolderId(null);
+    setErrorMessage(null);
+    pickerInvocationRef.current = null;
+    pickerFocusGenerationRef.current += 1;
+    if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
+    editorFocusGenerationRef.current += 1;
+    if (editorFocusTimerRef.current) clearTimeout(editorFocusTimerRef.current);
+    if (presetScrollRetryTimerRef.current) clearTimeout(presetScrollRetryTimerRef.current);
+  }, [authenticated]);
+
+  useEffect(() => {
     closeOpenSwipeable();
   }, [closeOpenSwipeable, presets, isSaving]);
+
+  useEffect(() => {
+    if (typeof expandedPresetId !== 'number') return;
+    const index = visiblePresets.findIndex(({ id }) => id === expandedPresetId);
+    if (index < 0) return;
+    const generation = ++editorFocusGenerationRef.current;
+    presetListRef.current?.scrollToIndex({ animated: true, index, viewPosition: 0.1 });
+    if (editorFocusTimerRef.current) clearTimeout(editorFocusTimerRef.current);
+    editorFocusTimerRef.current = setTimeout(() => {
+      editorFocusTimerRef.current = null;
+      if (!mountedRef.current || editorFocusGenerationRef.current !== generation) return;
+      const handle = findNodeHandle(presetEditorNameInputRef.current);
+      if (handle != null) AccessibilityInfo.setAccessibilityFocus(handle);
+    }, 100);
+  }, [expandedPresetId, visiblePresets]);
 
   function openPreset(preset: PartyPresetResponse) {
     setExpandedPresetId((current) => {
@@ -230,27 +298,36 @@ export function PartyPresetList({
   function openPresetFolderPicker() {
     pickerFocusGenerationRef.current += 1;
     if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
-    pickerReturnFocusHandleRef.current = findNodeHandle(presetFolderTriggerRef.current);
+    pickerInvocationRef.current = { kind: 'preset', handle: findNodeHandle(presetFolderTriggerRef.current) };
     setFolderPickerOpen(true);
   }
 
   function openFolderMovePicker(folderId: number) {
     pickerFocusGenerationRef.current += 1;
     if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
-    pickerReturnFocusHandleRef.current = findNodeHandle(folderMoveTriggerRefs.current.get(folderId) ?? null);
+    pickerInvocationRef.current = {
+      kind: 'folder',
+      folderId,
+      handle: findNodeHandle(folderMoveTriggerRefs.current.get(folderId) ?? null),
+    };
     setMovingFolderId(folderId);
   }
 
   function restorePickerFocusAfterClose() {
-    const handle = pickerReturnFocusHandleRef.current;
     const generation = ++pickerFocusGenerationRef.current;
     if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
-    if (handle == null) return;
     pickerFocusTimerRef.current = setTimeout(() => {
       pickerFocusTimerRef.current = null;
       if (!mountedRef.current || pickerVisibleRef.current || pickerFocusGenerationRef.current !== generation) return;
-      AccessibilityInfo.setAccessibilityFocus(handle);
-      if (pickerReturnFocusHandleRef.current === handle) pickerReturnFocusHandleRef.current = null;
+      const invocation = pickerInvocationRef.current;
+      if (!invocation || invocation.handle == null) return;
+      const liveNode = invocation.kind === 'preset'
+        ? presetFolderTriggerRef.current
+        : folderMoveTriggerRefs.current.get(invocation.folderId) ?? null;
+      const liveHandle = findNodeHandle(liveNode);
+      if (liveHandle == null || liveHandle !== invocation.handle) return;
+      AccessibilityInfo.setAccessibilityFocus(liveHandle);
+      if (pickerInvocationRef.current === invocation) pickerInvocationRef.current = null;
     }, 250);
   }
 
@@ -266,6 +343,7 @@ export function PartyPresetList({
 
   async function savePreset() {
     if (!authenticated || mutationPendingRef.current) return;
+    const accountGeneration = accountGenerationRef.current;
     const editingNew = expandedPresetId === 'new';
     const name = editingNew ? newDraft?.name ?? '' : draftName;
     const party = editingNew ? newDraft?.party ?? emptyPartyMembers() : draftParty;
@@ -282,7 +360,7 @@ export function PartyPresetList({
     try {
       if (editingNew) {
         const created = await onCreatePartyPreset(request);
-        if (!mountedRef.current) return;
+        if (!isCurrentAccountGeneration(accountGeneration)) return;
         setPresets((current) => {
           let siblingOrder = 0;
           return [created, ...current].map((preset) => preset.folderId === created.folderId
@@ -294,26 +372,28 @@ export function PartyPresetList({
         if (onGetPartyPresetCatalog) {
           try {
             const catalog = await onGetPartyPresetCatalog();
-            if (mountedRef.current) replaceCatalog(catalog);
+            if (isCurrentAccountGeneration(accountGeneration)) replaceCatalog(catalog);
           } catch { /* Keep the successful local mutation. */ }
         }
       } else if (typeof expandedPresetId === 'number') {
         const updated = await onUpdatePartyPreset(expandedPresetId, request);
-        if (!mountedRef.current) return;
+        if (!isCurrentAccountGeneration(accountGeneration)) return;
         setPresets((current) => current.map((preset) => preset.id === updated.id ? updated : preset));
         setExpandedPresetId(null);
         if (onGetPartyPresetCatalog) {
           try {
             const catalog = await onGetPartyPresetCatalog();
-            if (mountedRef.current) replaceCatalog(catalog);
+            if (isCurrentAccountGeneration(accountGeneration)) replaceCatalog(catalog);
           } catch { /* Keep the successful local mutation. */ }
         }
       }
     } catch (error) {
-      if (mountedRef.current) setErrorMessage(toUserFacingErrorMessage(error));
+      if (isCurrentAccountGeneration(accountGeneration)) setErrorMessage(toUserFacingErrorMessage(error));
     } finally {
-      mutationPendingRef.current = false;
-      if (mountedRef.current) setIsSaving(false);
+      if (isCurrentAccountGeneration(accountGeneration)) {
+        mutationPendingRef.current = false;
+        setIsSaving(false);
+      }
     }
   }
 
@@ -325,13 +405,14 @@ export function PartyPresetList({
 
   async function deletePresetById(presetId: number) {
     if (!authenticated || mutationPendingRef.current) return;
+    const accountGeneration = accountGenerationRef.current;
     closeOpenSwipeable();
     mutationPendingRef.current = true;
     setIsSaving(true);
     setErrorMessage(null);
     try {
       await onDeletePartyPreset(presetId);
-      if (!mountedRef.current) return;
+      if (!isCurrentAccountGeneration(accountGeneration)) return;
       setPresets((current) => {
         const deletedFolderId = current.find(({ id }) => id === presetId)?.folderId ?? null;
         let siblingOrder = 0;
@@ -345,19 +426,22 @@ export function PartyPresetList({
       if (onGetPartyPresetCatalog) {
         try {
           const catalog = await onGetPartyPresetCatalog();
-          if (mountedRef.current) replaceCatalog(catalog);
+          if (isCurrentAccountGeneration(accountGeneration)) replaceCatalog(catalog);
         } catch { /* Keep the successful local mutation. */ }
       }
     } catch (error) {
-      if (mountedRef.current) setErrorMessage(toUserFacingErrorMessage(error));
+      if (isCurrentAccountGeneration(accountGeneration)) setErrorMessage(toUserFacingErrorMessage(error));
     } finally {
-      mutationPendingRef.current = false;
-      if (mountedRef.current) setIsSaving(false);
+      if (isCurrentAccountGeneration(accountGeneration)) {
+        mutationPendingRef.current = false;
+        setIsSaving(false);
+      }
     }
   }
 
   async function makePrimary(presetId: number) {
     if (!authenticated || mutationPendingRef.current) return;
+    const accountGeneration = accountGenerationRef.current;
     const target = presetsRef.current.find(({ id }) => id === presetId);
     if (target?.isPrimary) return;
     mutationPendingRef.current = true;
@@ -365,22 +449,25 @@ export function PartyPresetList({
     setErrorMessage(null);
     try {
       const updated = await onMakePartyPresetPrimary(presetId);
-      if (!mountedRef.current) return;
+      if (!isCurrentAccountGeneration(accountGeneration)) return;
       setPresets((current) => current.map((preset) => (
         preset.id === updated.id
           ? { ...updated, isPrimary: true }
           : { ...preset, isPrimary: false }
       )));
     } catch (error) {
-      if (mountedRef.current) setErrorMessage(toUserFacingErrorMessage(error));
+      if (isCurrentAccountGeneration(accountGeneration)) setErrorMessage(toUserFacingErrorMessage(error));
     } finally {
-      mutationPendingRef.current = false;
-      if (mountedRef.current) setIsSaving(false);
+      if (isCurrentAccountGeneration(accountGeneration)) {
+        mutationPendingRef.current = false;
+        setIsSaving(false);
+      }
     }
   }
 
   async function reorderPresets(orderedPresets: PartyPresetResponse[], previous: PartyPresetResponse[]) {
     if (!authenticated || mutationPendingRef.current) return;
+    const accountGeneration = accountGenerationRef.current;
     const live = visiblePresetsRef.current;
     if (live.length !== previous.length || live.some((preset, index) => preset !== previous[index])) return;
     const previousCatalog = presetsRef.current;
@@ -395,29 +482,31 @@ export function PartyPresetList({
         folderId: activePresetFolderId,
         presetIds: optimistic.map(({ id }) => id),
       });
-      if (mountedRef.current) {
+      if (isCurrentAccountGeneration(accountGeneration)) {
         const savedById = new Map(saved.map((preset) => [preset.id, preset]));
         setPresets((current) => current.map((preset) => savedById.get(preset.id) ?? preset));
       }
     } catch (error) {
-      if (mountedRef.current) {
+      if (isCurrentAccountGeneration(accountGeneration)) {
         setPresets(previousCatalog);
         setErrorMessage(toUserFacingErrorMessage(error));
         try {
           if (onGetPartyPresetCatalog) {
             const catalog = await onGetPartyPresetCatalog();
-            if (mountedRef.current) replaceCatalog(catalog);
+            if (isCurrentAccountGeneration(accountGeneration)) replaceCatalog(catalog);
           } else {
             const loaded = await onListPartyPresets();
-            if (mountedRef.current) setPresets(loaded);
+            if (isCurrentAccountGeneration(accountGeneration)) setPresets(loaded);
           }
         } catch {
           // Keep the captured pre-drag order when authoritative recovery is unavailable.
         }
       }
     } finally {
-      mutationPendingRef.current = false;
-      if (mountedRef.current) setIsSaving(false);
+      if (isCurrentAccountGeneration(accountGeneration)) {
+        mutationPendingRef.current = false;
+        setIsSaving(false);
+      }
     }
   }
 
@@ -428,19 +517,23 @@ export function PartyPresetList({
 
   async function mutateFolder(operation: () => Promise<PartyPresetCatalogResponse>): Promise<boolean> {
     if (!authenticated || mutationPendingRef.current) return false;
+    const accountGeneration = accountGenerationRef.current;
     mutationPendingRef.current = true;
     setIsSaving(true);
     setErrorMessage(null);
     try {
       const catalog = await operation();
-      if (mountedRef.current) replaceCatalog(catalog);
+      if (!isCurrentAccountGeneration(accountGeneration)) return false;
+      replaceCatalog(catalog);
       return true;
     } catch (error) {
-      if (mountedRef.current) setErrorMessage(toUserFacingErrorMessage(error));
+      if (isCurrentAccountGeneration(accountGeneration)) setErrorMessage(toUserFacingErrorMessage(error));
       return false;
     } finally {
-      mutationPendingRef.current = false;
-      if (mountedRef.current) setIsSaving(false);
+      if (isCurrentAccountGeneration(accountGeneration)) {
+        mutationPendingRef.current = false;
+        setIsSaving(false);
+      }
     }
   }
 
@@ -477,7 +570,8 @@ export function PartyPresetList({
   }
 
   async function reorderFolders(ordered: PartyPresetFolderResponse[], previous: PartyPresetFolderResponse[]) {
-    if (!onReorderPartyPresetFolders || mutationPendingRef.current) return;
+    if (!authenticated || !onReorderPartyPresetFolders || mutationPendingRef.current) return;
+    const accountGeneration = accountGenerationRef.current;
     const optimisticIds = new Set(ordered.map(({ id }) => id));
     const optimistic = folders.map((folder) => {
       if (!optimisticIds.has(folder.id)) return folder;
@@ -493,21 +587,23 @@ export function PartyPresetList({
         parentFolderId: folderParentId,
         folderIds: ordered.map(({ id }) => id),
       });
-      if (mountedRef.current) replaceCatalog(catalog);
+      if (isCurrentAccountGeneration(accountGeneration)) replaceCatalog(catalog);
     } catch (error) {
-      if (mountedRef.current) {
+      if (isCurrentAccountGeneration(accountGeneration)) {
         setFolders((current) => current.map((folder) => previous.find(({ id }) => id === folder.id) ?? folder));
         setErrorMessage(toUserFacingErrorMessage(error));
         if (onGetPartyPresetCatalog) {
           try {
             const catalog = await onGetPartyPresetCatalog();
-            if (mountedRef.current) replaceCatalog(catalog);
+            if (isCurrentAccountGeneration(accountGeneration)) replaceCatalog(catalog);
           } catch { /* Keep captured order. */ }
         }
       }
     } finally {
-      mutationPendingRef.current = false;
-      if (mountedRef.current) setIsSaving(false);
+      if (isCurrentAccountGeneration(accountGeneration)) {
+        mutationPendingRef.current = false;
+        setIsSaving(false);
+      }
     }
   }
 
@@ -630,6 +726,7 @@ export function PartyPresetList({
             onNameChange: setDraftName,
             onPartyChange: setDraftParty,
             folderTriggerRef: presetFolderTriggerRef,
+            nameInputRef: presetEditorNameInputRef,
             onOpenFolderPicker: openPresetFolderPicker,
             onSave: savePreset,
           }) : null}
@@ -708,6 +805,7 @@ export function PartyPresetList({
             onNameChange: (name) => setNewDraft((current) => current ? { ...current, name } : current),
             onPartyChange: (party) => setNewDraft((current) => current ? { ...current, party } : current),
             folderTriggerRef: presetFolderTriggerRef,
+            nameInputRef: presetEditorNameInputRef,
             onOpenFolderPicker: openPresetFolderPicker,
             onSave: savePreset,
           }) : null}
@@ -844,6 +942,7 @@ export function PartyPresetList({
         </View>
       ) : (
         <DraggableFlatList
+          ref={presetListRef}
           containerStyle={styles.list}
           contentContainerStyle={styles.listContent}
           contentInsetAdjustmentBehavior="automatic"
@@ -858,6 +957,16 @@ export function PartyPresetList({
             setIsDragging(false);
             if (from === to) return;
             return reorderPresets(data, visiblePresets);
+          }}
+          onScrollToIndexFailed={({ averageItemLength, index }) => {
+            const generation = editorFocusGenerationRef.current;
+            presetListRef.current?.scrollToOffset({ animated: true, offset: Math.max(0, averageItemLength * index) });
+            if (presetScrollRetryTimerRef.current) clearTimeout(presetScrollRetryTimerRef.current);
+            presetScrollRetryTimerRef.current = setTimeout(() => {
+              presetScrollRetryTimerRef.current = null;
+              if (!mountedRef.current || editorFocusGenerationRef.current !== generation) return;
+              presetListRef.current?.scrollToIndex({ animated: true, index, viewPosition: 0.1 });
+            }, 50);
           }}
           renderItem={renderPreset}
           style={styles.list}
@@ -1144,6 +1253,7 @@ function renderEditor({
   draftName,
   draftParty,
   folderTriggerRef,
+  nameInputRef,
   folderPath,
   isSaving,
   onActiveSlotChange,
@@ -1158,6 +1268,7 @@ function renderEditor({
   draftName: string;
   draftParty: BattlePartyMember[];
   folderTriggerRef: Ref<ElementRef<typeof Pressable>>;
+  nameInputRef: Ref<ElementRef<typeof TextInput>>;
   folderPath: string;
   isSaving: boolean;
   onActiveSlotChange: (slotIndex: number) => void;
@@ -1171,6 +1282,8 @@ function renderEditor({
     <View style={styles.editor}>
       <Text style={styles.inputLabel}>프리셋 이름</Text>
       <TextInput
+        ref={nameInputRef}
+        accessibilityLabel="프리셋 이름 입력"
         autoCapitalize="none"
         autoCorrect={false}
         onChangeText={onNameChange}
