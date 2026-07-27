@@ -24,7 +24,9 @@ const flatList = (props: Record<string, unknown>) => React.createElement(
 const reactNativeMock = {
   AccessibilityInfo: { setAccessibilityFocus: (handle: number) => focusCalls.push(handle) },
   FlatList: flatList,
+  KeyboardAvoidingView: host('KeyboardAvoidingView'),
   Modal: host('Modal'),
+  Platform: { OS: 'ios' },
   Pressable: host('Pressable'),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: host('Text'),
@@ -38,6 +40,7 @@ const moduleWithLoader = Module as unknown as { _load: Loader };
 const originalLoad = moduleWithLoader._load;
 moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') return reactNativeMock;
+  if (request === 'react-native-safe-area-context') return { useSafeAreaInsets: () => ({ bottom: 31, left: 0, right: 0, top: 0 }) };
   if (request === 'lucide-react-native') return iconsMock;
   return originalLoad(request, parent, isMain);
 };
@@ -119,6 +122,41 @@ describe('PartyPresetPickerModal', () => {
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress());
     assert.equal(closed, 1);
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }).props.value, '');
+  });
+
+  it('bounds a native form sheet above the keyboard and iOS home indicator on a short viewport', async () => {
+    reactNativeMock.Platform.OS = 'ios';
+    const renderer = await renderPicker();
+    const modal = findHosts(renderer.root, 'Modal')[0]!;
+    const keyboardAvoiding = findHosts(renderer.root, 'KeyboardAvoidingView')[0]!;
+    const panel = renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' });
+
+    assert.equal(modal.props.presentationStyle, 'formSheet');
+    assert.equal(modal.props.transparent, undefined);
+    assert.equal(keyboardAvoiding.props.behavior, 'padding');
+    assert.equal(keyboardAvoiding.props.keyboardVerticalOffset, 0);
+    assert.equal(keyboardAvoiding.props.pointerEvents, 'box-none');
+    const panelStyle = Object.assign({}, ...(panel.props.style as Array<Record<string, unknown>>));
+    assert.equal(panelStyle.maxHeight, '84%');
+    assert.equal(panelStyle.paddingBottom, 31);
+    assert.equal(panelStyle.minHeight, undefined);
+
+    reactNativeMock.Platform.OS = 'android';
+    await act(async () => renderer.update(React.createElement(PartyPresetPickerModal, baseProps())));
+    assert.equal(findHosts(renderer.root, 'KeyboardAvoidingView')[0]?.props.behavior, 'height');
+    reactNativeMock.Platform.OS = 'ios';
+  });
+
+  it('clears a query when visibility is removed externally and reopens in tree browsing mode', async () => {
+    const renderer = await renderPicker();
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }).props.onChangeText('화속'));
+    assert.equal(findAllHostByTestId(renderer.root, 'party-preset-search-result').length, 2);
+
+    await act(async () => renderer.update(React.createElement(PartyPresetPickerModal, baseProps({ visible: false }))));
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }).props.value, '');
+    await act(async () => renderer.update(React.createElement(PartyPresetPickerModal, baseProps())));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }));
+    assert.equal(findAllHostByTestId(renderer.root, 'party-preset-search-result').length, 0);
   });
 });
 

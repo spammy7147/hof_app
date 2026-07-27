@@ -3,13 +3,16 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ElementRe
 import {
   AccessibilityInfo,
   findNodeHandle,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PartyPresetSearchResults } from './PartyPresetSearchResults';
 import { PartyPresetTree, type PartyPresetExpandedPath } from './PartyPresetTree';
@@ -50,6 +53,7 @@ export function PartyPresetPickerModal({
   title,
   visible,
 }: PartyPresetPickerModalProps) {
+  const { bottom } = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [expandedPath, setExpandedPath] = useState<PartyPresetExpandedPath>(initialExpandedPath);
   const titleRef = useRef<ElementRef<typeof Text>>(null);
@@ -78,13 +82,13 @@ export function PartyPresetPickerModal({
 
   return (
     <Modal
-      animationType="fade"
+      animationType="slide"
       onRequestClose={handleClose}
       onShow={handleShow}
-      transparent
+      presentationStyle="formSheet"
       visible={visible}
     >
-      <View style={styles.overlay}>
+      <View style={styles.modalRoot}>
         <Pressable
           accessibilityLabel="프리셋 선택기 배경 닫기"
           accessibilityRole="button"
@@ -93,67 +97,78 @@ export function PartyPresetPickerModal({
           onPress={handleClose}
           style={styles.backdrop}
         />
-        <View accessibilityLabel="파티 프리셋 선택기" accessibilityViewIsModal style={styles.root}>
-        <View style={styles.headingRow}>
-          <Text ref={titleRef} accessible accessibilityRole="header" style={styles.title}>{title}</Text>
-          <Pressable
-            accessibilityLabel="프리셋 선택기 닫기"
-            accessibilityRole="button"
-            accessibilityState={{ disabled }}
-            disabled={disabled}
-            onPress={handleClose}
-            style={({ pressed }) => [styles.closeButton, pressed && !disabled ? styles.pressed : null]}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={0}
+          pointerEvents="box-none"
+          style={styles.keyboardAvoiding}
+        >
+          <View
+            accessibilityLabel="파티 프리셋 선택기"
+            accessibilityViewIsModal
+            style={[styles.root, { paddingBottom: bottom }]}
           >
-            <X color={theme.colors.textMuted} size={20} />
-            <Text style={styles.closeText}>닫기</Text>
-          </Pressable>
-        </View>
+            <View style={styles.headingRow}>
+              <Text ref={titleRef} accessible accessibilityRole="header" style={styles.title}>{title}</Text>
+              <Pressable
+                accessibilityLabel="프리셋 선택기 닫기"
+                accessibilityRole="button"
+                accessibilityState={{ disabled }}
+                disabled={disabled}
+                onPress={handleClose}
+                style={({ pressed }) => [styles.closeButton, pressed && !disabled ? styles.pressed : null]}
+              >
+                <X color={theme.colors.textMuted} size={20} />
+                <Text style={styles.closeText}>닫기</Text>
+              </Pressable>
+            </View>
 
-        {syntheticOptions.length > 0 ? (
-          <View accessibilityLabel="특수 선택" style={styles.syntheticSection}>
-            <Text style={styles.sectionLabel}>빠른 선택</Text>
-            {syntheticOptions.map((option) => (
-              <SyntheticOptionRow disabled={disabled} key={option.key} option={option} />
-            ))}
+            {syntheticOptions.length > 0 ? (
+              <View accessibilityLabel="특수 선택" style={styles.syntheticSection}>
+                <Text style={styles.sectionLabel}>빠른 선택</Text>
+                {syntheticOptions.map((option) => (
+                  <SyntheticOptionRow disabled={disabled} key={option.key} option={option} />
+                ))}
+              </View>
+            ) : null}
+
+            <TextInput
+              ref={searchRef}
+              accessibilityLabel="프리셋 검색"
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!disabled}
+              onChangeText={setQuery}
+              placeholder="프리셋 이름 검색"
+              placeholderTextColor={theme.colors.textMuted}
+              style={[styles.searchInput, disabled ? styles.disabled : null]}
+              value={query}
+            />
+
+            <View style={styles.catalogArea}>
+              {searching ? (
+                <PartyPresetSearchResults
+                  disabled={disabled}
+                  emptyTitle="검색 결과가 없습니다"
+                  onSelectPreset={onSelectPreset}
+                  results={results}
+                  selectedPresetId={selectedPresetId}
+                  selectionLabels
+                />
+              ) : (
+                <PartyPresetTree
+                  disabled={disabled}
+                  expandedPath={expandedPath}
+                  index={index}
+                  onExpandedPathChange={setExpandedPath}
+                  onSelectPreset={onSelectPreset}
+                  selectedPresetId={selectedPresetId}
+                  selectionLabels
+                />
+              )}
+            </View>
           </View>
-        ) : null}
-
-        <TextInput
-          ref={searchRef}
-          accessibilityLabel="프리셋 검색"
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={!disabled}
-          onChangeText={setQuery}
-          placeholder="프리셋 이름 검색"
-          placeholderTextColor={theme.colors.textMuted}
-          style={[styles.searchInput, disabled ? styles.disabled : null]}
-          value={query}
-        />
-
-        <View style={styles.catalogArea}>
-          {searching ? (
-            <PartyPresetSearchResults
-              disabled={disabled}
-              emptyTitle="검색 결과가 없습니다"
-              onSelectPreset={onSelectPreset}
-              results={results}
-              selectedPresetId={selectedPresetId}
-              selectionLabels
-            />
-          ) : (
-            <PartyPresetTree
-              disabled={disabled}
-              expandedPath={expandedPath}
-              index={index}
-              onExpandedPathChange={setExpandedPath}
-              onSelectPreset={onSelectPreset}
-              selectedPresetId={selectedPresetId}
-              selectionLabels
-            />
-          )}
-        </View>
-      </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
@@ -189,7 +204,7 @@ const SyntheticOptionRow = memo(function SyntheticOptionRow({
 });
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, justifyContent: 'flex-end' },
+  modalRoot: { flex: 1, justifyContent: 'flex-end' },
   backdrop: {
     backgroundColor: theme.colors.overlay,
     bottom: 0,
@@ -205,10 +220,10 @@ const styles = StyleSheet.create({
     borderTopRightRadius: theme.radius.md + 8,
     borderWidth: 1,
     gap: theme.spacing.md,
-    maxHeight: '82%',
-    minHeight: '55%',
+    maxHeight: '84%',
     padding: theme.spacing.lg,
   },
+  keyboardAvoiding: { flex: 1, justifyContent: 'flex-end' },
   headingRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
   title: { color: theme.colors.text, flex: 1, fontSize: 18, fontWeight: '900' },
   closeButton: {

@@ -88,7 +88,9 @@ const reactNativeMock = {
   Alert: { alert: (...args: unknown[]) => { alertArguments = args; } },
   findNodeHandle: (node: unknown) => node,
   FlatList: flatList,
+  KeyboardAvoidingView: host('KeyboardAvoidingView'),
   Modal: host('Modal'),
+  Platform: { OS: 'ios' },
   Pressable: host('Pressable'),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Switch: host('Switch'),
@@ -102,6 +104,7 @@ const moduleWithLoader = Module as unknown as { _load: Loader };
 const originalLoad = moduleWithLoader._load;
 moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') return reactNativeMock;
+  if (request === 'react-native-safe-area-context') return { useSafeAreaInsets: () => ({ bottom: 0, left: 0, right: 0, top: 0 }) };
   if (request === 'lucide-react-native') return iconsMock;
   if (request === 'react-native-draggable-flatlist') return {
     __esModule: true,

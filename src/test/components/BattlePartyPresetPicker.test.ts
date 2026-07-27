@@ -6,9 +6,16 @@ import { act, create } from 'react-test-renderer';
 
 import type { PartyPresetResponse } from '../../main/types/api';
 
-const host = (name: string) => (props: Record<string, unknown>) => React.createElement(name, props, props.children as React.ReactNode);
+const focusCalls: number[] = [];
+let nativeHandle = 11;
+const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
+  React.useImperativeHandle(ref, () => ({ name }), [name]);
+  return React.createElement(name, props, props.children as React.ReactNode);
+});
 const reactNativeMock = {
+  AccessibilityInfo: { setAccessibilityFocus: (handle: number) => focusCalls.push(handle) },
   ActivityIndicator: host('ActivityIndicator'),
+  findNodeHandle: (node: unknown) => node == null ? null : nativeHandle,
   Pressable: host('Pressable'),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: host('Text'),
@@ -58,6 +65,7 @@ describe('BattlePartyPresetPicker', () => {
     await act(async () => (direct.onSelect as () => void)());
     assert.deepEqual(events, ['direct']);
     assert.equal(commonPickerCalls.at(-1)?.visible, false);
+    await act(async () => renderer.unmount());
   });
 
   it('preserves loading, error, retry, and explicit preset callback semantics', async () => {
@@ -73,12 +81,68 @@ describe('BattlePartyPresetPicker', () => {
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 파티 프리셋 선택' }).props.onPress());
     await act(async () => (commonPickerCalls.at(-1)?.onSelectPreset as (preset: PartyPresetResponse) => void)(PRESETS[0]!));
     assert.deepEqual(selected, [1]);
+    await act(async () => renderer.unmount());
 
     const loading = await renderPicker({ loading: true });
     assert.equal(loading.root.findByProps({ accessibilityLabel: '전투 파티 프리셋 선택' }).props.disabled, true);
     assert.ok(loading.root.findByProps({ accessibilityLabel: '프리셋을 불러오는 중' }));
+    await act(async () => loading.unmount());
+  });
+
+  it('restores the live trigger after close, direct selection, and preset selection', async () => {
+    focusCalls.length = 0;
+    nativeHandle = 11;
+    const renderer = await renderPicker();
+
+    await openPicker(renderer);
+    await act(async () => (commonPickerCalls.at(-1)?.onClose as () => void)());
+    await act(async () => { await delay(280); });
+    assert.deepEqual(focusCalls, [11]);
+
+    await openPicker(renderer);
+    const direct = (commonPickerCalls.at(-1)?.syntheticOptions as Array<Record<string, unknown>>)[0]!;
+    await act(async () => (direct.onSelect as () => void)());
+    await act(async () => { await delay(280); });
+    assert.deepEqual(focusCalls, [11, 11]);
+
+    await openPicker(renderer);
+    await act(async () => (commonPickerCalls.at(-1)?.onSelectPreset as (preset: PartyPresetResponse) => void)(PRESETS[0]!));
+    await act(async () => { await delay(280); });
+    assert.deepEqual(focusCalls, [11, 11, 11]);
+  });
+
+  it('skips delayed restoration after reopen, unmount, or a native handle replacement', async () => {
+    focusCalls.length = 0;
+    nativeHandle = 11;
+    const renderer = await renderPicker();
+
+    await openPicker(renderer);
+    await act(async () => (commonPickerCalls.at(-1)?.onClose as () => void)());
+    nativeHandle = 12;
+    await act(async () => { await delay(280); });
+    assert.deepEqual(focusCalls, []);
+
+    nativeHandle = 13;
+    await openPicker(renderer);
+    await act(async () => (commonPickerCalls.at(-1)?.onClose as () => void)());
+    await openPicker(renderer);
+    await act(async () => { await delay(280); });
+    assert.deepEqual(focusCalls, []);
+
+    await act(async () => (commonPickerCalls.at(-1)?.onClose as () => void)());
+    await act(async () => renderer.unmount());
+    await act(async () => { await delay(280); });
+    assert.deepEqual(focusCalls, []);
   });
 });
+
+async function openPicker(renderer: ReturnType<typeof create>) {
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 파티 프리셋 선택' }).props.onPress());
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
 
 async function renderPicker(overrides: Record<string, unknown> = {}) {
   let renderer!: ReturnType<typeof create>;
