@@ -171,6 +171,8 @@ function normalizePatternSlot(patternSlot: number | null): number | null {
     : null;
 }
 
-function normalizeSearchText(value: string): string {
+export function normalizePartyPresetSearchText(value: string): string {
   return value.trim().toLocaleLowerCase('ko-KR');
 }
+
+const normalizeSearchText = normalizePartyPresetSearchText;
