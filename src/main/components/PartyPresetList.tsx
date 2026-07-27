@@ -53,6 +53,8 @@ type PartyPresetListProps = {
 
 type ExpandedPresetId = number | 'new' | null;
 type NewPresetDraft = { name: string; party: BattlePartyMember[]; folderId: number | null };
+type PresetReorderOverlay = { base: PartyPresetResponse[]; value: PartyPresetResponse[] };
+type FolderReorderOverlay = { base: PartyPresetFolderResponse[]; value: PartyPresetFolderResponse[] };
 type PickerInvocation =
   | { kind: 'preset'; handle: ReturnType<typeof findNodeHandle> }
   | { kind: 'folder'; folderId: number; handle: ReturnType<typeof findNodeHandle> };
@@ -73,8 +75,8 @@ export function PartyPresetList({
   onMovePartyPresetFolder,
   onDeletePartyPresetFolder,
 }: PartyPresetListProps) {
-  const [presets, setPresets] = useState<PartyPresetResponse[]>(partyPresetCatalog.catalog.presets);
-  const [folders, setFolders] = useState<PartyPresetFolderResponse[]>(partyPresetCatalog.catalog.folders);
+  const [presetReorderOverlay, setPresetReorderOverlay] = useState<PresetReorderOverlay | null>(null);
+  const [folderReorderOverlay, setFolderReorderOverlay] = useState<FolderReorderOverlay | null>(null);
   const [expandedPresetId, setExpandedPresetId] = useState<ExpandedPresetId>(null);
   const [newDraft, setNewDraft] = useState<NewPresetDraft | null>(null);
   const [activeSlotIndex, setActiveSlotIndex] = useState(0);
@@ -94,7 +96,10 @@ export function PartyPresetList({
   const [isSaving, setIsSaving] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const presetsRef = useRef(presets);
+  const canonicalPresets = authenticated ? partyPresetCatalog.catalog.presets : [];
+  const canonicalFolders = authenticated ? partyPresetCatalog.catalog.folders : [];
+  const presets = presetReorderOverlay?.base === canonicalPresets ? presetReorderOverlay.value : canonicalPresets;
+  const folders = folderReorderOverlay?.base === canonicalFolders ? folderReorderOverlay.value : canonicalFolders;
   const mutationPendingRef = useRef(false);
   const authenticatedRef = useRef(authenticated);
   const previousAuthenticatedRef = useRef(authenticated);
@@ -116,7 +121,6 @@ export function PartyPresetList({
   const editorFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const presetScrollRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   pickerVisibleRef.current = folderPickerOpen || movingFolderId != null;
-  presetsRef.current = presets;
   const catalogIndex = useMemo(() => indexPartyPresetCatalog({ folders, presets }), [folders, presets]);
   const activePresetFolderId = expandedPresetId === 'new'
     ? newDraft?.folderId ?? null
@@ -164,8 +168,6 @@ export function PartyPresetList({
 
   useEffect(() => {
     if (!authenticated) {
-      setFolders([]);
-      setPresets([]);
       setExpandedPresetId(null);
       setNewDraft(null);
       setCatalogQuery('');
@@ -177,11 +179,8 @@ export function PartyPresetList({
       setMovingFolderId(null);
       setDeleteConfirmFolderId(null);
       setErrorMessage(null);
-      return;
     }
-    setFolders(partyPresetCatalog.catalog.folders);
-    setPresets(partyPresetCatalog.catalog.presets);
-  }, [authenticated, partyPresetCatalog.catalog]);
+  }, [authenticated]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -215,6 +214,8 @@ export function PartyPresetList({
     setFolderNameDraft('');
     setNewFolderName('');
     setDeleteConfirmFolderId(null);
+    setPresetReorderOverlay(null);
+    setFolderReorderOverlay(null);
     setErrorMessage(null);
     pickerInvocationRef.current = null;
     pickerFocusGenerationRef.current += 1;
@@ -331,20 +332,13 @@ export function PartyPresetList({
     setErrorMessage(null);
     try {
       if (editingNew) {
-        const created = await onCreatePartyPreset(request);
+        await onCreatePartyPreset(request);
         if (!isCurrentAccountGeneration(accountGeneration)) return;
-        setPresets((current) => {
-          let siblingOrder = 0;
-          return [created, ...current].map((preset) => preset.folderId === created.folderId
-            ? { ...preset, displayOrder: siblingOrder++ }
-            : preset);
-        });
         setNewDraft(null);
         setExpandedPresetId(null);
       } else if (typeof expandedPresetId === 'number') {
-        const updated = await onUpdatePartyPreset(expandedPresetId, request);
+        await onUpdatePartyPreset(expandedPresetId, request);
         if (!isCurrentAccountGeneration(accountGeneration)) return;
-        setPresets((current) => current.map((preset) => preset.id === updated.id ? updated : preset));
         setExpandedPresetId(null);
       }
     } catch (error) {
@@ -373,15 +367,6 @@ export function PartyPresetList({
     try {
       await onDeletePartyPreset(presetId);
       if (!isCurrentAccountGeneration(accountGeneration)) return;
-      setPresets((current) => {
-        const deletedFolderId = current.find(({ id }) => id === presetId)?.folderId ?? null;
-        let siblingOrder = 0;
-        return current
-          .filter((preset) => preset.id !== presetId)
-          .map((preset) => preset.folderId === deletedFolderId
-            ? { ...preset, displayOrder: siblingOrder++ }
-            : preset);
-      });
       setExpandedPresetId((current) => current === presetId ? null : current);
     } catch (error) {
       if (isCurrentAccountGeneration(accountGeneration)) setErrorMessage(toUserFacingErrorMessage(error));
@@ -396,19 +381,14 @@ export function PartyPresetList({
   async function makePrimary(presetId: number) {
     if (!authenticated || mutationPendingRef.current) return;
     const accountGeneration = accountGenerationRef.current;
-    const target = presetsRef.current.find(({ id }) => id === presetId);
+    const target = catalogIndex.presetsById.get(presetId);
     if (target?.isPrimary) return;
     mutationPendingRef.current = true;
     setIsSaving(true);
     setErrorMessage(null);
     try {
-      const updated = await onMakePartyPresetPrimary(presetId);
+      await onMakePartyPresetPrimary(presetId);
       if (!isCurrentAccountGeneration(accountGeneration)) return;
-      setPresets((current) => current.map((preset) => (
-        preset.id === updated.id
-          ? { ...updated, isPrimary: true }
-          : { ...preset, isPrimary: false }
-      )));
     } catch (error) {
       if (isCurrentAccountGeneration(accountGeneration)) setErrorMessage(toUserFacingErrorMessage(error));
     } finally {
@@ -424,25 +404,24 @@ export function PartyPresetList({
     const accountGeneration = accountGenerationRef.current;
     const live = visiblePresetsRef.current;
     if (live.length !== previous.length || live.some((preset, index) => preset !== previous[index])) return;
-    const previousCatalog = presetsRef.current;
     const optimistic = orderedPresets.map((preset, displayOrder) => ({ ...preset, displayOrder }));
     const optimisticById = new Map(optimistic.map((preset) => [preset.id, preset]));
     mutationPendingRef.current = true;
-    setPresets((current) => current.map((preset) => optimisticById.get(preset.id) ?? preset));
+    setPresetReorderOverlay({
+      base: partyPresetCatalog.catalog.presets,
+      value: partyPresetCatalog.catalog.presets.map((preset) => optimisticById.get(preset.id) ?? preset),
+    });
     setIsSaving(true);
     setErrorMessage(null);
     try {
-      const saved = await onReorderPartyPresets({
+      await onReorderPartyPresets({
         folderId: activePresetFolderId,
         presetIds: optimistic.map(({ id }) => id),
       });
-      if (isCurrentAccountGeneration(accountGeneration)) {
-        const savedById = new Map(saved.map((preset) => [preset.id, preset]));
-        setPresets((current) => current.map((preset) => savedById.get(preset.id) ?? preset));
-      }
+      if (isCurrentAccountGeneration(accountGeneration)) setPresetReorderOverlay(null);
     } catch (error) {
       if (isCurrentAccountGeneration(accountGeneration)) {
-        setPresets(previousCatalog);
+        setPresetReorderOverlay(null);
         setErrorMessage(toUserFacingErrorMessage(error));
         try {
           partyPresetCatalog.retry();
@@ -458,11 +437,6 @@ export function PartyPresetList({
     }
   }
 
-  function replaceCatalog(catalog: PartyPresetCatalogResponse) {
-    setFolders(catalog.folders);
-    setPresets(catalog.presets);
-  }
-
   async function mutateFolder(operation: () => Promise<PartyPresetCatalogResponse>): Promise<boolean> {
     if (!authenticated || mutationPendingRef.current) return false;
     const accountGeneration = accountGenerationRef.current;
@@ -470,9 +444,8 @@ export function PartyPresetList({
     setIsSaving(true);
     setErrorMessage(null);
     try {
-      const catalog = await operation();
+      await operation();
       if (!isCurrentAccountGeneration(accountGeneration)) return false;
-      replaceCatalog(catalog);
       return true;
     } catch (error) {
       if (isCurrentAccountGeneration(accountGeneration)) setErrorMessage(toUserFacingErrorMessage(error));
@@ -517,7 +490,7 @@ export function PartyPresetList({
     if (succeeded && mountedRef.current) closeFolderMovePicker();
   }
 
-  async function reorderFolders(ordered: PartyPresetFolderResponse[], previous: PartyPresetFolderResponse[]) {
+  async function reorderFolders(ordered: PartyPresetFolderResponse[]) {
     if (!authenticated || !onReorderPartyPresetFolders || mutationPendingRef.current) return;
     const accountGeneration = accountGenerationRef.current;
     const optimisticIds = new Set(ordered.map(({ id }) => id));
@@ -526,19 +499,19 @@ export function PartyPresetList({
       const displayOrder = ordered.findIndex(({ id }) => id === folder.id);
       return { ...folder, displayOrder };
     });
-    setFolders(optimistic);
+    setFolderReorderOverlay({ base: partyPresetCatalog.catalog.folders, value: optimistic });
     mutationPendingRef.current = true;
     setIsSaving(true);
     setErrorMessage(null);
     try {
-      const catalog = await onReorderPartyPresetFolders({
+      await onReorderPartyPresetFolders({
         parentFolderId: folderParentId,
         folderIds: ordered.map(({ id }) => id),
       });
-      if (isCurrentAccountGeneration(accountGeneration)) replaceCatalog(catalog);
+      if (isCurrentAccountGeneration(accountGeneration)) setFolderReorderOverlay(null);
     } catch (error) {
       if (isCurrentAccountGeneration(accountGeneration)) {
-        setFolders((current) => current.map((folder) => previous.find(({ id }) => id === folder.id) ?? folder));
+        setFolderReorderOverlay(null);
         setErrorMessage(toUserFacingErrorMessage(error));
         partyPresetCatalog.retry();
       }
@@ -597,7 +570,7 @@ export function PartyPresetList({
     const ordered = [...current];
     const [moved] = ordered.splice(from, 1);
     ordered.splice(to, 0, moved!);
-    void reorder(ordered, current);
+    void reorder(ordered);
   }, []);
   const dispatchFolderOpenChild = useCallback((folderId: number) => folderRowActionsRef.current.openChild(folderId), []);
   const dispatchFolderBeginRename = useCallback((folderId: number, name: string) => folderRowActionsRef.current.beginRename(folderId, name), []);
@@ -615,7 +588,7 @@ export function PartyPresetList({
     makePrimary,
     movePreset,
     openPreset: (presetId: number) => {
-      const preset = presetsRef.current.find(({ id }) => id === presetId);
+      const preset = catalogIndex.presetsById.get(presetId);
       if (preset) openPreset(preset);
     },
   });
@@ -624,7 +597,7 @@ export function PartyPresetList({
     makePrimary,
     movePreset,
     openPreset: (presetId) => {
-      const preset = presetsRef.current.find(({ id }) => id === presetId);
+      const preset = catalogIndex.presetsById.get(presetId);
       if (preset) openPreset(preset);
     },
   };
@@ -839,7 +812,7 @@ export function PartyPresetList({
             onDragBegin={() => setIsDragging(true)}
             onDragEnd={({ data, from, to }) => {
               setIsDragging(false);
-              if (from !== to) void reorderFolders(data, editableFolders);
+              if (from !== to) void reorderFolders(data);
             }}
             renderItem={renderFolder}
             style={styles.list}

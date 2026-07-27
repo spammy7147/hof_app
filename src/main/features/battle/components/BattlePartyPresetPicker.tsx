@@ -54,7 +54,9 @@ export function BattlePartyPresetPicker({
   );
   const selectedLabel = selectedMode === 'direct'
     ? '캐릭터 직접 선택'
-    : selectedPreset?.name ?? '프리셋을 선택하세요';
+    : selectedMode === 'preset' && selectedPresetId != null
+      ? selectedPreset?.name ?? `삭제된 프리셋 #${selectedPresetId}`
+      : '프리셋을 선택하세요';
 
   useEffect(() => {
     mountedRef.current = true;

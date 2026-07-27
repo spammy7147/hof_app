@@ -23,4 +23,17 @@ describe('party preset consumer contract', () => {
       assert.doesNotMatch(source, /onListPartyPresets/, `${file} retains a private flat loader`);
     }
   });
+
+  it('keeps the canonical preset and folder arrays only in the MainScreen catalog resource', () => {
+    const manager = readFileSync('src/main/components/PartyPresetList.tsx', 'utf8');
+    const battleRun = readFileSync('src/main/features/battle/components/BattleRunPanel.tsx', 'utf8');
+    const main = readFileSync('src/main/screens/MainScreen.tsx', 'utf8');
+
+    assert.doesNotMatch(manager, /useState<PartyPresetResponse\[\]>/, 'PartyPresetList owns a private preset array');
+    assert.doesNotMatch(manager, /useState<PartyPresetFolderResponse\[\]>/, 'PartyPresetList owns a private folder array');
+    assert.doesNotMatch(manager, /useRef\((?:presets|folders)\)/, 'PartyPresetList retains a private canonical catalog reference');
+    assert.doesNotMatch(manager, /\bset(?:Presets|Folders)\(/, 'PartyPresetList synchronizes a private canonical catalog');
+    assert.doesNotMatch(battleRun, /useState<PartyPreset(?:Response|FolderResponse)\[\]>/, 'BattleRunPanel owns a private catalog array');
+    assert.equal((main.match(/useState<PartyPresetCatalogResponse>/g) ?? []).length, 1);
+  });
 });

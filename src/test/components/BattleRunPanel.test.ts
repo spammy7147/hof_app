@@ -55,4 +55,33 @@ describe('BattleRunPanel party preset catalog', () => {
     const direct = renderer.root.findByProps({ accessibilityLabel: '캐릭터 직접 선택 선택' });
     assert.deepEqual(direct.props.accessibilityState, { checked: false, disabled: false });
   });
+
+  it('labels a selected preset deleted without discarding the retained battle selection', async () => {
+    const selected = { id: 7, accountId: 1, name: '레이드', folderId: null, displayOrder: 0, isPrimary: false, members: [], createdAt: '', updatedAt: '' };
+    const baseProps = {
+      characters: [],
+      partyPresetCatalog: { catalog: { folders: [], presets: [selected] }, loading: false, error: null, retry: () => undefined },
+      isRunning: false,
+      result: null,
+      errorMessage: null,
+      onRunBattle: () => undefined,
+    };
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => { renderer = create(React.createElement(BattleRunPanel, baseProps)); });
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 파티 프리셋 선택' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '레이드 프리셋 선택' }).props.onPress());
+
+    await act(async () => renderer.update(React.createElement(BattleRunPanel, {
+      ...baseProps,
+      partyPresetCatalog: { ...baseProps.partyPresetCatalog, catalog: { folders: [], presets: [] } },
+    })));
+
+    const trigger = renderer.root.findByProps({ accessibilityLabel: '전투 파티 프리셋 선택' });
+    assert.equal(trigger.findAll((node) => String(node.type) === 'Text' && node.children.join('') === '삭제된 프리셋 #7').length, 1);
+    await act(async () => trigger.props.onPress());
+    assert.deepEqual(
+      renderer.root.findByProps({ accessibilityLabel: '캐릭터 직접 선택 선택' }).props.accessibilityState,
+      { checked: false, disabled: false },
+    );
+  });
 });

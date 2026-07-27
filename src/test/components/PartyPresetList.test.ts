@@ -699,7 +699,80 @@ describe('PartyPresetList', () => {
 type Overrides = Partial<React.ComponentProps<typeof PartyPresetList>>;
 
 async function renderList(overrides: Overrides = {}): Promise<ReactTestRenderer> {
-  return renderListProps(listProps(overrides));
+  const props = listProps(overrides);
+  let renderer!: ReactTestRenderer;
+  await act(async () => {
+    renderer = create(React.createElement(ControlledPartyPresetList, props));
+    await Promise.resolve();
+  });
+  return renderer;
+}
+
+function ControlledPartyPresetList(props: React.ComponentProps<typeof PartyPresetList>) {
+  const [catalog, setCatalog] = React.useState(props.partyPresetCatalog.catalog);
+  const resource = React.useMemo(
+    () => ({ ...props.partyPresetCatalog, catalog }),
+    [catalog, props.partyPresetCatalog],
+  );
+  return React.createElement(PartyPresetList, {
+    ...props,
+    partyPresetCatalog: resource,
+    onCreatePartyPreset: async (request) => {
+      const created = await props.onCreatePartyPreset(request);
+      setCatalog((current) => ({ ...current, presets: [...current.presets.filter(({ id }) => id !== created.id), created] }));
+      return created;
+    },
+    onUpdatePartyPreset: async (presetId, request) => {
+      const updated = await props.onUpdatePartyPreset(presetId, request);
+      setCatalog((current) => ({ ...current, presets: current.presets.map((preset) => preset.id === updated.id ? updated : preset) }));
+      return updated;
+    },
+    onMakePartyPresetPrimary: async (presetId) => {
+      const updated = await props.onMakePartyPresetPrimary(presetId);
+      setCatalog((current) => ({
+        ...current,
+        presets: current.presets.map((preset) => preset.id === updated.id
+          ? { ...updated, isPrimary: true }
+          : { ...preset, isPrimary: false }),
+      }));
+      return updated;
+    },
+    onReorderPartyPresets: async (request) => {
+      const presets = await props.onReorderPartyPresets(request);
+      setCatalog((current) => ({ ...current, presets }));
+      return presets;
+    },
+    onDeletePartyPreset: async (presetId) => {
+      const result = await props.onDeletePartyPreset(presetId);
+      setCatalog((current) => ({ ...current, presets: current.presets.filter(({ id }) => id !== presetId) }));
+      return result;
+    },
+    onCreatePartyPresetFolder: props.onCreatePartyPresetFolder ? async (request) => {
+      const next = await props.onCreatePartyPresetFolder!(request);
+      setCatalog(next);
+      return next;
+    } : undefined,
+    onRenamePartyPresetFolder: props.onRenamePartyPresetFolder ? async (folderId, request) => {
+      const next = await props.onRenamePartyPresetFolder!(folderId, request);
+      setCatalog(next);
+      return next;
+    } : undefined,
+    onReorderPartyPresetFolders: props.onReorderPartyPresetFolders ? async (request) => {
+      const next = await props.onReorderPartyPresetFolders!(request);
+      setCatalog(next);
+      return next;
+    } : undefined,
+    onMovePartyPresetFolder: props.onMovePartyPresetFolder ? async (folderId, request) => {
+      const next = await props.onMovePartyPresetFolder!(folderId, request);
+      setCatalog(next);
+      return next;
+    } : undefined,
+    onDeletePartyPresetFolder: props.onDeletePartyPresetFolder ? async (folderId) => {
+      const next = await props.onDeletePartyPresetFolder!(folderId);
+      setCatalog(next);
+      return next;
+    } : undefined,
+  });
 }
 
 function listProps(overrides: Overrides = {}): React.ComponentProps<typeof PartyPresetList> {

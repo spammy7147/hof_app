@@ -129,6 +129,9 @@ export function MainScreen({
 }: MainScreenProps) {
   const catalogCoordinatorRef = useRef(new PartyPresetCatalogLoadCoordinator());
   const [partyPresetCatalog, setPartyPresetCatalog] = useState<PartyPresetCatalogResponse>({ folders: [], presets: [] });
+  const partyPresetCatalogRef = useRef(partyPresetCatalog);
+  const presetMutationQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const mountedRef = useRef(true);
   const [partyPresetCatalogLoading, setPartyPresetCatalogLoading] = useState(false);
   const [partyPresetCatalogError, setPartyPresetCatalogError] = useState<string | null>(null);
   const authenticated = Boolean(session?.loggedIn);
@@ -136,6 +139,17 @@ export function MainScreen({
   const previousAuthenticatedRef = useRef(authenticated);
   const accountGenerationRef = useRef(0);
   authenticatedRef.current = authenticated;
+  partyPresetCatalogRef.current = partyPresetCatalog;
+
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      authenticatedRef.current = false;
+      accountGenerationRef.current += 1;
+      catalogCoordinatorRef.current.invalidate();
+    };
+  }, []);
 
   const loadPartyPresetCatalog = useCallback(async (force = false) => {
     if (!authenticatedRef.current) return;
@@ -150,6 +164,7 @@ export function MainScreen({
       setPartyPresetCatalogError('파티 프리셋을 불러오지 못했습니다.');
       return;
     }
+    partyPresetCatalogRef.current = result.catalog;
     setPartyPresetCatalog(result.catalog);
   }, [onGetPartyPresetCatalog]);
 
@@ -160,7 +175,9 @@ export function MainScreen({
     }
     if (!authenticated) {
       catalogCoordinatorRef.current.invalidate();
-      setPartyPresetCatalog({ folders: [], presets: [] });
+      const emptyCatalog = { folders: [], presets: [] };
+      partyPresetCatalogRef.current = emptyCatalog;
+      setPartyPresetCatalog(emptyCatalog);
       setPartyPresetCatalogLoading(false);
       setPartyPresetCatalogError(null);
       return;
@@ -173,11 +190,34 @@ export function MainScreen({
     if (!authenticatedRef.current) return;
     const result = catalogCoordinatorRef.current.replace(catalog);
     if (result.status === 'success') {
+      partyPresetCatalogRef.current = result.catalog;
       setPartyPresetCatalog(result.catalog);
       setPartyPresetCatalogLoading(false);
       setPartyPresetCatalogError(null);
     }
   }, []);
+  const updatePartyPresetCatalog = useCallback((update: (catalog: PartyPresetCatalogResponse) => PartyPresetCatalogResponse) => {
+    adoptPartyPresetCatalog(update(partyPresetCatalogRef.current));
+  }, [adoptPartyPresetCatalog]);
+  const runPresetMutation = useCallback(<T,>(
+    operation: () => Promise<T>,
+    apply: (result: T) => void,
+  ): Promise<T> => {
+    const accountGeneration = accountGenerationRef.current;
+    const queued = presetMutationQueueRef.current.then(async () => {
+      if (!mountedRef.current || !authenticatedRef.current || accountGeneration !== accountGenerationRef.current) {
+        throw new Error('Party preset mutation cancelled');
+      }
+      const result = await operation();
+      if (mountedRef.current && authenticatedRef.current && accountGeneration === accountGenerationRef.current) {
+        apply(result);
+        await loadPartyPresetCatalog(true);
+      }
+      return result;
+    });
+    presetMutationQueueRef.current = queued.then(() => undefined, () => undefined);
+    return queued;
+  }, [loadPartyPresetCatalog]);
   const retryPartyPresetCatalog = useCallback(() => { void loadPartyPresetCatalog(true); }, [loadPartyPresetCatalog]);
   const partyPresetCatalogResource = useMemo<PartyPresetCatalogResource>(() => ({
     catalog: partyPresetCatalog,
@@ -186,41 +226,34 @@ export function MainScreen({
     retry: retryPartyPresetCatalog,
   }), [partyPresetCatalog, partyPresetCatalogError, partyPresetCatalogLoading, retryPartyPresetCatalog]);
 
-  const createPreset = useCallback(async (request: CreatePartyPresetRequest) => {
-    const accountGeneration = accountGenerationRef.current;
-    const result = await onCreatePartyPreset(request);
-    if (!authenticatedRef.current || accountGeneration !== accountGenerationRef.current) return result;
-    await loadPartyPresetCatalog(true);
-    return result;
-  }, [loadPartyPresetCatalog, onCreatePartyPreset]);
-  const updatePreset = useCallback(async (presetId: number, request: UpdatePartyPresetRequest) => {
-    const accountGeneration = accountGenerationRef.current;
-    const result = await onUpdatePartyPreset(presetId, request);
-    if (!authenticatedRef.current || accountGeneration !== accountGenerationRef.current) return result;
-    await loadPartyPresetCatalog(true);
-    return result;
-  }, [loadPartyPresetCatalog, onUpdatePartyPreset]);
-  const makePresetPrimary = useCallback(async (presetId: number) => {
-    const accountGeneration = accountGenerationRef.current;
-    const result = await onMakePartyPresetPrimary(presetId);
-    if (!authenticatedRef.current || accountGeneration !== accountGenerationRef.current) return result;
-    await loadPartyPresetCatalog(true);
-    return result;
-  }, [loadPartyPresetCatalog, onMakePartyPresetPrimary]);
-  const reorderPresets = useCallback(async (request: ReorderPartyPresetsRequest) => {
-    const accountGeneration = accountGenerationRef.current;
-    const result = await onReorderPartyPresets(request);
-    if (!authenticatedRef.current || accountGeneration !== accountGenerationRef.current) return result;
-    await loadPartyPresetCatalog(true);
-    return result;
-  }, [loadPartyPresetCatalog, onReorderPartyPresets]);
-  const deletePreset = useCallback(async (presetId: number) => {
-    const accountGeneration = accountGenerationRef.current;
-    const result = await onDeletePartyPreset(presetId);
-    if (!authenticatedRef.current || accountGeneration !== accountGenerationRef.current) return result;
-    await loadPartyPresetCatalog(true);
-    return result;
-  }, [loadPartyPresetCatalog, onDeletePartyPreset]);
+  const createPreset = useCallback((request: CreatePartyPresetRequest) => runPresetMutation(
+    () => onCreatePartyPreset(request),
+    (created) => updatePartyPresetCatalog((catalog) => projectPresetUpsert(catalog, created)),
+  ), [onCreatePartyPreset, runPresetMutation, updatePartyPresetCatalog]);
+  const updatePreset = useCallback((presetId: number, request: UpdatePartyPresetRequest) => runPresetMutation(
+    () => onUpdatePartyPreset(presetId, request),
+    (updated) => updatePartyPresetCatalog((catalog) => projectPresetUpsert(catalog, updated)),
+  ), [onUpdatePartyPreset, runPresetMutation, updatePartyPresetCatalog]);
+  const makePresetPrimary = useCallback((presetId: number) => runPresetMutation(
+    () => onMakePartyPresetPrimary(presetId),
+    (updated) => updatePartyPresetCatalog((catalog) => ({
+      ...catalog,
+      presets: catalog.presets.map((preset) => preset.id === updated.id
+        ? { ...updated, isPrimary: true }
+        : { ...preset, isPrimary: false }),
+    })),
+  ), [onMakePartyPresetPrimary, runPresetMutation, updatePartyPresetCatalog]);
+  const reorderPresets = useCallback((request: ReorderPartyPresetsRequest) => runPresetMutation(
+    () => onReorderPartyPresets(request),
+    (presets) => updatePartyPresetCatalog((catalog) => mergePresetMutationResponse(catalog, presets)),
+  ), [onReorderPartyPresets, runPresetMutation, updatePartyPresetCatalog]);
+  const deletePreset = useCallback((presetId: number) => runPresetMutation(
+    () => onDeletePartyPreset(presetId),
+    () => updatePartyPresetCatalog((catalog) => ({
+      ...catalog,
+      presets: catalog.presets.filter((preset) => preset.id !== presetId),
+    })),
+  ), [onDeletePartyPreset, runPresetMutation, updatePartyPresetCatalog]);
   const createPresetFolder = useCallback(async (request: CreatePartyPresetFolderRequest) => {
     if (!onCreatePartyPresetFolder) throw new Error('폴더 만들기를 사용할 수 없습니다.');
     const accountGeneration = accountGenerationRef.current;
@@ -392,6 +425,58 @@ export function MainScreen({
       {showGlobalChrome ? <BottomTabBar activeTabId={activeTabId} onChangeTab={setActiveTabId} /> : null}
     </SafeAreaView>
   );
+}
+
+function projectPresetUpsert(
+  catalog: PartyPresetCatalogResponse,
+  updated: PartyPresetResponse,
+): PartyPresetCatalogResponse {
+  const existing = catalog.presets.find(({ id }) => id === updated.id) ?? null;
+  const sourceFolderId = existing?.folderId;
+  const targetFolderId = updated.folderId;
+  const withoutUpdated = catalog.presets.filter(({ id }) => id !== updated.id);
+  const affectedFolderIds = new Set<number | null>([targetFolderId]);
+  if (sourceFolderId !== undefined) affectedFolderIds.add(sourceFolderId);
+  const normalizedById = new Map<number, PartyPresetResponse>();
+
+  for (const folderId of affectedFolderIds) {
+    const siblings = withoutUpdated
+      .filter((preset) => preset.folderId === folderId)
+      .sort(comparePresetOrder);
+    if (folderId === targetFolderId) {
+      const staysInFolder = existing?.folderId === targetFolderId;
+      const insertionIndex = staysInFolder
+        ? Math.max(0, Math.min(updated.displayOrder, siblings.length))
+        : 0;
+      siblings.splice(insertionIndex, 0, updated);
+    }
+    siblings.forEach((preset, displayOrder) => {
+      normalizedById.set(preset.id, { ...preset, displayOrder });
+    });
+  }
+
+  const presets = catalog.presets.map((preset) => normalizedById.get(preset.id) ?? preset);
+  if (!existing) presets.push(normalizedById.get(updated.id) ?? { ...updated, displayOrder: 0 });
+  return { ...catalog, presets };
+}
+
+function mergePresetMutationResponse(
+  catalog: PartyPresetCatalogResponse,
+  returned: PartyPresetResponse[],
+): PartyPresetCatalogResponse {
+  const returnedById = new Map(returned.map((preset) => [preset.id, preset]));
+  const existingIds = new Set(catalog.presets.map(({ id }) => id));
+  return {
+    ...catalog,
+    presets: [
+      ...catalog.presets.map((preset) => returnedById.get(preset.id) ?? preset),
+      ...returned.filter(({ id }) => !existingIds.has(id)),
+    ],
+  };
+}
+
+function comparePresetOrder(left: PartyPresetResponse, right: PartyPresetResponse): number {
+  return left.displayOrder - right.displayOrder || left.id - right.id;
 }
 
 type RenderActiveTabArgs = {
