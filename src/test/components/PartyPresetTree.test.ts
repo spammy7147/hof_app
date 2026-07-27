@@ -61,6 +61,7 @@ describe('PartyPresetTree', () => {
     assert.equal(findHosts(renderer.root, 'FlatList').length, 1);
     const list = findHosts(renderer.root, 'FlatList')[0]!;
     assert.equal(list.props.scrollEnabled, undefined);
+    assert.equal(list.props.style.flexShrink, 1);
     assert.deepEqual(
       (list.props.data as Array<{ kind: string }>).map(({ kind }) => kind),
       ['folder', 'unassigned', 'folder', 'folder', 'preset', 'preset'],
@@ -84,6 +85,7 @@ describe('PartyPresetTree', () => {
     assert.equal(findAllByTestId(renderer.root, 'party-preset-folder-row').length, 0);
     const results = findAllByTestId(renderer.root, 'party-preset-search-result');
     assert.equal(results.length, 3);
+    assert.equal(findHosts(renderer.root, 'FlatList')[0]?.props.style.flexShrink, 1);
     results.forEach(assertFullWidth);
     assert.equal(textCount(renderer.root, '전투 › 레이드 › 화속성'), 2);
     assert.equal(textCount(renderer.root, '미지정'), 1);

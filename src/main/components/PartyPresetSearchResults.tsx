@@ -113,7 +113,7 @@ function countConfiguredMembers(preset: PartyPresetResponse): number {
 }
 
 const styles = StyleSheet.create({
-  list: { width: '100%' },
+  list: { flexShrink: 1, width: '100%' },
   searchListContent: { gap: theme.spacing.sm, width: '100%' },
   presetRow: {
     backgroundColor: theme.colors.surface,
