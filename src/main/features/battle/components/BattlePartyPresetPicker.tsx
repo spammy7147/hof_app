@@ -128,10 +128,6 @@ export function BattlePartyPresetPicker({
     onSelect: handleSelectDirect,
   }], [handleSelectDirect, selectedMode]);
 
-  useEffect(() => {
-    if (loading && expandedRef.current) closePicker(false);
-  }, [closePicker, loading]);
-
   return (
     <View style={styles.root}>
       <Pressable
@@ -168,6 +164,7 @@ export function BattlePartyPresetPicker({
       ) : null}
 
       <PartyPresetPickerModal
+        busyMessage={loading ? '프리셋을 새로 고치는 중' : undefined}
         catalog={catalog}
         disabled={loading}
         initialExpandedPath={[null]}

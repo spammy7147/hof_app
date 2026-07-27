@@ -7,6 +7,7 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'rea
 import type { PartyPresetCatalogResponse, PartyPresetResponse } from '../../main/types/api';
 
 const focusCalls: number[] = [];
+const searchFocusCalls: string[] = [];
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
   React.useImperativeHandle(ref, () => ({ focus: () => undefined }), []);
   return React.createElement(name, props, props.children as React.ReactNode);
@@ -21,8 +22,15 @@ const flatList = (props: Record<string, unknown>) => React.createElement(
   )),
   (props.data as unknown[]).length === 0 ? props.ListEmptyComponent as React.ReactNode : null,
 );
+const textInput = React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
+  React.useImperativeHandle(ref, () => ({
+    focus: () => searchFocusCalls.push(String(props.accessibilityLabel)),
+  }), [props.accessibilityLabel]);
+  return React.createElement('TextInput', props, props.children as React.ReactNode);
+});
 const reactNativeMock = {
   AccessibilityInfo: { setAccessibilityFocus: (handle: number) => focusCalls.push(handle) },
+  ActivityIndicator: host('ActivityIndicator'),
   FlatList: flatList,
   KeyboardAvoidingView: host('KeyboardAvoidingView'),
   Modal: host('Modal'),
@@ -30,7 +38,7 @@ const reactNativeMock = {
   Pressable: host('Pressable'),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: host('Text'),
-  TextInput: host('TextInput'),
+  TextInput: textInput,
   View: host('View'),
   findNodeHandle: () => 7,
 };
@@ -102,12 +110,14 @@ describe('PartyPresetPickerModal', () => {
 
   it('focuses the title, resets search on close, and disables every action during mutation', async () => {
     focusCalls.length = 0;
+    searchFocusCalls.length = 0;
     let closed = 0;
     const renderer = await renderPicker({ disabled: true, onClose: () => { closed += 1; } });
     const modal = findHosts(renderer.root, 'Modal')[0]!;
 
     await act(async () => modal.props.onShow());
     assert.deepEqual(focusCalls, [7]);
+    assert.deepEqual(searchFocusCalls, []);
     const input = renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' });
     assert.equal(input.props.editable, false);
     await act(async () => input.props.onChangeText('화속'));

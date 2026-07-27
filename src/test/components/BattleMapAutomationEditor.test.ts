@@ -841,7 +841,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' }).props.onPress(); });
     await act(async () => { renderer.root.find((node) => (node.type as unknown) === 'Modal').props.onShow(); });
     assert.equal(focusedRole(accessibilityFocusCalls.at(-1)), 'header');
-    assert.equal(keyboardFocusCalls.at(-1), '프리셋 검색');
+    assert.deepEqual(keyboardFocusCalls, []);
     await act(async () => { renderer.root.find((node) => (node.type as unknown) === 'Modal').props.onRequestClose(); });
     await act(async () => { await delay(280); });
     assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), 'Alpha 프리셋 선택 열기');

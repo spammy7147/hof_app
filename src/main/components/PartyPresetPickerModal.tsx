@@ -2,6 +2,7 @@ import { X } from 'lucide-react-native';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
 import {
   AccessibilityInfo,
+  ActivityIndicator,
   findNodeHandle,
   KeyboardAvoidingView,
   Modal,
@@ -30,6 +31,7 @@ export type PartyPresetPickerSyntheticOption = {
 };
 
 export type PartyPresetPickerModalProps = {
+  busyMessage?: string;
   catalog: PartyPresetCatalogResponse;
   disabled?: boolean;
   initialExpandedPath?: PartyPresetExpandedPath;
@@ -43,6 +45,7 @@ export type PartyPresetPickerModalProps = {
 
 /** 모든 프리셋 선택 화면이 공유하는 읽기 전용 폴더 탐색 및 전역 검색 모달이다. */
 export function PartyPresetPickerModal({
+  busyMessage,
   catalog,
   disabled = false,
   initialExpandedPath = [],
@@ -57,7 +60,6 @@ export function PartyPresetPickerModal({
   const [query, setQuery] = useState('');
   const [expandedPath, setExpandedPath] = useState<PartyPresetExpandedPath>(initialExpandedPath);
   const titleRef = useRef<ElementRef<typeof Text>>(null);
-  const searchRef = useRef<TextInput>(null);
   const index = useMemo(() => indexPartyPresetCatalog(catalog), [catalog]);
   const searching = query.trim().length > 0;
   const results = useMemo(
@@ -70,7 +72,6 @@ export function PartyPresetPickerModal({
   }, [visible]);
 
   const handleShow = useCallback(() => {
-    searchRef.current?.focus();
     const titleNode = findNodeHandle(titleRef.current);
     if (titleNode != null) AccessibilityInfo.setAccessibilityFocus(titleNode);
   }, []);
@@ -133,7 +134,6 @@ export function PartyPresetPickerModal({
             ) : null}
 
             <TextInput
-              ref={searchRef}
               accessibilityLabel="프리셋 검색"
               autoCapitalize="none"
               autoCorrect={false}
@@ -144,6 +144,13 @@ export function PartyPresetPickerModal({
               style={[styles.searchInput, disabled ? styles.disabled : null]}
               value={query}
             />
+
+            {busyMessage != null ? (
+              <View accessibilityLabel={busyMessage} accessibilityLiveRegion="polite" style={styles.busyState}>
+                <ActivityIndicator color={theme.colors.accentGreen} size="small" />
+                <Text style={styles.busyText}>{busyMessage}</Text>
+              </View>
+            ) : null}
 
             <View style={styles.catalogArea}>
               {searching ? (
@@ -263,6 +270,8 @@ const styles = StyleSheet.create({
     minHeight: 46,
     paddingHorizontal: theme.spacing.md,
   },
+  busyState: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, minHeight: 32 },
+  busyText: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '800' },
   catalogArea: { flex: 1, minHeight: 0, width: '100%' },
   disabled: { opacity: 0.5 },
   pressed: { opacity: 0.82 },
