@@ -4,7 +4,10 @@ import { describe, it } from 'node:test';
 import React from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 
-import { indexPartyPresetCatalog } from '../../main/domain/partyPresetCatalog';
+import {
+  indexPartyPresetCatalog,
+  type PartyPresetCatalogIndex,
+} from '../../main/domain/partyPresetCatalog';
 import type { PartyPresetCatalogResponse, PartyPresetFolderResponse } from '../../main/types/api';
 
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
@@ -111,23 +114,16 @@ describe('PartyPresetFolderEditor', () => {
     ]);
   });
 
-  it('positions connectors at each depth and caps the five-level hierarchy', async () => {
+  it('caps malformed six-level input at the fifth supported visual level', async () => {
     const renderer = await renderEditor({
-      index: indexPartyPresetCatalog({
-        folders: [
-          folder(1, 'L1', null, 0),
-          folder(2, 'L2', 1, 0),
-          folder(3, 'L3', 2, 0),
-          folder(4, 'L4', 3, 0),
-          folder(5, 'L5', 4, 0),
-        ],
-        presets: [],
-      }),
+      index: malformedSixLevelIndex(),
     });
     assert.deepEqual(connectorLefts(renderer.root, 1), []);
     assert.deepEqual(connectorLefts(renderer.root, 3), [8, 24]);
     assert.deepEqual(connectorLefts(renderer.root, 5), [8, 24, 40, 56]);
-    assert.ok(connectorLefts(renderer.root, 5).length <= 5);
+    assert.deepEqual(connectorLefts(renderer.root, 6), [8, 24, 40, 56]);
+    assert.equal(rowPaddingLeft(renderer.root, 5), 72);
+    assert.equal(rowPaddingLeft(renderer.root, 6), 72);
   });
 
   it('adds top-level and inline child folders without naming their location root', async () => {
@@ -404,6 +400,24 @@ describe('PartyPresetFolderEditor', () => {
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Other 폴더 펼치기' }));
   });
 
+  it('expands a genuinely collapsed parent after child creation succeeds', async () => {
+    const creates: Array<{ name: string; parentFolderId: number | null }> = [];
+    const renderer = await renderEditor({
+      onCreate: async (request) => { creates.push(request); },
+    });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 접기' }).props.onPress(); });
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 펼치기' }));
+    assert.equal(textCount(renderer.root, 'new2'), 0);
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 하위 폴더 추가' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 새 하위 폴더 이름' }).props.onChangeText('new3'); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 하위 폴더 저장' }).props.onPress(); });
+
+    assert.deepEqual(creates, [{ name: 'new3', parentFolderId: 1 }]);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 접기' }));
+    assert.equal(textCount(renderer.root, 'new2'), 1);
+  });
+
   it('does not mutate frozen inputs and blocks mutations while disabled', async () => {
     const source = Object.freeze({
       folders: Object.freeze([
@@ -473,6 +487,25 @@ function catalog(): PartyPresetCatalogResponse {
   };
 }
 
+function malformedSixLevelIndex(): PartyPresetCatalogIndex {
+  const folders = [
+    folder(1, 'L1', null, 0),
+    folder(2, 'L2', 1, 0),
+    folder(3, 'L3', 2, 0),
+    folder(4, 'L4', 3, 0),
+    folder(5, 'L5', 4, 0),
+    folder(6, 'L6', 5, 0),
+  ];
+  return {
+    foldersById: new Map(folders.map((value) => [value.id, value])),
+    childFolderIdsByParent: new Map<number | null, readonly number[]>([
+      [null, [1]], [1, [2]], [2, [3]], [3, [4]], [4, [5]], [5, [6]],
+    ]),
+    presetIdsByFolder: new Map(),
+    presetsById: new Map(),
+  };
+}
+
 function folder(id: number, name: string, parentFolderId: number | null, displayOrder: number): PartyPresetFolderResponse {
   return { id, name, parentFolderId, displayOrder, createdAt: '', updatedAt: '' };
 }
@@ -529,6 +562,10 @@ function connectorLefts(root: ReactTestInstance, folderId: number): number[] {
   return root.findAll((node) => (
     (node.type as unknown) === 'View' && node.props.testID === `party-preset-folder-connector-${folderId}`
   )).map((node) => flattenStyle(node.props.style).left as number);
+}
+
+function rowPaddingLeft(root: ReactTestInstance, folderId: number): number {
+  return flattenStyle(root.findByProps({ testID: `party-preset-folder-row-${folderId}` }).props.style).paddingLeft as number;
 }
 
 function hostAccessibilityLabels(root: ReactTestInstance): string[] {

@@ -64,7 +64,7 @@ type FolderCellProps = {
   style: StyleProp<ViewStyle>;
 };
 
-const MAX_VISIBLE_INDENT = 5;
+const MAX_VISIBLE_INDENT = 4;
 
 export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   disabled,
