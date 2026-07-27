@@ -335,8 +335,13 @@ export function PartyPresetList({
         setPresets(previousCatalog);
         setErrorMessage(toUserFacingErrorMessage(error));
         try {
-          if (onGetPartyPresetCatalog) replaceCatalog(await onGetPartyPresetCatalog());
-          else setPresets(await onListPartyPresets());
+          if (onGetPartyPresetCatalog) {
+            const catalog = await onGetPartyPresetCatalog();
+            if (mountedRef.current) replaceCatalog(catalog);
+          } else {
+            const loaded = await onListPartyPresets();
+            if (mountedRef.current) setPresets(loaded);
+          }
         } catch {
           // Keep the captured pre-drag order when authoritative recovery is unavailable.
         }
@@ -392,6 +397,11 @@ export function PartyPresetList({
 
   async function moveFolder(folderId: number, parentFolderId: number | null) {
     if (!onMovePartyPresetFolder) return;
+    const currentParentFolderId = catalogIndex.foldersById.get(folderId)?.parentFolderId;
+    if (currentParentFolderId === parentFolderId) {
+      setMovingFolderId(null);
+      return;
+    }
     const displayOrder = catalogIndex.childFolderIdsByParent.get(parentFolderId)?.length ?? 0;
     const succeeded = await mutateFolder(() => onMovePartyPresetFolder(folderId, { parentFolderId, displayOrder }));
     if (succeeded && mountedRef.current) setMovingFolderId(null);
@@ -545,7 +555,8 @@ export function PartyPresetList({
       void reorderFolders(ordered, editableFolders);
     };
     return (
-      <View style={styles.folderEditRow}>
+      <View style={styles.folderEditItem}>
+        <View style={styles.folderEditRow}>
         <Pressable
           accessibilityActions={[
             ...(index > 0 ? [{ name: 'decrement' as const, label: '위로 이동' }] : []),
@@ -607,18 +618,41 @@ export function PartyPresetList({
           <FolderCog color={theme.colors.textMuted} size={17} />
         </Pressable>
         <Pressable
-          accessibilityLabel={deleteConfirmFolderId === folder.id ? `${folder.name} 폴더 삭제 확인` : `${folder.name} 폴더 삭제`}
-          accessibilityHint={deleteConfirmFolderId === folder.id ? '프리셋은 삭제되지 않고 미지정으로 이동합니다' : undefined}
+          accessibilityLabel={`${folder.name} 폴더 삭제`}
           accessibilityRole="button"
           disabled={interactionDisabled}
-          onPress={() => {
-            if (deleteConfirmFolderId === folder.id) void deleteFolder(folder.id);
-            else setDeleteConfirmFolderId(folder.id);
-          }}
+          onPress={() => setDeleteConfirmFolderId(folder.id)}
           style={styles.folderIconButton}
         >
           <Trash2 color={theme.colors.danger} size={17} />
         </Pressable>
+        </View>
+        {deleteConfirmFolderId === folder.id ? (
+          <View accessibilityLiveRegion="polite" style={styles.folderDeleteConfirmation}>
+            <View style={styles.folderDeleteCopy}>
+              <Text style={styles.folderDeleteTitle}>{folder.name} 폴더를 삭제할까요?</Text>
+              <Text style={styles.folderDeleteMessage}>프리셋은 삭제되지 않고 미지정으로 이동합니다.</Text>
+            </View>
+            <Pressable
+              accessibilityLabel={`${folder.name} 폴더 삭제 취소`}
+              accessibilityRole="button"
+              disabled={interactionDisabled}
+              onPress={() => setDeleteConfirmFolderId(null)}
+              style={styles.folderConfirmButton}
+            >
+              <Text style={styles.folderCancelText}>취소</Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel={`${folder.name} 폴더 삭제 확인`}
+              accessibilityRole="button"
+              disabled={interactionDisabled}
+              onPress={() => void deleteFolder(folder.id)}
+              style={[styles.folderConfirmButton, styles.folderDeleteButton]}
+            >
+              <Text style={styles.folderDeleteButtonText}>삭제</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
     );
   }
@@ -1035,7 +1069,16 @@ const styles = StyleSheet.create({
   folderManagerHeader: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs },
   folderManagerPath: { minWidth: 48, maxWidth: 120, color: theme.colors.text, fontSize: 13, fontWeight: '900' },
   newFolderInput: { minWidth: 0, flex: 1 },
-  folderEditRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  folderEditItem: { borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  folderEditRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs },
+  folderDeleteConfirmation: { minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs, paddingBottom: theme.spacing.sm, paddingHorizontal: theme.spacing.sm },
+  folderDeleteCopy: { minWidth: 0, flex: 1, gap: 2 },
+  folderDeleteTitle: { color: theme.colors.text, fontSize: 13, fontWeight: '900' },
+  folderDeleteMessage: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '700' },
+  folderConfirmButton: { minHeight: 44, minWidth: 52, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.sm, borderCurve: 'continuous', borderWidth: 1, borderColor: theme.colors.border },
+  folderDeleteButton: { borderColor: theme.colors.danger, backgroundColor: theme.colors.danger },
+  folderCancelText: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '900' },
+  folderDeleteButtonText: { color: theme.colors.buttonText, fontSize: 12, fontWeight: '900' },
   folderDragHandle: { minHeight: 44, width: 44, alignItems: 'center', justifyContent: 'center' },
   folderNameButton: { minHeight: 44, minWidth: 0, flex: 1, justifyContent: 'center' },
   folderNameText: { color: theme.colors.text, fontSize: 14, fontWeight: '900' },
