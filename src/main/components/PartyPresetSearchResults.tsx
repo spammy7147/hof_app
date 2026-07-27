@@ -10,6 +10,7 @@ export type PartyPresetSearchResultsProps = {
   disabled?: boolean;
   emptyTitle?: string;
   selectionLabels?: boolean;
+  showMemberCount?: boolean;
   results: readonly PartyPresetSearchResult[];
   selectedPresetId: number | null;
   onSelectPreset: (preset: PartyPresetResponse) => void;
@@ -20,6 +21,7 @@ export function PartyPresetSearchResults({
   disabled = false,
   emptyTitle,
   selectionLabels = false,
+  showMemberCount = true,
   results,
   selectedPresetId,
   onSelectPreset,
@@ -32,10 +34,11 @@ export function PartyPresetSearchResults({
       disabled={disabled}
       rowAccessibilityLabel={selectionLabels ? `${item.preset.name} 프리셋 선택` : undefined}
       selectionControl={selectionLabels}
+      showMemberCount={showMemberCount}
       testID="party-preset-search-result"
       onSelect={onSelectPreset}
     />
-  ), [disabled, onSelectPreset, selectedPresetId, selectionLabels]);
+  ), [disabled, onSelectPreset, selectedPresetId, selectionLabels, showMemberCount]);
 
   return (
     <FlatList
@@ -54,8 +57,10 @@ export function PartyPresetSearchResults({
 }
 
 type PartyPresetRowProps = {
+  browsingDepth?: number;
   rowAccessibilityLabel?: string;
   selectionControl?: boolean;
+  showMemberCount?: boolean;
   disabled?: boolean;
   path: string | null;
   preset: PartyPresetResponse;
@@ -65,8 +70,10 @@ type PartyPresetRowProps = {
 };
 
 export const PartyPresetRow = memo(function PartyPresetRow({
+  browsingDepth,
   rowAccessibilityLabel,
   selectionControl = false,
+  showMemberCount = true,
   path,
   preset,
   selected,
@@ -81,7 +88,7 @@ export const PartyPresetRow = memo(function PartyPresetRow({
 
   return (
     <Pressable
-      accessibilityLabel={rowAccessibilityLabel ?? `${preset.name}, 구성원 ${configuredMemberCount}명${preset.isPrimary ? ', 대표 프리셋' : ''}`}
+      accessibilityLabel={rowAccessibilityLabel ?? `${preset.name}${showMemberCount ? `, 구성원 ${configuredMemberCount}명` : ''}${preset.isPrimary ? ', 대표 프리셋' : ''}`}
       accessibilityRole={selectionControl ? 'radio' : 'button'}
       accessibilityState={selectionControl
         ? { checked: selected, disabled }
@@ -90,7 +97,7 @@ export const PartyPresetRow = memo(function PartyPresetRow({
       onPress={handlePress}
       style={({ pressed }) => [
         styles.presetRow,
-        styles.fullWidth,
+        browsingDepth == null ? styles.fullWidth : browsingDepthStyles[Math.min(browsingDepth, browsingDepthStyles.length - 1)],
         selected ? styles.selected : null,
         disabled ? styles.disabled : null,
         pressed && !disabled ? styles.pressed : null,
@@ -108,7 +115,7 @@ export const PartyPresetRow = memo(function PartyPresetRow({
           ) : null}
         </View>
         {path != null ? <Text numberOfLines={1} style={styles.path}>{path}</Text> : null}
-        <Text style={styles.memberCount}>구성원 {configuredMemberCount}명</Text>
+        {showMemberCount ? <Text style={styles.memberCount}>구성원 {configuredMemberCount}명</Text> : null}
       </View>
     </Pressable>
   );
@@ -133,6 +140,14 @@ function countConfiguredMembers(preset: PartyPresetResponse): number {
     0,
   );
 }
+
+const browsingDepthStyles = [
+  { alignSelf: 'stretch' as const, borderLeftColor: '#4f806c', borderLeftWidth: 2, marginLeft: theme.spacing.sm, marginRight: theme.spacing.sm },
+  { alignSelf: 'stretch' as const, borderLeftColor: '#4f806c', borderLeftWidth: 2, marginLeft: theme.spacing.md, marginRight: theme.spacing.md },
+  { alignSelf: 'stretch' as const, borderLeftColor: '#4f806c', borderLeftWidth: 2, marginLeft: theme.spacing.lg, marginRight: theme.spacing.lg },
+  { alignSelf: 'stretch' as const, borderLeftColor: '#4f806c', borderLeftWidth: 2, marginLeft: theme.spacing.xl, marginRight: theme.spacing.xl },
+  { alignSelf: 'stretch' as const, borderLeftColor: '#4f806c', borderLeftWidth: 2, marginLeft: theme.spacing.xl + theme.spacing.sm, marginRight: theme.spacing.xl + theme.spacing.sm },
+] as const;
 
 const styles = StyleSheet.create({
   list: { flexShrink: 1, width: '100%' },

@@ -3,63 +3,95 @@ import { memo, useCallback, useEffect, useMemo } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { PartyPresetRow } from './PartyPresetSearchResults';
-import type { PartyPresetCatalogIndex } from '../domain/partyPresetCatalog';
+import {
+  countPartyPresetsInFolderTree,
+  type PartyPresetCatalogIndex,
+} from '../domain/partyPresetCatalog';
 import { theme } from '../styles/theme';
 import type { PartyPresetResponse } from '../types/api';
 
 export type PartyPresetExpandedPath = readonly (number | null)[];
+export type PartyPresetExpandedFolderIds = ReadonlySet<number | null>;
 
-export type PartyPresetTreeProps = {
+type PartyPresetTreeBaseProps = {
   disabled?: boolean;
   selectionLabels?: boolean;
+  showMemberCount?: boolean;
   index: PartyPresetCatalogIndex;
-  expandedPath: PartyPresetExpandedPath;
   selectedPresetId: number | null;
-  onExpandedPathChange: (path: PartyPresetExpandedPath) => void;
   onSelectPreset: (preset: PartyPresetResponse) => void;
 };
 
-type PartyPresetTreeRow =
-  | { key: string; kind: 'folder'; depth: number; folderId: number; name: string; expanded: boolean }
-  | { key: string; kind: 'unassigned'; expanded: boolean }
-  | { key: string; kind: 'preset'; preset: PartyPresetResponse }
-  | { key: string; kind: 'empty'; unassigned: boolean };
+export type PartyPresetTreeProps = PartyPresetTreeBaseProps & (
+  | {
+    expandedFolderIds: PartyPresetExpandedFolderIds;
+    expandedPath?: never;
+    onExpandedFolderIdsChange: (folderIds: PartyPresetExpandedFolderIds) => void;
+    onExpandedPathChange?: never;
+  }
+  | {
+    expandedFolderIds?: never;
+    expandedPath: PartyPresetExpandedPath;
+    onExpandedFolderIdsChange?: never;
+    onExpandedPathChange: (path: PartyPresetExpandedPath) => void;
+  }
+);
 
-/** 하나의 확장 경로와 그 leaf 프리셋만 표시하는 읽기 전용 카탈로그 트리다. */
+type PartyPresetTreeRow =
+  | { key: string; kind: 'folder'; count: number; depth: number; folderId: number; name: string; expanded: boolean }
+  | { key: string; kind: 'unassigned'; count: number; expanded: boolean }
+  | { key: string; kind: 'preset'; depth: number; preset: PartyPresetResponse }
+  | { key: string; kind: 'empty'; depth: number; unassigned: boolean };
+
+/** 여러 폴더를 독립적으로 확장할 수 있는 읽기 전용 카탈로그 트리다. */
 export function PartyPresetTree({
   disabled = false,
   selectionLabels = false,
+  showMemberCount = true,
   index,
+  expandedFolderIds,
   expandedPath,
   selectedPresetId,
+  onExpandedFolderIdsChange,
   onExpandedPathChange,
   onSelectPreset,
 }: PartyPresetTreeProps) {
-  const validExpandedPath = useMemo(
-    () => validateExpandedPath(index, expandedPath),
-    [expandedPath, index],
+  const requestedExpandedFolderIds = useMemo<PartyPresetExpandedFolderIds>(
+    () => expandedFolderIds ?? new Set(expandedPath ?? []),
+    [expandedFolderIds, expandedPath],
+  );
+  const validExpandedFolderIds = useMemo(
+    () => validateExpandedFolderIds(index, requestedExpandedFolderIds),
+    [index, requestedExpandedFolderIds],
   );
   const rows = useMemo(
-    () => buildVisibleRows(index, validExpandedPath),
-    [index, validExpandedPath],
+    () => buildVisibleRows(index, validExpandedFolderIds),
+    [index, validExpandedFolderIds],
   );
 
-  useEffect(() => {
-    if (!pathsEqual(expandedPath, validExpandedPath)) {
-      onExpandedPathChange(validExpandedPath);
-    }
-  }, [expandedPath, onExpandedPathChange, validExpandedPath]);
+  const notifyExpandedFolderIdsChange = useCallback((folderIds: PartyPresetExpandedFolderIds) => {
+    if (expandedFolderIds != null) onExpandedFolderIdsChange?.(folderIds);
+    else onExpandedPathChange?.([...folderIds]);
+  }, [expandedFolderIds, onExpandedFolderIdsChange, onExpandedPathChange]);
 
-  const handleToggleFolder = useCallback((folderId: number, depth: number) => {
-    if (validExpandedPath[depth] === folderId) {
-      onExpandedPathChange(validExpandedPath.slice(0, depth));
-      return;
+  useEffect(() => {
+    if (!setsEqual(requestedExpandedFolderIds, validExpandedFolderIds)) {
+      notifyExpandedFolderIdsChange(validExpandedFolderIds);
     }
-    onExpandedPathChange([...validExpandedPath.slice(0, depth), folderId]);
-  }, [onExpandedPathChange, validExpandedPath]);
+  }, [notifyExpandedFolderIdsChange, requestedExpandedFolderIds, validExpandedFolderIds]);
+
+  const handleToggleFolder = useCallback((folderId: number) => {
+    const nextFolderIds = new Set(validExpandedFolderIds);
+    if (nextFolderIds.has(folderId)) nextFolderIds.delete(folderId);
+    else nextFolderIds.add(folderId);
+    notifyExpandedFolderIdsChange(nextFolderIds);
+  }, [notifyExpandedFolderIdsChange, validExpandedFolderIds]);
   const handleToggleUnassigned = useCallback(() => {
-    onExpandedPathChange(validExpandedPath.length === 1 && validExpandedPath[0] === null ? [] : [null]);
-  }, [onExpandedPathChange, validExpandedPath]);
+    const nextFolderIds = new Set(validExpandedFolderIds);
+    if (nextFolderIds.has(null)) nextFolderIds.delete(null);
+    else nextFolderIds.add(null);
+    notifyExpandedFolderIdsChange(nextFolderIds);
+  }, [notifyExpandedFolderIdsChange, validExpandedFolderIds]);
   const renderRow = useCallback(({ item }: { item: PartyPresetTreeRow }) => {
     switch (item.kind) {
       case 'folder':
@@ -68,18 +100,21 @@ export function PartyPresetTree({
             depth={item.depth}
             expanded={item.expanded}
             disabled={disabled}
+            count={item.count}
             folderId={item.folderId}
             name={item.name}
             onToggle={handleToggleFolder}
           />
         );
       case 'unassigned':
-        return <PartyPresetUnassignedRow disabled={disabled} expanded={item.expanded} onToggle={handleToggleUnassigned} />;
+        return <PartyPresetUnassignedRow count={item.count} disabled={disabled} expanded={item.expanded} onToggle={handleToggleUnassigned} />;
       case 'preset':
         return (
           <PartyPresetRow
+            browsingDepth={item.depth}
             rowAccessibilityLabel={selectionLabels ? `${item.preset.name} 프리셋 선택` : undefined}
             selectionControl={selectionLabels}
+            showMemberCount={showMemberCount}
             path={null}
             preset={item.preset}
             selected={item.preset.id === selectedPresetId}
@@ -91,7 +126,7 @@ export function PartyPresetTree({
       case 'empty':
         return <PartyPresetBrowsingEmptyState unassigned={item.unassigned} />;
     }
-  }, [disabled, handleToggleFolder, handleToggleUnassigned, onSelectPreset, selectedPresetId, selectionLabels]);
+  }, [disabled, handleToggleFolder, handleToggleUnassigned, onSelectPreset, selectedPresetId, selectionLabels, showMemberCount]);
 
   return (
     <FlatList
@@ -108,15 +143,17 @@ export function PartyPresetTree({
 }
 
 type PartyPresetFolderRowProps = {
+  count: number;
   disabled: boolean;
   depth: number;
   expanded: boolean;
   folderId: number;
   name: string;
-  onToggle: (folderId: number, depth: number) => void;
+  onToggle: (folderId: number) => void;
 };
 
 const PartyPresetFolderRow = memo(function PartyPresetFolderRow({
+  count,
   depth,
   disabled,
   expanded,
@@ -125,8 +162,8 @@ const PartyPresetFolderRow = memo(function PartyPresetFolderRow({
   onToggle,
 }: PartyPresetFolderRowProps) {
   const handlePress = useCallback(() => {
-    onToggle(folderId, depth);
-  }, [depth, folderId, onToggle]);
+    onToggle(folderId);
+  }, [folderId, onToggle]);
 
   return (
     <Pressable
@@ -146,6 +183,7 @@ const PartyPresetFolderRow = memo(function PartyPresetFolderRow({
     >
       <Folder color={expanded ? theme.colors.accentGreen : theme.colors.textMuted} size={16} />
       <Text numberOfLines={1} style={styles.folderName}>{name}</Text>
+      <Text style={styles.folderCount} testID="party-preset-folder-count">{count}</Text>
       {expanded
         ? <ChevronDown color={theme.colors.textMuted} size={17} />
         : <ChevronRight color={theme.colors.textMuted} size={17} />}
@@ -154,10 +192,12 @@ const PartyPresetFolderRow = memo(function PartyPresetFolderRow({
 });
 
 const PartyPresetUnassignedRow = memo(function PartyPresetUnassignedRow({
+  count,
   expanded,
   disabled,
   onToggle,
 }: {
+  count: number;
   expanded: boolean;
   disabled: boolean;
   onToggle: () => void;
@@ -179,6 +219,7 @@ const PartyPresetUnassignedRow = memo(function PartyPresetUnassignedRow({
     >
       <Folder color={expanded ? theme.colors.accentGreen : theme.colors.textMuted} size={16} />
       <Text numberOfLines={1} style={styles.folderName}>미지정</Text>
+      <Text style={styles.folderCount} testID="party-preset-folder-count">{count}</Text>
       {expanded
         ? <ChevronDown color={theme.colors.textMuted} size={17} />
         : <ChevronRight color={theme.colors.textMuted} size={17} />}
@@ -196,39 +237,39 @@ function PartyPresetBrowsingEmptyState({ unassigned }: { unassigned: boolean }) 
   );
 }
 
-function validateExpandedPath(
+function validateExpandedFolderIds(
   index: PartyPresetCatalogIndex,
-  expandedPath: PartyPresetExpandedPath,
-): PartyPresetExpandedPath {
-  if (expandedPath[0] === null) return [null];
-  const validPath: number[] = [];
-  let parentFolderId: number | null = null;
-  for (let depth = 0; depth < expandedPath.length && depth < 5; depth += 1) {
-    const folderId = expandedPath[depth];
-    if (folderId == null || !(index.childFolderIdsByParent.get(parentFolderId) ?? []).includes(folderId)) break;
-    validPath.push(folderId);
-    parentFolderId = folderId;
+  expandedFolderIds: PartyPresetExpandedFolderIds,
+): PartyPresetExpandedFolderIds {
+  const reachableFolderIds = new Set<number>();
+  const pending = [...(index.childFolderIdsByParent.get(null) ?? [])];
+  while (pending.length > 0) {
+    const folderId = pending.pop();
+    if (folderId == null || reachableFolderIds.has(folderId)) continue;
+    reachableFolderIds.add(folderId);
+    pending.push(...(index.childFolderIdsByParent.get(folderId) ?? []));
   }
-  return validPath;
+  return new Set([...expandedFolderIds].filter((folderId) => (
+    folderId === null || reachableFolderIds.has(folderId)
+  )));
 }
 
 function buildVisibleRows(
   index: PartyPresetCatalogIndex,
-  expandedPath: PartyPresetExpandedPath,
+  expandedFolderIds: PartyPresetExpandedFolderIds,
 ): PartyPresetTreeRow[] {
   const rows: PartyPresetTreeRow[] = [];
-  const activeDepth = expandedPath.length - 1;
 
-  function appendPresetRows(folderId: number | null) {
+  function appendPresetRows(folderId: number | null, depth: number) {
     let presetCount = 0;
     for (const presetId of index.presetIdsByFolder.get(folderId) ?? []) {
       const preset = index.presetsById.get(presetId);
       if (preset == null) continue;
-      rows.push({ key: `preset:${preset.id}`, kind: 'preset', preset });
+      rows.push({ key: `preset:${preset.id}`, kind: 'preset', depth, preset });
       presetCount += 1;
     }
     if (presetCount === 0) {
-      rows.push({ key: `empty:${folderId ?? 'unassigned'}`, kind: 'empty', unassigned: folderId == null });
+      rows.push({ key: `empty:${folderId ?? 'unassigned'}`, kind: 'empty', depth, unassigned: folderId == null });
     }
   }
 
@@ -237,10 +278,11 @@ function buildVisibleRows(
     for (const folderId of folderIds) {
       const folder = index.foldersById.get(folderId);
       if (folder == null) continue;
-      const expanded = expandedPath[depth] === folder.id;
+      const expanded = expandedFolderIds.has(folder.id);
       rows.push({
         key: `folder:${folder.id}`,
         kind: 'folder',
+        count: countPartyPresetsInFolderTree(index, folder.id),
         depth,
         folderId: folder.id,
         name: folder.name,
@@ -248,20 +290,25 @@ function buildVisibleRows(
       });
       if (expanded) {
         appendFolderLevel(folder.id, depth + 1);
-        if (depth === activeDepth) appendPresetRows(folder.id);
+        appendPresetRows(folder.id, depth);
       }
     }
   }
 
   appendFolderLevel(null, 0);
-  const unassignedExpanded = expandedPath.length === 1 && expandedPath[0] === null;
-  rows.push({ key: 'folder:unassigned', kind: 'unassigned', expanded: unassignedExpanded });
-  if (unassignedExpanded) appendPresetRows(null);
+  const unassignedExpanded = expandedFolderIds.has(null);
+  rows.push({
+    key: 'folder:unassigned',
+    kind: 'unassigned',
+    count: countPartyPresetsInFolderTree(index, null),
+    expanded: unassignedExpanded,
+  });
+  if (unassignedExpanded) appendPresetRows(null, 0);
   return rows;
 }
 
-function pathsEqual(left: PartyPresetExpandedPath, right: PartyPresetExpandedPath): boolean {
-  return left.length === right.length && left.every((folderId, index) => folderId === right[index]);
+function setsEqual(left: PartyPresetExpandedFolderIds, right: PartyPresetExpandedFolderIds): boolean {
+  return left.size === right.size && [...left].every((folderId) => right.has(folderId));
 }
 
 function treeRowKeyExtractor(row: PartyPresetTreeRow): string {
@@ -281,19 +328,20 @@ const styles = StyleSheet.create({
   listContent: { gap: theme.spacing.sm, width: '100%' },
   folderRow: {
     alignItems: 'center',
-    backgroundColor: theme.colors.surface,
-    borderColor: theme.colors.border,
+    backgroundColor: '#15251f',
+    borderColor: '#2e5143',
     borderCurve: 'continuous',
     borderRadius: theme.radius.sm,
     borderWidth: 1,
     flexDirection: 'row',
     gap: theme.spacing.sm,
     minHeight: 44,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
   },
-  folderRowExpanded: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong },
-  folderName: { color: theme.colors.text, flex: 1, fontSize: 14, fontWeight: '900' },
+  folderRowExpanded: { backgroundColor: '#1b342b', borderColor: '#4f806c' },
+  folderName: { color: '#cce9dc', flex: 1, fontSize: 13, fontWeight: '900' },
+  folderCount: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '700' },
   pressed: { opacity: 0.82 },
   disabled: { opacity: 0.5 },
   emptyState: {
