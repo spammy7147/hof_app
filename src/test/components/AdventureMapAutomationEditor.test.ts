@@ -718,7 +718,7 @@ describe('AdventureMapAutomationEditor', () => {
       retainedCloseA();
     });
 
-    assert.equal(hasText(renderer.root, '둘째 맵 프리셋 선택'), true);
+    assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), '둘째 맵'), true);
     assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.accessibilityValue, { text: '대표 프리셋 없음' });
     await act(async () => { currentSelectB(); });
     assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.accessibilityValue, { text: '고정 파티' });
@@ -739,13 +739,13 @@ describe('AdventureMapAutomationEditor', () => {
     const currentSelectB = renderer.root.findByProps({ accessibilityLabel: '고정 파티 프리셋 선택' }).props.onPress as () => void;
 
     await act(async () => { retainedOpenA(); });
-    assert.equal(hasText(renderer.root, '둘째 맵 프리셋 선택'), true);
+    assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), '둘째 맵'), true);
     await act(async () => { currentSelectB(); });
     assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.accessibilityValue, { text: '고정 파티' });
     assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.accessibilityValue, { text: '대표 프리셋 없음' });
 
     await act(async () => { retainedOpenA(); });
-    assert.equal(hasText(renderer.root, '첫 맵 프리셋 선택'), true);
+    assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), '첫 맵'), true);
   });
 
   it('restores accessibility focus to each live preset trigger after every ordinary close path', async () => {

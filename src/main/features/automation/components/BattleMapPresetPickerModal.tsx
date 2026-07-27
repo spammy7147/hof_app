@@ -40,12 +40,12 @@ export function BattleMapPresetPickerModal({
     <PartyPresetPickerModal
       catalog={catalog}
       disabled={disabled}
-      initialExpandedPath={[null]}
+      initialExpandedFolderIds={[null]}
       onClose={onClose}
       onSelectPreset={selectPreset}
       selectedPresetId={selectedPresetMode === 'EXPLICIT' ? selectedPresetId : null}
       syntheticOptions={syntheticOptions}
-      title={`${mapName} 프리셋 선택`}
+      title={mapName}
       visible={visible}
     />
   );

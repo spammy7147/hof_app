@@ -150,7 +150,7 @@ const browsingDepthStyles = [
 ] as const;
 
 const styles = StyleSheet.create({
-  list: { flexShrink: 1, width: '100%' },
+  list: { flex: 1, flexShrink: 1, width: '100%' },
   searchListContent: { gap: theme.spacing.sm, width: '100%' },
   presetRow: {
     backgroundColor: theme.colors.surface,

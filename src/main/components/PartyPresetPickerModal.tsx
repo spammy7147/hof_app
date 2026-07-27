@@ -16,7 +16,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PartyPresetSearchResults } from './PartyPresetSearchResults';
-import { PartyPresetTree, type PartyPresetExpandedPath } from './PartyPresetTree';
+import {
+  PartyPresetTree,
+  type PartyPresetExpandedFolderIds,
+  type PartyPresetExpandedPath,
+} from './PartyPresetTree';
 import { indexPartyPresetCatalog, searchPartyPresetCatalog } from '../domain/partyPresetCatalog';
 import { theme } from '../styles/theme';
 import type { PartyPresetCatalogResponse, PartyPresetResponse } from '../types/api';
@@ -34,6 +38,8 @@ export type PartyPresetPickerModalProps = {
   busyMessage?: string;
   catalog: PartyPresetCatalogResponse;
   disabled?: boolean;
+  initialExpandedFolderIds?: readonly (number | null)[];
+  /** @deprecated Use initialExpandedFolderIds for independent folder expansion. */
   initialExpandedPath?: PartyPresetExpandedPath;
   onClose: () => void;
   onSelectPreset: (preset: PartyPresetResponse) => void;
@@ -48,7 +54,8 @@ export function PartyPresetPickerModal({
   busyMessage,
   catalog,
   disabled = false,
-  initialExpandedPath = [],
+  initialExpandedFolderIds,
+  initialExpandedPath,
   onClose,
   onSelectPreset,
   selectedPresetId,
@@ -58,7 +65,9 @@ export function PartyPresetPickerModal({
 }: PartyPresetPickerModalProps) {
   const { bottom } = useSafeAreaInsets();
   const [query, setQuery] = useState('');
-  const [expandedPath, setExpandedPath] = useState<PartyPresetExpandedPath>(initialExpandedPath);
+  const [expandedFolderIds, setExpandedFolderIds] = useState<PartyPresetExpandedFolderIds>(
+    () => new Set(initialExpandedFolderIds ?? initialExpandedPath ?? [null]),
+  );
   const titleRef = useRef<ElementRef<typeof Text>>(null);
   const index = useMemo(() => indexPartyPresetCatalog(catalog), [catalog]);
   const searching = query.trim().length > 0;
@@ -152,7 +161,7 @@ export function PartyPresetPickerModal({
               </View>
             ) : null}
 
-            <View style={styles.catalogArea}>
+            <View style={styles.catalogArea} testID="party-preset-catalog-area">
               {searching ? (
                 <PartyPresetSearchResults
                   disabled={disabled}
@@ -161,16 +170,18 @@ export function PartyPresetPickerModal({
                   results={results}
                   selectedPresetId={selectedPresetId}
                   selectionLabels
+                  showMemberCount={false}
                 />
               ) : (
                 <PartyPresetTree
                   disabled={disabled}
-                  expandedPath={expandedPath}
+                  expandedFolderIds={expandedFolderIds}
                   index={index}
-                  onExpandedPathChange={setExpandedPath}
+                  onExpandedFolderIdsChange={setExpandedFolderIds}
                   onSelectPreset={onSelectPreset}
                   selectedPresetId={selectedPresetId}
                   selectionLabels
+                  showMemberCount={false}
                 />
               )}
             </View>
@@ -227,7 +238,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: theme.radius.md + 8,
     borderWidth: 1,
     gap: theme.spacing.md,
-    maxHeight: '84%',
+    height: '84%',
     padding: theme.spacing.lg,
   },
   keyboardAvoiding: { flex: 1, justifyContent: 'flex-end' },
@@ -251,7 +262,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md,
     borderWidth: 1,
     justifyContent: 'center',
-    minHeight: 52,
+    minHeight: 44,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
   },
@@ -272,7 +283,7 @@ const styles = StyleSheet.create({
   },
   busyState: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, minHeight: 32 },
   busyText: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '800' },
-  catalogArea: { flex: 1, minHeight: 0, width: '100%' },
+  catalogArea: { flex: 1, minHeight: 120, width: '100%' },
   disabled: { opacity: 0.5 },
   pressed: { opacity: 0.82 },
 });

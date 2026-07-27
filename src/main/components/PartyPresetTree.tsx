@@ -326,7 +326,7 @@ const depthStyles = [
 ] as const;
 
 const styles = StyleSheet.create({
-  list: { flexShrink: 1, width: '100%' },
+  list: { flex: 1, flexShrink: 1, width: '100%' },
   listContent: { gap: theme.spacing.sm, width: '100%' },
   folderRow: {
     alignItems: 'center',

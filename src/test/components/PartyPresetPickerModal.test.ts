@@ -63,11 +63,17 @@ describe('PartyPresetPickerModal', () => {
   it('browses the tree and switches one global name search to zero-indent full-width results', async () => {
     const renderer = await renderPicker();
 
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '미지정 폴더 닫기' }).props.accessibilityState.expanded, true);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }));
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '지원 폴더 열기' }).props.onPress());
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 폴더 닫기' }).props.accessibilityState.expanded, true);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '지원 폴더 닫기' }).props.accessibilityState.expanded, true);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '미지정 폴더 닫기' }).props.accessibilityState.expanded, true);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '레이드 폴더 열기' }));
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '레이드 폴더 열기' }).props.onPress());
-    assert.equal(findAllHostByTestId(renderer.root, 'party-preset-row').length, 1);
+    assert.equal(findAllHostByTestId(renderer.root, 'party-preset-row').length, 3);
+    assert.equal(textCount(renderer.root, '구성원 0명'), 0);
 
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }).props.onChangeText('화속'));
 
@@ -81,6 +87,26 @@ describe('PartyPresetPickerModal', () => {
     });
     assert.equal(textCount(renderer.root, '전투 › 레이드'), 1);
     assert.equal(textCount(renderer.root, '미지정'), 1);
+    assert.equal(textCount(renderer.root, '구성원 0명'), 0);
+
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }).props.onChangeText(''));
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 폴더 닫기' }).props.accessibilityState.expanded, true);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '지원 폴더 닫기' }).props.accessibilityState.expanded, true);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '미지정 폴더 닫기' }).props.accessibilityState.expanded, true);
+  });
+
+  it('prefers independent initial folder ids without mutating a frozen caller array', async () => {
+    const initialExpandedFolderIds = Object.freeze([1, 3, null] as const);
+    const renderer = await renderPicker({
+      initialExpandedFolderIds,
+      initialExpandedPath: [2],
+    });
+
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 폴더 닫기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '지원 폴더 닫기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '미지정 폴더 닫기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '레이드 폴더 열기' }));
+    assert.deepEqual(initialExpandedFolderIds, [1, 3, null]);
   });
 
   it('selects only explicit rows and keeps synthetic choices in a separate top section', async () => {
@@ -99,6 +125,8 @@ describe('PartyPresetPickerModal', () => {
     const synthetic = renderer.root.findByProps({ accessibilityLabel: '대표 · 화속 레이드 선택' });
     assert.equal(synthetic.props.accessibilityRole, 'radio');
     assert.deepEqual(synthetic.props.accessibilityState, { checked: true, disabled: false });
+    const syntheticStyle = Object.assign({}, ...(synthetic.props.style({ pressed: false }) as Array<Record<string, unknown>>));
+    assert.equal(syntheticStyle.minHeight, 44);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '특수 선택' }));
     await act(async () => synthetic.props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }).props.onPress());
@@ -106,6 +134,16 @@ describe('PartyPresetPickerModal', () => {
     await act(async () => findAllHostByTestId(renderer.root, 'party-preset-row')[0]?.props.onPress());
 
     assert.deepEqual(selected, ['primary', 10]);
+  });
+
+  it('lets both browse and search lists fill the catalog area', async () => {
+    const renderer = await renderPicker();
+    let listStyle = flattenStyle(findHosts(renderer.root, 'FlatList')[0]?.props.style);
+    assert.equal(listStyle.flex, 1);
+
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }).props.onChangeText('화속'));
+    listStyle = flattenStyle(findHosts(renderer.root, 'FlatList')[0]?.props.style);
+    assert.equal(listStyle.flex, 1);
   });
 
   it('focuses the title, resets search on close, and disables every action during mutation', async () => {
@@ -147,9 +185,14 @@ describe('PartyPresetPickerModal', () => {
     assert.equal(keyboardAvoiding.props.keyboardVerticalOffset, 0);
     assert.equal(keyboardAvoiding.props.pointerEvents, 'box-none');
     const panelStyle = Object.assign({}, ...(panel.props.style as Array<Record<string, unknown>>));
-    assert.equal(panelStyle.maxHeight, '84%');
+    assert.equal(panelStyle.height, '84%');
+    assert.equal(panelStyle.maxHeight, undefined);
     assert.equal(panelStyle.paddingBottom, 31);
     assert.equal(panelStyle.minHeight, undefined);
+    const catalogArea = renderer.root.findByProps({ testID: 'party-preset-catalog-area' });
+    const catalogAreaStyle = flattenStyle(catalogArea.props.style);
+    assert.equal(catalogAreaStyle.flex, 1);
+    assert.equal(catalogAreaStyle.minHeight, 120);
 
     reactNativeMock.Platform.OS = 'android';
     await act(async () => renderer.update(React.createElement(PartyPresetPickerModal, baseProps())));
@@ -199,10 +242,13 @@ function findHosts(root: ReactTestInstance, name: string): ReactTestInstance[] {
 function textCount(root: ReactTestInstance, value: string): number {
   return root.findAll((node) => (node.type as unknown) === 'Text' && node.children.join('') === value).length;
 }
+function flattenStyle(style: Record<string, unknown> | readonly Record<string, unknown>[]): Record<string, unknown> {
+  return Object.assign({}, ...(Array.isArray(style) ? style : [style]));
+}
 
 const CATALOG: PartyPresetCatalogResponse = {
-  folders: [folder(1, '전투', null), folder(2, '레이드', 1)],
-  presets: [preset(10, '화속 레이드', 2), preset(11, '화속 미지정', null)],
+  folders: [folder(1, '전투', null), folder(2, '레이드', 1), folder(3, '지원', null)],
+  presets: [preset(10, '화속 레이드', 2), preset(11, '화속 미지정', null), preset(12, '지원 파티', 3)],
 };
 function folder(id: number, name: string, parentFolderId: number | null) {
   return { id, name, parentFolderId, displayOrder: 0, createdAt: '', updatedAt: '' };
