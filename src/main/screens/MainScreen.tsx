@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -10,6 +10,7 @@ import { GameStatusBar } from '../components/GameStatusBar';
 import { PartyPresetList } from '../components/PartyPresetList';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { DEFAULT_MAIN_TAB_ID, MainTabId } from '../domain/mainTabs';
+import { PartyPresetCatalogLoadCoordinator, type PartyPresetCatalogResource } from '../domain/partyPresetCatalogLoader';
 import type { UnifiedAutomationController } from '../domain/unifiedAutomationController';
 import { toUserFacingErrorMessage } from '../domain/userFacingErrors';
 import { theme } from '../styles/theme';
@@ -65,8 +66,7 @@ type MainScreenProps = {
   onOpenCaptcha: () => void;
   onStatusObserved?: (status: HofObservedStatusResponse) => void;
   automationController: UnifiedAutomationController;
-  onListPartyPresets: () => Promise<PartyPresetResponse[]>;
-  onGetPartyPresetCatalog?: () => Promise<PartyPresetCatalogResponse>;
+  onGetPartyPresetCatalog: () => Promise<PartyPresetCatalogResponse>;
   onCreatePartyPresetFolder?: (request: CreatePartyPresetFolderRequest) => Promise<PartyPresetCatalogResponse>;
   onRenamePartyPresetFolder?: (folderId: number, request: RenamePartyPresetFolderRequest) => Promise<PartyPresetCatalogResponse>;
   onReorderPartyPresetFolders?: (request: ReorderPartyPresetFoldersRequest) => Promise<PartyPresetCatalogResponse>;
@@ -111,7 +111,6 @@ export function MainScreen({
   onOpenCaptcha,
   onStatusObserved,
   automationController,
-  onListPartyPresets,
   onGetPartyPresetCatalog,
   onCreatePartyPresetFolder,
   onRenamePartyPresetFolder,
@@ -128,6 +127,140 @@ export function MainScreen({
   onLogout,
   onOpenLogin,
 }: MainScreenProps) {
+  const catalogCoordinatorRef = useRef(new PartyPresetCatalogLoadCoordinator());
+  const [partyPresetCatalog, setPartyPresetCatalog] = useState<PartyPresetCatalogResponse>({ folders: [], presets: [] });
+  const [partyPresetCatalogLoading, setPartyPresetCatalogLoading] = useState(false);
+  const [partyPresetCatalogError, setPartyPresetCatalogError] = useState<string | null>(null);
+  const authenticated = Boolean(session?.loggedIn);
+  const authenticatedRef = useRef(authenticated);
+  const previousAuthenticatedRef = useRef(authenticated);
+  const accountGenerationRef = useRef(0);
+  authenticatedRef.current = authenticated;
+
+  const loadPartyPresetCatalog = useCallback(async (force = false) => {
+    if (!authenticatedRef.current) return;
+    const operation = catalogCoordinatorRef.current.start(onGetPartyPresetCatalog, force);
+    if (operation == null) return;
+    setPartyPresetCatalogLoading(true);
+    setPartyPresetCatalogError(null);
+    const result = await operation;
+    if (result.status === 'stale') return;
+    setPartyPresetCatalogLoading(false);
+    if (result.status === 'failure') {
+      setPartyPresetCatalogError('파티 프리셋을 불러오지 못했습니다.');
+      return;
+    }
+    setPartyPresetCatalog(result.catalog);
+  }, [onGetPartyPresetCatalog]);
+
+  useLayoutEffect(() => {
+    if (previousAuthenticatedRef.current !== authenticated) {
+      previousAuthenticatedRef.current = authenticated;
+      accountGenerationRef.current += 1;
+    }
+    if (!authenticated) {
+      catalogCoordinatorRef.current.invalidate();
+      setPartyPresetCatalog({ folders: [], presets: [] });
+      setPartyPresetCatalogLoading(false);
+      setPartyPresetCatalogError(null);
+      return;
+    }
+    void loadPartyPresetCatalog();
+    return () => catalogCoordinatorRef.current.invalidate();
+  }, [authenticated, loadPartyPresetCatalog]);
+
+  const adoptPartyPresetCatalog = useCallback((catalog: PartyPresetCatalogResponse) => {
+    if (!authenticatedRef.current) return;
+    const result = catalogCoordinatorRef.current.replace(catalog);
+    if (result.status === 'success') {
+      setPartyPresetCatalog(result.catalog);
+      setPartyPresetCatalogLoading(false);
+      setPartyPresetCatalogError(null);
+    }
+  }, []);
+  const retryPartyPresetCatalog = useCallback(() => { void loadPartyPresetCatalog(true); }, [loadPartyPresetCatalog]);
+  const partyPresetCatalogResource = useMemo<PartyPresetCatalogResource>(() => ({
+    catalog: partyPresetCatalog,
+    loading: partyPresetCatalogLoading,
+    error: partyPresetCatalogError,
+    retry: retryPartyPresetCatalog,
+  }), [partyPresetCatalog, partyPresetCatalogError, partyPresetCatalogLoading, retryPartyPresetCatalog]);
+
+  const createPreset = useCallback(async (request: CreatePartyPresetRequest) => {
+    const accountGeneration = accountGenerationRef.current;
+    const result = await onCreatePartyPreset(request);
+    if (!authenticatedRef.current || accountGeneration !== accountGenerationRef.current) return result;
+    await loadPartyPresetCatalog(true);
+    return result;
+  }, [loadPartyPresetCatalog, onCreatePartyPreset]);
+  const updatePreset = useCallback(async (presetId: number, request: UpdatePartyPresetRequest) => {
+    const accountGeneration = accountGenerationRef.current;
+    const result = await onUpdatePartyPreset(presetId, request);
+    if (!authenticatedRef.current || accountGeneration !== accountGenerationRef.current) return result;
+    await loadPartyPresetCatalog(true);
+    return result;
+  }, [loadPartyPresetCatalog, onUpdatePartyPreset]);
+  const makePresetPrimary = useCallback(async (presetId: number) => {
+    const accountGeneration = accountGenerationRef.current;
+    const result = await onMakePartyPresetPrimary(presetId);
+    if (!authenticatedRef.current || accountGeneration !== accountGenerationRef.current) return result;
+    await loadPartyPresetCatalog(true);
+    return result;
+  }, [loadPartyPresetCatalog, onMakePartyPresetPrimary]);
+  const reorderPresets = useCallback(async (request: ReorderPartyPresetsRequest) => {
+    const accountGeneration = accountGenerationRef.current;
+    const result = await onReorderPartyPresets(request);
+    if (!authenticatedRef.current || accountGeneration !== accountGenerationRef.current) return result;
+    await loadPartyPresetCatalog(true);
+    return result;
+  }, [loadPartyPresetCatalog, onReorderPartyPresets]);
+  const deletePreset = useCallback(async (presetId: number) => {
+    const accountGeneration = accountGenerationRef.current;
+    const result = await onDeletePartyPreset(presetId);
+    if (!authenticatedRef.current || accountGeneration !== accountGenerationRef.current) return result;
+    await loadPartyPresetCatalog(true);
+    return result;
+  }, [loadPartyPresetCatalog, onDeletePartyPreset]);
+  const createPresetFolder = useCallback(async (request: CreatePartyPresetFolderRequest) => {
+    if (!onCreatePartyPresetFolder) throw new Error('폴더 만들기를 사용할 수 없습니다.');
+    const accountGeneration = accountGenerationRef.current;
+    const catalog = await onCreatePartyPresetFolder(request);
+    if (!authenticatedRef.current || accountGeneration !== accountGenerationRef.current) return catalog;
+    adoptPartyPresetCatalog(catalog);
+    return catalog;
+  }, [adoptPartyPresetCatalog, onCreatePartyPresetFolder]);
+  const renamePresetFolder = useCallback(async (folderId: number, request: RenamePartyPresetFolderRequest) => {
+    if (!onRenamePartyPresetFolder) throw new Error('폴더 이름 변경을 사용할 수 없습니다.');
+    const accountGeneration = accountGenerationRef.current;
+    const catalog = await onRenamePartyPresetFolder(folderId, request);
+    if (!authenticatedRef.current || accountGeneration !== accountGenerationRef.current) return catalog;
+    adoptPartyPresetCatalog(catalog);
+    return catalog;
+  }, [adoptPartyPresetCatalog, onRenamePartyPresetFolder]);
+  const reorderPresetFolders = useCallback(async (request: ReorderPartyPresetFoldersRequest) => {
+    if (!onReorderPartyPresetFolders) throw new Error('폴더 순서 변경을 사용할 수 없습니다.');
+    const accountGeneration = accountGenerationRef.current;
+    const catalog = await onReorderPartyPresetFolders(request);
+    if (!authenticatedRef.current || accountGeneration !== accountGenerationRef.current) return catalog;
+    adoptPartyPresetCatalog(catalog);
+    return catalog;
+  }, [adoptPartyPresetCatalog, onReorderPartyPresetFolders]);
+  const movePresetFolder = useCallback(async (folderId: number, request: MovePartyPresetFolderRequest) => {
+    if (!onMovePartyPresetFolder) throw new Error('폴더 이동을 사용할 수 없습니다.');
+    const accountGeneration = accountGenerationRef.current;
+    const catalog = await onMovePartyPresetFolder(folderId, request);
+    if (!authenticatedRef.current || accountGeneration !== accountGenerationRef.current) return catalog;
+    adoptPartyPresetCatalog(catalog);
+    return catalog;
+  }, [adoptPartyPresetCatalog, onMovePartyPresetFolder]);
+  const deletePresetFolder = useCallback(async (folderId: number) => {
+    if (!onDeletePartyPresetFolder) throw new Error('폴더 삭제를 사용할 수 없습니다.');
+    const accountGeneration = accountGenerationRef.current;
+    const catalog = await onDeletePartyPresetFolder(folderId);
+    if (!authenticatedRef.current || accountGeneration !== accountGenerationRef.current) return catalog;
+    adoptPartyPresetCatalog(catalog);
+    return catalog;
+  }, [adoptPartyPresetCatalog, onDeletePartyPresetFolder]);
   const [activeTabId, setActiveTabId] = useState<MainTabId>(DEFAULT_MAIN_TAB_ID);
   const [characterSubTabId, setCharacterSubTabId] = useState<CharacterSubTabId>('characters');
   const [selectedCharacter, setSelectedCharacter] = useState<HofCharacter | null>(null);
@@ -222,18 +355,17 @@ export function MainScreen({
           onOpenCaptcha,
           onStatusObserved,
           automationController,
-          onListPartyPresets,
-          onGetPartyPresetCatalog,
-          onCreatePartyPresetFolder,
-          onRenamePartyPresetFolder,
-          onReorderPartyPresetFolders,
-          onMovePartyPresetFolder,
-          onDeletePartyPresetFolder,
-          onCreatePartyPreset,
-          onUpdatePartyPreset,
-          onMakePartyPresetPrimary,
-          onReorderPartyPresets,
-          onDeletePartyPreset,
+          partyPresetCatalog: partyPresetCatalogResource,
+          onCreatePartyPresetFolder: onCreatePartyPresetFolder ? createPresetFolder : undefined,
+          onRenamePartyPresetFolder: onRenamePartyPresetFolder ? renamePresetFolder : undefined,
+          onReorderPartyPresetFolders: onReorderPartyPresetFolders ? reorderPresetFolders : undefined,
+          onMovePartyPresetFolder: onMovePartyPresetFolder ? movePresetFolder : undefined,
+          onDeletePartyPresetFolder: onDeletePartyPresetFolder ? deletePresetFolder : undefined,
+          onCreatePartyPreset: createPreset,
+          onUpdatePartyPreset: updatePreset,
+          onMakePartyPresetPrimary: makePresetPrimary,
+          onReorderPartyPresets: reorderPresets,
+          onDeletePartyPreset: deletePreset,
           onLoadPattern: handleLoadPattern,
           onLogout,
           characterDetailError,
@@ -279,8 +411,7 @@ type RenderActiveTabArgs = {
   onOpenCaptcha: () => void;
   onStatusObserved?: (status: HofObservedStatusResponse) => void;
   automationController: UnifiedAutomationController;
-  onListPartyPresets: () => Promise<PartyPresetResponse[]>;
-  onGetPartyPresetCatalog?: () => Promise<PartyPresetCatalogResponse>;
+  partyPresetCatalog: PartyPresetCatalogResource;
   onCreatePartyPresetFolder?: (request: CreatePartyPresetFolderRequest) => Promise<PartyPresetCatalogResponse>;
   onRenamePartyPresetFolder?: (folderId: number, request: RenamePartyPresetFolderRequest) => Promise<PartyPresetCatalogResponse>;
   onReorderPartyPresetFolders?: (request: ReorderPartyPresetFoldersRequest) => Promise<PartyPresetCatalogResponse>;
@@ -330,8 +461,7 @@ function renderActiveTab({
   onOpenCaptcha,
   onStatusObserved,
   automationController,
-  onListPartyPresets,
-  onGetPartyPresetCatalog,
+  partyPresetCatalog,
   onCreatePartyPresetFolder,
   onRenamePartyPresetFolder,
   onReorderPartyPresetFolders,
@@ -364,7 +494,7 @@ function renderActiveTab({
           battleCategoriesError={battleCategoriesError}
           onLoadBattleCategories={onLoadBattleCategories}
           onLoadBattleMaps={onLoadBattleMaps}
-          onListPartyPresets={onListPartyPresets}
+          partyPresetCatalog={partyPresetCatalog}
           automationController={automationController}
           onOpenCaptcha={onOpenCaptcha}
           onStatusObserved={onStatusObserved}
@@ -381,7 +511,7 @@ function renderActiveTab({
           characters={characters}
           onLoadCategories={onLoadBattleCategories}
           onLoadMaps={onLoadBattleMaps}
-          onListPartyPresets={onListPartyPresets}
+          partyPresetCatalog={partyPresetCatalog}
           onRunBattle={onRunBattle}
         />
       );
@@ -434,8 +564,7 @@ function renderActiveTab({
             <PartyPresetList
               authenticated={authenticated}
               characters={characters}
-              onListPartyPresets={onListPartyPresets}
-              onGetPartyPresetCatalog={onGetPartyPresetCatalog}
+              partyPresetCatalog={partyPresetCatalog}
               onCreatePartyPresetFolder={onCreatePartyPresetFolder}
               onRenamePartyPresetFolder={onRenamePartyPresetFolder}
               onReorderPartyPresetFolders={onReorderPartyPresetFolders}

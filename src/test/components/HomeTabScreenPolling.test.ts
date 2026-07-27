@@ -182,7 +182,7 @@ function props(automationController: never) {
     battleCategoriesError: null,
     onLoadBattleCategories: () => undefined,
     onLoadBattleMaps: async () => [],
-    onListPartyPresets: async () => [],
+    partyPresetCatalog: { catalog: { folders: [], presets: [] }, loading: false, error: null, retry: () => undefined },
     onOpenCaptcha: () => undefined,
     onStatusObserved: () => undefined,
   };

@@ -12,7 +12,7 @@ import {
   Trophy,
 } from 'lucide-react-native';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
   type BattlePartyMember,
@@ -27,7 +27,7 @@ import {
   type BattleMapGroup,
 } from '../domain/battleMaps';
 import { getBattleResultRounds } from '../domain/battleResults';
-import { PartyPresetLoadCoordinator } from '../domain/partyPresetLoader';
+import type { PartyPresetCatalogResource } from '../domain/partyPresetCatalogLoader';
 import { BattleRunPanel } from '../features/battle/components/BattleRunPanel';
 import { theme } from '../styles/theme';
 import type {
@@ -35,7 +35,6 @@ import type {
   BattleMapResponse,
   BattleResultResponse,
   HofCharacter,
-  PartyPresetResponse,
   RunBattleRequest,
 } from '../types/api';
 import { PrimaryButton } from '../components/PrimaryButton';
@@ -48,7 +47,7 @@ type BattleTabScreenProps = {
   characters: HofCharacter[];
   onLoadCategories: () => void;
   onLoadMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
-  onListPartyPresets: () => Promise<PartyPresetResponse[]>;
+  partyPresetCatalog: PartyPresetCatalogResource;
   onRunBattle: (request: RunBattleRequest) => Promise<BattleResultResponse>;
 };
 
@@ -100,7 +99,7 @@ export function BattleTabScreen({
   characters,
   onLoadCategories,
   onLoadMaps,
-  onListPartyPresets,
+  partyPresetCatalog,
   onRunBattle,
 }: BattleTabScreenProps) {
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
@@ -112,28 +111,11 @@ export function BattleTabScreen({
   const [runningMapKey, setRunningMapKey] = useState<string | null>(null);
   const [runErrorsByMapKey, setRunErrorsByMapKey] = useState<Record<string, string>>({});
   const [resultsByMapKey, setResultsByMapKey] = useState<Record<string, BattleResultResponse>>({});
-  const [partyPresets, setPartyPresets] = useState<PartyPresetResponse[]>([]);
-  const [arePartyPresetsLoading, setArePartyPresetsLoading] = useState(false);
-  const [partyPresetsError, setPartyPresetsError] = useState<string | null>(null);
-  const partyPresetLoadCoordinatorRef = useRef(new PartyPresetLoadCoordinator());
 
   useEffect(() => {
     if (categories.length > 0 || isLoading || errorMessage) return;
     onLoadCategories();
   }, [categories.length, errorMessage, isLoading, onLoadCategories]);
-
-  useLayoutEffect(() => {
-    if (!authenticated) {
-      partyPresetLoadCoordinatorRef.current.invalidate();
-      setPartyPresets([]);
-      setArePartyPresetsLoading(false);
-      setPartyPresetsError(null);
-    }
-
-    return () => {
-      partyPresetLoadCoordinatorRef.current.invalidate();
-    };
-  }, [authenticated]);
 
   const orderedCategories = useMemo(() => orderBattleCategories(categories), [categories]);
 
@@ -177,32 +159,6 @@ export function BattleTabScreen({
   }, [authenticated, mapsByCategory, onLoadMaps]);
 
   /**
-   * 전투 실행 패널이 처음 열릴 때 파티 프리셋을 불러오고, 성공한 결과는 빈 목록까지 포함해 재사용한다.
-   *
-   * coordinator가 중복 요청, 성공 캐시, 계정 세대를 조정해서 이전 계정의 늦은 응답을 무시한다.
-   */
-  const loadPartyPresets = useCallback(async (force = false) => {
-    if (!authenticated) return;
-
-    const operation = partyPresetLoadCoordinatorRef.current.start(onListPartyPresets, force);
-    if (operation == null) return;
-
-    setArePartyPresetsLoading(true);
-    setPartyPresetsError(null);
-
-    const result = await operation;
-    if (result.status === 'stale') return;
-
-    setArePartyPresetsLoading(false);
-    if (result.status === 'failure') {
-      setPartyPresetsError('파티 프리셋을 불러오지 못했습니다.');
-      return;
-    }
-
-    setPartyPresets(result.presets);
-  }, [authenticated, onListPartyPresets]);
-
-  /**
    * 카테고리 카드를 열고 닫는다.
    *
    * 새 카테고리를 열 때는 이전 그룹/맵 확장 상태를 초기화한 뒤 해당 카테고리의 맵 목록을 준비한다.
@@ -243,10 +199,7 @@ export function BattleTabScreen({
     const willExpand = expandedMapKey !== mapKey;
     setExpandedMapKey(willExpand ? mapKey : null);
 
-    if (willExpand && map.enabled && map.resolved && map.mapCode != null) {
-      void loadPartyPresets();
-    }
-  }, [expandedMapKey, loadPartyPresets]);
+  }, [expandedMapKey]);
 
   /**
    * 전투 성공 직후 키/도전/승리 제한을 먼저 화면에서 줄이고, 서버 재조회로 실제 HOF 상태를 다시 맞춘다.
@@ -512,24 +465,18 @@ export function BattleTabScreen({
               isRunning={runningMapKey === buildBattleMapStateKey(item.map)}
               result={resultsByMapKey[buildBattleMapStateKey(item.map)] ?? null}
               errorMessage={runErrorsByMapKey[buildBattleMapStateKey(item.map)] ?? null}
-              partyPresets={partyPresets}
-              arePartyPresetsLoading={arePartyPresetsLoading}
-              partyPresetsError={partyPresetsError}
+              partyPresetCatalog={partyPresetCatalog}
               onPress={() => toggleMap(item.map)}
-              onRetryPartyPresets={() => loadPartyPresets(true)}
               onRunBattle={(party, battleCount) => runBattle(item.map, party, battleCount)}
             />
           </View>
         );
     }
   }, [
-    arePartyPresetsLoading,
     characters,
     expandedMapKey,
     loadMaps,
-    loadPartyPresets,
-    partyPresets,
-    partyPresetsError,
+    partyPresetCatalog,
     resultsByMapKey,
     runBattle,
     runErrorsByMapKey,
@@ -698,11 +645,8 @@ type BattleMapRowProps = {
   isRunning: boolean;
   result: BattleResultResponse | null;
   errorMessage: string | null;
-  partyPresets: PartyPresetResponse[];
-  arePartyPresetsLoading: boolean;
-  partyPresetsError: string | null;
+  partyPresetCatalog: PartyPresetCatalogResource;
   onPress: () => void;
-  onRetryPartyPresets: () => void;
   onRunBattle: (party: BattlePartyMember[], battleCount: 1 | 3) => void;
 };
 
@@ -718,11 +662,8 @@ function BattleMapRow({
   isRunning,
   result,
   errorMessage,
-  partyPresets,
-  arePartyPresetsLoading,
-  partyPresetsError,
+  partyPresetCatalog,
   onPress,
-  onRetryPartyPresets,
   onRunBattle,
 }: BattleMapRowProps) {
   const unresolved = map.mapCode == null || !map.resolved;
@@ -763,10 +704,7 @@ function BattleMapRow({
       {expanded ? (
         <BattleRunPanel
           characters={characters}
-          partyPresets={partyPresets}
-          arePartyPresetsLoading={arePartyPresetsLoading}
-          partyPresetsError={partyPresetsError}
-          onRetryPartyPresets={onRetryPartyPresets}
+          partyPresetCatalog={partyPresetCatalog}
           errorMessage={errorMessage}
           isRunning={isRunning}
           result={result}

@@ -22,6 +22,7 @@ import {
   rehydrateExecutablePartyFromPresetSeed,
 } from '../../../domain/partyPresets';
 import { theme } from '../../../styles/theme';
+import type { PartyPresetCatalogResource } from '../../../domain/partyPresetCatalogLoader';
 import type {
   BattleResultResponse,
   BattleRoundResultResponse,
@@ -35,10 +36,7 @@ import {
 
 type BattleRunPanelProps = {
   characters: HofCharacter[];
-  partyPresets: PartyPresetResponse[];
-  arePartyPresetsLoading: boolean;
-  partyPresetsError: string | null;
-  onRetryPartyPresets: () => void;
+  partyPresetCatalog: PartyPresetCatalogResource;
   isRunning: boolean;
   result: BattleResultResponse | null;
   errorMessage: string | null;
@@ -53,10 +51,7 @@ type BattleRunPanelProps = {
  */
 export function BattleRunPanel({
   characters,
-  partyPresets,
-  arePartyPresetsLoading,
-  partyPresetsError,
-  onRetryPartyPresets,
+  partyPresetCatalog,
   isRunning,
   result,
   errorMessage,
@@ -119,12 +114,12 @@ export function BattleRunPanel({
       <Text style={styles.stepLabel}>STEP 1 · 파티 선택</Text>
       <BattlePartyPresetPicker
         characters={characters}
-        presets={partyPresets}
-        loading={arePartyPresetsLoading}
-        errorMessage={partyPresetsError}
+        catalog={partyPresetCatalog.catalog}
+        loading={partyPresetCatalog.loading}
+        errorMessage={partyPresetCatalog.error}
         selectedMode={selectedMode}
         selectedPresetId={selectedPresetId}
-        onRetry={onRetryPartyPresets}
+        onRetry={partyPresetCatalog.retry}
         onSelectDirect={handleSelectDirect}
         onSelectPreset={handleSelectPreset}
       />

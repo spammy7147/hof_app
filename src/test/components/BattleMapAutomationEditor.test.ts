@@ -314,12 +314,12 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
 
   it('keeps selected rows through independent map/preset failures and retries only the failed resource', async () => {
     let mapAttempts = 0;
-    let presetAttempts = 0;
+    let presetAttempts = 1;
     const renderer = await renderEditor({
       entry: battleEntry([setting('saved', 3, 0)]),
       mutationMessage: '저장 실패',
       onLoadBattleMaps: async () => { mapAttempts += 1; if (mapAttempts === 1) throw new Error('map down'); return [catalogMap('new', 'New Map')]; },
-      onListPartyPresets: async () => { presetAttempts += 1; if (presetAttempts === 1) throw new Error('preset down'); return []; },
+      partyPresetCatalog: presetCatalog([], '프리셋을 불러오지 못했어요.', () => { presetAttempts += 1; }),
     });
     assert.equal(hasText(renderer.root, 'saved'), true);
     assert.equal(hasText(renderer.root, '저장 실패'), true);
@@ -655,17 +655,11 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
   });
 
   it('claims explicit preset deletion only after a successful empty verification', async () => {
-    const presets = deferred<ReturnType<typeof preset>[]>();
     const explicit = { ...setting('a', 3, 0), presetMode: 'EXPLICIT' as const, partyPresetId: 99 };
     const renderer = await renderEditor({
       entry: battleEntry([explicit]),
       maps: [catalogMap('a', 'Alpha')],
-      onListPartyPresets: () => presets.promise,
-    });
-
-    await act(async () => {
-      presets.resolve([]);
-      await presets.promise;
+      partyPresetCatalog: presetCatalog([]),
     });
 
     assert.equal(hasText(renderer.root, '삭제된 프리셋 #99'), true);
@@ -973,13 +967,11 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(backs, 0);
 
     const maps = deferred<BattleMapResponse[]>();
-    const presets = deferred<ReturnType<typeof preset>[]>();
-    const late = await renderEditor({ onLoadBattleMaps: async () => maps.promise, onListPartyPresets: async () => presets.promise });
+    const late = await renderEditor({ onLoadBattleMaps: async () => maps.promise });
     await act(async () => { late.unmount(); });
     await act(async () => {
       maps.resolve([catalogMap('late', 'Late')]);
-      presets.resolve([preset(8, 'Late')]);
-      await Promise.all([maps.promise, presets.promise]);
+      await maps.promise;
     });
   });
 });
@@ -988,7 +980,7 @@ type Overrides = {
   entry?: TypedAutomationEntryResponse; maps?: BattleMapResponse[]; presets?: ReturnType<typeof preset>[];
   saving?: boolean; mutationMessage?: string | null;
   onLoadBattleMaps?: (categoryId: string) => Promise<BattleMapResponse[]>;
-  onListPartyPresets?: () => Promise<ReturnType<typeof preset>[]>;
+  partyPresetCatalog?: React.ComponentProps<typeof BattleMapAutomationEditor>['partyPresetCatalog'];
   onSave?: (request: UpdateBattleMapAutomationRequest) => Promise<boolean>;
   onBack?: () => void; onDelete?: () => Promise<boolean>;
   battleCategories?: Array<{ id: string; label: string; description: string; order: number; enabled: boolean }>;
@@ -1014,11 +1006,14 @@ function editorProps(overrides: Overrides = {}) {
     battleCategoriesError: overrides.battleCategoriesError ?? null,
     onLoadBattleCategories: overrides.onLoadBattleCategories ?? (() => undefined),
     onLoadBattleMaps: overrides.onLoadBattleMaps ?? (async () => overrides.maps ?? []),
-    onListPartyPresets: overrides.onListPartyPresets ?? (async () => overrides.presets ?? []),
+    partyPresetCatalog: overrides.partyPresetCatalog ?? presetCatalog(overrides.presets ?? []),
     onClearMutationMessage: () => undefined,
     onSave: overrides.onSave ?? (async () => true), onBack: overrides.onBack ?? (() => undefined),
     onDelete: overrides.onDelete ?? (async () => true),
   };
+}
+function presetCatalog(presets: ReturnType<typeof preset>[], error: string | null = null, retry = () => undefined) {
+  return { catalog: { folders: [], presets }, loading: false, error, retry };
 }
 
 function hasText(root: ReactTestInstance, text: string): boolean {

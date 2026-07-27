@@ -5,6 +5,13 @@ export type PartyPresetCatalogLoadResult =
   | { status: 'failure'; error: unknown }
   | { status: 'stale' };
 
+export type PartyPresetCatalogResource = {
+  catalog: PartyPresetCatalogResponse;
+  loading: boolean;
+  error: string | null;
+  retry: () => void;
+};
+
 /** 카탈로그 캐시와 계정/요청 세대를 함께 조정한다. */
 export class PartyPresetCatalogLoadCoordinator {
   private accountGeneration = 0;

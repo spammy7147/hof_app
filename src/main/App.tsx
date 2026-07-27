@@ -182,7 +182,6 @@ export default function App() {
 
   const loadBattleStats = useCallback((): Promise<BattleStatsResponse> => api.fetchBattleStats(), [api]);
 
-  const listPartyPresets = useCallback((): Promise<PartyPresetResponse[]> => api.listPartyPresets(), [api]);
   const getPartyPresetCatalog = useCallback((): Promise<PartyPresetCatalogResponse> => api.getPartyPresetCatalog(), [api]);
   const createPartyPresetFolder = useCallback((request: CreatePartyPresetFolderRequest) => api.createPartyPresetFolder(request), [api]);
   const renamePartyPresetFolder = useCallback((folderId: number, request: RenamePartyPresetFolderRequest) => api.renamePartyPresetFolder(folderId, request), [api]);
@@ -367,7 +366,6 @@ export default function App() {
         onOpenCaptcha={handleOpenCaptchaModal}
         onStatusObserved={handleStatusObserved}
         automationController={automationController}
-        onListPartyPresets={listPartyPresets}
         onGetPartyPresetCatalog={getPartyPresetCatalog}
         onCreatePartyPresetFolder={createPartyPresetFolder}
         onRenamePartyPresetFolder={renamePartyPresetFolder}

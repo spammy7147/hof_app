@@ -12,13 +12,15 @@ import {
 
 import { PartyPresetPickerModal } from '../../../components/PartyPresetPickerModal';
 import { theme } from '../../../styles/theme';
-import type { HofCharacter, PartyPresetResponse } from '../../../types/api';
+import type { HofCharacter, PartyPresetCatalogResponse, PartyPresetResponse } from '../../../types/api';
 
 export type PartySelectionMode = 'preset' | 'direct' | null;
 
 export type BattlePartyPresetPickerProps = {
   characters: HofCharacter[];
-  presets: PartyPresetResponse[];
+  catalog?: PartyPresetCatalogResponse;
+  /** @deprecated 테스트 호환용 */
+  presets?: PartyPresetResponse[];
   loading: boolean;
   errorMessage: string | null;
   selectedMode: PartySelectionMode;
@@ -30,7 +32,8 @@ export type BattlePartyPresetPickerProps = {
 
 /** 전투용 요약 필드와 화면 전용 직접 선택을 공통 프리셋 모달에 연결한다. */
 export function BattlePartyPresetPicker({
-  presets,
+  catalog,
+  presets = [],
   loading,
   errorMessage,
   selectedMode,
@@ -48,11 +51,11 @@ export function BattlePartyPresetPicker({
   const focusGenerationRef = useRef(0);
   const restoreFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   loadingRef.current = loading;
+  const resolvedCatalog = useMemo(() => catalog ?? { folders: [], presets }, [catalog, presets]);
   const selectedPreset = useMemo(
-    () => presets.find((preset) => preset.id === selectedPresetId) ?? null,
-    [presets, selectedPresetId],
+    () => resolvedCatalog.presets.find((preset) => preset.id === selectedPresetId) ?? null,
+    [resolvedCatalog.presets, selectedPresetId],
   );
-  const catalog = useMemo(() => ({ folders: [], presets }), [presets]);
   const selectedLabel = selectedMode === 'direct'
     ? '캐릭터 직접 선택'
     : selectedPreset?.name ?? '프리셋을 선택하세요';
@@ -162,12 +165,12 @@ export function BattlePartyPresetPicker({
           </Pressable>
         </View>
       ) : null}
-      {!loading && errorMessage == null && presets.length === 0 ? (
+      {!loading && errorMessage == null && resolvedCatalog.presets.length === 0 ? (
         <Text style={styles.emptyText}>저장된 프리셋이 없습니다.</Text>
       ) : null}
 
       <PartyPresetPickerModal
-        catalog={catalog}
+        catalog={resolvedCatalog}
         disabled={loading}
         initialExpandedPath={[null]}
         onClose={handleClose}

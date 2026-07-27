@@ -4,6 +4,7 @@ import { ArrowLeft, Info } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
 
 import type { UnifiedAutomationController } from '../domain/unifiedAutomationController';
+import type { PartyPresetCatalogResource } from '../domain/partyPresetCatalogLoader';
 import { UnifiedAutomationDashboard } from '../features/automation/components/UnifiedAutomationDashboard';
 import { AdventureMapAutomationEditor } from '../features/automation/components/AdventureMapAutomationEditor';
 import { BattleMapAutomationEditor } from '../features/automation/components/BattleMapAutomationEditor';
@@ -14,7 +15,6 @@ import type {
   BattleCategoryResponse,
   BattleMapResponse,
   AutomationType,
-  PartyPresetResponse,
   HofObservedStatusResponse,
   TypedAutomationEntryResponse,
 } from '../types/api';
@@ -27,7 +27,7 @@ type HomeTabScreenProps = {
   battleCategoriesError: string | null;
   onLoadBattleCategories: () => void;
   onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
-  onListPartyPresets: () => Promise<PartyPresetResponse[]>;
+  partyPresetCatalog: PartyPresetCatalogResource;
   automationController: UnifiedAutomationController;
   onOpenCaptcha: () => void;
   onStatusObserved?: (status: HofObservedStatusResponse) => void;
@@ -50,7 +50,7 @@ export function HomeTabScreen({
   battleCategoriesError,
   onLoadBattleCategories,
   onLoadBattleMaps,
-  onListPartyPresets,
+  partyPresetCatalog,
   automationController,
   onOpenCaptcha,
   onStatusObserved,
@@ -162,7 +162,7 @@ export function HomeTabScreen({
         saving={savingEntryIds.includes(entry.id) || savingTypes.includes('QUEST')}
         onBack={closeEditor}
         onDelete={() => automationController.deleteEntry(entry.id)}
-        onListPartyPresets={onListPartyPresets}
+        partyPresetCatalog={partyPresetCatalog}
         onClearMutationMessage={() => automationController.clearMessage()}
         onLoadBattleCategories={onLoadBattleCategories}
         onLoadBattleMaps={onLoadBattleMaps}
@@ -189,7 +189,7 @@ export function HomeTabScreen({
         saving={savingEntryIds.includes(entry.id) || savingTypes.includes('BATTLE_MAP')}
         onBack={closeEditor}
         onDelete={() => automationController.deleteEntry(entry.id)}
-        onListPartyPresets={onListPartyPresets}
+        partyPresetCatalog={partyPresetCatalog}
         onClearMutationMessage={() => automationController.clearMessage()}
         onLoadBattleCategories={onLoadBattleCategories}
         onLoadBattleMaps={onLoadBattleMaps}
@@ -217,7 +217,7 @@ export function HomeTabScreen({
         saving={savingEntryIds.includes(entry.id) || savingTypes.includes('ADVENTURE_MAP')}
         onBack={closeEditor}
         onDelete={() => automationController.deleteEntry(entry.id)}
-        onListPartyPresets={onListPartyPresets}
+        partyPresetCatalog={partyPresetCatalog}
         onClearMutationMessage={() => automationController.clearMessage()}
         onLoadBattleCategories={onLoadBattleCategories}
         onLoadBattleMaps={onLoadBattleMaps}
@@ -308,6 +308,7 @@ export function HomeTabScreen({
     </NestableScrollContainer>
   );
 }
+
 
 const styles = StyleSheet.create({
   scroller: { flex: 1 },

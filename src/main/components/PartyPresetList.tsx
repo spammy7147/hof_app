@@ -18,6 +18,7 @@ import {
   formatPartyPresetSummary,
 } from '../domain/partyPresets';
 import { toUserFacingErrorMessage } from '../domain/userFacingErrors';
+import type { PartyPresetCatalogResource } from '../domain/partyPresetCatalogLoader';
 import { getPartyPresetFolderPath, indexPartyPresetCatalog, searchPartyPresetCatalog } from '../domain/partyPresetCatalog';
 import { theme } from '../styles/theme';
 import type {
@@ -37,8 +38,7 @@ import type {
 type PartyPresetListProps = {
   authenticated: boolean;
   characters: HofCharacter[];
-  onListPartyPresets: () => Promise<PartyPresetResponse[]>;
-  onGetPartyPresetCatalog?: () => Promise<PartyPresetCatalogResponse>;
+  partyPresetCatalog: PartyPresetCatalogResource;
   onCreatePartyPreset: (request: CreatePartyPresetRequest) => Promise<PartyPresetResponse>;
   onUpdatePartyPreset: (presetId: number, request: UpdatePartyPresetRequest) => Promise<PartyPresetResponse>;
   onMakePartyPresetPrimary: (presetId: number) => Promise<PartyPresetResponse>;
@@ -61,8 +61,7 @@ type PickerInvocation =
 export function PartyPresetList({
   authenticated,
   characters,
-  onListPartyPresets,
-  onGetPartyPresetCatalog,
+  partyPresetCatalog,
   onCreatePartyPreset,
   onUpdatePartyPreset,
   onMakePartyPresetPrimary,
@@ -74,8 +73,8 @@ export function PartyPresetList({
   onMovePartyPresetFolder,
   onDeletePartyPresetFolder,
 }: PartyPresetListProps) {
-  const [presets, setPresets] = useState<PartyPresetResponse[]>([]);
-  const [folders, setFolders] = useState<PartyPresetFolderResponse[]>([]);
+  const [presets, setPresets] = useState<PartyPresetResponse[]>(partyPresetCatalog.catalog.presets);
+  const [folders, setFolders] = useState<PartyPresetFolderResponse[]>(partyPresetCatalog.catalog.folders);
   const [expandedPresetId, setExpandedPresetId] = useState<ExpandedPresetId>(null);
   const [newDraft, setNewDraft] = useState<NewPresetDraft | null>(null);
   const [activeSlotIndex, setActiveSlotIndex] = useState(0);
@@ -92,7 +91,6 @@ export function PartyPresetList({
   const [newFolderName, setNewFolderName] = useState('');
   const [movingFolderId, setMovingFolderId] = useState<number | null>(null);
   const [deleteConfirmFolderId, setDeleteConfirmFolderId] = useState<number | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -102,7 +100,6 @@ export function PartyPresetList({
   const previousAuthenticatedRef = useRef(authenticated);
   const accountGenerationRef = useRef(0);
   const mountedRef = useRef(true);
-  const loadGenerationRef = useRef(0);
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const swipeableNodesRef = useRef(new Map<number, SwipeableMethods>());
   const presetFolderTriggerRef = useRef<ElementRef<typeof Pressable>>(null);
@@ -127,12 +124,10 @@ export function PartyPresetList({
       ? catalogIndex.presetsById.get(expandedPresetId)?.folderId ?? null
       : null;
   const visiblePresets = useMemo(
-    () => onGetPartyPresetCatalog
-      ? (catalogIndex.presetIdsByFolder.get(activePresetFolderId) ?? [])
+    () => (catalogIndex.presetIdsByFolder.get(activePresetFolderId) ?? [])
         .map((id) => catalogIndex.presetsById.get(id))
-        .filter((preset): preset is PartyPresetResponse => preset != null)
-      : presets,
-    [activePresetFolderId, catalogIndex, onGetPartyPresetCatalog, presets],
+        .filter((preset): preset is PartyPresetResponse => preset != null),
+    [activePresetFolderId, catalogIndex],
   );
   const visiblePresetsRef = useRef(visiblePresets);
   visiblePresetsRef.current = visiblePresets;
@@ -167,8 +162,7 @@ export function PartyPresetList({
     openSwipeableRef.current = null;
   }, []);
 
-  const loadPresets = useCallback(async () => {
-    const generation = ++loadGenerationRef.current;
+  useEffect(() => {
     if (!authenticated) {
       setFolders([]);
       setPresets([]);
@@ -183,38 +177,16 @@ export function PartyPresetList({
       setMovingFolderId(null);
       setDeleteConfirmFolderId(null);
       setErrorMessage(null);
-      setIsLoading(false);
       return;
     }
-
-    setIsLoading(true);
-    setErrorMessage(null);
-    try {
-      if (onGetPartyPresetCatalog) {
-        const loaded = await onGetPartyPresetCatalog();
-        if (mountedRef.current && loadGenerationRef.current === generation) {
-          setFolders(loaded.folders);
-          setPresets(loaded.presets);
-        }
-      } else {
-        const loaded = await onListPartyPresets();
-        if (mountedRef.current && loadGenerationRef.current === generation) setPresets(loaded);
-      }
-    } catch (error) {
-      if (mountedRef.current && loadGenerationRef.current === generation) {
-        setErrorMessage(toUserFacingErrorMessage(error));
-      }
-    } finally {
-      if (mountedRef.current && loadGenerationRef.current === generation) setIsLoading(false);
-    }
-  }, [authenticated, onGetPartyPresetCatalog, onListPartyPresets]);
+    setFolders(partyPresetCatalog.catalog.folders);
+    setPresets(partyPresetCatalog.catalog.presets);
+  }, [authenticated, partyPresetCatalog.catalog]);
 
   useEffect(() => {
     mountedRef.current = true;
-    void loadPresets();
     return () => {
       mountedRef.current = false;
-      loadGenerationRef.current += 1;
       closeOpenSwipeable();
       swipeableNodesRef.current.clear();
       folderMoveTriggerRefs.current.clear();
@@ -226,7 +198,7 @@ export function PartyPresetList({
       if (editorFocusTimerRef.current) clearTimeout(editorFocusTimerRef.current);
       if (presetScrollRetryTimerRef.current) clearTimeout(presetScrollRetryTimerRef.current);
     };
-  }, [closeOpenSwipeable, loadPresets]);
+  }, [closeOpenSwipeable]);
 
   useEffect(() => {
     mutationPendingRef.current = false;
@@ -369,23 +341,11 @@ export function PartyPresetList({
         });
         setNewDraft(null);
         setExpandedPresetId(null);
-        if (onGetPartyPresetCatalog) {
-          try {
-            const catalog = await onGetPartyPresetCatalog();
-            if (isCurrentAccountGeneration(accountGeneration)) replaceCatalog(catalog);
-          } catch { /* Keep the successful local mutation. */ }
-        }
       } else if (typeof expandedPresetId === 'number') {
         const updated = await onUpdatePartyPreset(expandedPresetId, request);
         if (!isCurrentAccountGeneration(accountGeneration)) return;
         setPresets((current) => current.map((preset) => preset.id === updated.id ? updated : preset));
         setExpandedPresetId(null);
-        if (onGetPartyPresetCatalog) {
-          try {
-            const catalog = await onGetPartyPresetCatalog();
-            if (isCurrentAccountGeneration(accountGeneration)) replaceCatalog(catalog);
-          } catch { /* Keep the successful local mutation. */ }
-        }
       }
     } catch (error) {
       if (isCurrentAccountGeneration(accountGeneration)) setErrorMessage(toUserFacingErrorMessage(error));
@@ -423,12 +383,6 @@ export function PartyPresetList({
             : preset);
       });
       setExpandedPresetId((current) => current === presetId ? null : current);
-      if (onGetPartyPresetCatalog) {
-        try {
-          const catalog = await onGetPartyPresetCatalog();
-          if (isCurrentAccountGeneration(accountGeneration)) replaceCatalog(catalog);
-        } catch { /* Keep the successful local mutation. */ }
-      }
     } catch (error) {
       if (isCurrentAccountGeneration(accountGeneration)) setErrorMessage(toUserFacingErrorMessage(error));
     } finally {
@@ -491,13 +445,7 @@ export function PartyPresetList({
         setPresets(previousCatalog);
         setErrorMessage(toUserFacingErrorMessage(error));
         try {
-          if (onGetPartyPresetCatalog) {
-            const catalog = await onGetPartyPresetCatalog();
-            if (isCurrentAccountGeneration(accountGeneration)) replaceCatalog(catalog);
-          } else {
-            const loaded = await onListPartyPresets();
-            if (isCurrentAccountGeneration(accountGeneration)) setPresets(loaded);
-          }
+          partyPresetCatalog.retry();
         } catch {
           // Keep the captured pre-drag order when authoritative recovery is unavailable.
         }
@@ -592,12 +540,7 @@ export function PartyPresetList({
       if (isCurrentAccountGeneration(accountGeneration)) {
         setFolders((current) => current.map((folder) => previous.find(({ id }) => id === folder.id) ?? folder));
         setErrorMessage(toUserFacingErrorMessage(error));
-        if (onGetPartyPresetCatalog) {
-          try {
-            const catalog = await onGetPartyPresetCatalog();
-            if (isCurrentAccountGeneration(accountGeneration)) replaceCatalog(catalog);
-          } catch { /* Keep captured order. */ }
-        }
+        partyPresetCatalog.retry();
       }
     } finally {
       if (isCurrentAccountGeneration(accountGeneration)) {
@@ -861,8 +804,8 @@ export function PartyPresetList({
         </Pressable>
       </View>
 
-      {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-      {isLoading ? (
+      {errorMessage ?? partyPresetCatalog.error ? <Text style={styles.errorText}>{errorMessage ?? partyPresetCatalog.error}</Text> : null}
+      {partyPresetCatalog.loading ? (
         <View style={styles.stateBox}>
           <ActivityIndicator color={theme.colors.accentGreen} />
           <Text style={styles.stateText}>프리셋을 불러오는 중</Text>
@@ -912,7 +855,7 @@ export function PartyPresetList({
             />
           ) : null}
         </View>
-      ) : onGetPartyPresetCatalog && expandedPresetId == null && newDraft == null ? (
+      ) : expandedPresetId == null && newDraft == null ? (
         <View style={styles.catalogBrowser}>
           <TextInput
             accessibilityLabel="프리셋 이름 검색"
@@ -975,7 +918,6 @@ export function PartyPresetList({
     </View>
   );
 }
-
 type PresetCardProps = {
   children: ReactNode;
   expanded: boolean;

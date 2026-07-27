@@ -35,12 +35,12 @@ import {
   type AdventureMapCatalogRow,
 } from '../../../domain/adventureMapCatalog';
 import { toUserFacingErrorMessage } from '../../../domain/userFacingErrors';
+import type { PartyPresetCatalogResource } from '../../../domain/partyPresetCatalogLoader';
 import { theme } from '../../../styles/theme';
 import type {
   AdventureDailyRefreshResponse,
   BattleCategoryResponse,
   BattleMapResponse,
-  PartyPresetResponse,
   TypedAutomationEntryResponse,
   UpdateAdventureMapAutomationRequest,
 } from '../../../types/api';
@@ -64,7 +64,7 @@ type Props = {
   onDelete: () => Promise<boolean>;
   onLoadBattleCategories: () => void;
   onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
-  onListPartyPresets: () => Promise<PartyPresetResponse[]>;
+  partyPresetCatalog: PartyPresetCatalogResource;
   onClearMutationMessage: () => void;
   onSave: (request: UpdateAdventureMapAutomationRequest) => Promise<boolean>;
 };
@@ -91,15 +91,15 @@ export function AdventureMapAutomationEditor({
   onDelete,
   onLoadBattleCategories,
   onLoadBattleMaps,
-  onListPartyPresets,
+  partyPresetCatalog,
   onClearMutationMessage,
   onSave,
 }: Props) {
   const [draft, setDraft] = useState<AdventureMapAutomationDraft>(() => buildAdventureMapAutomationDraft(entry, []));
   const [catalog, setCatalog] = useState<BattleMapResponse[]>([]);
-  const [presets, setPresets] = useState<PartyPresetResponse[]>([]);
+  const presets = partyPresetCatalog.catalog.presets;
   const [mapState, setMapState] = useState<ResourceState>({ loading: true, error: null });
-  const [presetState, setPresetState] = useState<ResourceState>({ loading: true, error: null });
+  const presetState = { loading: partyPresetCatalog.loading, error: partyPresetCatalog.error };
   const [query, setQuery] = useState('');
   const [expandedGroupKeys, setExpandedGroupKeys] = useState<string[]>([]);
   const [activePresetSession, setActivePresetSession] = useState<PresetSession | null>(null);
@@ -108,7 +108,6 @@ export function AdventureMapAutomationEditor({
   const mountedRef = useRef(true);
   const mountedGenerationRef = useRef(0);
   const mapGenerationRef = useRef(0);
-  const presetGenerationRef = useRef(0);
   const draftRef = useRef(draft);
   const queryRef = useRef(query);
   const baselineRef = useRef(serializeDraft(draft));
@@ -147,32 +146,7 @@ export function AdventureMapAutomationEditor({
     }
     mountedGenerationRef.current += 1;
     mapGenerationRef.current += 1;
-    presetGenerationRef.current += 1;
   }, []);
-
-  const loadPresets = useCallback(async () => {
-    const generation = ++presetGenerationRef.current;
-    const mountedGeneration = mountedGenerationRef.current;
-    setPresetState({ loading: true, error: null });
-    try {
-      const next = await onListPartyPresets();
-      if (!mountedRef.current
-        || mountedGeneration !== mountedGenerationRef.current
-        || generation !== presetGenerationRef.current) return;
-      setPresets(next);
-      setPresetState({ loading: false, error: null });
-    } catch (error: unknown) {
-      if (mountedRef.current
-        && mountedGeneration === mountedGenerationRef.current
-        && generation === presetGenerationRef.current) {
-        setPresetState({ loading: false, error: toUserFacingErrorMessage(error) });
-      }
-    }
-  }, [onListPartyPresets]);
-
-  useEffect(() => {
-    void loadPresets();
-  }, [loadPresets]);
 
   useEffect(() => {
     if (!areBattleCategoriesLoaded && battleCategories.length === 0 && !isBattleCategoriesLoading
@@ -525,7 +499,7 @@ export function AdventureMapAutomationEditor({
       {mutationMessage ? <Text accessibilityRole="alert" style={styles.problem}>{mutationMessage}</Text> : null}
       {battleCategoriesError ? <ResourceWarning label="맵 카테고리" onRetry={onLoadBattleCategories} /> : null}
       {mapState.error ? <ResourceWarning label="모험맵" onRetry={loadMaps} /> : null}
-      {presetState.error ? <ResourceWarning label="프리셋" onRetry={loadPresets} /> : presetState.loading ? <Text style={styles.muted}>프리셋 불러오는 중</Text> : null}
+      {presetState.error ? <ResourceWarning label="프리셋" onRetry={partyPresetCatalog.retry} /> : presetState.loading ? <Text style={styles.muted}>프리셋 불러오는 중</Text> : null}
       <TextInput accessibilityLabel="모험맵 검색" editable={!controlsDisabled} onChangeText={(nextQuery) => { queryRef.current = nextQuery; setQuery(nextQuery); }} placeholder="추가할 모험맵 이름, 그룹, 추천 레벨 검색" placeholderTextColor={theme.colors.textMuted} style={styles.search} value={query} />
       <NestableScrollContainer contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" style={styles.scroller}>
         {items.map((item) => <Fragment key={item.key}>{renderItem({ item })}</Fragment>)}
@@ -546,7 +520,7 @@ export function AdventureMapAutomationEditor({
           }));
           closePresetPicker(session);
         }}
-        presets={presets}
+        catalog={partyPresetCatalog.catalog}
         selectedPresetId={activePresetSetting?.partyPresetId ?? null}
         selectedPresetMode={activePresetSetting?.presetMode ?? 'PRIMARY'}
         visible={activePresetSetting != null && !controlsDisabled}
@@ -559,6 +533,7 @@ export function AdventureMapAutomationEditor({
     </View>
   );
 }
+
 
 function ResourceWarning({ label, onRetry }: { label: string; onRetry: () => void | Promise<unknown> }) {
   return <View style={styles.warning}><Text style={styles.problem}>{label}을 불러오지 못했어요.</Text><Pressable onPress={() => { void onRetry(); }} style={styles.choice}><Text style={styles.choiceText}>다시 시도</Text></Pressable></View>;

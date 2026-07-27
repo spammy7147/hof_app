@@ -113,6 +113,7 @@ moduleWithLoader._load = originalLoad;
 describe('PartyPresetList', () => {
   it('gives the draggable list container the remaining screen height', async () => {
     const renderer = await renderList();
+    await openUnassignedPreset(renderer, '서관, 구성원 0명, 대표 프리셋');
 
     const container = findHost(renderer.root, 'DraggableFlatListContainer');
     assert.deepEqual(container.props.style, { flex: 1 });
@@ -126,6 +127,7 @@ describe('PartyPresetList', () => {
         return { ...PRESETS[1]!, isPrimary: true };
       },
     });
+    await openUnassignedPreset(renderer, '서관, 구성원 0명, 대표 프리셋');
 
     assert.equal(textCount(renderer.root, '+ 추가'), 0);
     assert.equal(textCount(renderer.root, '추가'), 1);
@@ -133,7 +135,7 @@ describe('PartyPresetList', () => {
     await act(async () => { await star.props.onPress(); });
 
     assert.deepEqual(primaryCalls, [2]);
-    assert.equal(findHosts(renderer.root, 'TextInput').length, 0);
+    assert.equal(findHosts(renderer.root, 'TextInput').length, 1);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '동관 대표 프리셋' }));
   });
 
@@ -146,6 +148,7 @@ describe('PartyPresetList', () => {
         throw new Error('reorder failed');
       },
     });
+    await openUnassignedPreset(renderer, '서관, 구성원 0명, 대표 프리셋');
 
     const firstHandle = renderer.root.findByProps({ accessibilityLabel: '서관 1번째 프리셋 순서 이동' });
     await act(async () => { firstHandle.props.onLongPress(); });
@@ -171,6 +174,7 @@ describe('PartyPresetList', () => {
         return null;
       },
     });
+    await openUnassignedPreset(renderer, '서관, 구성원 0명, 대표 프리셋');
     const swipeables = findHosts(renderer.root, 'ReanimatedSwipeable');
     assert.equal(swipeables.length, 2);
 
@@ -206,7 +210,7 @@ describe('PartyPresetList', () => {
     const createCalls: unknown[] = [];
     const deleteCalls: number[] = [];
     const renderer = await renderList({
-      onGetPartyPresetCatalog: async () => CATALOG,
+      partyPresetCatalog: catalogResource(CATALOG),
       onCreatePartyPreset: async (request) => { createCalls.push(request); return PRESETS[0]!; },
       onDeletePartyPreset: async (presetId) => { deleteCalls.push(presetId); return null; },
       onUpdatePartyPreset: async (presetId, request) => {
@@ -235,7 +239,7 @@ describe('PartyPresetList', () => {
   it('creates a new preset with its confirmed folder id', async () => {
     const createCalls: unknown[] = [];
     const renderer = await renderList({
-      onGetPartyPresetCatalog: async () => CATALOG,
+      partyPresetCatalog: catalogResource(CATALOG),
       onCreatePartyPreset: async (request) => {
         createCalls.push(request);
         return { ...PRESETS[0]!, id: 20, name: request.name, members: request.members, folderId: request.folderId ?? null };
@@ -261,7 +265,7 @@ describe('PartyPresetList', () => {
       { slotIndex: 4, characterId: null, patternSlot: null },
     ];
     const renderer = await renderList({
-      onGetPartyPresetCatalog: async () => CATALOG,
+      partyPresetCatalog: catalogResource(CATALOG),
       onUpdatePartyPreset: async (presetId, request) => {
         updateCalls.push({ presetId, request });
         throw new Error('assignment failed');
@@ -293,7 +297,7 @@ describe('PartyPresetList', () => {
     const updateCalls: unknown[] = [];
     const pending = deferred<PartyPresetResponse>();
     const renderer = await renderList({
-      onGetPartyPresetCatalog: async () => CATALOG,
+      partyPresetCatalog: catalogResource(CATALOG),
       onUpdatePartyPreset: async (presetId, request) => {
         updateCalls.push({ presetId, request });
         return pending.promise;
@@ -314,7 +318,7 @@ describe('PartyPresetList', () => {
     const deletedFolders: number[] = [];
     const deletedPresets: number[] = [];
     const renderer = await renderList({
-      onGetPartyPresetCatalog: async () => CATALOG,
+      partyPresetCatalog: catalogResource(CATALOG),
       onDeletePartyPreset: async (presetId) => { deletedPresets.push(presetId); return null; },
       onDeletePartyPresetFolder: async (folderId) => {
         deletedFolders.push(folderId);
@@ -340,7 +344,7 @@ describe('PartyPresetList', () => {
   it('closes a same-parent folder destination as a no-op without sending an out-of-range order', async () => {
     const moveCalls: unknown[] = [];
     const renderer = await renderList({
-      onGetPartyPresetCatalog: async () => FOLDER_CATALOG,
+      partyPresetCatalog: catalogResource(FOLDER_CATALOG),
       onMovePartyPresetFolder: async (folderId, request) => {
         moveCalls.push({ folderId, request });
         return FOLDER_CATALOG;
@@ -368,7 +372,7 @@ describe('PartyPresetList', () => {
       folders: createdCatalog.folders.map((value) => value.id === 10 ? { ...value, name: '보스전' } : value),
     };
     const renderer = await renderList({
-      onGetPartyPresetCatalog: async () => FOLDER_CATALOG,
+      partyPresetCatalog: catalogResource(FOLDER_CATALOG),
       onCreatePartyPresetFolder: async (request) => { createCalls.push(request); return createdCatalog; },
       onRenamePartyPresetFolder: async (folderId, request) => { renameCalls.push({ folderId, request }); return renamedCatalog; },
     });
@@ -388,7 +392,7 @@ describe('PartyPresetList', () => {
     const createCalls: unknown[] = [];
     const pending = deferred<PartyPresetCatalogResponse>();
     const renderer = await renderList({
-      onGetPartyPresetCatalog: async () => FOLDER_CATALOG,
+      partyPresetCatalog: catalogResource(FOLDER_CATALOG),
       onCreatePartyPresetFolder: async (request) => { createCalls.push(request); return pending.promise; },
     });
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
@@ -412,7 +416,7 @@ describe('PartyPresetList', () => {
         : value),
     };
     const renderer = await renderList({
-      onGetPartyPresetCatalog: async () => FOLDER_CATALOG,
+      partyPresetCatalog: catalogResource(FOLDER_CATALOG),
       onMovePartyPresetFolder: async (folderId, request) => {
         moveCalls.push({ folderId, request });
         return movedCatalog;
@@ -426,7 +430,7 @@ describe('PartyPresetList', () => {
 
     const failedMoveCalls: unknown[] = [];
     const failedRenderer = await renderList({
-      onGetPartyPresetCatalog: async () => FOLDER_CATALOG,
+      partyPresetCatalog: catalogResource(FOLDER_CATALOG),
       onMovePartyPresetFolder: async (folderId, request) => {
         failedMoveCalls.push({ folderId, request });
         throw new Error('move failed');
@@ -455,7 +459,7 @@ describe('PartyPresetList', () => {
         : value),
     };
     const renderer = await renderList({
-      onGetPartyPresetCatalog: async () => FOLDER_CATALOG,
+      partyPresetCatalog: catalogResource(FOLDER_CATALOG),
       onReorderPartyPresetFolders: async (request) => { requests.push(request); return authoritative; },
     });
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
@@ -470,7 +474,7 @@ describe('PartyPresetList', () => {
 
     const accessibleRequests: unknown[] = [];
     const accessibleRenderer = await renderList({
-      onGetPartyPresetCatalog: async () => FOLDER_CATALOG,
+      partyPresetCatalog: catalogResource(FOLDER_CATALOG),
       onReorderPartyPresetFolders: async (request) => { accessibleRequests.push(request); return authoritative; },
     });
     await act(async () => accessibleRenderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
@@ -480,9 +484,9 @@ describe('PartyPresetList', () => {
 
   it('shows optimistic folder order, then rolls back and adopts the authoritative recovery', async () => {
     const pending = deferred<PartyPresetCatalogResponse>();
-    let loads = 0;
+    let loads = 1;
     const renderer = await renderList({
-      onGetPartyPresetCatalog: async () => { loads += 1; return FOLDER_CATALOG; },
+      partyPresetCatalog: { ...catalogResource(FOLDER_CATALOG), retry: () => { loads += 1; } },
       onReorderPartyPresetFolders: async () => pending.promise,
     });
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
@@ -501,7 +505,7 @@ describe('PartyPresetList', () => {
   it('submits a numeric folder id and the complete preset sibling set when reordering', async () => {
     const requests: unknown[] = [];
     const renderer = await renderList({
-      onGetPartyPresetCatalog: async () => FOLDER_PRESETS_CATALOG,
+      partyPresetCatalog: catalogResource(FOLDER_PRESETS_CATALOG),
       onReorderPartyPresets: async (request) => { requests.push(request); return [...FOLDER_PRESETS_CATALOG.presets].reverse(); },
     });
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }).props.onPress());
@@ -522,7 +526,7 @@ describe('PartyPresetList', () => {
       ],
     };
     const renderer = await renderList({
-      onGetPartyPresetCatalog: async () => catalog,
+      partyPresetCatalog: catalogResource(catalog),
       onReorderPartyPresets: async () => pending.promise,
     });
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }).props.onPress());
@@ -547,26 +551,19 @@ describe('PartyPresetList', () => {
   });
 
   it('clears the full catalog on auth loss and ignores the late old-account load', async () => {
-    const pending = deferred<PartyPresetCatalogResponse>();
-    const props = listProps({ onGetPartyPresetCatalog: async () => pending.promise });
+    const props = listProps({ partyPresetCatalog: catalogResource(FOLDER_CATALOG) });
     const renderer = await renderListProps(props);
     await act(async () => renderer.update(React.createElement(PartyPresetList, { ...props, authenticated: false })));
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투 폴더 열기' }).length, 0);
-    await act(async () => pending.resolve(FOLDER_CATALOG));
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투 폴더 열기' }).length, 0);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '폴더 편집 시작' }).length, 0);
   });
 
-  it('lets only the latest catalog request replace state when loads resolve in reverse order', async () => {
-    const older = deferred<PartyPresetCatalogResponse>();
-    const newer = deferred<PartyPresetCatalogResponse>();
-    const olderProps = listProps({ onGetPartyPresetCatalog: async () => older.promise });
+  it('adopts the latest catalog resource supplied by its owner', async () => {
+    const olderProps = listProps({ partyPresetCatalog: catalogResource({ folders: [folder(31, '오래됨', null, 0)], presets: [] }) });
     const renderer = await renderListProps(olderProps);
-    const newerProps = { ...olderProps, onGetPartyPresetCatalog: async () => newer.promise };
+    const newerProps = { ...olderProps, partyPresetCatalog: catalogResource({ folders: [folder(30, '최신', null, 0)], presets: [] }) };
     await act(async () => renderer.update(React.createElement(PartyPresetList, newerProps)));
-    await act(async () => newer.resolve({ folders: [folder(30, '최신', null, 0)], presets: [] }));
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '최신 폴더 열기' }));
-    await act(async () => older.resolve({ folders: [folder(31, '오래됨', null, 0)], presets: [] }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '최신 폴더 열기' }));
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '오래됨 폴더 열기' }).length, 0);
   });
@@ -579,7 +576,7 @@ describe('PartyPresetList', () => {
       presets: [],
     };
     const oldProps = listProps({
-      onGetPartyPresetCatalog: async () => CATALOG,
+      partyPresetCatalog: catalogResource(CATALOG),
       onUpdatePartyPreset: async () => oldUpdate.promise,
     });
     const renderer = await renderListProps(oldProps);
@@ -593,7 +590,7 @@ describe('PartyPresetList', () => {
     const newProps = {
       ...oldProps,
       authenticated: true,
-      onGetPartyPresetCatalog: async () => latestCatalog,
+      partyPresetCatalog: catalogResource(latestCatalog),
       onCreatePartyPreset: async () => newCreate.promise,
     };
     await act(async () => {
@@ -623,7 +620,7 @@ describe('PartyPresetList', () => {
       presets: [],
     };
     const oldProps = listProps({
-      onGetPartyPresetCatalog: async () => FOLDER_CATALOG,
+      partyPresetCatalog: catalogResource(FOLDER_CATALOG),
       onCreatePartyPresetFolder: async () => oldCreate.promise,
     });
     const renderer = await renderListProps(oldProps);
@@ -638,7 +635,7 @@ describe('PartyPresetList', () => {
     const newProps = {
       ...oldProps,
       authenticated: true,
-      onGetPartyPresetCatalog: async () => latestCatalog,
+      partyPresetCatalog: catalogResource(latestCatalog),
       onCreatePartyPresetFolder: async () => newCreate.promise,
     };
     await act(async () => {
@@ -671,7 +668,7 @@ describe('PartyPresetList', () => {
       folderId: 10,
     }));
     const renderer = await renderList({
-      onGetPartyPresetCatalog: async () => ({ folders: [folder(10, '전투', null, 0)], presets: deepPresets }),
+      partyPresetCatalog: catalogResource({ folders: [folder(10, '전투', null, 0)], presets: deepPresets }),
     });
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }).props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '프리셋 12, 구성원 0명' }).props.onPress());
@@ -682,14 +679,14 @@ describe('PartyPresetList', () => {
   });
 
   it('does not rebuild unrelated memoized virtual rows while editing text', async () => {
-    const renderer = await renderList({ onGetPartyPresetCatalog: async () => FOLDER_PRESETS_CATALOG });
+    const renderer = await renderList({ partyPresetCatalog: catalogResource(FOLDER_PRESETS_CATALOG) });
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }).props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 구성원 0명, 대표 프리셋' }).props.onPress());
     hostRenderCounts.clear();
     await act(async () => findHost(renderer.root, 'TextInput').props.onChangeText('편집 중'));
     assert.equal(hostRenderCounts.get('party-preset-managed-row-2') ?? 0, 0);
 
-    const folderRenderer = await renderList({ onGetPartyPresetCatalog: async () => FOLDER_CATALOG });
+    const folderRenderer = await renderList({ partyPresetCatalog: catalogResource(FOLDER_CATALOG) });
     await act(async () => folderRenderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
     await act(async () => folderRenderer.root.findByProps({ accessibilityLabel: '전투 폴더 이름 변경' }).props.onPress());
     hostRenderCounts.clear();
@@ -709,7 +706,7 @@ function listProps(overrides: Overrides = {}): React.ComponentProps<typeof Party
   return {
     authenticated: true,
     characters: [],
-    onListPartyPresets: async () => PRESETS,
+    partyPresetCatalog: catalogResource({ folders: [], presets: PRESETS }),
     onCreatePartyPreset: async () => PRESETS[0]!,
     onUpdatePartyPreset: async () => PRESETS[0]!,
     onMakePartyPresetPrimary: async () => PRESETS[0]!,
@@ -717,6 +714,10 @@ function listProps(overrides: Overrides = {}): React.ComponentProps<typeof Party
     onDeletePartyPreset: async () => null,
     ...overrides,
   };
+}
+
+function catalogResource(catalog: PartyPresetCatalogResponse) {
+  return { catalog, loading: false, error: null, retry: () => undefined };
 }
 
 async function renderListProps(props: React.ComponentProps<typeof PartyPresetList>): Promise<ReactTestRenderer> {

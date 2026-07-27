@@ -1,14 +1,16 @@
 import { useCallback, useMemo } from 'react';
 
 import { PartyPresetPickerModal } from '../../../components/PartyPresetPickerModal';
-import type { PartyPresetResponse } from '../../../types/api';
+import type { PartyPresetCatalogResponse, PartyPresetResponse } from '../../../types/api';
 
 type Props = {
   disabled: boolean;
   mapName: string;
   onClose: () => void;
   onSelect: (presetId: number | null) => void;
-  presets: PartyPresetResponse[];
+  catalog?: PartyPresetCatalogResponse;
+  /** @deprecated 테스트 호환용 */
+  presets?: PartyPresetResponse[];
   selectedPresetId: number | null;
   selectedPresetMode: 'PRIMARY' | 'EXPLICIT';
   visible: boolean;
@@ -20,13 +22,14 @@ export function BattleMapPresetPickerModal({
   mapName,
   onClose,
   onSelect,
-  presets,
+  catalog,
+  presets = [],
   selectedPresetId,
   selectedPresetMode,
   visible,
 }: Props) {
-  const catalog = useMemo(() => ({ folders: [], presets }), [presets]);
-  const primaryPreset = useMemo(() => presets.find(({ isPrimary }) => isPrimary) ?? null, [presets]);
+  const resolvedCatalog = catalog ?? { folders: [], presets };
+  const primaryPreset = useMemo(() => resolvedCatalog.presets.find(({ isPrimary }) => isPrimary) ?? null, [resolvedCatalog.presets]);
   const selectPrimary = useCallback(() => onSelect(null), [onSelect]);
   const selectPreset = useCallback((preset: PartyPresetResponse) => onSelect(preset.id), [onSelect]);
   const syntheticOptions = useMemo(() => [{
@@ -39,7 +42,7 @@ export function BattleMapPresetPickerModal({
 
   return (
     <PartyPresetPickerModal
-      catalog={catalog}
+      catalog={resolvedCatalog}
       disabled={disabled}
       initialExpandedPath={[null]}
       onClose={onClose}

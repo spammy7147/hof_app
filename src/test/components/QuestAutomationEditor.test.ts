@@ -1205,13 +1205,13 @@ describe('QuestAutomationEditor mounted behavior', () => {
   });
 
   it('keeps quests visible across independent preset/map failures and targeted retries', async () => {
-    let presetAttempts = 0;
+    let presetAttempts = 1;
     let mapAttempts = 0;
     const hofUnavailable = 'HOF 서버 연결이 일시적으로 원활하지 않습니다. 잠시 후 다시 시도해 주세요.';
     const quest = snapshot('noncombat', 'Noncombat', 'ACTIVE', [mission('now', 'IMMEDIATE', null)]);
     const renderer = await renderEditor({
       quests: [quest],
-      onListPartyPresets: async () => { presetAttempts += 1; if (presetAttempts === 1) throw new Error('preset down'); return []; },
+      partyPresetCatalog: presetCatalog([], '프리셋을 불러오지 못했어요.', () => { presetAttempts += 1; }),
       onLoadBattleMaps: async () => { mapAttempts += 1; if (mapAttempts === 1) throw new Error(hofUnavailable); return []; },
     });
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Noncombat 선택' }));
@@ -1378,7 +1378,7 @@ describe('HomeTabScreen mounted typed editor routing', () => {
       battleCategoriesError: null,
       onLoadBattleCategories: () => undefined,
       onLoadBattleMaps: async () => [],
-      onListPartyPresets: async () => [],
+      partyPresetCatalog: presetCatalog([]),
       onOpenCaptcha: () => undefined,
       onDetailModeChange,
     };
@@ -1457,7 +1457,7 @@ type EditorOverrides = {
   presets?: ReturnType<typeof preset>[];
   isBattleCategoriesLoading?: boolean;
   battleCategoriesError?: string | null;
-  onListPartyPresets?: () => Promise<ReturnType<typeof preset>[]>;
+  partyPresetCatalog?: React.ComponentProps<typeof QuestAutomationEditor>['partyPresetCatalog'];
   onLoadBattleMaps?: (categoryId: string) => Promise<BattleMapResponse[]>;
   mutationMessage?: string | null;
   onClearMutationMessage?: () => void;
@@ -1481,11 +1481,14 @@ function editorProps(overrides: EditorOverrides = {}) {
     onDelete: overrides.onDelete ?? (async () => true),
     onLoadBattleCategories: overrides.onLoadBattleCategories ?? (() => undefined),
     onLoadBattleMaps: overrides.onLoadBattleMaps ?? (async () => overrides.maps ?? []),
-    onListPartyPresets: overrides.onListPartyPresets ?? (async () => overrides.presets ?? []),
+    partyPresetCatalog: overrides.partyPresetCatalog ?? presetCatalog(overrides.presets ?? []),
     onSave: overrides.onSave ?? (async () => true),
     mutationMessage: overrides.mutationMessage ?? null,
     onClearMutationMessage: overrides.onClearMutationMessage ?? (() => undefined),
   };
+}
+function presetCatalog(presets: ReturnType<typeof preset>[], error: string | null = null, retry = () => undefined) {
+  return { catalog: { folders: [], presets }, loading: false, error, retry };
 }
 
 function missionMapListProps(overrides: Partial<React.ComponentProps<typeof QuestMissionMapList>> = {}): React.ComponentProps<typeof QuestMissionMapList> {
