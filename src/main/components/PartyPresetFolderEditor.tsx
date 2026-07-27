@@ -56,6 +56,7 @@ type DropFeedback = {
   contentY: number;
 };
 type DragOrigin = { folderId: number; pointerY: number; scrollOffset: number };
+type DragEdgeDirection = 'up' | 'down';
 type FolderCellProps = {
   children: ReactNode;
   index: number;
@@ -95,7 +96,24 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   const viewportHeightRef = useRef(0);
   const contentHeightRef = useRef(0);
   const indexRef = useRef(index);
+  const mountedRef = useRef(true);
+  const dragBaseContentYRef = useRef<number | null>(null);
+  const dragEdgeDirectionRef = useRef<DragEdgeDirection | null>(null);
+  const edgeAnimationFrameRef = useRef<number | null>(null);
+  const advanceEdgeScrollRef = useRef<() => boolean>(() => false);
+  const scheduleEdgeScrollRef = useRef<() => void>(() => undefined);
   indexRef.current = index;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (edgeAnimationFrameRef.current != null) {
+        cancelAnimationFrame(edgeAnimationFrameRef.current);
+        edgeAnimationFrameRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const currentFolderIds = new Set(index.foldersById.keys());
@@ -183,7 +201,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   ) => {
     if (disabled || plan == null) return;
     await onMove(folderId, plan);
-    if (expandInsideParent && plan.parentFolderId != null) {
+    if (mountedRef.current && expandInsideParent && plan.parentFolderId != null) {
       setExpandedFolderIds((previous) => new Set(previous).add(plan.parentFolderId!));
     }
   }, [disabled, onMove]);
@@ -220,41 +238,17 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     return actions;
   }, [planForAccessibilityAction]);
 
-  const onDragStart = useCallback((folderId: number, pointerY: number) => {
-    if (disabled) return;
-    dragOriginRef.current = { folderId, pointerY, scrollOffset: scrollOffsetRef.current };
-    const sourceLayout = rowLayoutsRef.current.get(folderId);
-    if (sourceLayout != null) {
-      setDragPreview({ folderId, contentY: sourceLayout.y + pointerY });
+  const cancelEdgeScroll = useCallback(() => {
+    dragEdgeDirectionRef.current = null;
+    dragBaseContentYRef.current = null;
+    if (edgeAnimationFrameRef.current != null) {
+      cancelAnimationFrame(edgeAnimationFrameRef.current);
+      edgeAnimationFrameRef.current = null;
     }
-  }, [disabled]);
+  }, []);
 
-  const onDragUpdate = useCallback((folderId: number, _pointerY: number, translationY: number) => {
-    if (disabled) return;
-    const origin = dragOriginRef.current;
-    const sourceLayout = rowLayoutsRef.current.get(folderId);
-    if (origin == null || origin.folderId !== folderId || sourceLayout == null) return;
-    let contentY = sourceLayout.y
-      + origin.pointerY
-      + translationY
-      + (scrollOffsetRef.current - origin.scrollOffset);
-    const currentScrollOffset = scrollOffsetRef.current;
-    const viewportHeight = viewportHeightRef.current;
-    const maximumScrollOffset = Math.max(0, contentHeightRef.current - viewportHeight);
-    const viewportY = contentY - currentScrollOffset;
-    let nextScrollOffset = currentScrollOffset;
-    if (viewportHeight > 0 && maximumScrollOffset > 0) {
-      if (viewportY < DRAG_EDGE_THRESHOLD) {
-        nextScrollOffset = Math.max(0, currentScrollOffset - DRAG_SCROLL_STEP);
-      } else if (viewportY > viewportHeight - DRAG_EDGE_THRESHOLD) {
-        nextScrollOffset = Math.min(maximumScrollOffset, currentScrollOffset + DRAG_SCROLL_STEP);
-      }
-    }
-    if (nextScrollOffset !== currentScrollOffset) {
-      scrollOffsetRef.current = nextScrollOffset;
-      listRef.current?.scrollToOffset({ animated: false, offset: nextScrollOffset });
-      contentY += nextScrollOffset - currentScrollOffset;
-    }
+  const updateDragPresentation = useCallback((folderId: number, contentY: number) => {
+    if (!mountedRef.current) return;
     setDragPreview({ folderId, contentY });
     const target = rows.find((row) => {
       const layout = rowLayoutsRef.current.get(row.folderId);
@@ -284,25 +278,120 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     ) return;
     dropFeedbackRef.current = feedback;
     setDropFeedback(feedback);
-  }, [disabled, index, rows]);
+  }, [index, rows]);
+
+  const advanceEdgeScroll = useCallback((): boolean => {
+    const origin = dragOriginRef.current;
+    const baseContentY = dragBaseContentYRef.current;
+    const direction = dragEdgeDirectionRef.current;
+    if (!mountedRef.current || disabled || origin == null || baseContentY == null || direction == null) {
+      return false;
+    }
+
+    const currentScrollOffset = scrollOffsetRef.current;
+    const maximumScrollOffset = Math.max(0, contentHeightRef.current - viewportHeightRef.current);
+    const nextScrollOffset = direction === 'up'
+      ? Math.max(0, currentScrollOffset - DRAG_SCROLL_STEP)
+      : Math.min(maximumScrollOffset, currentScrollOffset + DRAG_SCROLL_STEP);
+    if (nextScrollOffset === currentScrollOffset) {
+      updateDragPresentation(
+        origin.folderId,
+        baseContentY + currentScrollOffset - origin.scrollOffset,
+      );
+      return false;
+    }
+
+    scrollOffsetRef.current = nextScrollOffset;
+    listRef.current?.scrollToOffset({ animated: false, offset: nextScrollOffset });
+    updateDragPresentation(
+      origin.folderId,
+      baseContentY + nextScrollOffset - origin.scrollOffset,
+    );
+    return direction === 'up' ? nextScrollOffset > 0 : nextScrollOffset < maximumScrollOffset;
+  }, [disabled, updateDragPresentation]);
+  advanceEdgeScrollRef.current = advanceEdgeScroll;
+
+  const scheduleEdgeScroll = useCallback(() => {
+    if (
+      edgeAnimationFrameRef.current != null
+      || dragEdgeDirectionRef.current == null
+      || !mountedRef.current
+    ) return;
+    edgeAnimationFrameRef.current = requestAnimationFrame(() => {
+      edgeAnimationFrameRef.current = null;
+      if (!mountedRef.current) return;
+      if (advanceEdgeScrollRef.current()) scheduleEdgeScrollRef.current();
+    });
+  }, []);
+  scheduleEdgeScrollRef.current = scheduleEdgeScroll;
+
+  const onDragStart = useCallback((folderId: number, pointerY: number) => {
+    if (disabled || !mountedRef.current) return;
+    cancelEdgeScroll();
+    dragOriginRef.current = { folderId, pointerY, scrollOffset: scrollOffsetRef.current };
+    const sourceLayout = rowLayoutsRef.current.get(folderId);
+    if (sourceLayout != null) {
+      setDragPreview({ folderId, contentY: sourceLayout.y + pointerY });
+    }
+  }, [cancelEdgeScroll, disabled]);
+
+  const onDragUpdate = useCallback((folderId: number, _pointerY: number, translationY: number) => {
+    if (disabled || !mountedRef.current) return;
+    const origin = dragOriginRef.current;
+    const sourceLayout = rowLayoutsRef.current.get(folderId);
+    if (origin == null || origin.folderId !== folderId || sourceLayout == null) return;
+    const baseContentY = sourceLayout.y + origin.pointerY + translationY;
+    dragBaseContentYRef.current = baseContentY;
+    const contentY = baseContentY + scrollOffsetRef.current - origin.scrollOffset;
+    const viewportY = contentY - scrollOffsetRef.current;
+    const viewportHeight = viewportHeightRef.current;
+    const maximumScrollOffset = Math.max(0, contentHeightRef.current - viewportHeight);
+    const direction: DragEdgeDirection | null = viewportHeight > 0 && maximumScrollOffset > 0
+      ? viewportY < DRAG_EDGE_THRESHOLD
+        ? 'up'
+        : viewportY > viewportHeight - DRAG_EDGE_THRESHOLD
+          ? 'down'
+          : null
+      : null;
+    dragEdgeDirectionRef.current = direction;
+    if (direction == null) {
+      if (edgeAnimationFrameRef.current != null) {
+        cancelAnimationFrame(edgeAnimationFrameRef.current);
+        edgeAnimationFrameRef.current = null;
+      }
+      updateDragPresentation(folderId, contentY);
+      return;
+    }
+    if (advanceEdgeScrollRef.current()) scheduleEdgeScrollRef.current();
+  }, [disabled, updateDragPresentation]);
 
   const onDragEnd = useCallback((folderId: number) => {
     const feedback = dropFeedbackRef.current;
+    cancelEdgeScroll();
     dragOriginRef.current = null;
     dropFeedbackRef.current = null;
-    setDropFeedback(null);
-    setDragPreview(null);
-    if (disabled || feedback == null || feedback.movingFolderId !== folderId) return;
+    if (mountedRef.current) {
+      setDropFeedback(null);
+      setDragPreview(null);
+    }
+    if (!mountedRef.current || disabled || feedback == null || feedback.movingFolderId !== folderId) return;
     const plan = planPartyPresetFolderDrop(index, folderId, feedback.targetFolderId, feedback.zone);
     void moveFolder(folderId, plan, feedback.zone === 'inside').catch(() => undefined);
-  }, [disabled, index, moveFolder]);
+  }, [cancelEdgeScroll, disabled, index, moveFolder]);
 
   const cancelDrag = useCallback(() => {
+    cancelEdgeScroll();
     dragOriginRef.current = null;
     dropFeedbackRef.current = null;
-    setDropFeedback(null);
-    setDragPreview(null);
-  }, []);
+    if (mountedRef.current) {
+      setDropFeedback(null);
+      setDragPreview(null);
+    }
+  }, [cancelEdgeScroll]);
+
+  useEffect(() => {
+    if (disabled) cancelDrag();
+  }, [cancelDrag, disabled]);
 
   const renderItem = useCallback(({ item: row }: {
     item: PartyPresetFolderEditorRow;

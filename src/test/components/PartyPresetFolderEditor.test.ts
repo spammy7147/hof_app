@@ -10,6 +10,20 @@ import {
 } from '../../main/domain/partyPresetCatalog';
 import type { PartyPresetCatalogResponse, PartyPresetFolderResponse } from '../../main/types/api';
 
+let nextAnimationFrameId = 1;
+const animationFrames = new Map<number, FrameRequestCallback>();
+(globalThis as typeof globalThis & {
+  requestAnimationFrame: (callback: FrameRequestCallback) => number;
+  cancelAnimationFrame: (id: number) => void;
+}).requestAnimationFrame = (callback) => {
+  const id = nextAnimationFrameId++;
+  animationFrames.set(id, callback);
+  return id;
+};
+(globalThis as typeof globalThis).cancelAnimationFrame = (id?: number | null) => {
+  if (id != null) animationFrames.delete(id);
+};
+
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
   React.useImperativeHandle(ref, () => ({}), []);
   return React.createElement(name, props, props.children as React.ReactNode);
@@ -396,6 +410,86 @@ describe('PartyPresetFolderEditor', () => {
     assert.deepEqual(moves, [[1, { parentFolderId: null, displayOrder: 3 }]]);
   });
 
+  it('continues edge scrolling across frames after only one gesture update', async () => {
+    resetAnimationFrames();
+    listScrollCalls.length = 0;
+    const renderer = await renderLongRootList();
+    const gesture = gestureFor(renderer.root, 'Root 1 폴더 위치 이동');
+    await act(async () => {
+      (gesture.config.onStart as (event: Record<string, number>) => void)({ y: 22 });
+      (gesture.config.onUpdate as (event: Record<string, number>) => void)({ y: 22, translationY: 100 });
+    });
+    assert.deepEqual(listScrollCalls, [44]);
+    assert.equal(animationFrames.size, 1);
+    await act(async () => { flushAnimationFrames(2); });
+    assert.deepEqual(listScrollCalls, [44, 88, 132]);
+    assert.equal(animationFrames.size, 1);
+    await act(async () => { (gesture.config.onFinalize as () => void)(); });
+  });
+
+  it('stops continuous scrolling when the pointer leaves the edge', async () => {
+    resetAnimationFrames();
+    listScrollCalls.length = 0;
+    const renderer = await renderLongRootList();
+    const gesture = gestureFor(renderer.root, 'Root 1 폴더 위치 이동');
+    await act(async () => {
+      (gesture.config.onStart as (event: Record<string, number>) => void)({ y: 22 });
+      (gesture.config.onUpdate as (event: Record<string, number>) => void)({ y: 22, translationY: 100 });
+      (gesture.config.onUpdate as (event: Record<string, number>) => void)({ y: 22, translationY: 44 });
+    });
+    assert.deepEqual(listScrollCalls, [44]);
+    assert.equal(animationFrames.size, 0);
+    await act(async () => { flushAnimationFrames(5); });
+    assert.deepEqual(listScrollCalls, [44]);
+  });
+
+  it('cancels scheduled edge frames on finalize, unmount, and disabled transition', async () => {
+    resetAnimationFrames();
+    listScrollCalls.length = 0;
+    const finalized = await renderLongRootList();
+    const finalizedGesture = gestureFor(finalized.root, 'Root 1 폴더 위치 이동');
+    await act(async () => {
+      (finalizedGesture.config.onStart as (event: Record<string, number>) => void)({ y: 22 });
+      (finalizedGesture.config.onUpdate as (event: Record<string, number>) => void)({ y: 22, translationY: 100 });
+      (finalizedGesture.config.onFinalize as () => void)();
+    });
+    assert.equal(animationFrames.size, 0);
+    await act(async () => { flushAnimationFrames(3); });
+    assert.deepEqual(listScrollCalls, [44]);
+
+    resetAnimationFrames();
+    listScrollCalls.length = 0;
+    const unmounted = await renderLongRootList();
+    const unmountedGesture = gestureFor(unmounted.root, 'Root 1 폴더 위치 이동');
+    await act(async () => {
+      (unmountedGesture.config.onStart as (event: Record<string, number>) => void)({ y: 22 });
+      (unmountedGesture.config.onUpdate as (event: Record<string, number>) => void)({ y: 22, translationY: 100 });
+      unmounted.unmount();
+    });
+    assert.equal(animationFrames.size, 0);
+    await act(async () => { flushAnimationFrames(3); });
+    assert.deepEqual(listScrollCalls, [44]);
+
+    resetAnimationFrames();
+    listScrollCalls.length = 0;
+    const disabled = await renderLongRootList();
+    const disabledGesture = gestureFor(disabled.root, 'Root 1 폴더 위치 이동');
+    await act(async () => {
+      (disabledGesture.config.onStart as (event: Record<string, number>) => void)({ y: 22 });
+      (disabledGesture.config.onUpdate as (event: Record<string, number>) => void)({ y: 22, translationY: 100 });
+      disabled.update(element({
+        disabled: true,
+        index: indexPartyPresetCatalog({
+          folders: Array.from({ length: 8 }, (_, index) => folder(index + 1, `Root ${index + 1}`, null, index)),
+          presets: [],
+        }),
+      }));
+    });
+    assert.equal(animationFrames.size, 0);
+    await act(async () => { flushAnimationFrames(3); });
+    assert.deepEqual(listScrollCalls, [44]);
+  });
+
   it('bounds repeated edge scrolling to the measured content size', async () => {
     listScrollCalls.length = 0;
     const roots = Array.from({ length: 8 }, (_, index) => folder(index + 1, `Root ${index + 1}`, null, index));
@@ -562,6 +656,16 @@ async function renderEditor(overrides: Partial<React.ComponentProps<typeof Party
   return renderer;
 }
 
+async function renderLongRootList(): Promise<ReactTestRenderer> {
+  const roots = Array.from({ length: 8 }, (_, index) => folder(index + 1, `Root ${index + 1}`, null, index));
+  const renderer = await renderEditor({ index: indexPartyPresetCatalog({ folders: roots, presets: [] }) });
+  layoutRows(renderer.root);
+  const list = renderer.root.findByType('FlatList' as never);
+  list.props.onLayout({ nativeEvent: { layout: { height: 132 } } });
+  list.props.onContentSizeChange(320, 352);
+  return renderer;
+}
+
 function element(overrides: Partial<React.ComponentProps<typeof PartyPresetFolderEditor>> = {}): React.ReactElement {
   return React.createElement(PartyPresetFolderEditor, {
     disabled: false,
@@ -666,4 +770,17 @@ function hostAccessibilityLabels(root: ReactTestInstance): string[] {
   return root.findAll((node) => (
     (node.type as unknown) === 'Pressable' && typeof node.props.accessibilityLabel === 'string'
   )).map((node) => node.props.accessibilityLabel as string);
+}
+
+function resetAnimationFrames(): void {
+  animationFrames.clear();
+}
+
+function flushAnimationFrames(count: number): void {
+  for (let index = 0; index < count; index += 1) {
+    const next = animationFrames.entries().next().value as [number, FrameRequestCallback] | undefined;
+    if (next == null) return;
+    animationFrames.delete(next[0]);
+    next[1](index * 16);
+  }
 }
