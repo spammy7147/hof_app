@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, FolderCog, GripVertical, Pencil, Plus, Save, Star, Trash2 } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, FolderCog, GripVertical, Plus, Save, Star, Trash2 } from 'lucide-react-native';
 import type { ElementRef, ReactNode, Ref } from 'react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, findNodeHandle, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -7,9 +7,10 @@ import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist';
 
 import { BattlePartySelector } from './BattlePartySelector';
+import { PartyPresetFolderEditor } from './PartyPresetFolderEditor';
 import { PartyPresetFolderPicker } from './PartyPresetFolderPicker';
 import { PartyPresetSearchResults } from './PartyPresetSearchResults';
-import { PartyPresetTree, type PartyPresetExpandedPath } from './PartyPresetTree';
+import { PartyPresetTree, type PartyPresetExpandedFolderIds } from './PartyPresetTree';
 import { BATTLE_PARTY_SIZE, type BattlePartyMember } from '../domain/battleParty';
 import {
   buildCreatePartyPresetRequest,
@@ -54,10 +55,8 @@ type PartyPresetListProps = {
 type ExpandedPresetId = number | 'new' | null;
 type NewPresetDraft = { name: string; party: BattlePartyMember[]; folderId: number | null };
 type PresetReorderOverlay = { base: PartyPresetResponse[]; value: PartyPresetResponse[] };
-type FolderReorderOverlay = { base: PartyPresetFolderResponse[]; value: PartyPresetFolderResponse[] };
-type PickerInvocation =
-  | { kind: 'preset'; handle: ReturnType<typeof findNodeHandle> }
-  | { kind: 'folder'; folderId: number; handle: ReturnType<typeof findNodeHandle> };
+type FolderMoveOverlay = { base: PartyPresetFolderResponse[]; value: PartyPresetFolderResponse[] };
+type PickerInvocation = { handle: ReturnType<typeof findNodeHandle> };
 
 /** 캐릭터 탭의 저장 파티 프리셋을 편집하고 정렬한다. */
 export function PartyPresetList({
@@ -71,12 +70,11 @@ export function PartyPresetList({
   onDeletePartyPreset,
   onCreatePartyPresetFolder,
   onRenamePartyPresetFolder,
-  onReorderPartyPresetFolders,
   onMovePartyPresetFolder,
   onDeletePartyPresetFolder,
 }: PartyPresetListProps) {
   const [presetReorderOverlay, setPresetReorderOverlay] = useState<PresetReorderOverlay | null>(null);
-  const [folderReorderOverlay, setFolderReorderOverlay] = useState<FolderReorderOverlay | null>(null);
+  const [folderMoveOverlay, setFolderMoveOverlay] = useState<FolderMoveOverlay | null>(null);
   const [expandedPresetId, setExpandedPresetId] = useState<ExpandedPresetId>(null);
   const [newDraft, setNewDraft] = useState<NewPresetDraft | null>(null);
   const [activeSlotIndex, setActiveSlotIndex] = useState(0);
@@ -85,21 +83,15 @@ export function PartyPresetList({
   const [draftFolderId, setDraftFolderId] = useState<number | null>(null);
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [catalogQuery, setCatalogQuery] = useState('');
-  const [expandedFolderPath, setExpandedFolderPath] = useState<PartyPresetExpandedPath>([]);
+  const [expandedFolderIds, setExpandedFolderIds] = useState<PartyPresetExpandedFolderIds>(() => new Set());
   const [folderEditMode, setFolderEditMode] = useState(false);
-  const [folderParentId, setFolderParentId] = useState<number | null>(null);
-  const [renamingFolderId, setRenamingFolderId] = useState<number | null>(null);
-  const [folderNameDraft, setFolderNameDraft] = useState('');
-  const [newFolderName, setNewFolderName] = useState('');
-  const [movingFolderId, setMovingFolderId] = useState<number | null>(null);
-  const [deleteConfirmFolderId, setDeleteConfirmFolderId] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const canonicalPresets = authenticated ? partyPresetCatalog.catalog.presets : [];
   const canonicalFolders = authenticated ? partyPresetCatalog.catalog.folders : [];
   const presets = presetReorderOverlay?.base === canonicalPresets ? presetReorderOverlay.value : canonicalPresets;
-  const folders = folderReorderOverlay?.base === canonicalFolders ? folderReorderOverlay.value : canonicalFolders;
+  const folders = folderMoveOverlay?.base === canonicalFolders ? folderMoveOverlay.value : canonicalFolders;
   const mutationPendingRef = useRef(false);
   const authenticatedRef = useRef(authenticated);
   const previousAuthenticatedRef = useRef(authenticated);
@@ -108,9 +100,7 @@ export function PartyPresetList({
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const swipeableNodesRef = useRef(new Map<number, SwipeableMethods>());
   const presetFolderTriggerRef = useRef<ElementRef<typeof Pressable>>(null);
-  const folderMoveTriggerRefs = useRef(new Map<number, ElementRef<typeof Pressable>>());
   const presetDragRefs = useRef(new Map<number, () => void>());
-  const folderDragRefs = useRef(new Map<number, () => void>());
   const pickerInvocationRef = useRef<PickerInvocation | null>(null);
   const pickerVisibleRef = useRef(false);
   const pickerFocusGenerationRef = useRef(0);
@@ -120,7 +110,7 @@ export function PartyPresetList({
   const editorFocusGenerationRef = useRef(0);
   const editorFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const presetScrollRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  pickerVisibleRef.current = folderPickerOpen || movingFolderId != null;
+  pickerVisibleRef.current = folderPickerOpen;
   const catalogIndex = useMemo(() => indexPartyPresetCatalog({ folders, presets }), [folders, presets]);
   const activePresetFolderId = expandedPresetId === 'new'
     ? newDraft?.folderId ?? null
@@ -139,14 +129,6 @@ export function PartyPresetList({
     () => searchPartyPresetCatalog(catalogIndex, catalogQuery),
     [catalogIndex, catalogQuery],
   );
-  const editableFolders = useMemo(() => (
-    (catalogIndex.childFolderIdsByParent.get(folderParentId) ?? [])
-      .map((id) => catalogIndex.foldersById.get(id))
-      .filter((folder): folder is PartyPresetFolderResponse => folder != null)
-  ), [catalogIndex, folderParentId]);
-  const folderParentAtMaxDepth = folderParentId != null
-    && partyPresetFolderDepth(catalogIndex.foldersById, folderParentId) >= 5;
-
   useLayoutEffect(() => {
     authenticatedRef.current = authenticated;
     if (previousAuthenticatedRef.current === authenticated) return;
@@ -171,13 +153,9 @@ export function PartyPresetList({
       setExpandedPresetId(null);
       setNewDraft(null);
       setCatalogQuery('');
-      setExpandedFolderPath([]);
+      setExpandedFolderIds(new Set());
       setFolderPickerOpen(false);
       setFolderEditMode(false);
-      setFolderParentId(null);
-      setRenamingFolderId(null);
-      setMovingFolderId(null);
-      setDeleteConfirmFolderId(null);
       setErrorMessage(null);
     }
   }, [authenticated]);
@@ -188,9 +166,7 @@ export function PartyPresetList({
       mountedRef.current = false;
       closeOpenSwipeable();
       swipeableNodesRef.current.clear();
-      folderMoveTriggerRefs.current.clear();
       presetDragRefs.current.clear();
-      folderDragRefs.current.clear();
       pickerFocusGenerationRef.current += 1;
       if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
       editorFocusGenerationRef.current += 1;
@@ -205,17 +181,11 @@ export function PartyPresetList({
     setExpandedPresetId(null);
     setNewDraft(null);
     setCatalogQuery('');
-    setExpandedFolderPath([]);
+    setExpandedFolderIds(new Set());
     setFolderPickerOpen(false);
     setFolderEditMode(false);
-    setFolderParentId(null);
-    setMovingFolderId(null);
-    setRenamingFolderId(null);
-    setFolderNameDraft('');
-    setNewFolderName('');
-    setDeleteConfirmFolderId(null);
     setPresetReorderOverlay(null);
-    setFolderReorderOverlay(null);
+    setFolderMoveOverlay(null);
     setErrorMessage(null);
     pickerInvocationRef.current = null;
     pickerFocusGenerationRef.current += 1;
@@ -271,19 +241,8 @@ export function PartyPresetList({
   function openPresetFolderPicker() {
     pickerFocusGenerationRef.current += 1;
     if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
-    pickerInvocationRef.current = { kind: 'preset', handle: findNodeHandle(presetFolderTriggerRef.current) };
+    pickerInvocationRef.current = { handle: findNodeHandle(presetFolderTriggerRef.current) };
     setFolderPickerOpen(true);
-  }
-
-  function openFolderMovePicker(folderId: number) {
-    pickerFocusGenerationRef.current += 1;
-    if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
-    pickerInvocationRef.current = {
-      kind: 'folder',
-      folderId,
-      handle: findNodeHandle(folderMoveTriggerRefs.current.get(folderId) ?? null),
-    };
-    setMovingFolderId(folderId);
   }
 
   function restorePickerFocusAfterClose() {
@@ -294,10 +253,7 @@ export function PartyPresetList({
       if (!mountedRef.current || pickerVisibleRef.current || pickerFocusGenerationRef.current !== generation) return;
       const invocation = pickerInvocationRef.current;
       if (!invocation || invocation.handle == null) return;
-      const liveNode = invocation.kind === 'preset'
-        ? presetFolderTriggerRef.current
-        : folderMoveTriggerRefs.current.get(invocation.folderId) ?? null;
-      const liveHandle = findNodeHandle(liveNode);
+      const liveHandle = findNodeHandle(presetFolderTriggerRef.current);
       if (liveHandle == null || liveHandle !== invocation.handle) return;
       AccessibilityInfo.setAccessibilityFocus(liveHandle);
       if (pickerInvocationRef.current === invocation) pickerInvocationRef.current = null;
@@ -306,11 +262,6 @@ export function PartyPresetList({
 
   function closePresetFolderPicker() {
     setFolderPickerOpen(false);
-    restorePickerFocusAfterClose();
-  }
-
-  function closeFolderMovePicker() {
-    setMovingFolderId(null);
     restorePickerFocusAfterClose();
   }
 
@@ -458,69 +409,39 @@ export function PartyPresetList({
     }
   }
 
-  async function createFolder() {
-    const name = newFolderName.trim();
-    if (!name || !onCreatePartyPresetFolder || folderParentAtMaxDepth) return;
-    const succeeded = await mutateFolder(() => onCreatePartyPresetFolder({ name, parentFolderId: folderParentId }));
-    if (succeeded && mountedRef.current) setNewFolderName('');
+  async function createFolder(request: CreatePartyPresetFolderRequest) {
+    if (!onCreatePartyPresetFolder) return false;
+    return mutateFolder(() => onCreatePartyPresetFolder(request));
   }
 
-  async function renameFolder(folderId: number) {
-    const name = folderNameDraft.trim();
-    if (!name || !onRenamePartyPresetFolder) return;
-    const succeeded = await mutateFolder(() => onRenamePartyPresetFolder(folderId, { name }));
-    if (succeeded && mountedRef.current) setRenamingFolderId(null);
+  async function renameFolder(folderId: number, request: RenamePartyPresetFolderRequest) {
+    if (!onRenamePartyPresetFolder) return false;
+    return mutateFolder(() => onRenamePartyPresetFolder(folderId, request));
   }
 
   async function deleteFolder(folderId: number) {
-    if (!onDeletePartyPresetFolder) return;
-    const succeeded = await mutateFolder(() => onDeletePartyPresetFolder(folderId));
-    if (succeeded && mountedRef.current) setDeleteConfirmFolderId(null);
+    if (!onDeletePartyPresetFolder) return false;
+    return mutateFolder(() => onDeletePartyPresetFolder(folderId));
   }
 
-  async function moveFolder(folderId: number, parentFolderId: number | null) {
-    if (!onMovePartyPresetFolder) return;
-    const currentParentFolderId = catalogIndex.foldersById.get(folderId)?.parentFolderId;
-    if (currentParentFolderId === parentFolderId) {
-      closeFolderMovePicker();
-      return;
-    }
-    const displayOrder = catalogIndex.childFolderIdsByParent.get(parentFolderId)?.length ?? 0;
-    const succeeded = await mutateFolder(() => onMovePartyPresetFolder(folderId, { parentFolderId, displayOrder }));
-    if (succeeded && mountedRef.current) closeFolderMovePicker();
-  }
-
-  async function reorderFolders(ordered: PartyPresetFolderResponse[]) {
-    if (!authenticated || !onReorderPartyPresetFolders || mutationPendingRef.current) return;
+  async function moveFolder(folderId: number, request: MovePartyPresetFolderRequest) {
+    if (!authenticated || mutationPendingRef.current || !onMovePartyPresetFolder) return false;
     const accountGeneration = accountGenerationRef.current;
-    const optimisticIds = new Set(ordered.map(({ id }) => id));
-    const optimistic = folders.map((folder) => {
-      if (!optimisticIds.has(folder.id)) return folder;
-      const displayOrder = ordered.findIndex(({ id }) => id === folder.id);
-      return { ...folder, displayOrder };
+    setFolderMoveOverlay({
+      base: canonicalFolders,
+      value: optimisticallyMoveFolder(canonicalFolders, folderId, request),
     });
-    setFolderReorderOverlay({ base: partyPresetCatalog.catalog.folders, value: optimistic });
-    mutationPendingRef.current = true;
-    setIsSaving(true);
-    setErrorMessage(null);
-    try {
-      await onReorderPartyPresetFolders({
-        parentFolderId: folderParentId,
-        folderIds: ordered.map(({ id }) => id),
-      });
-      if (isCurrentAccountGeneration(accountGeneration)) setFolderReorderOverlay(null);
-    } catch (error) {
-      if (isCurrentAccountGeneration(accountGeneration)) {
-        setFolderReorderOverlay(null);
-        setErrorMessage(toUserFacingErrorMessage(error));
+    const succeeded = await mutateFolder(() => onMovePartyPresetFolder(folderId, request));
+    if (!isCurrentAccountGeneration(accountGeneration)) return false;
+    setFolderMoveOverlay(null);
+    if (!succeeded) {
+      try {
         partyPresetCatalog.retry();
-      }
-    } finally {
-      if (isCurrentAccountGeneration(accountGeneration)) {
-        mutationPendingRef.current = false;
-        setIsSaving(false);
+      } catch {
+        // Keep the authoritative pre-drag catalog when recovery is unavailable.
       }
     }
+    return succeeded;
   }
 
   function movePreset(presetId: number, offset: -1 | 1) {
@@ -534,55 +455,6 @@ export function PartyPresetList({
     void reorderPresets(ordered, previous);
   }
 
-  const folderRowActionsRef = useRef({
-    editableFolders,
-    openChild: setFolderParentId,
-    openMove: openFolderMovePicker,
-    reorder: reorderFolders,
-    requestDelete: setDeleteConfirmFolderId,
-    cancelDelete: () => setDeleteConfirmFolderId(null),
-    confirmDelete: deleteFolder,
-    beginRename: (folderId: number, name: string) => {
-      setRenamingFolderId(folderId);
-      setFolderNameDraft(name);
-    },
-    saveRename: renameFolder,
-  });
-  folderRowActionsRef.current = {
-    editableFolders,
-    openChild: setFolderParentId,
-    openMove: openFolderMovePicker,
-    reorder: reorderFolders,
-    requestDelete: setDeleteConfirmFolderId,
-    cancelDelete: () => setDeleteConfirmFolderId(null),
-    confirmDelete: deleteFolder,
-    beginRename: (folderId, name) => {
-      setRenamingFolderId(folderId);
-      setFolderNameDraft(name);
-    },
-    saveRename: renameFolder,
-  };
-  const dispatchFolderMoveBy = useCallback((folderId: number, offset: -1 | 1) => {
-    const { editableFolders: current, reorder } = folderRowActionsRef.current;
-    const from = current.findIndex(({ id }) => id === folderId);
-    const to = from + offset;
-    if (from < 0 || to < 0 || to >= current.length) return;
-    const ordered = [...current];
-    const [moved] = ordered.splice(from, 1);
-    ordered.splice(to, 0, moved!);
-    void reorder(ordered);
-  }, []);
-  const dispatchFolderOpenChild = useCallback((folderId: number) => folderRowActionsRef.current.openChild(folderId), []);
-  const dispatchFolderBeginRename = useCallback((folderId: number, name: string) => folderRowActionsRef.current.beginRename(folderId, name), []);
-  const dispatchFolderSaveRename = useCallback((folderId: number) => void folderRowActionsRef.current.saveRename(folderId), []);
-  const dispatchFolderOpenMove = useCallback((folderId: number) => folderRowActionsRef.current.openMove(folderId), []);
-  const dispatchFolderRequestDelete = useCallback((folderId: number) => folderRowActionsRef.current.requestDelete(folderId), []);
-  const dispatchFolderCancelDelete = useCallback(() => folderRowActionsRef.current.cancelDelete(), []);
-  const dispatchFolderConfirmDelete = useCallback((folderId: number) => void folderRowActionsRef.current.confirmDelete(folderId), []);
-  const registerFolderMoveTrigger = useCallback((folderId: number, node: ElementRef<typeof Pressable> | null) => {
-    if (node) folderMoveTriggerRefs.current.set(folderId, node);
-    else folderMoveTriggerRefs.current.delete(folderId);
-  }, []);
   const presetRowActionsRef = useRef({
     deletePreset: deletePresetById,
     makePrimary,
@@ -619,8 +491,6 @@ export function PartyPresetList({
     setIsDragging(true);
     presetDragRefs.current.get(presetId)?.();
   }, [closeOpenSwipeable]);
-  const beginFolderDrag = useCallback((folderId: number) => folderDragRefs.current.get(folderId)?.(), []);
-
   function renderPreset({ item: preset, drag, getIndex, isActive }: RenderItemParams<PartyPresetResponse>) {
     presetDragRefs.current.set(preset.id, drag);
     const index = getIndex() ?? visiblePresetsRef.current.findIndex(({ id }) => id === preset.id);
@@ -659,34 +529,6 @@ export function PartyPresetList({
         onSwipeableWillOpen={prepareSwipeable}
         presetId={preset.id}
         summary={formatPartyPresetSummary(preset)}
-      />
-    );
-  }
-
-  function renderFolder({ item: folder, drag, getIndex, isActive }: RenderItemParams<PartyPresetFolderResponse>) {
-    folderDragRefs.current.set(folder.id, drag);
-    const index = getIndex() ?? editableFolders.findIndex(({ id }) => id === folder.id);
-    const interactionDisabled = isSaving || isDragging || isActive;
-    return (
-      <PartyPresetFolderManagerRow
-        count={editableFolders.length}
-        deleteConfirmation={deleteConfirmFolderId === folder.id}
-        disabled={interactionDisabled}
-        folderId={folder.id}
-        index={index}
-        name={folder.name}
-        onBeginRename={dispatchFolderBeginRename}
-        onBeginDrag={beginFolderDrag}
-        onCancelDelete={dispatchFolderCancelDelete}
-        onConfirmDelete={dispatchFolderConfirmDelete}
-        onMoveBy={dispatchFolderMoveBy}
-        onNameChange={setFolderNameDraft}
-        onOpenChild={dispatchFolderOpenChild}
-        onOpenMove={dispatchFolderOpenMove}
-        onRegisterMoveTrigger={registerFolderMoveTrigger}
-        onRequestDelete={dispatchFolderRequestDelete}
-        onSaveRename={dispatchFolderSaveRename}
-        renameValue={renamingFolderId === folder.id ? folderNameDraft : null}
       />
     );
   }
@@ -785,48 +627,14 @@ export function PartyPresetList({
         </View>
       ) : folderEditMode ? (
         <View style={styles.folderManager}>
-          <View style={styles.folderManagerHeader}>
-            {folderParentId != null ? (
-              <Pressable accessibilityLabel="상위 폴더로 이동" accessibilityRole="button" onPress={() => setFolderParentId(catalogIndex.foldersById.get(folderParentId)?.parentFolderId ?? null)} style={styles.folderIconButton}>
-                <ChevronUp color={theme.colors.textMuted} size={18} />
-              </Pressable>
-            ) : null}
-            <Text style={styles.folderManagerPath}>{folderParentId == null ? '루트' : getPartyPresetFolderPath(catalogIndex, folderParentId)}</Text>
-            <TextInput accessibilityLabel="새 폴더 이름" onChangeText={setNewFolderName} placeholder="새 폴더" placeholderTextColor={theme.colors.textMuted} style={[styles.nameInput, styles.newFolderInput]} value={newFolderName} />
-            <Pressable
-              accessibilityHint={folderParentAtMaxDepth ? '폴더는 최대 5단계까지 만들 수 있습니다' : undefined}
-              accessibilityLabel="현재 위치에 폴더 추가"
-              accessibilityRole="button"
-              disabled={!newFolderName.trim() || isSaving || !onCreatePartyPresetFolder || folderParentAtMaxDepth}
-              onPress={() => void createFolder()}
-              style={styles.folderIconButton}
-            >
-              <Plus color={theme.colors.accentGreen} size={18} />
-            </Pressable>
-          </View>
-          <DraggableFlatList
-            containerStyle={styles.list}
-            contentContainerStyle={styles.listContent}
-            data={editableFolders}
-            keyExtractor={({ id }) => id.toString()}
-            onDragBegin={() => setIsDragging(true)}
-            onDragEnd={({ data, from, to }) => {
-              setIsDragging(false);
-              if (from !== to) void reorderFolders(data);
-            }}
-            renderItem={renderFolder}
-            style={styles.list}
+          <PartyPresetFolderEditor
+            disabled={isSaving}
+            index={catalogIndex}
+            onCreate={createFolder}
+            onDelete={deleteFolder}
+            onMove={moveFolder}
+            onRename={renameFolder}
           />
-          {movingFolderId != null ? (
-            <PartyPresetFolderPicker
-              allowUnassigned={false}
-              index={catalogIndex}
-              movingFolderId={movingFolderId}
-              onCancel={closeFolderMovePicker}
-              onConfirm={(parentFolderId) => void moveFolder(movingFolderId, parentFolderId)}
-              selectedFolderId={catalogIndex.foldersById.get(movingFolderId)?.parentFolderId ?? null}
-            />
-          ) : null}
         </View>
       ) : expandedPresetId == null && newDraft == null ? (
         <View style={styles.catalogBrowser}>
@@ -848,9 +656,9 @@ export function PartyPresetList({
             />
           ) : (
             <PartyPresetTree
-              expandedPath={expandedFolderPath}
+              expandedFolderIds={expandedFolderIds}
               index={catalogIndex}
-              onExpandedPathChange={setExpandedFolderPath}
+              onExpandedFolderIdsChange={setExpandedFolderIds}
               onSelectPreset={openPreset}
               selectedPresetId={null}
             />
@@ -994,118 +802,6 @@ const PartyPresetManagedRow = memo(function PartyPresetManagedRow({
         {editor}
       </PresetCard>
     </ReanimatedSwipeable>
-  );
-});
-
-type PartyPresetFolderManagerRowProps = {
-  count: number;
-  deleteConfirmation: boolean;
-  disabled: boolean;
-  folderId: number;
-  index: number;
-  name: string;
-  renameValue: string | null;
-  onBeginDrag: (folderId: number) => void;
-  onBeginRename: (folderId: number, name: string) => void;
-  onCancelDelete: () => void;
-  onConfirmDelete: (folderId: number) => void;
-  onMoveBy: (folderId: number, offset: -1 | 1) => void;
-  onNameChange: (name: string) => void;
-  onOpenChild: (folderId: number) => void;
-  onOpenMove: (folderId: number) => void;
-  onRegisterMoveTrigger: (folderId: number, node: ElementRef<typeof Pressable> | null) => void;
-  onRequestDelete: (folderId: number) => void;
-  onSaveRename: (folderId: number) => void;
-};
-
-const PartyPresetFolderManagerRow = memo(function PartyPresetFolderManagerRow({
-  count,
-  deleteConfirmation,
-  disabled,
-  folderId,
-  index,
-  name,
-  renameValue,
-  onBeginDrag,
-  onBeginRename,
-  onCancelDelete,
-  onConfirmDelete,
-  onMoveBy,
-  onNameChange,
-  onOpenChild,
-  onOpenMove,
-  onRegisterMoveTrigger,
-  onRequestDelete,
-  onSaveRename,
-}: PartyPresetFolderManagerRowProps) {
-  const moveUp = useCallback(() => onMoveBy(folderId, -1), [folderId, onMoveBy]);
-  const moveDown = useCallback(() => onMoveBy(folderId, 1), [folderId, onMoveBy]);
-  const openChild = useCallback(() => onOpenChild(folderId), [folderId, onOpenChild]);
-  const toggleRename = useCallback(() => {
-    if (renameValue != null) onSaveRename(folderId);
-    else onBeginRename(folderId, name);
-  }, [folderId, name, onBeginRename, onSaveRename, renameValue]);
-  const openMove = useCallback(() => onOpenMove(folderId), [folderId, onOpenMove]);
-  const registerMove = useCallback((node: ElementRef<typeof Pressable> | null) => onRegisterMoveTrigger(folderId, node), [folderId, onRegisterMoveTrigger]);
-  const requestDelete = useCallback(() => onRequestDelete(folderId), [folderId, onRequestDelete]);
-  const confirmDelete = useCallback(() => onConfirmDelete(folderId), [folderId, onConfirmDelete]);
-  const beginDrag = useCallback(() => onBeginDrag(folderId), [folderId, onBeginDrag]);
-  return (
-    <View style={styles.folderEditItem} testID={`party-preset-folder-manager-row-${folderId}`}>
-      <View style={styles.folderEditRow}>
-        <Pressable
-          accessibilityActions={[
-            ...(index > 0 ? [{ name: 'decrement' as const, label: '위로 이동' }] : []),
-            ...(index < count - 1 ? [{ name: 'increment' as const, label: '아래로 이동' }] : []),
-          ]}
-          accessibilityHint="길게 누르거나 접근성 동작으로 같은 부모의 폴더 순서를 바꾸세요"
-          accessibilityLabel={`${name} ${index + 1}번째 폴더 순서 이동`}
-          accessibilityRole="adjustable"
-          accessibilityState={{ disabled }}
-          accessibilityValue={{ min: 1, max: count, now: index + 1 }}
-          delayLongPress={120}
-          disabled={disabled}
-          onAccessibilityAction={({ nativeEvent: { actionName } }) => {
-            if (actionName === 'decrement') moveUp();
-            if (actionName === 'increment') moveDown();
-          }}
-          onLongPress={beginDrag}
-          style={styles.folderDragHandle}
-        >
-          <GripVertical color={theme.colors.textMuted} size={18} />
-        </Pressable>
-        {renameValue != null ? (
-          <TextInput accessibilityLabel={`${name} 폴더 이름`} autoFocus onChangeText={onNameChange} style={[styles.nameInput, styles.folderNameInput]} value={renameValue} />
-        ) : (
-          <Pressable accessibilityLabel={`${name} 하위 폴더 열기`} accessibilityRole="button" onPress={openChild} style={styles.folderNameButton}>
-            <Text numberOfLines={1} style={styles.folderNameText}>{name}</Text>
-          </Pressable>
-        )}
-        <Pressable accessibilityLabel={renameValue != null ? `${name} 폴더 이름 저장` : `${name} 폴더 이름 변경`} accessibilityRole="button" disabled={disabled} onPress={toggleRename} style={styles.folderIconButton}>
-          {renameValue != null ? <Save color={theme.colors.accentGreen} size={17} /> : <Pencil color={theme.colors.textMuted} size={17} />}
-        </Pressable>
-        <Pressable ref={registerMove} accessibilityLabel={`${name} 폴더 이동`} accessibilityRole="button" disabled={disabled} onPress={openMove} style={styles.folderIconButton}>
-          <FolderCog color={theme.colors.textMuted} size={17} />
-        </Pressable>
-        <Pressable accessibilityLabel={`${name} 폴더 삭제`} accessibilityRole="button" disabled={disabled} onPress={requestDelete} style={styles.folderIconButton}>
-          <Trash2 color={theme.colors.danger} size={17} />
-        </Pressable>
-      </View>
-      {deleteConfirmation ? (
-        <View accessibilityLiveRegion="polite" style={styles.folderDeleteConfirmation}>
-          <View style={styles.folderDeleteCopy}>
-            <Text style={styles.folderDeleteTitle}>{name} 폴더를 삭제할까요?</Text>
-            <Text style={styles.folderDeleteMessage}>직접 프리셋은 미지정으로 이동하고, 바로 아래 폴더는 상위로 승격되며 그 프리셋은 그대로 유지됩니다.</Text>
-          </View>
-          <Pressable accessibilityLabel={`${name} 폴더 삭제 취소`} accessibilityRole="button" disabled={disabled} onPress={onCancelDelete} style={styles.folderConfirmButton}>
-            <Text style={styles.folderCancelText}>취소</Text>
-          </Pressable>
-          <Pressable accessibilityLabel={`${name} 폴더 삭제 확인`} accessibilityRole="button" disabled={disabled} onPress={confirmDelete} style={[styles.folderConfirmButton, styles.folderDeleteButton]}>
-            <Text style={styles.folderDeleteButtonText}>삭제</Text>
-          </Pressable>
-        </View>
-      ) : null}
-    </View>
   );
 });
 
@@ -1280,19 +976,38 @@ function formatDraftPartySummary(party: BattlePartyMember[]): string {
   return `${memberCount.toLocaleString('en-US')}명 설정`;
 }
 
-function partyPresetFolderDepth(
-  foldersById: ReadonlyMap<number, PartyPresetFolderResponse>,
+function optimisticallyMoveFolder(
+  folders: PartyPresetFolderResponse[],
   folderId: number,
-): number {
-  const visited = new Set<number>();
-  let depth = 0;
-  let currentFolderId: number | null = folderId;
-  while (currentFolderId != null && !visited.has(currentFolderId)) {
-    visited.add(currentFolderId);
-    depth += 1;
-    currentFolderId = foldersById.get(currentFolderId)?.parentFolderId ?? null;
-  }
-  return depth;
+  request: MovePartyPresetFolderRequest,
+): PartyPresetFolderResponse[] {
+  const moving = folders.find((folder) => folder.id === folderId);
+  if (!moving) return folders;
+  const byOrder = (left: PartyPresetFolderResponse, right: PartyPresetFolderResponse) => (
+    left.displayOrder - right.displayOrder || left.id - right.id
+  );
+  const orders = new Map<number, { parentFolderId: number | null; displayOrder: number }>();
+  const previousSiblings = folders
+    .filter((folder) => folder.parentFolderId === moving.parentFolderId && folder.id !== folderId)
+    .sort(byOrder);
+  previousSiblings.forEach((folder, displayOrder) => {
+    orders.set(folder.id, { parentFolderId: folder.parentFolderId, displayOrder });
+  });
+  const targetSiblings = (request.parentFolderId === moving.parentFolderId
+    ? previousSiblings
+    : folders
+        .filter((folder) => folder.parentFolderId === request.parentFolderId && folder.id !== folderId)
+        .sort(byOrder));
+  const insertionIndex = Math.max(0, Math.min(request.displayOrder, targetSiblings.length));
+  const nextTargetSiblings = [...targetSiblings];
+  nextTargetSiblings.splice(insertionIndex, 0, moving);
+  nextTargetSiblings.forEach((folder, displayOrder) => {
+    orders.set(folder.id, { parentFolderId: request.parentFolderId, displayOrder });
+  });
+  return folders.map((folder) => {
+    const order = orders.get(folder.id);
+    return order == null ? folder : { ...folder, ...order };
+  });
 }
 
 const styles = StyleSheet.create({
@@ -1326,24 +1041,6 @@ const styles = StyleSheet.create({
   folderLocationText: { minWidth: 0, flex: 1, color: theme.colors.text, fontSize: 14, fontWeight: '800' },
   folderManager: { flex: 1, gap: theme.spacing.sm },
   catalogBrowser: { flex: 1, gap: theme.spacing.sm },
-  folderManagerHeader: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs },
-  folderManagerPath: { minWidth: 48, maxWidth: 120, color: theme.colors.text, fontSize: 13, fontWeight: '900' },
-  newFolderInput: { minWidth: 0, flex: 1 },
-  folderEditItem: { borderBottomWidth: 1, borderBottomColor: theme.colors.border },
-  folderEditRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs },
-  folderDeleteConfirmation: { minHeight: 60, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs, paddingBottom: theme.spacing.sm, paddingHorizontal: theme.spacing.sm },
-  folderDeleteCopy: { minWidth: 0, flex: 1, gap: 2 },
-  folderDeleteTitle: { color: theme.colors.text, fontSize: 13, fontWeight: '900' },
-  folderDeleteMessage: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '700' },
-  folderConfirmButton: { minHeight: 44, minWidth: 52, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.sm, borderCurve: 'continuous', borderWidth: 1, borderColor: theme.colors.border },
-  folderDeleteButton: { borderColor: theme.colors.danger, backgroundColor: theme.colors.danger },
-  folderCancelText: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '900' },
-  folderDeleteButtonText: { color: theme.colors.buttonText, fontSize: 12, fontWeight: '900' },
-  folderDragHandle: { minHeight: 44, width: 44, alignItems: 'center', justifyContent: 'center' },
-  folderNameButton: { minHeight: 44, minWidth: 0, flex: 1, justifyContent: 'center' },
-  folderNameText: { color: theme.colors.text, fontSize: 14, fontWeight: '900' },
-  folderNameInput: { minWidth: 0, flex: 1 },
-  folderIconButton: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' },
   editorActions: { flexDirection: 'row', gap: theme.spacing.sm },
   primaryActionButton: { minHeight: 36, flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.spacing.xs, borderRadius: theme.radius.md, backgroundColor: theme.colors.accentGreen },
   secondaryActionButton: { minHeight: 36, flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.spacing.xs, borderWidth: 1, borderColor: theme.colors.danger, borderRadius: theme.radius.md },

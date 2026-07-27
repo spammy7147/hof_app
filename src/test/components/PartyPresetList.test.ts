@@ -5,6 +5,7 @@ import React from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 
 import type { BattlePartyMember } from '../../main/domain/battleParty';
+import { buildPartyPresetFolderEditorRows } from '../../main/domain/partyPresetFolderEditor';
 import type { PartyPresetCatalogResponse, PartyPresetResponse } from '../../main/types/api';
 
 type SwipeableMockMethods = { close: () => void; closeCalls: number };
@@ -68,6 +69,7 @@ const reanimatedSwipeable = React.forwardRef<SwipeableMockMethods, Record<string
   );
 });
 const battlePartySelector = (props: Record<string, unknown>) => React.createElement('BattlePartySelector', props);
+const partyPresetFolderEditor = (props: Record<string, unknown>) => React.createElement('PartyPresetFolderEditor', props);
 const reactNativeMock = {
   AccessibilityInfo: { setAccessibilityFocus: (handle: number) => { accessibilityFocusCalls.push(handle); } },
   ActivityIndicator: host('ActivityIndicator'),
@@ -101,6 +103,7 @@ moduleWithLoader._load = (request, parent, isMain) => {
     return { __esModule: true, default: reanimatedSwipeable };
   }
   if (request === './BattlePartySelector') return { BattlePartySelector: battlePartySelector };
+  if (request === './PartyPresetFolderEditor') return { PartyPresetFolderEditor: partyPresetFolderEditor };
   return originalLoad(request, parent, isMain);
 };
 const { PartyPresetList } = require(
@@ -111,6 +114,52 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('PartyPresetList', () => {
+  it('renders and moves folders through one full-tree editor backed by the authoritative catalog', async () => {
+    const moveCalls: unknown[] = [];
+    const initialCatalog: PartyPresetCatalogResponse = {
+      folders: [
+        folder(1, 'New1', null, 0),
+        folder(2, 'new2', 1, 0),
+        folder(3, '다른 폴더', null, 1),
+      ],
+      presets: [],
+    };
+    const movedCatalog: PartyPresetCatalogResponse = {
+      ...initialCatalog,
+      folders: [
+        folder(1, 'New1', null, 0),
+        folder(2, 'new2', null, 1),
+        folder(3, '다른 폴더', null, 2),
+      ],
+    };
+    const renderer = await renderList({
+      partyPresetCatalog: catalogResource(initialCatalog),
+      onMovePartyPresetFolder: async (folderId, request) => {
+        moveCalls.push({ folderId, request });
+        return movedCatalog;
+      },
+    });
+
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
+    let editors = findHosts(renderer.root, 'PartyPresetFolderEditor');
+    assert.equal(editors.length, 1);
+    assert.equal(editors[0]!.props.index.foldersById.size, 3);
+    assert.deepEqual(
+      buildPartyPresetFolderEditorRows(editors[0]!.props.index, new Set([1])).map(({ folderId, depth }) => [folderId, depth]),
+      [[1, 0], [2, 1], [3, 0]],
+    );
+
+    await act(async () => editors[0]!.props.onMove(2, { parentFolderId: null, displayOrder: 1 }));
+    editors = findHosts(renderer.root, 'PartyPresetFolderEditor');
+    assert.deepEqual(moveCalls, [{ folderId: 2, request: { parentFolderId: null, displayOrder: 1 } }]);
+    assert.deepEqual(
+      buildPartyPresetFolderEditorRows(editors[0]!.props.index, new Set([1])).map(({ folderId, depth }) => [folderId, depth]),
+      [[1, 0], [2, 0], [3, 0]],
+    );
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '폴더 위치 확인' }).length, 0);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '상위 폴더로 이동' }).length, 0);
+  });
+
   it('gives the draggable list container the remaining screen height', async () => {
     const renderer = await renderList();
     await openUnassignedPreset(renderer, '서관, 구성원 0명, 대표 프리셋');
@@ -314,7 +363,7 @@ describe('PartyPresetList', () => {
     await act(async () => pending.resolve(PRESETS[0]!));
   });
 
-  it('uses explicit folder edit mode and confirms folder deletion without deleting presets', async () => {
+  it('uses explicit folder edit mode and deletes a folder without deleting presets', async () => {
     const deletedFolders: number[] = [];
     const deletedPresets: number[] = [];
     const renderer = await renderList({
@@ -327,40 +376,30 @@ describe('PartyPresetList', () => {
     });
 
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 삭제' }).props.onPress());
-    assert.deepEqual(deletedFolders, []);
-    assert.equal(textCount(renderer.root, '전투 폴더를 삭제할까요?'), 1);
-    assert.equal(textCount(renderer.root, '직접 프리셋은 미지정으로 이동하고, 바로 아래 폴더는 상위로 승격되며 그 프리셋은 그대로 유지됩니다.'), 1);
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 삭제 취소' }).props.onPress());
-    assert.deepEqual(deletedFolders, []);
-    assert.equal(textCount(renderer.root, '전투 폴더를 삭제할까요?'), 0);
-
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 삭제' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 삭제 확인' }).props.onPress());
+    await act(async () => findHost(renderer.root, 'PartyPresetFolderEditor').props.onDelete(10));
     assert.deepEqual(deletedFolders, [10]);
     assert.deepEqual(deletedPresets, []);
   });
 
-  it('closes a same-parent folder destination as a no-op without sending an out-of-range order', async () => {
-    const moveCalls: unknown[] = [];
+  it('does not render a folder-moving picker but retains the preset assignment picker', async () => {
     const renderer = await renderList({
       partyPresetCatalog: catalogResource(FOLDER_CATALOG),
-      onMovePartyPresetFolder: async (folderId, request) => {
-        moveCalls.push({ folderId, request });
-        return FOLDER_CATALOG;
-      },
     });
 
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 이동' }).props.onPress());
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '현재 폴더 위치 루트' }));
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 확인' }).props.onPress());
-
-    assert.deepEqual(moveCalls, []);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '폴더 위치 확인' }).length, 0);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '상위 폴더로 이동' }).length, 0);
+    assert.equal(findAllText(renderer.root).includes('루트'), false);
+
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 편집 종료' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '미지정 폴더 열기' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 구성원 0명, 대표 프리셋' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 선택' }).props.onPress());
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '폴더 위치 확인' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '현재 폴더 위치 미지정' }));
   });
 
-  it('creates and renames folders from explicit manager controls', async () => {
+  it('creates and renames folders through the full-tree editor callbacks', async () => {
     const createCalls: unknown[] = [];
     const renameCalls: unknown[] = [];
     const createdCatalog: PartyPresetCatalogResponse = {
@@ -377,15 +416,14 @@ describe('PartyPresetList', () => {
       onRenamePartyPresetFolder: async (folderId, request) => { renameCalls.push({ folderId, request }); return renamedCatalog; },
     });
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '새 폴더 이름' }).props.onChangeText('  파밍  '));
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '현재 위치에 폴더 추가' }).props.onPress());
+    let editor = findHost(renderer.root, 'PartyPresetFolderEditor');
+    await act(async () => editor.props.onCreate({ name: '파밍', parentFolderId: null }));
     assert.deepEqual(createCalls, [{ name: '파밍', parentFolderId: null }]);
 
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 이름 변경' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 이름' }).props.onChangeText('  보스전  '));
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 이름 저장' }).props.onPress());
+    editor = findHost(renderer.root, 'PartyPresetFolderEditor');
+    await act(async () => editor.props.onRename(10, { name: '보스전' }));
     assert.deepEqual(renameCalls, [{ folderId: 10, request: { name: '보스전' } }]);
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '보스전 하위 폴더 열기' }));
+    assert.equal(findHost(renderer.root, 'PartyPresetFolderEditor').props.index.foldersById.get(10).name, '보스전');
   });
 
   it('excludes duplicate folder mutations synchronously', async () => {
@@ -396,18 +434,17 @@ describe('PartyPresetList', () => {
       onCreatePartyPresetFolder: async (request) => { createCalls.push(request); return pending.promise; },
     });
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '새 폴더 이름' }).props.onChangeText('파밍'));
-    const add = renderer.root.findByProps({ accessibilityLabel: '현재 위치에 폴더 추가' });
+    const editor = findHost(renderer.root, 'PartyPresetFolderEditor');
     await act(async () => {
-      void add.props.onPress();
-      void add.props.onPress();
+      void editor.props.onCreate({ name: '파밍', parentFolderId: null });
+      void editor.props.onCreate({ name: '파밍', parentFolderId: null });
       await Promise.resolve();
     });
     assert.deepEqual(createCalls, [{ name: '파밍', parentFolderId: null }]);
     await act(async () => pending.resolve(FOLDER_CATALOG));
   });
 
-  it('moves a folder to a different destination and keeps a failed destination draft open', async () => {
+  it('moves a folder through the editor and preserves the catalog when the move fails', async () => {
     const moveCalls: unknown[] = [];
     const movedCatalog: PartyPresetCatalogResponse = {
       ...FOLDER_CATALOG,
@@ -423,10 +460,9 @@ describe('PartyPresetList', () => {
       },
     });
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 이동' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 퀘스트' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 확인' }).props.onPress());
+    await act(async () => findHost(renderer.root, 'PartyPresetFolderEditor').props.onMove(10, { parentFolderId: 11, displayOrder: 0 }));
     assert.deepEqual(moveCalls, [{ folderId: 10, request: { parentFolderId: 11, displayOrder: 0 } }]);
+    assert.equal(findHost(renderer.root, 'PartyPresetFolderEditor').props.index.foldersById.get(10).parentFolderId, 11);
 
     const failedMoveCalls: unknown[] = [];
     const failedRenderer = await renderList({
@@ -437,69 +473,39 @@ describe('PartyPresetList', () => {
       },
     });
     await act(async () => failedRenderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
-    await act(async () => failedRenderer.root.findByProps({ accessibilityLabel: '전투 폴더 이동' }).props.onPress());
-    await act(async () => failedRenderer.root.findByProps({ accessibilityLabel: '폴더 위치 퀘스트' }).props.onPress());
-    await act(async () => failedRenderer.root.findByProps({ accessibilityLabel: '폴더 위치 확인' }).props.onPress());
-    assert.ok(failedRenderer.root.findByProps({ accessibilityLabel: '현재 폴더 위치 퀘스트' }));
+    await act(async () => findHost(failedRenderer.root, 'PartyPresetFolderEditor').props.onMove(10, { parentFolderId: 11, displayOrder: 0 }));
     assert.deepEqual(failedMoveCalls, [{ folderId: 10, request: { parentFolderId: 11, displayOrder: 0 } }]);
     assert.equal(textCount(failedRenderer.root, 'move failed'), 1);
-    assert.deepEqual(
-      (findHost(failedRenderer.root, 'DraggableFlatList').props.data as Array<{ id: number }>).map(({ id }) => id),
-      [10, 11],
-    );
+    assert.equal(findHost(failedRenderer.root, 'PartyPresetFolderEditor').props.index.foldersById.get(10).parentFolderId, null);
   });
 
-  it('reorders sibling folders by drag and accessible action using authoritative responses', async () => {
-    dragCalls.length = 0;
-    const requests: unknown[] = [];
-    const authoritative = {
-      ...reorderRootFolders(FOLDER_CATALOG, [11, 10]),
-      folders: reorderRootFolders(FOLDER_CATALOG, [11, 10]).folders.map((value) => value.id === 11
-        ? { ...value, name: '서버 퀘스트' }
-        : value),
-    };
-    const renderer = await renderList({
-      partyPresetCatalog: catalogResource(FOLDER_CATALOG),
-      onReorderPartyPresetFolders: async (request) => { requests.push(request); return authoritative; },
-    });
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 1번째 폴더 순서 이동' }).props.onLongPress());
-    assert.deepEqual(dragCalls.map(({ id }) => id), [10]);
-    const draggable = findHost(renderer.root, 'DraggableFlatList');
-    const folderRows = draggable.props.data as PartyPresetResponse[];
-    await act(async () => draggable.props.onDragEnd({ data: [folderRows[1], folderRows[0]], from: 0, to: 1 }));
-    assert.deepEqual(requests, [{ parentFolderId: null, folderIds: [11, 10] }]);
-    assert.deepEqual((findHost(renderer.root, 'DraggableFlatList').props.data as Array<{ id: number }>).map(({ id }) => id), [11, 10]);
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '서버 퀘스트 하위 폴더 열기' }));
-
-    const accessibleRequests: unknown[] = [];
-    const accessibleRenderer = await renderList({
-      partyPresetCatalog: catalogResource(FOLDER_CATALOG),
-      onReorderPartyPresetFolders: async (request) => { accessibleRequests.push(request); return authoritative; },
-    });
-    await act(async () => accessibleRenderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
-    await act(async () => accessibleRenderer.root.findByProps({ accessibilityLabel: '전투 1번째 폴더 순서 이동' }).props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } }));
-    assert.deepEqual(accessibleRequests, [{ parentFolderId: null, folderIds: [11, 10] }]);
-  });
-
-  it('shows optimistic folder order, then rolls back and adopts the authoritative recovery', async () => {
+  it('shows an optimistic full-tree move and rolls back with authoritative recovery on failure', async () => {
     const pending = deferred<PartyPresetCatalogResponse>();
-    let loads = 1;
+    let retries = 0;
     const renderer = await renderList({
-      partyPresetCatalog: { ...catalogResource(FOLDER_CATALOG), retry: () => { loads += 1; } },
-      onReorderPartyPresetFolders: async () => pending.promise,
+      partyPresetCatalog: { ...catalogResource(FOLDER_CATALOG), retry: () => { retries += 1; } },
+      onMovePartyPresetFolder: async () => pending.promise,
     });
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
-    const draggable = findHost(renderer.root, 'DraggableFlatList');
-    const rows = draggable.props.data as Array<{ id: number }>;
+    const editor = findHost(renderer.root, 'PartyPresetFolderEditor');
     await act(async () => {
-      void draggable.props.onDragEnd({ data: [rows[1], rows[0]], from: 0, to: 1 });
+      void editor.props.onMove(10, { parentFolderId: 11, displayOrder: 0 });
       await Promise.resolve();
     });
-    assert.deepEqual((findHost(renderer.root, 'DraggableFlatList').props.data as Array<{ id: number }>).map(({ id }) => id), [11, 10]);
-    await act(async () => pending.reject(new Error('reorder failed')));
-    assert.equal(loads, 2);
-    assert.deepEqual((findHost(renderer.root, 'DraggableFlatList').props.data as Array<{ id: number }>).map(({ id }) => id), [10, 11]);
+    assert.equal(findHost(renderer.root, 'PartyPresetFolderEditor').props.index.foldersById.get(10).parentFolderId, 11);
+
+    await act(async () => pending.reject(new Error('move failed')));
+    assert.equal(retries, 1);
+    assert.equal(findHost(renderer.root, 'PartyPresetFolderEditor').props.index.foldersById.get(10).parentFolderId, null);
+    assert.equal(textCount(renderer.root, 'move failed'), 1);
+  });
+
+  it('keeps multiple character-catalog folders open independently', async () => {
+    const renderer = await renderList({ partyPresetCatalog: catalogResource(FOLDER_CATALOG) });
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '퀘스트 폴더 열기' }).props.onPress());
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 폴더 닫기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '퀘스트 폴더 닫기' }));
   });
 
   it('submits a numeric folder id and the complete preset sibling set when reordering', async () => {
@@ -625,9 +631,8 @@ describe('PartyPresetList', () => {
     });
     const renderer = await renderListProps(oldProps);
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '새 폴더 이름' }).props.onChangeText('이전 폴더'));
     await act(async () => {
-      void renderer.root.findByProps({ accessibilityLabel: '현재 위치에 폴더 추가' }).props.onPress();
+      void findHost(renderer.root, 'PartyPresetFolderEditor').props.onCreate({ name: '이전 폴더', parentFolderId: null });
       await Promise.resolve();
     });
 
@@ -643,15 +648,13 @@ describe('PartyPresetList', () => {
       await Promise.resolve();
     });
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '새 폴더 이름' }).props.onChangeText('새 폴더'));
     await act(async () => {
-      void renderer.root.findByProps({ accessibilityLabel: '현재 위치에 폴더 추가' }).props.onPress();
+      void findHost(renderer.root, 'PartyPresetFolderEditor').props.onCreate({ name: '새 폴더', parentFolderId: null });
       await Promise.resolve();
     });
 
     await act(async () => oldCreate.reject(new Error('이전 계정 실패')));
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: '새 폴더 이름' }).props.value, '새 폴더');
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: '현재 위치에 폴더 추가' }).props.disabled, true);
+    assert.equal(findHost(renderer.root, 'PartyPresetFolderEditor').props.disabled, true);
     assert.equal(textCount(renderer.root, '이전 계정 실패'), 0);
 
     await act(async () => newCreate.resolve({
@@ -685,13 +688,6 @@ describe('PartyPresetList', () => {
     hostRenderCounts.clear();
     await act(async () => findHost(renderer.root, 'TextInput').props.onChangeText('편집 중'));
     assert.equal(hostRenderCounts.get('party-preset-managed-row-2') ?? 0, 0);
-
-    const folderRenderer = await renderList({ partyPresetCatalog: catalogResource(FOLDER_CATALOG) });
-    await act(async () => folderRenderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
-    await act(async () => folderRenderer.root.findByProps({ accessibilityLabel: '전투 폴더 이름 변경' }).props.onPress());
-    hostRenderCounts.clear();
-    await act(async () => folderRenderer.root.findByProps({ accessibilityLabel: '전투 폴더 이름' }).props.onChangeText('보스전'));
-    assert.equal(hostRenderCounts.get('party-preset-folder-manager-row-11') ?? 0, 0);
   });
 
 });
@@ -848,17 +844,12 @@ function folder(id: number, name: string, parentFolderId: number | null, display
   return { id, name, parentFolderId, displayOrder, createdAt: '', updatedAt: '' };
 }
 
-function reorderRootFolders(catalog: PartyPresetCatalogResponse, ids: number[]): PartyPresetCatalogResponse {
-  return {
-    ...catalog,
-    folders: catalog.folders.map((value) => value.parentFolderId == null
-      ? { ...value, displayOrder: ids.indexOf(value.id) }
-      : value),
-  };
-}
-
 function textCount(root: ReactTestInstance, text: string): number {
   return root.findAll((node) => (node.type as unknown) === 'Text' && node.children.join('') === text).length;
+}
+
+function findAllText(root: ReactTestInstance): string[] {
+  return root.findAll((node) => (node.type as unknown) === 'Text').map((node) => node.children.join(''));
 }
 
 function findHost(root: ReactTestInstance, name: string): ReactTestInstance {

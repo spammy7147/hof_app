@@ -553,8 +553,7 @@ describe('PartyPresetFolderEditor', () => {
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Other 폴더 접기' }));
   });
 
-  it('does not expand a parent when child creation or an inside move fails', async () => {
-    const failure = new Error('expected failure');
+  it('keeps editor state and does not expand a parent when an integrated mutation reports failure', async () => {
     const index = indexPartyPresetCatalog({
       folders: [
         folder(1, 'New1', null, 0), folder(2, 'new2', 1, 0),
@@ -564,8 +563,8 @@ describe('PartyPresetFolderEditor', () => {
     });
     const renderer = await renderEditor({
       index,
-      onCreate: async () => { throw failure; },
-      onMove: async () => { throw failure; },
+      onCreate: async () => false,
+      onMove: async () => false,
     });
     await act(async () => {
       renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 접기' }).props.onPress();
@@ -575,6 +574,7 @@ describe('PartyPresetFolderEditor', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 새 하위 폴더 이름' }).props.onChangeText('fail'); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 하위 폴더 저장' }).props.onPress(); });
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 펼치기' }));
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'New1 새 하위 폴더 이름' }).props.value, 'fail');
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 펼치기' }).props.onPress(); });
     layoutRows(renderer.root);

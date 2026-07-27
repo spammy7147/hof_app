@@ -42,10 +42,10 @@ import type {
 export type PartyPresetFolderEditorProps = {
   disabled: boolean;
   index: PartyPresetCatalogIndex;
-  onCreate: (request: CreatePartyPresetFolderRequest) => Promise<void>;
-  onDelete: (folderId: number) => Promise<void>;
-  onMove: (folderId: number, request: MovePartyPresetFolderRequest) => Promise<void>;
-  onRename: (folderId: number, request: RenamePartyPresetFolderRequest) => Promise<void>;
+  onCreate: (request: CreatePartyPresetFolderRequest) => Promise<boolean | void>;
+  onDelete: (folderId: number) => Promise<boolean | void>;
+  onMove: (folderId: number, request: MovePartyPresetFolderRequest) => Promise<boolean | void>;
+  onRename: (folderId: number, request: RenamePartyPresetFolderRequest) => Promise<boolean | void>;
 };
 
 type RowLayout = { y: number; height: number };
@@ -152,7 +152,8 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   const submitTopLevel = useCallback(async () => {
     const name = topLevelName.trim();
     if (disabled || name.length === 0) return;
-    await onCreate({ name, parentFolderId: null });
+    const succeeded = await onCreate({ name, parentFolderId: null });
+    if (succeeded === false) return;
     setTopLevelName('');
   }, [disabled, onCreate, topLevelName]);
 
@@ -169,7 +170,8 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
       || name.length === 0
       || !canCreatePartyPresetChildFolder(indexRef.current, folderId)
     ) return;
-    await onCreate({ name, parentFolderId: folderId });
+    const succeeded = await onCreate({ name, parentFolderId: folderId });
+    if (succeeded === false) return;
     setExpandedFolderIds((previous) => new Set(previous).add(folderId));
     setChildEditorFolderId(null);
     setChildName('');
@@ -184,13 +186,15 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   const submitRename = useCallback(async (folderId: number) => {
     const name = renameValue.trim();
     if (disabled || name.length === 0) return;
-    await onRename(folderId, { name });
+    const succeeded = await onRename(folderId, { name });
+    if (succeeded === false) return;
     setRenameFolderId(null);
   }, [disabled, onRename, renameValue]);
 
   const deleteFolder = useCallback(async (folderId: number) => {
     if (disabled) return;
-    await onDelete(folderId);
+    const succeeded = await onDelete(folderId);
+    if (succeeded === false) return;
     setRenameFolderId(null);
   }, [disabled, onDelete]);
 
@@ -200,7 +204,8 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     expandInsideParent: boolean,
   ) => {
     if (disabled || plan == null) return;
-    await onMove(folderId, plan);
+    const succeeded = await onMove(folderId, plan);
+    if (succeeded === false) return;
     if (mountedRef.current && expandInsideParent && plan.parentFolderId != null) {
       setExpandedFolderIds((previous) => new Set(previous).add(plan.parentFolderId!));
     }
