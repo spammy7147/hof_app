@@ -58,7 +58,7 @@ describe('BattlePartyPresetPicker', () => {
     await act(async () => field.props.onPress());
     const modal = commonPickerCalls.at(-1)!;
     assert.equal(modal.visible, true);
-    assert.deepEqual(modal.catalog, { folders: [], presets: PRESETS });
+    assert.equal(modal.catalog, CATALOG);
     const direct = (modal.syntheticOptions as Array<Record<string, unknown>>)[0]!;
     assert.equal(direct.label, '캐릭터 직접 선택');
     assert.equal(direct.selected, true);
@@ -148,7 +148,7 @@ async function renderPicker(overrides: Record<string, unknown> = {}) {
   let renderer!: ReturnType<typeof create>;
   await act(async () => {
     renderer = create(React.createElement(BattlePartyPresetPicker, {
-      characters: [], presets: PRESETS, loading: false, errorMessage: null,
+      characters: [], catalog: CATALOG, loading: false, errorMessage: null,
       selectedMode: null, selectedPresetId: null, onRetry: () => undefined,
       onSelectDirect: () => undefined, onSelectPreset: () => undefined, ...overrides,
     }));
@@ -157,3 +157,7 @@ async function renderPicker(overrides: Record<string, unknown> = {}) {
 }
 
 const PRESETS: PartyPresetResponse[] = [{ id: 1, accountId: 1, name: '레이드', folderId: null, isPrimary: false, displayOrder: 0, members: [], createdAt: '', updatedAt: '' }];
+const CATALOG = {
+  folders: [{ id: 10, name: '전투', parentFolderId: null, displayOrder: 0, createdAt: '', updatedAt: '' }],
+  presets: PRESETS,
+};

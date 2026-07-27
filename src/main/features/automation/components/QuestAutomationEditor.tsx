@@ -90,7 +90,6 @@ export function QuestAutomationEditor({
   const [query, setQuery] = useState('');
   const [snapshots, setSnapshots] = useState<QuestSnapshot[]>([]);
   const [catalog, setCatalog] = useState<BattleMapResponse[]>([]);
-  const presets = partyPresetCatalog.catalog.presets;
   const [draft, setDraft] = useState<QuestAutomationDraft | null>(null);
   const [questLoading, setQuestLoading] = useState(true);
   const [questLoaded, setQuestLoaded] = useState(false);
@@ -329,7 +328,10 @@ export function QuestAutomationEditor({
     () => prioritizeSelectedQuests(filterQuests(snapshots, section, query), selectedQuestKeys),
     [query, section, selectedQuestKeys, snapshots],
   );
-  const presetIds = useMemo(() => presets.map(({ id }) => id), [presets]);
+  const presetIds = useMemo(
+    () => partyPresetCatalog.catalog.presets.map(({ id }) => id),
+    [partyPresetCatalog.catalog.presets],
+  );
   const validationErrors = useMemo(
     () => draft ? validateQuestAutomationDraft(draft, presetIds) : [],
     [draft, presetIds],

@@ -40,7 +40,7 @@ describe('BattleMapPresetPickerModal', () => {
     await act(async () => {
       create(React.createElement(BattleMapPresetPickerModal, {
         disabled: false, mapName: '화염 동굴', onClose: () => undefined,
-        onSelect: (presetId: number | null) => selected.push(presetId), presets: PRESETS,
+        onSelect: (presetId: number | null) => selected.push(presetId), catalog: CATALOG,
         selectedPresetId: null, selectedPresetMode: 'PRIMARY', visible: true,
       }));
     });
@@ -48,7 +48,7 @@ describe('BattleMapPresetPickerModal', () => {
     assert.equal(commonPickerCalls.length, 1);
     const modal = commonPickerCalls[0]!;
     assert.equal(modal.title, '화염 동굴 프리셋 선택');
-    assert.deepEqual(modal.catalog, { folders: [], presets: PRESETS });
+    assert.equal(modal.catalog, CATALOG);
     const primary = (modal.syntheticOptions as Array<Record<string, unknown>>)[0]!;
     assert.equal(primary.label, '대표 · 대표 파티');
     assert.equal(primary.selected, true);
@@ -62,7 +62,7 @@ describe('BattleMapPresetPickerModal', () => {
     await act(async () => {
       create(React.createElement(BattleMapPresetPickerModal, {
         disabled: true, mapName: '', onClose: () => undefined, onSelect: () => undefined,
-        presets: [], selectedPresetId: null, selectedPresetMode: 'PRIMARY', visible: true,
+        catalog: { ...CATALOG, presets: [] }, selectedPresetId: null, selectedPresetMode: 'PRIMARY', visible: true,
       }));
     });
     const modal = commonPickerCalls[0]!;
@@ -75,3 +75,7 @@ const PRESETS: PartyPresetResponse[] = [
   { id: 1, accountId: 1, name: '대표 파티', folderId: null, isPrimary: true, displayOrder: 0, members: [], createdAt: '', updatedAt: '' },
   { id: 2, accountId: 1, name: '공략 파티', folderId: null, isPrimary: false, displayOrder: 1, members: [], createdAt: '', updatedAt: '' },
 ];
+const CATALOG = {
+  folders: [{ id: 10, name: '전투', parentFolderId: null, displayOrder: 0, createdAt: '', updatedAt: '' }],
+  presets: PRESETS,
+};

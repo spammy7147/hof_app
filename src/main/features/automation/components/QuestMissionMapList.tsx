@@ -14,7 +14,7 @@ import {
 } from '../../../domain/questAutomation';
 import { formatAutomationPresetSelection } from '../../../domain/partyPresets';
 import { theme } from '../../../styles/theme';
-import type { BattleMapResponse, PartyPresetCatalogResponse, PartyPresetResponse, QuestMapSettingRequest } from '../../../types/api';
+import type { BattleMapResponse, PartyPresetCatalogResponse, QuestMapSettingRequest } from '../../../types/api';
 import { BattleMapPresetPickerModal } from './BattleMapPresetPickerModal';
 
 export type QuestMissionMapListProps = {
@@ -23,9 +23,7 @@ export type QuestMissionMapListProps = {
   disabled: boolean;
   maps: QuestMapSettingRequest[];
   missionKey: string;
-  partyPresetCatalog?: PartyPresetCatalogResponse;
-  /** @deprecated 테스트 호환용 */
-  presets?: PartyPresetResponse[];
+  partyPresetCatalog: PartyPresetCatalogResponse;
   questContext: string;
   onUpdate: (maps: QuestMapSettingRequest[]) => void;
 };
@@ -61,11 +59,9 @@ export function QuestMissionMapList({
   maps,
   missionKey,
   partyPresetCatalog,
-  presets = [],
   questContext,
   onUpdate,
 }: QuestMissionMapListProps) {
-  const resolvedPartyPresetCatalog = partyPresetCatalog ?? { folders: [], presets };
   const [activePresetRowKey, setActivePresetRowKey] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const mountedRef = useRef(false);
@@ -274,7 +270,7 @@ export function QuestMissionMapList({
 
   function renderMapRow({ item: { identity, map, rowKey }, drag, getIndex, isActive }: RenderItemParams<MissionMapRow>) {
     const resolved = catalog.find((candidate) => buildQuestMapIdentity(candidate) === identity);
-    const presetLabel = formatAutomationPresetSelection(map, resolvedPartyPresetCatalog.presets);
+    const presetLabel = formatAutomationPresetSelection(map, partyPresetCatalog.presets);
     const category = map.categoryId === 'battle_map'
       ? '전투맵'
       : map.categoryId === 'adventure_map'
@@ -407,7 +403,7 @@ export function QuestMissionMapList({
         mapName={activeCatalogMap?.name ?? activePresetMap?.mapCode ?? ''}
         onClose={() => closePresetPicker(true)}
         onSelect={selectPreset}
-        catalog={resolvedPartyPresetCatalog}
+        catalog={partyPresetCatalog}
         selectedPresetId={activePresetMap?.partyPresetId ?? null}
         selectedPresetMode={activePresetMap?.presetMode ?? 'PRIMARY'}
         visible={activePresetMap != null && !disabled}
@@ -421,14 +417,13 @@ export type QuestMapListProps = {
   disabled: boolean;
   maps: QuestMapDraft[];
   mode: QuestMapMode;
-  partyPresetCatalog?: PartyPresetCatalogResponse;
-  presets?: PartyPresetResponse[];
+  partyPresetCatalog: PartyPresetCatalogResponse;
   questContext: string;
   onRemove?: (index: number) => void;
   onUpdate: (maps: QuestMapDraft[]) => void;
 };
 
-export function QuestMapList({ catalog, disabled, maps, mode, partyPresetCatalog, presets, questContext, onRemove, onUpdate }: QuestMapListProps) {
+export function QuestMapList({ catalog, disabled, maps, mode, partyPresetCatalog, questContext, onRemove, onUpdate }: QuestMapListProps) {
   const missionMaps = maps.map<QuestMapSettingRequest>((map) => ({
     ...map,
     missionKey: '',
@@ -442,7 +437,6 @@ export function QuestMapList({ catalog, disabled, maps, mode, partyPresetCatalog
       maps={missionMaps}
       missionKey=""
       partyPresetCatalog={partyPresetCatalog}
-      presets={presets}
       questContext={questContext}
       onUpdate={(updated) => {
         if (onRemove && updated.length < maps.length) {

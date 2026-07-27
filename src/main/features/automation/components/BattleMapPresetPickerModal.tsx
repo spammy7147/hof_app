@@ -8,9 +8,7 @@ type Props = {
   mapName: string;
   onClose: () => void;
   onSelect: (presetId: number | null) => void;
-  catalog?: PartyPresetCatalogResponse;
-  /** @deprecated 테스트 호환용 */
-  presets?: PartyPresetResponse[];
+  catalog: PartyPresetCatalogResponse;
   selectedPresetId: number | null;
   selectedPresetMode: 'PRIMARY' | 'EXPLICIT';
   visible: boolean;
@@ -23,13 +21,11 @@ export function BattleMapPresetPickerModal({
   onClose,
   onSelect,
   catalog,
-  presets = [],
   selectedPresetId,
   selectedPresetMode,
   visible,
 }: Props) {
-  const resolvedCatalog = catalog ?? { folders: [], presets };
-  const primaryPreset = useMemo(() => resolvedCatalog.presets.find(({ isPrimary }) => isPrimary) ?? null, [resolvedCatalog.presets]);
+  const primaryPreset = useMemo(() => catalog.presets.find(({ isPrimary }) => isPrimary) ?? null, [catalog.presets]);
   const selectPrimary = useCallback(() => onSelect(null), [onSelect]);
   const selectPreset = useCallback((preset: PartyPresetResponse) => onSelect(preset.id), [onSelect]);
   const syntheticOptions = useMemo(() => [{
@@ -42,7 +38,7 @@ export function BattleMapPresetPickerModal({
 
   return (
     <PartyPresetPickerModal
-      catalog={resolvedCatalog}
+      catalog={catalog}
       disabled={disabled}
       initialExpandedPath={[null]}
       onClose={onClose}

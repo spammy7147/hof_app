@@ -96,7 +96,6 @@ export function BattleMapAutomationEditor({
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
   const [expandedGroupKeys, setExpandedGroupKeys] = useState<string[]>([]);
   const [activePresetIdentity, setActivePresetIdentity] = useState<string | null>(null);
-  const presets = partyPresetCatalog.catalog.presets;
   const presetState = { loading: partyPresetCatalog.loading, error: partyPresetCatalog.error };
   const [mapStates, setMapStates] = useState<Record<string, ResourceState>>({});
   const [localBusy, setLocalBusy] = useState(false);
@@ -249,7 +248,10 @@ export function BattleMapAutomationEditor({
     }
   }, [catalog, entry, updateDraft]);
 
-  const validPresetIds = useMemo(() => presets.map(({ id }) => id), [presets]);
+  const validPresetIds = useMemo(
+    () => partyPresetCatalog.catalog.presets.map(({ id }) => id),
+    [partyPresetCatalog.catalog.presets],
+  );
   const presetsVerified = !presetState.loading && presetState.error == null;
   const validationErrors = useMemo(
     () => validateBattleMapAutomationDraft(
@@ -440,13 +442,13 @@ export function BattleMapAutomationEditor({
     const dailyTarget = validBattleDailyTarget(setting.dailyTargetCount);
     const progress = dailyTarget == null ? null : buildBattleProgress({ target: dailyTarget, successes });
     const selectedPreset = setting.presetMode === 'EXPLICIT'
-      ? presets.find(({ id }) => id === setting.partyPresetId)
+      ? partyPresetCatalog.catalog.presets.find(({ id }) => id === setting.partyPresetId)
       : null;
     const presetSummary = presetState.loading
       ? '프리셋 확인 중'
       : presetState.error
         ? '프리셋 확인 불가'
-        : formatAutomationPresetSelection(setting, presets);
+        : formatAutomationPresetSelection(setting, partyPresetCatalog.catalog.presets);
     const progressSummary = buildBattleProgressSummary(setting, successes, dailyTarget, progress?.remaining ?? null);
     return (
       <>
@@ -487,7 +489,7 @@ export function BattleMapAutomationEditor({
         </Pressable>
       </>
     );
-  }, [draft.dailyProgress, openPresetPicker, presets, presetsVerified, presetState.error, presetState.loading, updateEditableDraft]);
+  }, [draft.dailyProgress, openPresetPicker, partyPresetCatalog.catalog.presets, presetsVerified, presetState.error, presetState.loading, updateEditableDraft]);
 
   const renderListItem = useCallback(({ item }: { item: EditorListItem }) => {
     if (item.kind === 'HEADING') return <Text style={styles.sectionTitle}>{item.title}</Text>;

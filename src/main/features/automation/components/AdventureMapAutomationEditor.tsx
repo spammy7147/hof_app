@@ -97,7 +97,6 @@ export function AdventureMapAutomationEditor({
 }: Props) {
   const [draft, setDraft] = useState<AdventureMapAutomationDraft>(() => buildAdventureMapAutomationDraft(entry, []));
   const [catalog, setCatalog] = useState<BattleMapResponse[]>([]);
-  const presets = partyPresetCatalog.catalog.presets;
   const [mapState, setMapState] = useState<ResourceState>({ loading: true, error: null });
   const presetState = { loading: partyPresetCatalog.loading, error: partyPresetCatalog.error };
   const [query, setQuery] = useState('');
@@ -240,7 +239,10 @@ export function AdventureMapAutomationEditor({
     baselineRef.current = serializeDraft(next);
   }, [catalog, draftDirty, entry]);
 
-  const validPresetIds = useMemo(() => presets.map(({ id }) => id), [presets]);
+  const validPresetIds = useMemo(
+    () => partyPresetCatalog.catalog.presets.map(({ id }) => id),
+    [partyPresetCatalog.catalog.presets],
+  );
   const presetsVerified = !presetState.loading && presetState.error == null;
   const errors = useMemo(
     () => validateAdventureMapAutomationDraft(draft, validPresetIds, {
@@ -411,7 +413,7 @@ export function AdventureMapAutomationEditor({
 
   const renderSelectedMap = useCallback((setting: AdventureMapAutomationDraft['maps'][number], { disabled }: { disabled: boolean }) => {
     const identity = adventureMapIdentity(setting);
-    const presetLabel = formatAutomationPresetSelection(setting, presets);
+    const presetLabel = formatAutomationPresetSelection(setting, partyPresetCatalog.catalog.presets);
     return (
       <>
         <Text ellipsizeMode="tail" numberOfLines={1} style={styles.mapName}>{setting.displayName}</Text>
@@ -435,7 +437,7 @@ export function AdventureMapAutomationEditor({
         </Pressable>
       </>
     );
-  }, [openPresetPicker, presets]);
+  }, [openPresetPicker, partyPresetCatalog.catalog.presets]);
 
   const renderItem = useCallback(({ item }: { item: ListItem }) => {
     if (item.kind === 'HEADING') return <Text style={styles.sectionTitle}>{item.title}</Text>;

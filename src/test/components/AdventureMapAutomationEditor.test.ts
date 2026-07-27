@@ -706,6 +706,7 @@ describe('AdventureMapAutomationEditor', () => {
       partyPresetCatalog: presetCatalog([preset(9, '고정 파티', false)]),
     });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.onPress(); });
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '공유 폴더 폴더 열기' }));
     const retainedSelectA = renderer.root.findByProps({ accessibilityLabel: '고정 파티 프리셋 선택' }).props.onPress as () => void;
     const retainedCloseA = renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress as () => void;
     await act(async () => { retainedCloseA(); });
@@ -1078,7 +1079,7 @@ function editorProps(overrides: Partial<React.ComponentProps<typeof AdventureMap
   };
 }
 function presetCatalog(presets: PartyPresetResponse[]) {
-  return { catalog: { folders: [], presets }, loading: false, error: null, retry: () => undefined };
+  return { catalog: { folders: [{ id: 90, name: '공유 폴더', parentFolderId: null, displayOrder: 0, createdAt: '', updatedAt: '' }], presets }, loading: false, error: null, retry: () => undefined };
 }
 function hasText(root: ReactTestInstance, text: string): boolean {
   return root.findAll((node) => (node.type as unknown) === 'Text' && node.children.join('') === text).length > 0;

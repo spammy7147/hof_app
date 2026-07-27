@@ -222,7 +222,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
         [{ categoryId: 'battle', mapCode: 'compact', successfulRuns: 2 }],
       ),
       maps: [catalogMap('compact', '압축 전투', { supportsThreeBattles: true })],
-      presets: [{ ...preset(7, '대표 프리셋'), isPrimary: true }],
+      partyPresetCatalog: presetCatalog([{ ...preset(7, '대표 프리셋'), isPrimary: true }]),
     });
 
     const presetChoice = renderer.root.findByProps({ accessibilityLabel: '압축 전투 프리셋 선택 열기' });
@@ -283,7 +283,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
         setting('missing', 2, 1),
       ], [{ categoryId: 'battle', mapCode: 'a', successfulRuns: 3 }]),
       maps: [catalogMap('a', 'Alpha', { supportsThreeBattles: true }), catalogMap('b', 'Beta', { groupName: 'Forest', recommendedLevel: 'Lv 20' })],
-      presets: [preset(9, 'Raid Team')],
+      partyPresetCatalog: presetCatalog([preset(9, 'Raid Team')]),
       onSave: async (request) => { saves.push(request); return true; },
     });
 
@@ -413,7 +413,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     const renderer = await renderEditor({
       entry: battleEntry([setting('a', 3, 0), setting('b', 4, 1)]),
       maps: [catalogMap('a', 'Alpha'), catalogMap('b', 'Beta', { mapOrder: 1 })],
-      presets: [preset(9, 'Raid Team')],
+      partyPresetCatalog: presetCatalog([preset(9, 'Raid Team')]),
       onSave: async (request) => { saves.push(request); return saveResult.promise; },
       onBack: () => { backs += 1; },
     });
@@ -642,7 +642,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
 
   it('repairs a deleted explicit preset and keeps a missing stored map labeled and removable', async () => {
     const broken = { ...setting('missing', 3, 0), presetMode: 'EXPLICIT' as const, partyPresetId: 99 };
-    const renderer = await renderEditor({ entry: battleEntry([broken]), presets: [preset(7, 'Existing')] });
+    const renderer = await renderEditor({ entry: battleEntry([broken]), partyPresetCatalog: presetCatalog([preset(7, 'Existing')]) });
     assert.equal(hasText(renderer.root, 'missing'), true);
     assert.equal(hasText(renderer.root, '현재 맵 목록에 없음 · 오늘 0/3 · 3회 남음 · 다음 1회 전투'), true);
     assert.equal(hasText(renderer.root, '선택한 프리셋이 삭제되었습니다. 다른 프리셋을 선택해 주세요.'), true);
@@ -752,7 +752,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
       areBattleCategoriesLoaded: false,
       battleCategoriesError: 'category down',
       onLoadBattleCategories: () => { categoryRetries += 1; },
-      presets: [preset(7, 'Existing')],
+      partyPresetCatalog: presetCatalog([preset(7, 'Existing')]),
     });
     assert.equal(renderer.root.findByProps({ accessibilityLabel: 'stored 일일 목표' }).props.editable, true);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'stored 프리셋 선택 열기' }));
@@ -803,13 +803,14 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     const renderer = await renderEditor({
       entry: battleEntry([setting('a', 3, 0), setting('b', 3, 1)]),
       maps: [catalogMap('a', 'Alpha'), catalogMap('b', 'Beta')],
-      presets: Array.from({ length: 100 }, (_, index) => preset(index + 1, `Preset ${index + 1}`)),
+      partyPresetCatalog: presetCatalog(Array.from({ length: 100 }, (_, index) => preset(index + 1, `Preset ${index + 1}`))),
     });
 
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Preset 100 프리셋 선택' }).length, 0);
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'Modal').length, 0);
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' }).props.onPress(); });
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'Modal').length, 1);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '공유 폴더 폴더 열기' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '대표 프리셋 선택' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Preset 100 프리셋 선택' }));
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }).props.onChangeText('100'); });
@@ -834,7 +835,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     const renderer = await renderEditor({
       entry: battleEntry([setting('a', 3, 0), setting('b', 3, 1)]),
       maps: [catalogMap('a', 'Alpha'), catalogMap('b', 'Beta')],
-      presets: [preset(7, 'Existing')],
+      partyPresetCatalog: presetCatalog([preset(7, 'Existing')]),
     });
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' }).props.onPress(); });
@@ -866,7 +867,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     const base = editorProps({
       entry: battleEntry([setting('a', 3, 0), setting('b', 3, 1)]),
       maps: [catalogMap('a', 'Alpha'), catalogMap('b', 'Beta')],
-      presets: [preset(7, 'Existing')],
+      partyPresetCatalog: presetCatalog([preset(7, 'Existing')]),
     });
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(React.createElement(BattleMapAutomationEditor, base)); });
@@ -895,7 +896,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     const broken = { ...setting('a', 3, 0), presetMode: 'EXPLICIT' as const, partyPresetId: 99 };
     const renderer = await renderEditor({
       entry: battleEntry([broken]), maps: [catalogMap('a', 'Alpha')],
-      presets: [preset(7, 'Raid Team'), preset(8, 'Support Team')],
+      partyPresetCatalog: presetCatalog([preset(7, 'Raid Team'), preset(8, 'Support Team')]),
     });
 
     assert.equal(hasText(renderer.root, '삭제된 프리셋 #99'), true);
@@ -914,7 +915,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
   it('closes the shared picker when its row is removed or the editor becomes busy', async () => {
     const base = editorProps({
       entry: battleEntry([setting('a', 3, 0), setting('b', 3, 1)]),
-      maps: [catalogMap('a', 'Alpha'), catalogMap('b', 'Beta')], presets: [preset(7, 'Existing')],
+      maps: [catalogMap('a', 'Alpha'), catalogMap('b', 'Beta')], partyPresetCatalog: presetCatalog([preset(7, 'Existing')]),
     });
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(React.createElement(BattleMapAutomationEditor, base)); });
@@ -977,7 +978,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
 });
 
 type Overrides = {
-  entry?: TypedAutomationEntryResponse; maps?: BattleMapResponse[]; presets?: ReturnType<typeof preset>[];
+  entry?: TypedAutomationEntryResponse; maps?: BattleMapResponse[];
   saving?: boolean; mutationMessage?: string | null;
   onLoadBattleMaps?: (categoryId: string) => Promise<BattleMapResponse[]>;
   partyPresetCatalog?: React.ComponentProps<typeof BattleMapAutomationEditor>['partyPresetCatalog'];
@@ -1006,15 +1007,16 @@ function editorProps(overrides: Overrides = {}) {
     battleCategoriesError: overrides.battleCategoriesError ?? null,
     onLoadBattleCategories: overrides.onLoadBattleCategories ?? (() => undefined),
     onLoadBattleMaps: overrides.onLoadBattleMaps ?? (async () => overrides.maps ?? []),
-    partyPresetCatalog: overrides.partyPresetCatalog ?? presetCatalog(overrides.presets ?? []),
+    partyPresetCatalog: overrides.partyPresetCatalog ?? presetCatalog([]),
     onClearMutationMessage: () => undefined,
     onSave: overrides.onSave ?? (async () => true), onBack: overrides.onBack ?? (() => undefined),
     onDelete: overrides.onDelete ?? (async () => true),
   };
 }
 function presetCatalog(presets: ReturnType<typeof preset>[], error: string | null = null, retry = () => undefined) {
-  return { catalog: { folders: [], presets }, loading: false, error, retry };
+  return { catalog: { folders: [presetFolder()], presets }, loading: false, error, retry };
 }
+function presetFolder() { return { id: 90, name: '공유 폴더', parentFolderId: null, displayOrder: 0, createdAt: '', updatedAt: '' }; }
 
 function hasText(root: ReactTestInstance, text: string): boolean {
   return root.findAll((node) => (node.type as unknown) === 'Text' && node.children.join('') === text).length > 0;
