@@ -1,6 +1,16 @@
 import { Check, Circle, X } from 'lucide-react-native';
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View, type ListRenderItemInfo } from 'react-native';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
+import {
+  AccessibilityInfo,
+  findNodeHandle,
+  FlatList,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type ListRenderItemInfo,
+} from 'react-native';
 
 import {
   canMovePartyPresetFolder,
@@ -34,6 +44,7 @@ export function PartyPresetFolderPicker({
   onConfirm,
 }: PartyPresetFolderPickerProps) {
   const [pendingFolderId, setPendingFolderId] = useState<number | null>(selectedFolderId);
+  const titleRef = useRef<ElementRef<typeof Text>>(null);
   useEffect(() => setPendingFolderId(selectedFolderId), [selectedFolderId]);
 
   const choices = useMemo<FolderChoice[]>(() => {
@@ -42,14 +53,13 @@ export function PartyPresetFolderPicker({
       folderId: null,
       path: movingFolderId == null ? '미지정' : '루트',
     };
-    const folders = [...index.foldersById.values()]
-      .map((folder): FolderChoice => ({
+    const folders = orderedFolderIdsDepthFirst(index)
+      .map((folderId): FolderChoice => ({
         disabled: movingFolderId != null
-          && !canMovePartyPresetFolder(index, movingFolderId, folder.id),
-        folderId: folder.id,
-        path: getPartyPresetFolderPath(index, folder.id),
-      }))
-      .sort((left, right) => left.path.localeCompare(right.path, 'ko'));
+          && !canMovePartyPresetFolder(index, movingFolderId, folderId),
+        folderId,
+        path: getPartyPresetFolderPath(index, folderId),
+      }));
     return allowUnassigned || movingFolderId != null ? [nullChoice, ...folders] : folders;
   }, [allowUnassigned, index, movingFolderId]);
 
@@ -65,28 +75,53 @@ export function PartyPresetFolderPicker({
   ), [pendingFolderId, selectChoice]);
   const keyExtractor = useCallback((item: FolderChoice) => item.folderId?.toString() ?? 'null', []);
   const confirm = useCallback(() => onConfirm(pendingFolderId), [onConfirm, pendingFolderId]);
+  const handleShow = useCallback(() => {
+    const titleNode = findNodeHandle(titleRef.current);
+    if (titleNode != null) AccessibilityInfo.setAccessibilityFocus(titleNode);
+  }, []);
 
   return (
-    <View accessibilityViewIsModal style={styles.root}>
-      <Text style={styles.title}>폴더 위치</Text>
-      <FlatList
-        data={choices}
-        keyExtractor={keyExtractor}
-        renderItem={renderChoice}
-        style={styles.list}
-      />
-      <View style={styles.actions}>
-        <Pressable accessibilityLabel="폴더 위치 취소" accessibilityRole="button" onPress={onCancel} style={styles.actionButton}>
-          <X color={theme.colors.textMuted} size={18} />
-          <Text style={styles.cancelText}>취소</Text>
-        </Pressable>
-        <Pressable accessibilityLabel="폴더 위치 확인" accessibilityRole="button" onPress={confirm} style={[styles.actionButton, styles.confirmButton]}>
-          <Check color={theme.colors.background} size={18} />
-          <Text style={styles.confirmText}>확인</Text>
-        </Pressable>
+    <Modal
+      animationType="slide"
+      onRequestClose={onCancel}
+      onShow={handleShow}
+      presentationStyle="formSheet"
+      visible
+    >
+      <View accessibilityLabel="폴더 위치 선택기" accessibilityViewIsModal style={styles.root}>
+        <Text ref={titleRef} accessible accessibilityRole="header" style={styles.title}>폴더 위치</Text>
+        <FlatList
+          data={choices}
+          keyExtractor={keyExtractor}
+          renderItem={renderChoice}
+          style={styles.list}
+        />
+        <View style={styles.actions}>
+          <Pressable accessibilityLabel="폴더 위치 취소" accessibilityRole="button" onPress={onCancel} style={styles.actionButton}>
+            <X color={theme.colors.textMuted} size={18} />
+            <Text style={styles.cancelText}>취소</Text>
+          </Pressable>
+          <Pressable accessibilityLabel="폴더 위치 확인" accessibilityRole="button" onPress={confirm} style={[styles.actionButton, styles.confirmButton]}>
+            <Check color={theme.colors.background} size={18} />
+            <Text style={styles.confirmText}>확인</Text>
+          </Pressable>
+        </View>
       </View>
-    </View>
+    </Modal>
   );
+}
+
+function orderedFolderIdsDepthFirst(index: PartyPresetCatalogIndex): number[] {
+  const result: number[] = [];
+  const pending = [...(index.childFolderIdsByParent.get(null) ?? [])].reverse();
+  while (pending.length > 0) {
+    const folderId = pending.pop();
+    if (folderId == null) break;
+    result.push(folderId);
+    const children = index.childFolderIdsByParent.get(folderId) ?? [];
+    for (let index = children.length - 1; index >= 0; index -= 1) pending.push(children[index]!);
+  }
+  return result;
 }
 
 const FolderChoiceRow = memo(function FolderChoiceRow({
@@ -117,9 +152,9 @@ const FolderChoiceRow = memo(function FolderChoiceRow({
 });
 
 const styles = StyleSheet.create({
-  root: { maxHeight: 480, gap: theme.spacing.sm, borderRadius: theme.radius.md, borderCurve: 'continuous', backgroundColor: theme.colors.surface, padding: theme.spacing.md },
+  root: { flex: 1, gap: theme.spacing.sm, backgroundColor: theme.colors.surface, padding: theme.spacing.md },
   title: { color: theme.colors.text, fontSize: 18, fontWeight: '900' },
-  list: { maxHeight: 340 },
+  list: { flex: 1 },
   choice: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, borderRadius: theme.radius.sm, borderCurve: 'continuous', paddingHorizontal: theme.spacing.sm },
   selectedChoice: { backgroundColor: theme.colors.surfaceAlt },
   choiceText: { flex: 1, color: theme.colors.text, fontSize: 14, fontWeight: '800' },

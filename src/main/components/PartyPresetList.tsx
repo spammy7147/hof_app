@@ -1,7 +1,7 @@
 import { ChevronDown, ChevronUp, FolderCog, GripVertical, Pencil, Plus, Save, Star, Trash2 } from 'lucide-react-native';
-import type { ReactNode } from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import type { ElementRef, ReactNode, Ref } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AccessibilityInfo, ActivityIndicator, findNodeHandle, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist';
 
@@ -95,8 +95,18 @@ export function PartyPresetList({
   const presetsRef = useRef(presets);
   const mutationPendingRef = useRef(false);
   const mountedRef = useRef(true);
+  const loadGenerationRef = useRef(0);
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const swipeableNodesRef = useRef(new Map<number, SwipeableMethods>());
+  const presetFolderTriggerRef = useRef<ElementRef<typeof Pressable>>(null);
+  const folderMoveTriggerRefs = useRef(new Map<number, ElementRef<typeof Pressable>>());
+  const presetDragRefs = useRef(new Map<number, () => void>());
+  const folderDragRefs = useRef(new Map<number, () => void>());
+  const pickerReturnFocusHandleRef = useRef<ReturnType<typeof findNodeHandle>>(null);
+  const pickerVisibleRef = useRef(false);
+  const pickerFocusGenerationRef = useRef(0);
+  const pickerFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  pickerVisibleRef.current = folderPickerOpen || movingFolderId != null;
   presetsRef.current = presets;
   const catalogIndex = useMemo(() => indexPartyPresetCatalog({ folders, presets }), [folders, presets]);
   const activePresetFolderId = expandedPresetId === 'new'
@@ -106,9 +116,11 @@ export function PartyPresetList({
       : null;
   const visiblePresets = useMemo(
     () => onGetPartyPresetCatalog
-      ? presets.filter(({ folderId }) => folderId === activePresetFolderId)
+      ? (catalogIndex.presetIdsByFolder.get(activePresetFolderId) ?? [])
+        .map((id) => catalogIndex.presetsById.get(id))
+        .filter((preset): preset is PartyPresetResponse => preset != null)
       : presets,
-    [activePresetFolderId, onGetPartyPresetCatalog, presets],
+    [activePresetFolderId, catalogIndex, onGetPartyPresetCatalog, presets],
   );
   const visiblePresetsRef = useRef(visiblePresets);
   visiblePresetsRef.current = visiblePresets;
@@ -130,10 +142,22 @@ export function PartyPresetList({
   }, []);
 
   const loadPresets = useCallback(async () => {
+    const generation = ++loadGenerationRef.current;
     if (!authenticated) {
+      setFolders([]);
       setPresets([]);
       setExpandedPresetId(null);
       setNewDraft(null);
+      setCatalogQuery('');
+      setExpandedFolderPath([]);
+      setFolderPickerOpen(false);
+      setFolderEditMode(false);
+      setFolderParentId(null);
+      setRenamingFolderId(null);
+      setMovingFolderId(null);
+      setDeleteConfirmFolderId(null);
+      setErrorMessage(null);
+      setIsLoading(false);
       return;
     }
 
@@ -142,18 +166,20 @@ export function PartyPresetList({
     try {
       if (onGetPartyPresetCatalog) {
         const loaded = await onGetPartyPresetCatalog();
-        if (mountedRef.current) {
+        if (mountedRef.current && loadGenerationRef.current === generation) {
           setFolders(loaded.folders);
           setPresets(loaded.presets);
         }
       } else {
         const loaded = await onListPartyPresets();
-        if (mountedRef.current) setPresets(loaded);
+        if (mountedRef.current && loadGenerationRef.current === generation) setPresets(loaded);
       }
     } catch (error) {
-      if (mountedRef.current) setErrorMessage(toUserFacingErrorMessage(error));
+      if (mountedRef.current && loadGenerationRef.current === generation) {
+        setErrorMessage(toUserFacingErrorMessage(error));
+      }
     } finally {
-      if (mountedRef.current) setIsLoading(false);
+      if (mountedRef.current && loadGenerationRef.current === generation) setIsLoading(false);
     }
   }, [authenticated, onGetPartyPresetCatalog, onListPartyPresets]);
 
@@ -162,8 +188,14 @@ export function PartyPresetList({
     void loadPresets();
     return () => {
       mountedRef.current = false;
+      loadGenerationRef.current += 1;
       closeOpenSwipeable();
       swipeableNodesRef.current.clear();
+      folderMoveTriggerRefs.current.clear();
+      presetDragRefs.current.clear();
+      folderDragRefs.current.clear();
+      pickerFocusGenerationRef.current += 1;
+      if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
     };
   }, [closeOpenSwipeable, loadPresets]);
 
@@ -193,6 +225,43 @@ export function PartyPresetList({
 
   function toggleNewPreset() {
     setExpandedPresetId((current) => current === 'new' ? null : 'new');
+  }
+
+  function openPresetFolderPicker() {
+    pickerFocusGenerationRef.current += 1;
+    if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
+    pickerReturnFocusHandleRef.current = findNodeHandle(presetFolderTriggerRef.current);
+    setFolderPickerOpen(true);
+  }
+
+  function openFolderMovePicker(folderId: number) {
+    pickerFocusGenerationRef.current += 1;
+    if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
+    pickerReturnFocusHandleRef.current = findNodeHandle(folderMoveTriggerRefs.current.get(folderId) ?? null);
+    setMovingFolderId(folderId);
+  }
+
+  function restorePickerFocusAfterClose() {
+    const handle = pickerReturnFocusHandleRef.current;
+    const generation = ++pickerFocusGenerationRef.current;
+    if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
+    if (handle == null) return;
+    pickerFocusTimerRef.current = setTimeout(() => {
+      pickerFocusTimerRef.current = null;
+      if (!mountedRef.current || pickerVisibleRef.current || pickerFocusGenerationRef.current !== generation) return;
+      AccessibilityInfo.setAccessibilityFocus(handle);
+      if (pickerReturnFocusHandleRef.current === handle) pickerReturnFocusHandleRef.current = null;
+    }, 250);
+  }
+
+  function closePresetFolderPicker() {
+    setFolderPickerOpen(false);
+    restorePickerFocusAfterClose();
+  }
+
+  function closeFolderMovePicker() {
+    setMovingFolderId(null);
+    restorePickerFocusAfterClose();
   }
 
   async function savePreset() {
@@ -399,12 +468,12 @@ export function PartyPresetList({
     if (!onMovePartyPresetFolder) return;
     const currentParentFolderId = catalogIndex.foldersById.get(folderId)?.parentFolderId;
     if (currentParentFolderId === parentFolderId) {
-      setMovingFolderId(null);
+      closeFolderMovePicker();
       return;
     }
     const displayOrder = catalogIndex.childFolderIdsByParent.get(parentFolderId)?.length ?? 0;
     const succeeded = await mutateFolder(() => onMovePartyPresetFolder(folderId, { parentFolderId, displayOrder }));
-    if (succeeded && mountedRef.current) setMovingFolderId(null);
+    if (succeeded && mountedRef.current) closeFolderMovePicker();
   }
 
   async function reorderFolders(ordered: PartyPresetFolderResponse[], previous: PartyPresetFolderResponse[]) {
@@ -453,78 +522,103 @@ export function PartyPresetList({
     void reorderPresets(ordered, previous);
   }
 
+  const folderRowActionsRef = useRef({
+    editableFolders,
+    openChild: setFolderParentId,
+    openMove: openFolderMovePicker,
+    reorder: reorderFolders,
+    requestDelete: setDeleteConfirmFolderId,
+    cancelDelete: () => setDeleteConfirmFolderId(null),
+    confirmDelete: deleteFolder,
+    beginRename: (folderId: number, name: string) => {
+      setRenamingFolderId(folderId);
+      setFolderNameDraft(name);
+    },
+    saveRename: renameFolder,
+  });
+  folderRowActionsRef.current = {
+    editableFolders,
+    openChild: setFolderParentId,
+    openMove: openFolderMovePicker,
+    reorder: reorderFolders,
+    requestDelete: setDeleteConfirmFolderId,
+    cancelDelete: () => setDeleteConfirmFolderId(null),
+    confirmDelete: deleteFolder,
+    beginRename: (folderId, name) => {
+      setRenamingFolderId(folderId);
+      setFolderNameDraft(name);
+    },
+    saveRename: renameFolder,
+  };
+  const dispatchFolderMoveBy = useCallback((folderId: number, offset: -1 | 1) => {
+    const { editableFolders: current, reorder } = folderRowActionsRef.current;
+    const from = current.findIndex(({ id }) => id === folderId);
+    const to = from + offset;
+    if (from < 0 || to < 0 || to >= current.length) return;
+    const ordered = [...current];
+    const [moved] = ordered.splice(from, 1);
+    ordered.splice(to, 0, moved!);
+    void reorder(ordered, current);
+  }, []);
+  const dispatchFolderOpenChild = useCallback((folderId: number) => folderRowActionsRef.current.openChild(folderId), []);
+  const dispatchFolderBeginRename = useCallback((folderId: number, name: string) => folderRowActionsRef.current.beginRename(folderId, name), []);
+  const dispatchFolderSaveRename = useCallback((folderId: number) => void folderRowActionsRef.current.saveRename(folderId), []);
+  const dispatchFolderOpenMove = useCallback((folderId: number) => folderRowActionsRef.current.openMove(folderId), []);
+  const dispatchFolderRequestDelete = useCallback((folderId: number) => folderRowActionsRef.current.requestDelete(folderId), []);
+  const dispatchFolderCancelDelete = useCallback(() => folderRowActionsRef.current.cancelDelete(), []);
+  const dispatchFolderConfirmDelete = useCallback((folderId: number) => void folderRowActionsRef.current.confirmDelete(folderId), []);
+  const registerFolderMoveTrigger = useCallback((folderId: number, node: ElementRef<typeof Pressable> | null) => {
+    if (node) folderMoveTriggerRefs.current.set(folderId, node);
+    else folderMoveTriggerRefs.current.delete(folderId);
+  }, []);
+  const presetRowActionsRef = useRef({
+    deletePreset: deletePresetById,
+    makePrimary,
+    movePreset,
+    openPreset: (presetId: number) => {
+      const preset = presetsRef.current.find(({ id }) => id === presetId);
+      if (preset) openPreset(preset);
+    },
+  });
+  presetRowActionsRef.current = {
+    deletePreset: deletePresetById,
+    makePrimary,
+    movePreset,
+    openPreset: (presetId) => {
+      const preset = presetsRef.current.find(({ id }) => id === presetId);
+      if (preset) openPreset(preset);
+    },
+  };
+  const dispatchPresetDelete = useCallback((presetId: number) => void presetRowActionsRef.current.deletePreset(presetId), []);
+  const dispatchPresetPrimary = useCallback((presetId: number) => void presetRowActionsRef.current.makePrimary(presetId), []);
+  const dispatchPresetMove = useCallback((presetId: number, offset: -1 | 1) => presetRowActionsRef.current.movePreset(presetId, offset), []);
+  const dispatchPresetOpen = useCallback((presetId: number) => presetRowActionsRef.current.openPreset(presetId), []);
+  const registerSwipeable = useCallback((presetId: number, node: SwipeableMethods | null) => {
+    if (node) swipeableNodesRef.current.set(presetId, node);
+    else swipeableNodesRef.current.delete(presetId);
+  }, []);
+  const prepareSwipeable = useCallback((presetId: number) => {
+    const next = swipeableNodesRef.current.get(presetId) ?? null;
+    if (openSwipeableRef.current && openSwipeableRef.current !== next) openSwipeableRef.current.close();
+    openSwipeableRef.current = next;
+  }, []);
+  const beginPresetDrag = useCallback((presetId: number) => {
+    closeOpenSwipeable();
+    setIsDragging(true);
+    presetDragRefs.current.get(presetId)?.();
+  }, [closeOpenSwipeable]);
+  const beginFolderDrag = useCallback((folderId: number) => folderDragRefs.current.get(folderId)?.(), []);
+
   function renderPreset({ item: preset, drag, getIndex, isActive }: RenderItemParams<PartyPresetResponse>) {
+    presetDragRefs.current.set(preset.id, drag);
     const index = getIndex() ?? visiblePresetsRef.current.findIndex(({ id }) => id === preset.id);
     const expanded = expandedPresetId === preset.id;
     const interactionDisabled = isSaving || isDragging || isActive;
-    const deleteAction = () => void deletePresetById(preset.id);
     return (
-      <ReanimatedSwipeable
-        ref={(node) => {
-          if (node) swipeableNodesRef.current.set(preset.id, node);
-          else swipeableNodesRef.current.delete(preset.id);
-        }}
-        containerStyle={styles.swipeContainer}
-        enabled={!interactionDisabled}
-        friction={2}
-        onSwipeableWillOpen={() => {
-          const next = swipeableNodesRef.current.get(preset.id) ?? null;
-          if (openSwipeableRef.current && openSwipeableRef.current !== next) openSwipeableRef.current.close();
-          openSwipeableRef.current = next;
-        }}
-        overshootRight={false}
-        renderRightActions={() => (
-          <Pressable
-            accessibilityLabel={`${preset.name} 삭제`}
-            accessibilityRole="button"
-            disabled={interactionDisabled}
-            onPress={deleteAction}
-            style={({ pressed }) => [styles.swipeDeleteAction, pressed && styles.pressed]}
-          >
-            <Trash2 color={theme.colors.buttonText} size={18} />
-            <Text style={styles.swipeDeleteText}>삭제</Text>
-          </Pressable>
-        )}
-        rightThreshold={40}
-      >
-        <PresetCard
-          expanded={expanded}
-          isPrimary={preset.isPrimary}
-          name={preset.name}
-          summary={formatPartyPresetSummary(preset)}
-          onMakePrimary={() => void makePrimary(preset.id)}
-          onPress={() => openPreset(preset)}
-          renderHandle={() => (
-            <Pressable
-              accessibilityActions={[
-                ...(index > 0 ? [{ name: 'decrement' as const, label: '위로 이동' }] : []),
-                ...(index < visiblePresets.length - 1 ? [{ name: 'increment' as const, label: '아래로 이동' }] : []),
-                { name: 'delete' as const, label: '삭제' },
-              ]}
-              accessibilityHint="길게 누르거나 접근성 동작으로 순서를 바꾸세요"
-              accessibilityLabel={`${preset.name} ${index + 1}번째 프리셋 순서 이동`}
-              accessibilityRole="adjustable"
-              accessibilityState={{ disabled: interactionDisabled }}
-              accessibilityValue={{ min: 1, max: visiblePresets.length, now: index + 1 }}
-              delayLongPress={120}
-              disabled={interactionDisabled}
-              onAccessibilityAction={({ nativeEvent: { actionName } }) => {
-                if (actionName === 'decrement') movePreset(preset.id, -1);
-                if (actionName === 'increment') movePreset(preset.id, 1);
-                if (actionName === 'delete') deleteAction();
-              }}
-              onLongPress={() => {
-                closeOpenSwipeable();
-                setIsDragging(true);
-                drag();
-              }}
-              style={({ pressed }) => [styles.dragHandle, pressed && styles.pressed]}
-            >
-              <GripVertical color={theme.colors.textMuted} size={18} />
-            </Pressable>
-          )}
-        >
-          {expanded ? renderEditor({
+      <PartyPresetManagedRow
+        count={visiblePresets.length}
+        disabled={interactionDisabled}
+        editor={expanded ? renderEditor({
             activeSlotIndex,
             characters,
             draftName,
@@ -532,128 +626,55 @@ export function PartyPresetList({
             folderPath: getPartyPresetFolderPath(catalogIndex, draftFolderId),
             isSaving,
             onActiveSlotChange: setActiveSlotIndex,
-            onDelete: deleteAction,
+            onDelete: () => dispatchPresetDelete(preset.id),
             onNameChange: setDraftName,
             onPartyChange: setDraftParty,
-            onOpenFolderPicker: () => setFolderPickerOpen(true),
+            folderTriggerRef: presetFolderTriggerRef,
+            onOpenFolderPicker: openPresetFolderPicker,
             onSave: savePreset,
           }) : null}
-        </PresetCard>
-      </ReanimatedSwipeable>
+        expanded={expanded}
+        index={index}
+        isPrimary={preset.isPrimary}
+        name={preset.name}
+        onBeginDrag={beginPresetDrag}
+        onDelete={dispatchPresetDelete}
+        onMakePrimary={dispatchPresetPrimary}
+        onMove={dispatchPresetMove}
+        onOpen={dispatchPresetOpen}
+        onRegisterSwipeable={registerSwipeable}
+        onSwipeableWillOpen={prepareSwipeable}
+        presetId={preset.id}
+        summary={formatPartyPresetSummary(preset)}
+      />
     );
   }
 
   function renderFolder({ item: folder, drag, getIndex, isActive }: RenderItemParams<PartyPresetFolderResponse>) {
+    folderDragRefs.current.set(folder.id, drag);
     const index = getIndex() ?? editableFolders.findIndex(({ id }) => id === folder.id);
     const interactionDisabled = isSaving || isDragging || isActive;
-    const moveBy = (offset: -1 | 1) => {
-      const to = index + offset;
-      if (to < 0 || to >= editableFolders.length) return;
-      const ordered = [...editableFolders];
-      const [moved] = ordered.splice(index, 1);
-      ordered.splice(to, 0, moved!);
-      void reorderFolders(ordered, editableFolders);
-    };
     return (
-      <View style={styles.folderEditItem}>
-        <View style={styles.folderEditRow}>
-        <Pressable
-          accessibilityActions={[
-            ...(index > 0 ? [{ name: 'decrement' as const, label: '위로 이동' }] : []),
-            ...(index < editableFolders.length - 1 ? [{ name: 'increment' as const, label: '아래로 이동' }] : []),
-          ]}
-          accessibilityHint="길게 누르거나 접근성 동작으로 같은 부모의 폴더 순서를 바꾸세요"
-          accessibilityLabel={`${folder.name} ${index + 1}번째 폴더 순서 이동`}
-          accessibilityRole="adjustable"
-          accessibilityState={{ disabled: interactionDisabled }}
-          accessibilityValue={{ min: 1, max: editableFolders.length, now: index + 1 }}
-          delayLongPress={120}
-          disabled={interactionDisabled}
-          onAccessibilityAction={({ nativeEvent: { actionName } }) => {
-            if (actionName === 'decrement') moveBy(-1);
-            if (actionName === 'increment') moveBy(1);
-          }}
-          onLongPress={drag}
-          style={styles.folderDragHandle}
-        >
-          <GripVertical color={theme.colors.textMuted} size={18} />
-        </Pressable>
-        {renamingFolderId === folder.id ? (
-          <TextInput
-            accessibilityLabel={`${folder.name} 폴더 이름`}
-            autoFocus
-            onChangeText={setFolderNameDraft}
-            style={[styles.nameInput, styles.folderNameInput]}
-            value={folderNameDraft}
-          />
-        ) : (
-          <Pressable
-            accessibilityLabel={`${folder.name} 하위 폴더 열기`}
-            accessibilityRole="button"
-            onPress={() => setFolderParentId(folder.id)}
-            style={styles.folderNameButton}
-          >
-            <Text numberOfLines={1} style={styles.folderNameText}>{folder.name}</Text>
-          </Pressable>
-        )}
-        <Pressable
-          accessibilityLabel={renamingFolderId === folder.id ? `${folder.name} 폴더 이름 저장` : `${folder.name} 폴더 이름 변경`}
-          accessibilityRole="button"
-          disabled={interactionDisabled}
-          onPress={() => {
-            if (renamingFolderId === folder.id) void renameFolder(folder.id);
-            else { setRenamingFolderId(folder.id); setFolderNameDraft(folder.name); }
-          }}
-          style={styles.folderIconButton}
-        >
-          {renamingFolderId === folder.id ? <Save color={theme.colors.accentGreen} size={17} /> : <Pencil color={theme.colors.textMuted} size={17} />}
-        </Pressable>
-        <Pressable
-          accessibilityLabel={`${folder.name} 폴더 이동`}
-          accessibilityRole="button"
-          disabled={interactionDisabled}
-          onPress={() => setMovingFolderId(folder.id)}
-          style={styles.folderIconButton}
-        >
-          <FolderCog color={theme.colors.textMuted} size={17} />
-        </Pressable>
-        <Pressable
-          accessibilityLabel={`${folder.name} 폴더 삭제`}
-          accessibilityRole="button"
-          disabled={interactionDisabled}
-          onPress={() => setDeleteConfirmFolderId(folder.id)}
-          style={styles.folderIconButton}
-        >
-          <Trash2 color={theme.colors.danger} size={17} />
-        </Pressable>
-        </View>
-        {deleteConfirmFolderId === folder.id ? (
-          <View accessibilityLiveRegion="polite" style={styles.folderDeleteConfirmation}>
-            <View style={styles.folderDeleteCopy}>
-              <Text style={styles.folderDeleteTitle}>{folder.name} 폴더를 삭제할까요?</Text>
-              <Text style={styles.folderDeleteMessage}>프리셋은 삭제되지 않고 미지정으로 이동합니다.</Text>
-            </View>
-            <Pressable
-              accessibilityLabel={`${folder.name} 폴더 삭제 취소`}
-              accessibilityRole="button"
-              disabled={interactionDisabled}
-              onPress={() => setDeleteConfirmFolderId(null)}
-              style={styles.folderConfirmButton}
-            >
-              <Text style={styles.folderCancelText}>취소</Text>
-            </Pressable>
-            <Pressable
-              accessibilityLabel={`${folder.name} 폴더 삭제 확인`}
-              accessibilityRole="button"
-              disabled={interactionDisabled}
-              onPress={() => void deleteFolder(folder.id)}
-              style={[styles.folderConfirmButton, styles.folderDeleteButton]}
-            >
-              <Text style={styles.folderDeleteButtonText}>삭제</Text>
-            </Pressable>
-          </View>
-        ) : null}
-      </View>
+      <PartyPresetFolderManagerRow
+        count={editableFolders.length}
+        deleteConfirmation={deleteConfirmFolderId === folder.id}
+        disabled={interactionDisabled}
+        folderId={folder.id}
+        index={index}
+        name={folder.name}
+        onBeginRename={dispatchFolderBeginRename}
+        onBeginDrag={beginFolderDrag}
+        onCancelDelete={dispatchFolderCancelDelete}
+        onConfirmDelete={dispatchFolderConfirmDelete}
+        onMoveBy={dispatchFolderMoveBy}
+        onNameChange={setFolderNameDraft}
+        onOpenChild={dispatchFolderOpenChild}
+        onOpenMove={dispatchFolderOpenMove}
+        onRegisterMoveTrigger={registerFolderMoveTrigger}
+        onRequestDelete={dispatchFolderRequestDelete}
+        onSaveRename={dispatchFolderSaveRename}
+        renameValue={renamingFolderId === folder.id ? folderNameDraft : null}
+      />
     );
   }
 
@@ -686,7 +707,8 @@ export function PartyPresetList({
             onDelete: discardNewPreset,
             onNameChange: (name) => setNewDraft((current) => current ? { ...current, name } : current),
             onPartyChange: (party) => setNewDraft((current) => current ? { ...current, party } : current),
-            onOpenFolderPicker: () => setFolderPickerOpen(true),
+            folderTriggerRef: presetFolderTriggerRef,
+            onOpenFolderPicker: openPresetFolderPicker,
             onSave: savePreset,
           }) : null}
         </PresetCard>
@@ -694,14 +716,14 @@ export function PartyPresetList({
       {folderPickerOpen ? (
         <PartyPresetFolderPicker
           index={catalogIndex}
-          onCancel={() => setFolderPickerOpen(false)}
+          onCancel={closePresetFolderPicker}
           onConfirm={(folderId) => {
             if (expandedPresetId === 'new') {
               setNewDraft((current) => current ? { ...current, folderId } : current);
             } else {
               setDraftFolderId(folderId);
             }
-            setFolderPickerOpen(false);
+            closePresetFolderPicker();
           }}
           selectedFolderId={expandedPresetId === 'new' ? newDraft?.folderId ?? null : draftFolderId}
         />
@@ -786,7 +808,7 @@ export function PartyPresetList({
               allowUnassigned={false}
               index={catalogIndex}
               movingFolderId={movingFolderId}
-              onCancel={() => setMovingFolderId(null)}
+              onCancel={closeFolderMovePicker}
               onConfirm={(parentFolderId) => void moveFolder(movingFolderId, parentFolderId)}
               selectedFolderId={catalogIndex.foldersById.get(movingFolderId)?.parentFolderId ?? null}
             />
@@ -856,7 +878,214 @@ type PresetCardProps = {
   renderHandle: (() => ReactNode) | null;
 };
 
-function PresetCard({
+type PartyPresetManagedRowProps = {
+  count: number;
+  disabled: boolean;
+  editor: ReactNode;
+  expanded: boolean;
+  index: number;
+  isPrimary: boolean;
+  name: string;
+  presetId: number;
+  summary: string;
+  onBeginDrag: (presetId: number) => void;
+  onDelete: (presetId: number) => void;
+  onMakePrimary: (presetId: number) => void;
+  onMove: (presetId: number, offset: -1 | 1) => void;
+  onOpen: (presetId: number) => void;
+  onRegisterSwipeable: (presetId: number, node: SwipeableMethods | null) => void;
+  onSwipeableWillOpen: (presetId: number) => void;
+};
+
+const PartyPresetManagedRow = memo(function PartyPresetManagedRow({
+  count,
+  disabled,
+  editor,
+  expanded,
+  index,
+  isPrimary,
+  name,
+  presetId,
+  summary,
+  onBeginDrag,
+  onDelete,
+  onMakePrimary,
+  onMove,
+  onOpen,
+  onRegisterSwipeable,
+  onSwipeableWillOpen,
+}: PartyPresetManagedRowProps) {
+  const register = useCallback((node: SwipeableMethods | null) => onRegisterSwipeable(presetId, node), [onRegisterSwipeable, presetId]);
+  const prepareSwipe = useCallback(() => onSwipeableWillOpen(presetId), [onSwipeableWillOpen, presetId]);
+  const deletePreset = useCallback(() => onDelete(presetId), [onDelete, presetId]);
+  const makePrimaryPreset = useCallback(() => onMakePrimary(presetId), [onMakePrimary, presetId]);
+  const open = useCallback(() => onOpen(presetId), [onOpen, presetId]);
+  const beginDrag = useCallback(() => onBeginDrag(presetId), [onBeginDrag, presetId]);
+  const moveUp = useCallback(() => onMove(presetId, -1), [onMove, presetId]);
+  const moveDown = useCallback(() => onMove(presetId, 1), [onMove, presetId]);
+  const renderRightActions = useCallback(() => (
+    <Pressable accessibilityLabel={`${name} 삭제`} accessibilityRole="button" disabled={disabled} onPress={deletePreset} style={({ pressed }) => [styles.swipeDeleteAction, pressed && styles.pressed]}>
+      <Trash2 color={theme.colors.buttonText} size={18} />
+      <Text style={styles.swipeDeleteText}>삭제</Text>
+    </Pressable>
+  ), [deletePreset, disabled, name]);
+  const renderHandle = useCallback(() => (
+    <Pressable
+      accessibilityActions={[
+        ...(index > 0 ? [{ name: 'decrement' as const, label: '위로 이동' }] : []),
+        ...(index < count - 1 ? [{ name: 'increment' as const, label: '아래로 이동' }] : []),
+        { name: 'delete' as const, label: '삭제' },
+      ]}
+      accessibilityHint="길게 누르거나 접근성 동작으로 순서를 바꾸세요"
+      accessibilityLabel={`${name} ${index + 1}번째 프리셋 순서 이동`}
+      accessibilityRole="adjustable"
+      accessibilityState={{ disabled }}
+      accessibilityValue={{ min: 1, max: count, now: index + 1 }}
+      delayLongPress={120}
+      disabled={disabled}
+      onAccessibilityAction={({ nativeEvent: { actionName } }) => {
+        if (actionName === 'decrement') moveUp();
+        if (actionName === 'increment') moveDown();
+        if (actionName === 'delete') deletePreset();
+      }}
+      onLongPress={beginDrag}
+      style={({ pressed }) => [styles.dragHandle, pressed && styles.pressed]}
+    >
+      <GripVertical color={theme.colors.textMuted} size={18} />
+    </Pressable>
+  ), [beginDrag, count, deletePreset, disabled, index, moveDown, moveUp, name]);
+  return (
+    <ReanimatedSwipeable
+      testID={`party-preset-managed-row-${presetId}`}
+      ref={register}
+      containerStyle={styles.swipeContainer}
+      enabled={!disabled}
+      friction={2}
+      onSwipeableWillOpen={prepareSwipe}
+      overshootRight={false}
+      renderRightActions={renderRightActions}
+      rightThreshold={40}
+    >
+      <PresetCard expanded={expanded} isPrimary={isPrimary} name={name} onMakePrimary={makePrimaryPreset} onPress={open} renderHandle={renderHandle} summary={summary}>
+        {editor}
+      </PresetCard>
+    </ReanimatedSwipeable>
+  );
+});
+
+type PartyPresetFolderManagerRowProps = {
+  count: number;
+  deleteConfirmation: boolean;
+  disabled: boolean;
+  folderId: number;
+  index: number;
+  name: string;
+  renameValue: string | null;
+  onBeginDrag: (folderId: number) => void;
+  onBeginRename: (folderId: number, name: string) => void;
+  onCancelDelete: () => void;
+  onConfirmDelete: (folderId: number) => void;
+  onMoveBy: (folderId: number, offset: -1 | 1) => void;
+  onNameChange: (name: string) => void;
+  onOpenChild: (folderId: number) => void;
+  onOpenMove: (folderId: number) => void;
+  onRegisterMoveTrigger: (folderId: number, node: ElementRef<typeof Pressable> | null) => void;
+  onRequestDelete: (folderId: number) => void;
+  onSaveRename: (folderId: number) => void;
+};
+
+const PartyPresetFolderManagerRow = memo(function PartyPresetFolderManagerRow({
+  count,
+  deleteConfirmation,
+  disabled,
+  folderId,
+  index,
+  name,
+  renameValue,
+  onBeginDrag,
+  onBeginRename,
+  onCancelDelete,
+  onConfirmDelete,
+  onMoveBy,
+  onNameChange,
+  onOpenChild,
+  onOpenMove,
+  onRegisterMoveTrigger,
+  onRequestDelete,
+  onSaveRename,
+}: PartyPresetFolderManagerRowProps) {
+  const moveUp = useCallback(() => onMoveBy(folderId, -1), [folderId, onMoveBy]);
+  const moveDown = useCallback(() => onMoveBy(folderId, 1), [folderId, onMoveBy]);
+  const openChild = useCallback(() => onOpenChild(folderId), [folderId, onOpenChild]);
+  const toggleRename = useCallback(() => {
+    if (renameValue != null) onSaveRename(folderId);
+    else onBeginRename(folderId, name);
+  }, [folderId, name, onBeginRename, onSaveRename, renameValue]);
+  const openMove = useCallback(() => onOpenMove(folderId), [folderId, onOpenMove]);
+  const registerMove = useCallback((node: ElementRef<typeof Pressable> | null) => onRegisterMoveTrigger(folderId, node), [folderId, onRegisterMoveTrigger]);
+  const requestDelete = useCallback(() => onRequestDelete(folderId), [folderId, onRequestDelete]);
+  const confirmDelete = useCallback(() => onConfirmDelete(folderId), [folderId, onConfirmDelete]);
+  const beginDrag = useCallback(() => onBeginDrag(folderId), [folderId, onBeginDrag]);
+  return (
+    <View style={styles.folderEditItem} testID={`party-preset-folder-manager-row-${folderId}`}>
+      <View style={styles.folderEditRow}>
+        <Pressable
+          accessibilityActions={[
+            ...(index > 0 ? [{ name: 'decrement' as const, label: '위로 이동' }] : []),
+            ...(index < count - 1 ? [{ name: 'increment' as const, label: '아래로 이동' }] : []),
+          ]}
+          accessibilityHint="길게 누르거나 접근성 동작으로 같은 부모의 폴더 순서를 바꾸세요"
+          accessibilityLabel={`${name} ${index + 1}번째 폴더 순서 이동`}
+          accessibilityRole="adjustable"
+          accessibilityState={{ disabled }}
+          accessibilityValue={{ min: 1, max: count, now: index + 1 }}
+          delayLongPress={120}
+          disabled={disabled}
+          onAccessibilityAction={({ nativeEvent: { actionName } }) => {
+            if (actionName === 'decrement') moveUp();
+            if (actionName === 'increment') moveDown();
+          }}
+          onLongPress={beginDrag}
+          style={styles.folderDragHandle}
+        >
+          <GripVertical color={theme.colors.textMuted} size={18} />
+        </Pressable>
+        {renameValue != null ? (
+          <TextInput accessibilityLabel={`${name} 폴더 이름`} autoFocus onChangeText={onNameChange} style={[styles.nameInput, styles.folderNameInput]} value={renameValue} />
+        ) : (
+          <Pressable accessibilityLabel={`${name} 하위 폴더 열기`} accessibilityRole="button" onPress={openChild} style={styles.folderNameButton}>
+            <Text numberOfLines={1} style={styles.folderNameText}>{name}</Text>
+          </Pressable>
+        )}
+        <Pressable accessibilityLabel={renameValue != null ? `${name} 폴더 이름 저장` : `${name} 폴더 이름 변경`} accessibilityRole="button" disabled={disabled} onPress={toggleRename} style={styles.folderIconButton}>
+          {renameValue != null ? <Save color={theme.colors.accentGreen} size={17} /> : <Pencil color={theme.colors.textMuted} size={17} />}
+        </Pressable>
+        <Pressable ref={registerMove} accessibilityLabel={`${name} 폴더 이동`} accessibilityRole="button" disabled={disabled} onPress={openMove} style={styles.folderIconButton}>
+          <FolderCog color={theme.colors.textMuted} size={17} />
+        </Pressable>
+        <Pressable accessibilityLabel={`${name} 폴더 삭제`} accessibilityRole="button" disabled={disabled} onPress={requestDelete} style={styles.folderIconButton}>
+          <Trash2 color={theme.colors.danger} size={17} />
+        </Pressable>
+      </View>
+      {deleteConfirmation ? (
+        <View accessibilityLiveRegion="polite" style={styles.folderDeleteConfirmation}>
+          <View style={styles.folderDeleteCopy}>
+            <Text style={styles.folderDeleteTitle}>{name} 폴더를 삭제할까요?</Text>
+            <Text style={styles.folderDeleteMessage}>직접 프리셋은 미지정으로 이동하고, 바로 아래 폴더는 상위로 승격되며 그 프리셋은 그대로 유지됩니다.</Text>
+          </View>
+          <Pressable accessibilityLabel={`${name} 폴더 삭제 취소`} accessibilityRole="button" disabled={disabled} onPress={onCancelDelete} style={styles.folderConfirmButton}>
+            <Text style={styles.folderCancelText}>취소</Text>
+          </Pressable>
+          <Pressable accessibilityLabel={`${name} 폴더 삭제 확인`} accessibilityRole="button" disabled={disabled} onPress={confirmDelete} style={[styles.folderConfirmButton, styles.folderDeleteButton]}>
+            <Text style={styles.folderDeleteButtonText}>삭제</Text>
+          </Pressable>
+        </View>
+      ) : null}
+    </View>
+  );
+});
+
+const PresetCard = memo(function PresetCard({
   children,
   expanded,
   isPrimary,
@@ -907,13 +1136,14 @@ function PresetCard({
       {expanded ? <View style={styles.cardBody}>{children}</View> : null}
     </View>
   );
-}
+});
 
 function renderEditor({
   activeSlotIndex,
   characters,
   draftName,
   draftParty,
+  folderTriggerRef,
   folderPath,
   isSaving,
   onActiveSlotChange,
@@ -927,6 +1157,7 @@ function renderEditor({
   characters: HofCharacter[];
   draftName: string;
   draftParty: BattlePartyMember[];
+  folderTriggerRef: Ref<ElementRef<typeof Pressable>>;
   folderPath: string;
   isSaving: boolean;
   onActiveSlotChange: (slotIndex: number) => void;
@@ -950,6 +1181,7 @@ function renderEditor({
       />
       <Text style={styles.inputLabel}>폴더 위치</Text>
       <Pressable
+        ref={folderTriggerRef}
         accessibilityLabel="폴더 위치 선택"
         accessibilityRole="button"
         disabled={isSaving}

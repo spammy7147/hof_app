@@ -10,7 +10,9 @@ import type { PartyPresetCatalogResponse, PartyPresetResponse } from '../../main
 type SwipeableMockMethods = { close: () => void; closeCalls: number };
 
 const dragCalls: PartyPresetResponse[] = [];
+const hostRenderCounts = new Map<string, number>();
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
+  if (typeof props.testID === 'string') hostRenderCounts.set(props.testID, (hostRenderCounts.get(props.testID) ?? 0) + 1);
   const nodeRef = React.useRef<Record<string, unknown>>({});
   Object.assign(nodeRef.current, props);
   React.useImperativeHandle(ref, () => nodeRef.current, []);
@@ -41,6 +43,7 @@ const draggableFlatList = (props: Record<string, unknown>) => React.createElemen
   ),
 );
 const reanimatedSwipeable = React.forwardRef<SwipeableMockMethods, Record<string, unknown>>((props, ref) => {
+  if (typeof props.testID === 'string') hostRenderCounts.set(props.testID, (hostRenderCounts.get(props.testID) ?? 0) + 1);
   const methods = React.useMemo<SwipeableMockMethods>(() => ({
     closeCalls: 0,
     close() { methods.closeCalls += 1; },
@@ -56,6 +59,7 @@ const reanimatedSwipeable = React.forwardRef<SwipeableMockMethods, Record<string
 });
 const battlePartySelector = (props: Record<string, unknown>) => React.createElement('BattlePartySelector', props);
 const reactNativeMock = {
+  AccessibilityInfo: { setAccessibilityFocus: () => undefined },
   ActivityIndicator: host('ActivityIndicator'),
   FlatList: (props: Record<string, unknown>) => React.createElement(
     'FlatList',
@@ -66,12 +70,14 @@ const reactNativeMock = {
       (props.renderItem as (value: { item: unknown; index: number }) => React.ReactNode)({ item, index }),
     )),
   ),
+  Modal: host('Modal'),
   Pressable: host('Pressable'),
   ScrollView: host('ScrollView'),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: host('Text'),
   TextInput: host('TextInput'),
   View: host('View'),
+  findNodeHandle: () => 1,
 };
 const iconsMock = new Proxy({}, { get: (_target, property) => host(String(property)) });
 type Loader = (request: string, parent: NodeModule | undefined, isMain: boolean) => unknown;
@@ -310,7 +316,7 @@ describe('PartyPresetList', () => {
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 삭제' }).props.onPress());
     assert.deepEqual(deletedFolders, []);
     assert.equal(textCount(renderer.root, '전투 폴더를 삭제할까요?'), 1);
-    assert.equal(textCount(renderer.root, '프리셋은 삭제되지 않고 미지정으로 이동합니다.'), 1);
+    assert.equal(textCount(renderer.root, '직접 프리셋은 미지정으로 이동하고, 바로 아래 폴더는 상위로 승격되며 그 프리셋은 그대로 유지됩니다.'), 1);
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 삭제 취소' }).props.onPress());
     assert.deepEqual(deletedFolders, []);
     assert.equal(textCount(renderer.root, '전투 폴더를 삭제할까요?'), 0);
@@ -495,24 +501,108 @@ describe('PartyPresetList', () => {
     await act(async () => draggable.props.onDragEnd({ data: [rows[1], rows[0]], from: 0, to: 1 }));
     assert.deepEqual(requests, [{ folderId: 10, presetIds: [2, 1] }]);
   });
+
+  it('renders catalog preset order, updates optimistically, and adopts successful server order', async () => {
+    const pending = deferred<PartyPresetResponse[]>();
+    const catalog: PartyPresetCatalogResponse = {
+      ...FOLDER_PRESETS_CATALOG,
+      presets: [
+        { ...FOLDER_PRESETS_CATALOG.presets[1]!, displayOrder: 1 },
+        { ...FOLDER_PRESETS_CATALOG.presets[0]!, displayOrder: 0 },
+      ],
+    };
+    const renderer = await renderList({
+      onGetPartyPresetCatalog: async () => catalog,
+      onReorderPartyPresets: async () => pending.promise,
+    });
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 구성원 0명, 대표 프리셋' }).props.onPress());
+    let draggable = findHost(renderer.root, 'DraggableFlatList');
+    assert.deepEqual((draggable.props.data as PartyPresetResponse[]).map(({ id }) => id), [1, 2]);
+    const rows = draggable.props.data as PartyPresetResponse[];
+    await act(async () => {
+      void draggable.props.onDragEnd({ data: [rows[1], rows[0]], from: 0, to: 1 });
+      await Promise.resolve();
+    });
+    draggable = findHost(renderer.root, 'DraggableFlatList');
+    assert.deepEqual((draggable.props.data as PartyPresetResponse[]).map(({ id }) => id), [2, 1]);
+    await act(async () => pending.resolve([
+      { ...catalog.presets[0]!, displayOrder: 1 },
+      { ...catalog.presets[1]!, displayOrder: 0 },
+    ]));
+    assert.deepEqual(
+      (findHost(renderer.root, 'DraggableFlatList').props.data as PartyPresetResponse[]).map(({ id }) => id),
+      [1, 2],
+    );
+  });
+
+  it('clears the full catalog on auth loss and ignores the late old-account load', async () => {
+    const pending = deferred<PartyPresetCatalogResponse>();
+    const props = listProps({ onGetPartyPresetCatalog: async () => pending.promise });
+    const renderer = await renderListProps(props);
+    await act(async () => renderer.update(React.createElement(PartyPresetList, { ...props, authenticated: false })));
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투 폴더 열기' }).length, 0);
+    await act(async () => pending.resolve(FOLDER_CATALOG));
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투 폴더 열기' }).length, 0);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '폴더 편집 시작' }).length, 0);
+  });
+
+  it('lets only the latest catalog request replace state when loads resolve in reverse order', async () => {
+    const older = deferred<PartyPresetCatalogResponse>();
+    const newer = deferred<PartyPresetCatalogResponse>();
+    const olderProps = listProps({ onGetPartyPresetCatalog: async () => older.promise });
+    const renderer = await renderListProps(olderProps);
+    const newerProps = { ...olderProps, onGetPartyPresetCatalog: async () => newer.promise };
+    await act(async () => renderer.update(React.createElement(PartyPresetList, newerProps)));
+    await act(async () => newer.resolve({ folders: [folder(30, '최신', null, 0)], presets: [] }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '최신 폴더 열기' }));
+    await act(async () => older.resolve({ folders: [folder(31, '오래됨', null, 0)], presets: [] }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '최신 폴더 열기' }));
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '오래됨 폴더 열기' }).length, 0);
+  });
+
+  it('does not rebuild unrelated memoized virtual rows while editing text', async () => {
+    const renderer = await renderList({ onGetPartyPresetCatalog: async () => FOLDER_PRESETS_CATALOG });
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 구성원 0명, 대표 프리셋' }).props.onPress());
+    hostRenderCounts.clear();
+    await act(async () => findHost(renderer.root, 'TextInput').props.onChangeText('편집 중'));
+    assert.equal(hostRenderCounts.get('party-preset-managed-row-2') ?? 0, 0);
+
+    const folderRenderer = await renderList({ onGetPartyPresetCatalog: async () => FOLDER_CATALOG });
+    await act(async () => folderRenderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
+    await act(async () => folderRenderer.root.findByProps({ accessibilityLabel: '전투 폴더 이름 변경' }).props.onPress());
+    hostRenderCounts.clear();
+    await act(async () => folderRenderer.root.findByProps({ accessibilityLabel: '전투 폴더 이름' }).props.onChangeText('보스전'));
+    assert.equal(hostRenderCounts.get('party-preset-folder-manager-row-11') ?? 0, 0);
+  });
+
 });
 
 type Overrides = Partial<React.ComponentProps<typeof PartyPresetList>>;
 
 async function renderList(overrides: Overrides = {}): Promise<ReactTestRenderer> {
+  return renderListProps(listProps(overrides));
+}
+
+function listProps(overrides: Overrides = {}): React.ComponentProps<typeof PartyPresetList> {
+  return {
+    authenticated: true,
+    characters: [],
+    onListPartyPresets: async () => PRESETS,
+    onCreatePartyPreset: async () => PRESETS[0]!,
+    onUpdatePartyPreset: async () => PRESETS[0]!,
+    onMakePartyPresetPrimary: async () => PRESETS[0]!,
+    onReorderPartyPresets: async () => PRESETS,
+    onDeletePartyPreset: async () => null,
+    ...overrides,
+  };
+}
+
+async function renderListProps(props: React.ComponentProps<typeof PartyPresetList>): Promise<ReactTestRenderer> {
   let renderer!: ReactTestRenderer;
   await act(async () => {
-    renderer = create(React.createElement(PartyPresetList, {
-      authenticated: true,
-      characters: [],
-      onListPartyPresets: async () => PRESETS,
-      onCreatePartyPreset: async () => PRESETS[0]!,
-      onUpdatePartyPreset: async () => PRESETS[0]!,
-      onMakePartyPresetPrimary: async () => PRESETS[0]!,
-      onReorderPartyPresets: async () => PRESETS,
-      onDeletePartyPreset: async () => null,
-      ...overrides,
-    }));
+    renderer = create(React.createElement(PartyPresetList, props));
     await Promise.resolve();
   });
   return renderer;

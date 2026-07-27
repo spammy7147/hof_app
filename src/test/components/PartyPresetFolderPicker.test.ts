@@ -8,6 +8,7 @@ import { indexPartyPresetCatalog } from '../../main/domain/partyPresetCatalog';
 import type { PartyPresetCatalogResponse } from '../../main/types/api';
 
 const host = (name: string) => (props: Record<string, unknown>) => React.createElement(name, props, props.children as React.ReactNode);
+const focusCalls: number[] = [];
 const flatList = (props: Record<string, unknown>) => React.createElement(
   'FlatList',
   props,
@@ -18,11 +19,14 @@ const flatList = (props: Record<string, unknown>) => React.createElement(
   )),
 );
 const reactNativeMock = {
+  AccessibilityInfo: { setAccessibilityFocus: (handle: number) => focusCalls.push(handle) },
   FlatList: flatList,
+  Modal: host('Modal'),
   Pressable: host('Pressable'),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: host('Text'),
   View: host('View'),
+  findNodeHandle: () => 1,
 };
 const iconsMock = new Proxy({}, { get: (_target, property) => host(String(property)) });
 type Loader = (request: string, parent: NodeModule | undefined, isMain: boolean) => unknown;
@@ -78,7 +82,36 @@ describe('PartyPresetFolderPicker', () => {
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '폴더 위치 이동할 폴더 › 자식' }).props.disabled, true);
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '폴더 위치 깊이1 › 깊이2 › 깊이3 › 깊이4' }).props.disabled, true);
   });
+
+  it('opens a form-sheet modal and keeps persisted depth-first folder order', async () => {
+    focusCalls.length = 0;
+    const renderer = await renderPicker(ORDERED_CATALOG);
+    const modal = renderer.root.find((node) => (node.type as unknown) === 'Modal');
+    assert.equal(modal.props.visible, true);
+    assert.equal(modal.props.presentationStyle, 'formSheet');
+    assert.ok(renderer.root.findByProps({ accessibilityRole: 'header' }));
+    assert.deepEqual(
+      (renderer.root.find((node) => (node.type as unknown) === 'FlatList').props.data as Array<{ path: string }>).map(({ path }) => path),
+      ['미지정', 'Z 루트', 'Z 루트 › B 자식', 'Z 루트 › B 자식 › 깊은 항목', 'A 루트'],
+    );
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '폴더 위치 Z 루트 › B 자식 › 깊은 항목' }));
+    await act(async () => modal.props.onShow());
+    assert.deepEqual(focusCalls, [1]);
+  });
 });
+
+async function renderPicker(catalog: PartyPresetCatalogResponse) {
+  let renderer!: ReturnType<typeof create>;
+  await act(async () => {
+    renderer = create(React.createElement(PartyPresetFolderPicker, {
+      index: indexPartyPresetCatalog(catalog),
+      selectedFolderId: null,
+      onCancel: () => undefined,
+      onConfirm: () => undefined,
+    }));
+  });
+  return renderer;
+}
 
 const CATALOG: PartyPresetCatalogResponse = {
   folders: [folder(1, '전투', null, 0), folder(2, '레이드', 1, 0)],
@@ -88,6 +121,15 @@ const DEEP_CATALOG: PartyPresetCatalogResponse = {
   folders: [
     folder(1, '이동할 폴더', null, 0), folder(2, '자식', 1, 0),
     folder(3, '깊이1', null, 1), folder(4, '깊이2', 3, 0), folder(5, '깊이3', 4, 0), folder(6, '깊이4', 5, 0),
+  ],
+  presets: [],
+};
+const ORDERED_CATALOG: PartyPresetCatalogResponse = {
+  folders: [
+    folder(10, 'A 루트', null, 1),
+    folder(1, 'Z 루트', null, 0),
+    folder(2, 'B 자식', 1, 0),
+    folder(3, '깊은 항목', 2, 0),
   ],
   presets: [],
 };
