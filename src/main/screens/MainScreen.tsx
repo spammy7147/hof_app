@@ -20,12 +20,17 @@ import type {
   BattleResultResponse,
   BattleStatsResponse,
   CreatePartyPresetRequest,
+  CreatePartyPresetFolderRequest,
   HofCharacter,
   HofCharacterDetail,
   HofObservedStatusResponse,
   HofStatusResponse,
   LoadPatternResponse,
+  MovePartyPresetFolderRequest,
+  PartyPresetCatalogResponse,
   PartyPresetResponse,
+  RenamePartyPresetFolderRequest,
+  ReorderPartyPresetFoldersRequest,
   ReorderPartyPresetsRequest,
   RunBattleRequest,
   UpdatePartyPresetRequest,
@@ -61,6 +66,12 @@ type MainScreenProps = {
   onStatusObserved?: (status: HofObservedStatusResponse) => void;
   automationController: UnifiedAutomationController;
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
+  onGetPartyPresetCatalog?: () => Promise<PartyPresetCatalogResponse>;
+  onCreatePartyPresetFolder?: (request: CreatePartyPresetFolderRequest) => Promise<PartyPresetCatalogResponse>;
+  onRenamePartyPresetFolder?: (folderId: number, request: RenamePartyPresetFolderRequest) => Promise<PartyPresetCatalogResponse>;
+  onReorderPartyPresetFolders?: (request: ReorderPartyPresetFoldersRequest) => Promise<PartyPresetCatalogResponse>;
+  onMovePartyPresetFolder?: (folderId: number, request: MovePartyPresetFolderRequest) => Promise<PartyPresetCatalogResponse>;
+  onDeletePartyPresetFolder?: (folderId: number) => Promise<PartyPresetCatalogResponse>;
   onCreatePartyPreset: (
     request: CreatePartyPresetRequest,
   ) => Promise<PartyPresetResponse>;
@@ -101,6 +112,12 @@ export function MainScreen({
   onStatusObserved,
   automationController,
   onListPartyPresets,
+  onGetPartyPresetCatalog,
+  onCreatePartyPresetFolder,
+  onRenamePartyPresetFolder,
+  onReorderPartyPresetFolders,
+  onMovePartyPresetFolder,
+  onDeletePartyPresetFolder,
   onCreatePartyPreset,
   onUpdatePartyPreset,
   onMakePartyPresetPrimary,
@@ -206,6 +223,12 @@ export function MainScreen({
           onStatusObserved,
           automationController,
           onListPartyPresets,
+          onGetPartyPresetCatalog,
+          onCreatePartyPresetFolder,
+          onRenamePartyPresetFolder,
+          onReorderPartyPresetFolders,
+          onMovePartyPresetFolder,
+          onDeletePartyPresetFolder,
           onCreatePartyPreset,
           onUpdatePartyPreset,
           onMakePartyPresetPrimary,
@@ -257,6 +280,12 @@ type RenderActiveTabArgs = {
   onStatusObserved?: (status: HofObservedStatusResponse) => void;
   automationController: UnifiedAutomationController;
   onListPartyPresets: () => Promise<PartyPresetResponse[]>;
+  onGetPartyPresetCatalog?: () => Promise<PartyPresetCatalogResponse>;
+  onCreatePartyPresetFolder?: (request: CreatePartyPresetFolderRequest) => Promise<PartyPresetCatalogResponse>;
+  onRenamePartyPresetFolder?: (folderId: number, request: RenamePartyPresetFolderRequest) => Promise<PartyPresetCatalogResponse>;
+  onReorderPartyPresetFolders?: (request: ReorderPartyPresetFoldersRequest) => Promise<PartyPresetCatalogResponse>;
+  onMovePartyPresetFolder?: (folderId: number, request: MovePartyPresetFolderRequest) => Promise<PartyPresetCatalogResponse>;
+  onDeletePartyPresetFolder?: (folderId: number) => Promise<PartyPresetCatalogResponse>;
   onCreatePartyPreset: (
     request: CreatePartyPresetRequest,
   ) => Promise<PartyPresetResponse>;
@@ -302,6 +331,12 @@ function renderActiveTab({
   onStatusObserved,
   automationController,
   onListPartyPresets,
+  onGetPartyPresetCatalog,
+  onCreatePartyPresetFolder,
+  onRenamePartyPresetFolder,
+  onReorderPartyPresetFolders,
+  onMovePartyPresetFolder,
+  onDeletePartyPresetFolder,
   onCreatePartyPreset,
   onUpdatePartyPreset,
   onMakePartyPresetPrimary,
@@ -400,6 +435,12 @@ function renderActiveTab({
               authenticated={authenticated}
               characters={characters}
               onListPartyPresets={onListPartyPresets}
+              onGetPartyPresetCatalog={onGetPartyPresetCatalog}
+              onCreatePartyPresetFolder={onCreatePartyPresetFolder}
+              onRenamePartyPresetFolder={onRenamePartyPresetFolder}
+              onReorderPartyPresetFolders={onReorderPartyPresetFolders}
+              onMovePartyPresetFolder={onMovePartyPresetFolder}
+              onDeletePartyPresetFolder={onDeletePartyPresetFolder}
               onCreatePartyPreset={onCreatePartyPreset}
               onUpdatePartyPreset={onUpdatePartyPreset}
               onMakePartyPresetPrimary={onMakePartyPresetPrimary}

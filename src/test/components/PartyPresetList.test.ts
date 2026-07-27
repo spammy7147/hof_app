@@ -5,7 +5,7 @@ import React from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 
 import type { BattlePartyMember } from '../../main/domain/battleParty';
-import type { PartyPresetResponse } from '../../main/types/api';
+import type { PartyPresetCatalogResponse, PartyPresetResponse } from '../../main/types/api';
 
 type SwipeableMockMethods = { close: () => void; closeCalls: number };
 
@@ -57,6 +57,15 @@ const reanimatedSwipeable = React.forwardRef<SwipeableMockMethods, Record<string
 const battlePartySelector = (props: Record<string, unknown>) => React.createElement('BattlePartySelector', props);
 const reactNativeMock = {
   ActivityIndicator: host('ActivityIndicator'),
+  FlatList: (props: Record<string, unknown>) => React.createElement(
+    'FlatList',
+    props,
+    (props.data as unknown[]).map((item, index) => React.createElement(
+      React.Fragment,
+      { key: (props.keyExtractor as (value: unknown) => string)(item) },
+      (props.renderItem as (value: { item: unknown; index: number }) => React.ReactNode)({ item, index }),
+    )),
+  ),
   Pressable: host('Pressable'),
   ScrollView: host('ScrollView'),
   StyleSheet: { create: <T,>(styles: T) => styles },
@@ -175,6 +184,50 @@ describe('PartyPresetList', () => {
       [null, null, null, null, null],
     );
   });
+
+  it('assigns an existing unassigned preset by updating the same id', async () => {
+    const updateCalls: Array<{ presetId: number; request: unknown }> = [];
+    const renderer = await renderList({
+      onGetPartyPresetCatalog: async () => CATALOG,
+      onUpdatePartyPreset: async (presetId, request) => {
+        updateCalls.push({ presetId, request });
+        return { ...PRESETS[0]!, ...request, folderId: request.folderId ?? null };
+      },
+    });
+
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '미지정 폴더 열기' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 구성원 0명, 대표 프리셋' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 선택' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 전투' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 확인' }).props.onPress());
+    const save = renderer.root.findAllByProps({ accessibilityRole: 'button' })
+      .find((node) => node.findAll((child) => String(child.type) === 'Text' && child.children.includes('저장')).length > 0);
+    await act(async () => save?.props.onPress());
+
+    assert.equal(updateCalls.length, 1);
+    assert.equal(updateCalls[0]?.presetId, 1);
+    assert.equal((updateCalls[0]?.request as { folderId: number | null }).folderId, 10);
+  });
+
+  it('uses explicit folder edit mode and confirms folder deletion without deleting presets', async () => {
+    const deletedFolders: number[] = [];
+    const deletedPresets: number[] = [];
+    const renderer = await renderList({
+      onGetPartyPresetCatalog: async () => CATALOG,
+      onDeletePartyPreset: async (presetId) => { deletedPresets.push(presetId); return null; },
+      onDeletePartyPresetFolder: async (folderId) => {
+        deletedFolders.push(folderId);
+        return { folders: [], presets: PRESETS.map((preset) => ({ ...preset, folderId: null })) };
+      },
+    });
+
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 삭제' }).props.onPress());
+    assert.deepEqual(deletedFolders, []);
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 삭제 확인' }).props.onPress());
+    assert.deepEqual(deletedFolders, [10]);
+    assert.deepEqual(deletedPresets, []);
+  });
 });
 
 type Overrides = Partial<React.ComponentProps<typeof PartyPresetList>>;
@@ -202,6 +255,11 @@ const PRESETS: PartyPresetResponse[] = [
   preset(1, '서관', 0, true),
   preset(2, '동관', 1, false),
 ];
+
+const CATALOG: PartyPresetCatalogResponse = {
+  folders: [{ id: 10, name: '전투', parentFolderId: null, displayOrder: 0, createdAt: '', updatedAt: '' }],
+  presets: PRESETS,
+};
 
 function preset(id: number, name: string, displayOrder: number, isPrimary: boolean): PartyPresetResponse {
   return {
