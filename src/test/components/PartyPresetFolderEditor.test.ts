@@ -219,8 +219,12 @@ describe('PartyPresetFolderEditor', () => {
 
   it('edits a folder name in its existing row without rename action controls', async () => {
     const renames: Array<[number, { name: string }]> = [];
+    const completion = deferred<boolean | void>();
     const renderer = await renderEditor({
-      onRename: async (id, request) => { renames.push([id, request]); },
+      onRename: (id, request) => {
+        renames.push([id, request]);
+        return completion.promise;
+      },
     });
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 수정' }).props.onPress(); });
@@ -233,14 +237,37 @@ describe('PartyPresetFolderEditor', () => {
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'New1 폴더 삭제' }).length, 0);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'New1 폴더 수정 취소' }).length, 0);
     await act(async () => { input.props.onChangeText(' Renamed '); });
-    await act(async () => { await input.props.onBlur(); });
+    await act(async () => { input.props.onBlur(); });
     assert.deepEqual(renames, [[1, { name: 'Renamed' }]]);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름' }));
+
+    await act(async () => {
+      completion.resolve();
+      await completion.promise;
+    });
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'New1 폴더 이름' }).length, 0);
+    assert.equal(textCount(renderer.root, 'New1'), 1);
+
+    await act(async () => {
+      renderer.update(element({
+        index: indexPartyPresetCatalog({
+          folders: [folder(1, 'Renamed', null, 0), folder(2, 'new2', 1, 0), folder(3, 'Other', null, 1)],
+          presets: [],
+        }),
+        onRename: () => completion.promise,
+      }));
+    });
+    assert.equal(textCount(renderer.root, 'Renamed'), 1);
   });
 
   it('deduplicates keyboard submit and blur while renaming', async () => {
     const renames: Array<[number, { name: string }]> = [];
+    const completion = deferred<boolean | void>();
     const renderer = await renderEditor({
-      onRename: async (id, request) => { renames.push([id, request]); },
+      onRename: (id, request) => {
+        renames.push([id, request]);
+        return completion.promise;
+      },
     });
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 수정' }).props.onPress(); });
@@ -249,9 +276,12 @@ describe('PartyPresetFolderEditor', () => {
     await act(async () => {
       input.props.onSubmitEditing();
       input.props.onBlur();
-      await Promise.resolve();
     });
     assert.deepEqual(renames, [[1, { name: 'Renamed' }]]);
+    await act(async () => {
+      completion.resolve();
+      await completion.promise;
+    });
   });
 
   it('abandons empty and unchanged folder rename values without mutating', async () => {
@@ -264,7 +294,7 @@ describe('PartyPresetFolderEditor', () => {
       await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 수정' }).props.onPress(); });
       const input = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름' });
       await act(async () => { input.props.onChangeText(value); });
-      await act(async () => { await input.props.onBlur(); });
+      await act(async () => { input.props.onBlur(); });
       assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'New1 폴더 이름' }).length, 0);
       assert.equal(textCount(renderer.root, 'New1'), 1);
     }
@@ -277,9 +307,51 @@ describe('PartyPresetFolderEditor', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 수정' }).props.onPress(); });
     const input = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름' });
     await act(async () => { input.props.onChangeText('Renamed'); });
-    await act(async () => { await input.props.onBlur(); });
+    await act(async () => { input.props.onBlur(); });
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'New1 폴더 이름' }).length, 0);
     assert.equal(textCount(renderer.root, 'New1'), 1);
+  });
+
+  it('restores the catalog name after a rejected folder rename', async () => {
+    const completion = deferred<boolean | void>();
+    const renderer = await renderEditor({ onRename: () => completion.promise });
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 수정' }).props.onPress(); });
+    const input = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름' });
+    await act(async () => { input.props.onChangeText('Renamed'); });
+    await act(async () => { input.props.onBlur(); });
+    await act(async () => {
+      completion.reject(new Error('rename failed'));
+      await Promise.resolve();
+    });
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'New1 폴더 이름' }).length, 0);
+    assert.equal(textCount(renderer.root, 'New1'), 1);
+  });
+
+  it('does not update state after unmounting with a pending folder rename', async () => {
+    const resolved = deferred<boolean | void>();
+    const resolvedRenderer = await renderEditor({ onRename: () => resolved.promise });
+    await act(async () => { resolvedRenderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 수정' }).props.onPress(); });
+    const resolvedInput = resolvedRenderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름' });
+    await act(async () => { resolvedInput.props.onChangeText('Renamed'); });
+    await act(async () => { resolvedInput.props.onBlur(); });
+    await act(async () => {
+      resolvedRenderer.unmount();
+      resolved.resolve();
+      await resolved.promise;
+    });
+
+    const rejected = deferred<boolean | void>();
+    const rejectedRenderer = await renderEditor({ onRename: () => rejected.promise });
+    await act(async () => { rejectedRenderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 수정' }).props.onPress(); });
+    const rejectedInput = rejectedRenderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름' });
+    await act(async () => { rejectedInput.props.onChangeText('Renamed'); });
+    await act(async () => { rejectedInput.props.onBlur(); });
+    await act(async () => {
+      rejectedRenderer.unmount();
+      rejected.reject(new Error('rename failed'));
+      await Promise.resolve();
+    });
   });
 
   it('preserves collapsed survivors and prunes deleted IDs without auto-expanding new or reintroduced folders', async () => {
@@ -680,6 +752,22 @@ describe('PartyPresetFolderEditor', () => {
     assert.deepEqual(calls, []);
   });
 });
+
+type Deferred<T> = {
+  promise: Promise<T>;
+  reject: (reason?: unknown) => void;
+  resolve: (value: T | PromiseLike<T>) => void;
+};
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: Deferred<T>['resolve'];
+  let reject!: Deferred<T>['reject'];
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}
 
 async function renderEditor(overrides: Partial<React.ComponentProps<typeof PartyPresetFolderEditor>> = {}): Promise<ReactTestRenderer> {
   let renderer!: ReactTestRenderer;
