@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { after, afterEach, describe, it } from 'node:test';
 
+import type { PartyPresetResponse } from '../../main/types/api';
 import { makeCaptchaChallenge, makeHofCharacter, makeHofCharacterDetail } from '../fixtures/api';
+
+const partyPresetFolderIdIsRequired: (
+  {} extends Pick<PartyPresetResponse, 'folderId'> ? false : true
+) = true;
 
 type BackendApiModule = typeof import('../../main/services/backendApi');
 
@@ -598,6 +603,7 @@ describe('BackendApiClient', () => {
   });
 
   it('uses catalog and folder endpoints for the party preset hierarchy', async () => {
+    assert.equal(partyPresetFolderIdIsRequired, true);
     const { BackendApiClient } = await loadBackendApi();
     const requests: CapturedRequest[] = [];
     const catalog = {
@@ -636,6 +642,8 @@ describe('BackendApiClient', () => {
     assert.equal(response.folders[0]?.parentFolderId, null);
     assert.equal(response.presets[0]?.folderId, null);
     assert.equal(requests[0]?.url, 'http://backend.test/api/party-presets/catalog');
+    assert.equal(requests[0]?.init.method, undefined);
+    assert.equal(requests[0]?.init.body, undefined);
 
     mockFetchWithCapture(catalog, requests);
     await client.createPartyPresetFolder({ name: '보스', parentFolderId: null });
@@ -665,6 +673,7 @@ describe('BackendApiClient', () => {
     await client.deletePartyPresetFolder(4);
     assert.equal(requests[5]?.url, 'http://backend.test/api/party-preset-folders/4');
     assert.equal(requests[5]?.init.method, 'DELETE');
+    assert.equal(requests[5]?.init.body, undefined);
   });
 });
 

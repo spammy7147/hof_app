@@ -220,5 +220,5 @@ function map(mapCode: string, overrides: Partial<BattleMapResponse> = {}): Battl
 }
 
 function preset(id: number, name: string, isPrimary: boolean): PartyPresetResponse {
-  return { id, accountId: 1, name, displayOrder: id, isPrimary, members: [], createdAt: '', updatedAt: '' };
+  return { id, accountId: 1, name, displayOrder: id, isPrimary, members: [], createdAt: '', updatedAt: '', folderId: null };
 }

@@ -104,5 +104,6 @@ function preset(id: number): PartyPresetResponse {
     members: [],
     createdAt: '2026-07-15T00:00:00.000Z',
     updatedAt: '2026-07-15T00:00:00.000Z',
+    folderId: null,
   };
 }

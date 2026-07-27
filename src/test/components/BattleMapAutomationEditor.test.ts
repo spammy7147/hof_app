@@ -1063,7 +1063,7 @@ async function openCatalogGroup(renderer: ReactTestRenderer, categoryLabel = '�
   const group = renderer.root.findAllByProps({ accessibilityLabel: `${groupName} 그룹 열기` })[0];
   if (group) await act(async () => { group.props.onPress(); });
 }
-function preset(id: number, name: string) { return { id, accountId: 1, name, displayOrder: id, isPrimary: false, members: [], createdAt: '', updatedAt: '' }; }
+function preset(id: number, name: string) { return { id, accountId: 1, name, displayOrder: id, isPrimary: false, members: [], createdAt: '', updatedAt: '', folderId: null }; }
 function deferred<T>() {
   let resolve!: (value: T) => void;
   let reject!: (reason?: unknown) => void;

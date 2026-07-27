@@ -376,7 +376,7 @@ export type PartyPresetResponse = {
   members: PartyPresetMember[];
   createdAt: string;
   updatedAt: string;
-  folderId?: number | null;
+  folderId: number | null;
 };
 
 export type PartyPresetFolderResponse = {

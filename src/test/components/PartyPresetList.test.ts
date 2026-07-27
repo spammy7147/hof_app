@@ -217,6 +217,7 @@ function preset(id: number, name: string, displayOrder: number, isPrimary: boole
     })),
     createdAt: '2026-07-23T00:00:00Z',
     updatedAt: '2026-07-23T00:00:00Z',
+    folderId: null,
   };
 }
 
