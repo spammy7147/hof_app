@@ -10,7 +10,6 @@ export type PartyPresetSearchResultsProps = {
   disabled?: boolean;
   emptyTitle?: string;
   selectionLabels?: boolean;
-  showMemberCount?: boolean;
   results: readonly PartyPresetSearchResult[];
   selectedPresetId: number | null;
   onSelectPreset: (preset: PartyPresetResponse) => void;
@@ -21,7 +20,6 @@ export function PartyPresetSearchResults({
   disabled = false,
   emptyTitle,
   selectionLabels = false,
-  showMemberCount = true,
   results,
   selectedPresetId,
   onSelectPreset,
@@ -34,11 +32,10 @@ export function PartyPresetSearchResults({
       disabled={disabled}
       rowAccessibilityLabel={selectionLabels ? `${item.preset.name} 프리셋 선택` : undefined}
       selectionControl={selectionLabels}
-      showMemberCount={showMemberCount}
       testID="party-preset-search-result"
       onSelect={onSelectPreset}
     />
-  ), [disabled, onSelectPreset, selectedPresetId, selectionLabels, showMemberCount]);
+  ), [disabled, onSelectPreset, selectedPresetId, selectionLabels]);
 
   return (
     <FlatList
@@ -60,7 +57,6 @@ type PartyPresetRowProps = {
   browsingDepth?: number;
   rowAccessibilityLabel?: string;
   selectionControl?: boolean;
-  showMemberCount?: boolean;
   disabled?: boolean;
   path: string | null;
   preset: PartyPresetResponse;
@@ -73,7 +69,6 @@ export const PartyPresetRow = memo(function PartyPresetRow({
   browsingDepth,
   rowAccessibilityLabel,
   selectionControl = false,
-  showMemberCount = true,
   path,
   preset,
   selected,
@@ -84,11 +79,9 @@ export const PartyPresetRow = memo(function PartyPresetRow({
   const handlePress = useCallback(() => {
     onSelect(preset);
   }, [onSelect, preset]);
-  const configuredMemberCount = countConfiguredMembers(preset);
-
   return (
     <Pressable
-      accessibilityLabel={rowAccessibilityLabel ?? `${preset.name}${showMemberCount ? `, 구성원 ${configuredMemberCount}명` : ''}${preset.isPrimary ? ', 대표 프리셋' : ''}`}
+      accessibilityLabel={rowAccessibilityLabel ?? `${preset.name}${preset.isPrimary ? ', 대표 프리셋' : ''}`}
       accessibilityRole={selectionControl ? 'radio' : 'button'}
       accessibilityState={selectionControl
         ? { checked: selected, disabled }
@@ -115,7 +108,6 @@ export const PartyPresetRow = memo(function PartyPresetRow({
           ) : null}
         </View>
         {path != null ? <Text numberOfLines={1} style={styles.path}>{path}</Text> : null}
-        {showMemberCount ? <Text style={styles.memberCount}>구성원 {configuredMemberCount}명</Text> : null}
       </View>
     </Pressable>
   );
@@ -132,13 +124,6 @@ function PartyPresetSearchEmptyState({ title = '일치하는 프리셋이 없습
 
 function presetSearchResultKeyExtractor(result: PartyPresetSearchResult): string {
   return String(result.preset.id);
-}
-
-function countConfiguredMembers(preset: PartyPresetResponse): number {
-  return preset.members.reduce(
-    (count, member) => count + (member.characterId == null ? 0 : 1),
-    0,
-  );
 }
 
 const browsingDepthStyles = [
@@ -159,9 +144,9 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md,
     borderWidth: 1,
     justifyContent: 'center',
-    minHeight: 58,
+    minHeight: 44,
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
   },
   fullWidth: { alignSelf: 'stretch', marginLeft: 0, width: '100%' },
   selected: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.accentGreen },
@@ -173,7 +158,6 @@ const styles = StyleSheet.create({
   primaryBadge: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },
   primaryText: { color: theme.colors.accentAmber, fontSize: 11, fontWeight: '900' },
   path: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '700' },
-  memberCount: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '700' },
   emptyState: {
     alignItems: 'center',
     backgroundColor: theme.colors.surface,

@@ -139,16 +139,17 @@ describe('PartyPresetTree', () => {
     assert.equal(style.borderLeftWidth, 2);
   });
 
-  it('can omit member counts from browsing preset rows', async () => {
+  it('uses compact single-line browsing preset rows without member counts by default', async () => {
     const renderer = await renderTree({
       expandedFolderIds: new Set([1]),
-      showMemberCount: false,
     });
 
     assert.equal(textCount(renderer.root, 'A direct'), 1);
     assert.equal(renderer.root.findAll((node) => (
       (node.type as unknown) === 'Text' && /^구성원 \d+명$/.test(node.children.join(''))
     )).length, 0);
+    const rowStyle = flattenPressableStyle(findAllByTestId(renderer.root, 'party-preset-row')[0]!);
+    assert.equal(rowStyle.minHeight, 44);
   });
 
   it('hides the tree during global search and restores every expanded folder when cleared', async () => {
@@ -305,14 +306,13 @@ describe('PartyPresetSearchResults', () => {
     assert.deepEqual(selectedPresetIds, [10]);
   });
 
-  it('can omit member counts without indenting breadcrumb search results', async () => {
+  it('uses compact search results without member counts or breadcrumb indentation by default', async () => {
     const index = indexPartyPresetCatalog(CATALOG);
     let renderer!: ReactTestRenderer;
     await act(async () => {
       renderer = create(React.createElement(PartyPresetSearchResults, {
         results: searchPartyPresetCatalog(index, 'direct'),
         selectedPresetId: null,
-        showMemberCount: false,
         onSelectPreset: () => undefined,
       }));
     });
@@ -324,6 +324,7 @@ describe('PartyPresetSearchResults', () => {
       assert.equal(style.marginLeft, 0);
       assert.equal(style.width, '100%');
       assert.equal(style.borderLeftWidth, undefined);
+      assert.equal(style.minHeight, 44);
     });
     assert.equal(textCount(renderer.root, 'A › A child'), 1);
     assert.equal(renderer.root.findAll((node) => (
@@ -376,14 +377,12 @@ async function renderTree({
   selectedPresetId = null,
   onExpandedFolderIdsChange,
   onSelectPreset = () => undefined,
-  showMemberCount,
 }: {
   catalog?: PartyPresetCatalogResponse;
   expandedFolderIds?: ReadonlySet<number | null>;
   selectedPresetId?: number | null;
   onExpandedFolderIdsChange?: (folderIds: ReadonlySet<number | null>) => void;
   onSelectPreset?: (preset: PartyPresetResponse) => void;
-  showMemberCount?: boolean;
 }): Promise<ReactTestRenderer> {
   const index = indexPartyPresetCatalog(catalog);
   function StatefulTree() {
@@ -396,7 +395,6 @@ async function renderTree({
       index,
       expandedFolderIds: folderIds,
       selectedPresetId,
-      showMemberCount,
       onExpandedFolderIdsChange: handleChange,
       onSelectPreset,
     });

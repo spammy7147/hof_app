@@ -15,7 +15,6 @@ export type PartyPresetExpandedFolderIds = ReadonlySet<number | null>;
 type PartyPresetTreeBaseProps = {
   disabled?: boolean;
   selectionLabels?: boolean;
-  showMemberCount?: boolean;
   index: PartyPresetCatalogIndex;
   selectedPresetId: number | null;
   onSelectPreset: (preset: PartyPresetResponse) => void;
@@ -36,7 +35,6 @@ type PartyPresetTreeRow =
 export function PartyPresetTree({
   disabled = false,
   selectionLabels = false,
-  showMemberCount = true,
   index,
   expandedFolderIds,
   selectedPresetId,
@@ -92,7 +90,6 @@ export function PartyPresetTree({
             browsingDepth={item.depth}
             rowAccessibilityLabel={selectionLabels ? `${item.preset.name} 프리셋 선택` : undefined}
             selectionControl={selectionLabels}
-            showMemberCount={showMemberCount}
             path={null}
             preset={item.preset}
             selected={item.preset.id === selectedPresetId}
@@ -104,7 +101,7 @@ export function PartyPresetTree({
       case 'empty':
         return <PartyPresetBrowsingEmptyState unassigned={item.unassigned} />;
     }
-  }, [disabled, handleToggleFolder, handleToggleUnassigned, onSelectPreset, selectedPresetId, selectionLabels, showMemberCount]);
+  }, [disabled, handleToggleFolder, handleToggleUnassigned, onSelectPreset, selectedPresetId, selectionLabels]);
 
   return (
     <FlatList

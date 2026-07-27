@@ -162,7 +162,7 @@ describe('PartyPresetList', () => {
 
   it('gives the draggable list container the remaining screen height', async () => {
     const renderer = await renderList();
-    await openUnassignedPreset(renderer, '서관, 구성원 0명, 대표 프리셋');
+    await openUnassignedPreset(renderer, '서관, 대표 프리셋');
 
     const container = findHost(renderer.root, 'DraggableFlatListContainer');
     assert.deepEqual(container.props.style, { flex: 1 });
@@ -176,7 +176,7 @@ describe('PartyPresetList', () => {
         return { ...PRESETS[1]!, isPrimary: true };
       },
     });
-    await openUnassignedPreset(renderer, '서관, 구성원 0명, 대표 프리셋');
+    await openUnassignedPreset(renderer, '서관, 대표 프리셋');
 
     assert.equal(textCount(renderer.root, '+ 추가'), 0);
     assert.equal(textCount(renderer.root, '추가'), 1);
@@ -197,7 +197,7 @@ describe('PartyPresetList', () => {
         throw new Error('reorder failed');
       },
     });
-    await openUnassignedPreset(renderer, '서관, 구성원 0명, 대표 프리셋');
+    await openUnassignedPreset(renderer, '서관, 대표 프리셋');
 
     const firstHandle = renderer.root.findByProps({ accessibilityLabel: '서관 1번째 프리셋 순서 이동' });
     await act(async () => { firstHandle.props.onLongPress(); });
@@ -223,7 +223,7 @@ describe('PartyPresetList', () => {
         return null;
       },
     });
-    await openUnassignedPreset(renderer, '서관, 구성원 0명, 대표 프리셋');
+    await openUnassignedPreset(renderer, '서관, 대표 프리셋');
     const swipeables = findHosts(renderer.root, 'ReanimatedSwipeable');
     assert.equal(swipeables.length, 2);
 
@@ -269,7 +269,7 @@ describe('PartyPresetList', () => {
     });
 
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '미지정 폴더, 프리셋 2개, 열기' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 구성원 0명, 대표 프리셋' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 대표 프리셋' }).props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 선택' }).props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 전투' }).props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 확인' }).props.onPress());
@@ -321,7 +321,7 @@ describe('PartyPresetList', () => {
       },
     });
 
-    await openUnassignedPreset(renderer, '서관, 구성원 0명, 대표 프리셋');
+    await openUnassignedPreset(renderer, '서관, 대표 프리셋');
     const nameInput = findHost(renderer.root, 'TextInput');
     await act(async () => nameInput.props.onChangeText('대회랑'));
     await act(async () => findHost(renderer.root, 'BattlePartySelector').props.onPartyChange(editedParty));
@@ -352,7 +352,7 @@ describe('PartyPresetList', () => {
         return pending.promise;
       },
     });
-    await openUnassignedPreset(renderer, '서관, 구성원 0명, 대표 프리셋');
+    await openUnassignedPreset(renderer, '서관, 대표 프리셋');
     const save = findButtonByText(renderer.root, '저장');
     await act(async () => {
       void save.props.onPress();
@@ -393,7 +393,7 @@ describe('PartyPresetList', () => {
 
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 편집 종료' }).props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '미지정 폴더, 프리셋 2개, 열기' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 구성원 0명, 대표 프리셋' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 대표 프리셋' }).props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 선택' }).props.onPress());
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '폴더 위치 확인' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '현재 폴더 위치 미지정' }));
@@ -564,7 +564,7 @@ describe('PartyPresetList', () => {
       onReorderPartyPresets: async (request) => { requests.push(request); return [...FOLDER_PRESETS_CATALOG.presets].reverse(); },
     });
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 2개, 열기' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 구성원 0명, 대표 프리셋' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 대표 프리셋' }).props.onPress());
     const draggable = findHost(renderer.root, 'DraggableFlatList');
     const rows = draggable.props.data as PartyPresetResponse[];
     await act(async () => draggable.props.onDragEnd({ data: [rows[1], rows[0]], from: 0, to: 1 }));
@@ -585,7 +585,7 @@ describe('PartyPresetList', () => {
       onReorderPartyPresets: async () => pending.promise,
     });
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 2개, 열기' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 구성원 0명, 대표 프리셋' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 대표 프리셋' }).props.onPress());
     let draggable = findHost(renderer.root, 'DraggableFlatList');
     assert.deepEqual((draggable.props.data as PartyPresetResponse[]).map(({ id }) => id), [1, 2]);
     const rows = draggable.props.data as PartyPresetResponse[];
@@ -635,7 +635,7 @@ describe('PartyPresetList', () => {
       onUpdatePartyPreset: async () => oldUpdate.promise,
     });
     const renderer = await renderListProps(oldProps);
-    await openUnassignedPreset(renderer, '서관, 구성원 0명, 대표 프리셋');
+    await openUnassignedPreset(renderer, '서관, 대표 프리셋');
     await act(async () => {
       void findButtonByText(renderer.root, '저장').props.onPress();
       await Promise.resolve();
@@ -723,7 +723,7 @@ describe('PartyPresetList', () => {
       partyPresetCatalog: catalogResource({ folders: [folder(10, '전투', null, 0)], presets: deepPresets }),
     });
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 12개, 열기' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '프리셋 12, 구성원 0명' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '프리셋 12' }).props.onPress());
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 120)); });
 
     assert.ok(scrollToIndexCalls.some((call) => call.index === 11));
@@ -733,7 +733,7 @@ describe('PartyPresetList', () => {
   it('does not rebuild unrelated memoized virtual rows while editing text', async () => {
     const renderer = await renderList({ partyPresetCatalog: catalogResource(FOLDER_PRESETS_CATALOG) });
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 2개, 열기' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 구성원 0명, 대표 프리셋' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 대표 프리셋' }).props.onPress());
     hostRenderCounts.clear();
     await act(async () => findHost(renderer.root, 'TextInput').props.onChangeText('편집 중'));
     assert.equal(hostRenderCounts.get('party-preset-managed-row-2') ?? 0, 0);

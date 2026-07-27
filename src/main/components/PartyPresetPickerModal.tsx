@@ -166,7 +166,6 @@ export function PartyPresetPickerModal({
                   results={results}
                   selectedPresetId={selectedPresetId}
                   selectionLabels
-                  showMemberCount={false}
                 />
               ) : (
                 <PartyPresetTree
@@ -177,7 +176,6 @@ export function PartyPresetPickerModal({
                   onSelectPreset={onSelectPreset}
                   selectedPresetId={selectedPresetId}
                   selectionLabels
-                  showMemberCount={false}
                 />
               )}
             </View>
