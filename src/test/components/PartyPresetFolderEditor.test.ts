@@ -110,7 +110,7 @@ describe('PartyPresetFolderEditor', () => {
     assert.equal(renderer.root.findAllByType('Folder' as never).length, 0);
     assert.equal(findAllText(renderer.root).some((text) => /\d+개/.test(text)), false);
 
-    const edit = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 및 삭제 수정' });
+    const edit = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 수정' });
     const add = renderer.root.findByProps({ accessibilityLabel: 'New1 하위 폴더 추가' });
     const grip = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 위치 이동' });
     assertBorderless(edit);
@@ -128,7 +128,7 @@ describe('PartyPresetFolderEditor', () => {
     const row = renderer.root.findByProps({ testID: 'party-preset-folder-row-1' });
     assert.deepEqual(hostAccessibilityLabels(row), [
       'New1 폴더 접기',
-      'New1 폴더 이름 및 삭제 수정',
+      'New1 폴더 이름 수정',
       'New1 하위 폴더 추가',
       'New1 폴더 위치 이동',
     ]);
@@ -217,28 +217,69 @@ describe('PartyPresetFolderEditor', () => {
     assert.deepEqual(requests, []);
   });
 
-  it('opens a pencil panel for rename, delete, and cancel callbacks', async () => {
+  it('edits a folder name in its existing row without rename action controls', async () => {
     const renames: Array<[number, { name: string }]> = [];
-    const deletes: number[] = [];
     const renderer = await renderEditor({
       onRename: async (id, request) => { renames.push([id, request]); },
-      onDelete: async (id) => { deletes.push(id); },
     });
 
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 및 삭제 수정' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 수정' }).props.onPress(); });
+    const row = renderer.root.findByProps({ testID: 'party-preset-folder-row-1' });
     const input = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름' });
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 수정 취소' }));
-    await act(async () => { input.props.onChangeText('Renamed'); });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 저장' }).props.onPress(); });
+    assert.ok(row.findByProps({ accessibilityLabel: 'New1 폴더 이름' }));
+    assert.equal(input.props.autoFocus, true);
+    assert.equal(input.props.selectTextOnFocus, true);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'New1 폴더 이름 저장' }).length, 0);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'New1 폴더 삭제' }).length, 0);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'New1 폴더 수정 취소' }).length, 0);
+    await act(async () => { input.props.onChangeText(' Renamed '); });
+    await act(async () => { await input.props.onBlur(); });
     assert.deepEqual(renames, [[1, { name: 'Renamed' }]]);
+  });
 
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 및 삭제 수정' }).props.onPress(); });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 삭제' }).props.onPress(); });
-    assert.deepEqual(deletes, [1]);
+  it('deduplicates keyboard submit and blur while renaming', async () => {
+    const renames: Array<[number, { name: string }]> = [];
+    const renderer = await renderEditor({
+      onRename: async (id, request) => { renames.push([id, request]); },
+    });
 
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 및 삭제 수정' }).props.onPress(); });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 수정 취소' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 수정' }).props.onPress(); });
+    const input = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름' });
+    await act(async () => { input.props.onChangeText('Renamed'); });
+    await act(async () => {
+      input.props.onSubmitEditing();
+      input.props.onBlur();
+      await Promise.resolve();
+    });
+    assert.deepEqual(renames, [[1, { name: 'Renamed' }]]);
+  });
+
+  it('abandons empty and unchanged folder rename values without mutating', async () => {
+    const renames: Array<[number, { name: string }]> = [];
+    const renderer = await renderEditor({
+      onRename: async (id, request) => { renames.push([id, request]); },
+    });
+
+    for (const value of ['   ', ' New1 ']) {
+      await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 수정' }).props.onPress(); });
+      const input = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름' });
+      await act(async () => { input.props.onChangeText(value); });
+      await act(async () => { await input.props.onBlur(); });
+      assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'New1 폴더 이름' }).length, 0);
+      assert.equal(textCount(renderer.root, 'New1'), 1);
+    }
+    assert.deepEqual(renames, []);
+  });
+
+  it('restores the catalog name after a failed folder rename', async () => {
+    const renderer = await renderEditor({ onRename: async () => false });
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 수정' }).props.onPress(); });
+    const input = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름' });
+    await act(async () => { input.props.onChangeText('Renamed'); });
+    await act(async () => { await input.props.onBlur(); });
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'New1 폴더 이름' }).length, 0);
+    assert.equal(textCount(renderer.root, 'New1'), 1);
   });
 
   it('preserves collapsed survivors and prunes deleted IDs without auto-expanding new or reintroduced folders', async () => {
@@ -509,18 +550,18 @@ describe('PartyPresetFolderEditor', () => {
     assert.deepEqual(listScrollCalls, [44, 88, 132, 176, 220]);
   });
 
-  it('measures only the compact row and applies scroll offset while resolving targets', async () => {
+  it('keeps an inline rename within the compact row while resolving drag targets', async () => {
     const moves: unknown[] = [];
     const renderer = await renderEditor({ onMove: async (...args) => { moves.push(args); } });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 및 삭제 수정' }).props.onPress(); });
-    layoutRows(renderer.root, [0, 88, 132], [88, 44, 44]);
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 수정' }).props.onPress(); });
+    layoutRows(renderer.root, [0, 44, 88]);
     const gesture = gestureFor(renderer.root, 'new2 폴더 위치 이동');
     await act(async () => {
       (gesture.config.onStart as (event: Record<string, number>) => void)({ y: 22 });
-      // Content y=60 lies in New1's inline editor, not its 44px folder row.
+      // Content y=16 lies within New1's unchanged 44px folder row.
       (gesture.config.onUpdate as (event: Record<string, number>) => void)({ y: 22, translationY: -50 });
     });
-    assert.equal(hostTestIdCount(renderer.root, 'party-preset-folder-drop-inside-1'), 0);
+    assert.equal(hostTestIdCount(renderer.root, 'party-preset-folder-drop-inside-1'), 1);
     await act(async () => {
       renderer.root.findByType('FlatList' as never).props.onScroll({ nativeEvent: { contentOffset: { y: 44 } } });
       // The +44 scroll delta moves this content coordinate outside the last measured row.
@@ -623,7 +664,7 @@ describe('PartyPresetFolderEditor', () => {
       onMove: async () => { calls.push('move'); },
       onRename: async () => { calls.push('rename'); },
     });
-    const edit = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 및 삭제 수정' });
+    const edit = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 수정' });
     const add = renderer.root.findByProps({ accessibilityLabel: 'New1 하위 폴더 추가' });
     const grip = renderer.root.findByProps({ accessibilityLabel: 'new2 폴더 위치 이동' });
     assert.equal(edit.props.disabled, true);

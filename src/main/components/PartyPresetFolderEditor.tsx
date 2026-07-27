@@ -20,7 +20,6 @@ import {
   GripVertical,
   Pencil,
   Plus,
-  Trash2,
   X,
 } from 'lucide-react-native';
 
@@ -74,7 +73,6 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   disabled,
   index,
   onCreate,
-  onDelete,
   onMove,
   onRename,
 }: PartyPresetFolderEditorProps) {
@@ -97,6 +95,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   const contentHeightRef = useRef(0);
   const indexRef = useRef(index);
   const mountedRef = useRef(true);
+  const renamePendingRef = useRef(false);
   const dragBaseContentYRef = useRef<number | null>(null);
   const dragEdgeDirectionRef = useRef<DragEdgeDirection | null>(null);
   const edgeAnimationFrameRef = useRef<number | null>(null);
@@ -178,25 +177,33 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   }, [childName, disabled, onCreate]);
 
   const openRename = useCallback((row: PartyPresetFolderEditorRow) => {
-    if (disabled) return;
+    if (disabled || renamePendingRef.current) return;
     setRenameFolderId(row.folderId);
     setRenameValue(row.name);
   }, [disabled]);
 
-  const submitRename = useCallback(async (folderId: number) => {
+  const finishRename = useCallback(async (row: PartyPresetFolderEditorRow) => {
     const name = renameValue.trim();
-    if (disabled || name.length === 0) return;
-    const succeeded = await onRename(folderId, { name });
-    if (succeeded === false) return;
-    setRenameFolderId(null);
-  }, [disabled, onRename, renameValue]);
-
-  const deleteFolder = useCallback(async (folderId: number) => {
-    if (disabled) return;
-    const succeeded = await onDelete(folderId);
-    if (succeeded === false) return;
-    setRenameFolderId(null);
-  }, [disabled, onDelete]);
+    const clearRename = () => {
+      if (!mountedRef.current) return;
+      setRenameFolderId(null);
+      setRenameValue('');
+    };
+    if (disabled || renameFolderId !== row.folderId || renamePendingRef.current) return;
+    if (name.length === 0 || name === row.name) {
+      clearRename();
+      return;
+    }
+    renamePendingRef.current = true;
+    try {
+      await onRename(row.folderId, { name });
+    } catch {
+      // Parent mutation handling already surfaces errors.
+    } finally {
+      renamePendingRef.current = false;
+      clearRename();
+    }
+  }, [disabled, onRename, renameFolderId, renameValue]);
 
   const moveFolder = useCallback(async (
     folderId: number,
@@ -419,9 +426,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
             .catch(() => undefined);
         }}
         onCancelChild={() => setChildEditorFolderId(null)}
-        onCancelRename={() => setRenameFolderId(null)}
         onChildNameChange={setChildName}
-        onDelete={() => { void deleteFolder(row.folderId).catch(() => undefined); }}
         onDragEnd={onDragEnd}
         onDragStart={onDragStart}
         onDragUpdate={onDragUpdate}
@@ -437,7 +442,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
         }}
         onRenameValueChange={setRenameValue}
         onSubmitChild={() => { void submitChild(row.folderId).catch(() => undefined); }}
-        onSubmitRename={() => { void submitRename(row.folderId).catch(() => undefined); }}
+        onFinishRename={() => { void finishRename(row); }}
         onToggle={() => toggleExpanded(row.folderId)}
         renameValue={editingName ? renameValue : ''}
         row={row}
@@ -448,7 +453,6 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     cancelDrag,
     childEditorFolderId,
     childName,
-    deleteFolder,
     disabled,
     dropFeedback,
     index,
@@ -462,7 +466,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     renameFolderId,
     renameValue,
     submitChild,
-    submitRename,
+    finishRename,
     toggleExpanded,
   ]);
 
@@ -560,9 +564,7 @@ type FolderEditorRowProps = {
   row: PartyPresetFolderEditorRow;
   onAccessibilityAction: (actionName: string) => void;
   onCancelChild: () => void;
-  onCancelRename: () => void;
   onChildNameChange: (name: string) => void;
-  onDelete: () => void;
   onDragEnd: (folderId: number) => void;
   onDragStart: (folderId: number, pointerY: number) => void;
   onDragUpdate: (folderId: number, pointerY: number, translationY: number) => void;
@@ -572,7 +574,7 @@ type FolderEditorRowProps = {
   onRowLayout: (event: LayoutChangeEvent) => void;
   onRenameValueChange: (name: string) => void;
   onSubmitChild: () => void;
-  onSubmitRename: () => void;
+  onFinishRename: () => void;
   onToggle: () => void;
 };
 
@@ -588,9 +590,7 @@ const FolderEditorRow = memo(function FolderEditorRow({
   row,
   onAccessibilityAction,
   onCancelChild,
-  onCancelRename,
   onChildNameChange,
-  onDelete,
   onDragEnd,
   onDragStart,
   onDragUpdate,
@@ -600,7 +600,7 @@ const FolderEditorRow = memo(function FolderEditorRow({
   onRowLayout,
   onRenameValueChange,
   onSubmitChild,
-  onSubmitRename,
+  onFinishRename,
   onToggle,
 }: FolderEditorRowProps) {
   const gesture = useMemo(() => Gesture.Pan()
@@ -657,9 +657,21 @@ const FolderEditorRow = memo(function FolderEditorRow({
               : <ChevronRight color={theme.colors.textMuted} size={17} />}
           </Pressable>
         ) : <View style={styles.disclosureButton} />}
-        <Text numberOfLines={1} style={styles.folderName}>{row.name}</Text>
+        {editingName ? (
+          <TextInput
+            accessibilityLabel={`${row.name} 폴더 이름`}
+            autoFocus
+            editable={!disabled}
+            onBlur={onFinishRename}
+            onChangeText={onRenameValueChange}
+            onSubmitEditing={onFinishRename}
+            selectTextOnFocus
+            style={styles.renameInput}
+            value={renameValue}
+          />
+        ) : <Text numberOfLines={1} style={styles.folderName}>{row.name}</Text>}
         <Pressable
-          accessibilityLabel={`${row.name} 폴더 이름 및 삭제 수정`}
+          accessibilityLabel={`${row.name} 폴더 이름 수정`}
           accessibilityRole="button"
           disabled={disabled}
           onPress={onOpenRename}
@@ -691,28 +703,6 @@ const FolderEditorRow = memo(function FolderEditorRow({
           </Pressable>
         </GestureDetector>
       </View>
-      {editingName ? (
-        <View style={[styles.inlineEditor, { marginLeft: indentation + 34 }]}>
-          <TextInput
-            accessibilityLabel={`${row.name} 폴더 이름`}
-            autoFocus
-            editable={!disabled}
-            onChangeText={onRenameValueChange}
-            onSubmitEditing={onSubmitRename}
-            style={styles.inlineInput}
-            value={renameValue}
-          />
-          <Pressable accessibilityLabel={`${row.name} 폴더 이름 저장`} accessibilityRole="button" disabled={disabled} onPress={onSubmitRename} style={styles.inlineAction}>
-            <Check color={theme.colors.accentGreen} size={18} />
-          </Pressable>
-          <Pressable accessibilityLabel={`${row.name} 폴더 삭제`} accessibilityRole="button" disabled={disabled} onPress={onDelete} style={styles.inlineAction}>
-            <Trash2 color={theme.colors.danger} size={17} />
-          </Pressable>
-          <Pressable accessibilityLabel={`${row.name} 폴더 수정 취소`} accessibilityRole="button" onPress={onCancelRename} style={styles.inlineAction}>
-            <X color={theme.colors.textMuted} size={18} />
-          </Pressable>
-        </View>
-      ) : null}
       {editingChild ? (
         <View style={[styles.inlineEditor, { marginLeft: indentation + 34 }]}>
           <TextInput
@@ -815,6 +805,17 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: '700',
+  },
+  renameInput: {
+    backgroundColor: theme.colors.surfaceAlt,
+    borderColor: theme.colors.borderStrong,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    color: theme.colors.text,
+    flex: 1,
+    height: 38,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
   },
   iconButton: {
     alignItems: 'center',
