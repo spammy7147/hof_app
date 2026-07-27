@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   canMovePartyPresetFolder,
+  countPartyPresetsInFolderTree,
   getPartyPresetFolderPath,
   indexPartyPresetCatalog,
   searchPartyPresetCatalog,
@@ -57,6 +58,18 @@ describe('party preset catalog projection', () => {
     assert.deepEqual(index.presetIdsByFolder.get(null), [2, 3]);
     assert.deepEqual(index.presetIdsByFolder.get(1), [1]);
     assert.equal(getPartyPresetFolderPath(index, 3), 'cycle-a');
+  });
+
+  it('counts presets in a folder tree and only direct unassigned presets', () => {
+    const index = indexPartyPresetCatalog(makeCatalog(
+      [folder(1, '상위', null, 0), folder(2, '하위', 1, 0), folder(3, '다른 폴더', null, 1)],
+      [preset(1, '상위 프리셋', 1, 0), preset(2, '하위 프리셋', 2, 0), preset(3, '다른 프리셋', 3, 0), preset(4, '미지정 프리셋', null, 0)],
+    ));
+
+    assert.equal(countPartyPresetsInFolderTree(index, 1), 2);
+    assert.equal(countPartyPresetsInFolderTree(index, 2), 1);
+    assert.equal(countPartyPresetsInFolderTree(index, 3), 1);
+    assert.equal(countPartyPresetsInFolderTree(index, null), 1);
   });
 
   it('searches preset names globally and returns flat results with their paths', () => {

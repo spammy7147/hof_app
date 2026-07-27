@@ -75,6 +75,28 @@ export function getPartyPresetFolderPath(
     .join(' › ');
 }
 
+/** 폴더와 모든 하위 폴더의 프리셋 수를 합산한다. null은 미지정 프리셋만 센다. */
+export function countPartyPresetsInFolderTree(
+  index: PartyPresetCatalogIndex,
+  folderId: number | null,
+): number {
+  if (folderId == null) return index.presetIdsByFolder.get(null)?.length ?? 0;
+
+  let count = 0;
+  const visited = new Set<number>();
+  const pending = [folderId];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current == null || visited.has(current)) continue;
+    visited.add(current);
+    count += index.presetIdsByFolder.get(current)?.length ?? 0;
+    for (const childId of index.childFolderIdsByParent.get(current) ?? []) {
+      pending.push(childId);
+    }
+  }
+  return count;
+}
+
 /** 현재 폴더와 무관하게 프리셋 이름만 검색한 평면 결과를 반환한다. */
 export function searchPartyPresetCatalog(
   index: PartyPresetCatalogIndex,
