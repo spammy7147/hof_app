@@ -14,19 +14,25 @@ const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>
   React.useImperativeHandle(ref, () => ({}), []);
   return React.createElement(name, props, props.children as React.ReactNode);
 });
-const flatList = (props: Record<string, unknown>) => React.createElement(
-  'FlatList',
-  props,
-  props.ListHeaderComponent as React.ReactNode,
-  (props.data as unknown[]).map((item, index) => {
-    const key = (props.keyExtractor as (value: unknown) => string)(item);
-    const child = (props.renderItem as (value: { item: unknown; index: number }) => React.ReactNode)({ item, index });
-    const Cell = props.CellRendererComponent as React.ComponentType<Record<string, unknown>> | undefined;
-    return Cell == null
-      ? React.createElement(React.Fragment, { key }, child)
-      : React.createElement(Cell, { cellKey: key, index, item, key, onLayout: () => undefined, style: {} }, child);
-  }),
-);
+const listScrollCalls: number[] = [];
+const flatList = React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
+  React.useImperativeHandle(ref, () => ({
+    scrollToOffset: ({ offset }: { offset: number }) => { listScrollCalls.push(offset); },
+  }), []);
+  return React.createElement(
+    'FlatList',
+    props,
+    props.ListHeaderComponent as React.ReactNode,
+    (props.data as unknown[]).map((item, index) => {
+      const key = (props.keyExtractor as (value: unknown) => string)(item);
+      const child = (props.renderItem as (value: { item: unknown; index: number }) => React.ReactNode)({ item, index });
+      const Cell = props.CellRendererComponent as React.ComponentType<Record<string, unknown>> | undefined;
+      return Cell == null
+        ? React.createElement(React.Fragment, { key }, child)
+        : React.createElement(Cell, { cellKey: key, index, item, key, onLayout: () => undefined, style: {} }, child);
+    }),
+  );
+});
 
 type GestureMock = {
   config: Record<string, unknown>;
@@ -149,6 +155,52 @@ describe('PartyPresetFolderEditor', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 하위 폴더 추가 취소' }).props.onPress(); });
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'New1 새 하위 폴더 이름' }).length, 0);
     assert.equal(requests.length, 2);
+  });
+
+  it('blocks sixth-level child creation while allowing a fifth-level child', async () => {
+    const requests: Array<{ name: string; parentFolderId: number | null }> = [];
+    const renderer = await renderEditor({
+      index: indexPartyPresetCatalog({
+        folders: [
+          folder(1, 'L1', null, 0), folder(2, 'L2', 1, 0),
+          folder(3, 'L3', 2, 0), folder(4, 'L4', 3, 0), folder(5, 'L5', 4, 0),
+        ],
+        presets: [],
+      }),
+      onCreate: async (request) => { requests.push(request); },
+    });
+    const depthFourAdd = renderer.root.findByProps({ accessibilityLabel: 'L5 하위 폴더 추가' });
+    assert.equal(depthFourAdd.props.disabled, true);
+    assert.deepEqual(depthFourAdd.props.accessibilityState, { disabled: true });
+    await act(async () => { depthFourAdd.props.onPress(); });
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'L5 새 하위 폴더 이름' }).length, 0);
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'L4 하위 폴더 추가' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'L4 새 하위 폴더 이름' }).props.onChangeText('allowed'); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'L4 하위 폴더 저장' }).props.onPress(); });
+    assert.deepEqual(requests, [{ name: 'allowed', parentFolderId: 4 }]);
+  });
+
+  it('revalidates depth before a stale child-create panel can submit', async () => {
+    const requests: unknown[] = [];
+    const initial = indexPartyPresetCatalog({
+      folders: [folder(1, 'Target', null, 0)],
+      presets: [],
+    });
+    const renderer = await renderEditor({ index: initial, onCreate: async (...args) => { requests.push(args); } });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Target 하위 폴더 추가' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Target 새 하위 폴더 이름' }).props.onChangeText('stale'); });
+    const staleSubmit = renderer.root.findByProps({ accessibilityLabel: 'Target 하위 폴더 저장' }).props.onPress as () => void;
+    const deepIndex = indexPartyPresetCatalog({
+      folders: [
+        folder(10, 'L1', null, 0), folder(11, 'L2', 10, 0),
+        folder(12, 'L3', 11, 0), folder(13, 'L4', 12, 0), folder(1, 'Target', 13, 0),
+      ],
+      presets: [],
+    });
+    await act(async () => { renderer.update(element({ index: deepIndex, onCreate: async (...args) => { requests.push(args); } })); });
+    await act(async () => { staleSubmit(); });
+    assert.deepEqual(requests, []);
   });
 
   it('opens a pencil panel for rename, delete, and cancel callbacks', async () => {
@@ -299,26 +351,68 @@ describe('PartyPresetFolderEditor', () => {
     assert.deepEqual(moves, [[2, { parentFolderId: null, displayOrder: 2 }]]);
   });
 
-  it('offers accessible same-position moves and a one-level out action through the planner', async () => {
+  it('moves accessibly only among siblings while escape outdents', async () => {
     const moves: Array<[number, { parentFolderId: number | null; displayOrder: number }]> = [];
     const renderer = await renderEditor({ onMove: async (id, request) => { moves.push([id, request]); } });
-    const grip = renderer.root.findByProps({ accessibilityLabel: 'new2 폴더 위치 이동' });
-    assert.deepEqual(grip.props.accessibilityActions, [
-      { name: 'decrement', label: '같은 위치에서 위로 이동' },
-      { name: 'increment', label: '같은 위치에서 아래로 이동' },
+    const childGrip = renderer.root.findByProps({ accessibilityLabel: 'new2 폴더 위치 이동' });
+    assert.deepEqual(childGrip.props.accessibilityActions, [
       { name: 'escape', label: '한 단계 위 폴더로 이동' },
     ]);
+    const rootGrip = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 위치 이동' });
+    assert.deepEqual(rootGrip.props.accessibilityActions, [
+      { name: 'increment', label: '같은 위치에서 아래로 이동' },
+    ]);
     await act(async () => {
-      grip.props.onAccessibilityAction({ nativeEvent: { actionName: 'decrement' } });
-      grip.props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } });
-      grip.props.onAccessibilityAction({ nativeEvent: { actionName: 'escape' } });
-      renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 위치 이동' }).props.onAccessibilityAction({ nativeEvent: { actionName: 'decrement' } });
+      childGrip.props.onAccessibilityAction({ nativeEvent: { actionName: 'decrement' } });
+      childGrip.props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } });
+      rootGrip.props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } });
+      childGrip.props.onAccessibilityAction({ nativeEvent: { actionName: 'escape' } });
     });
     assert.deepEqual(moves, [
-      [2, { parentFolderId: null, displayOrder: 0 }],
-      [2, { parentFolderId: null, displayOrder: 2 }],
+      [1, { parentFolderId: null, displayOrder: 1 }],
       [2, { parentFolderId: null, displayOrder: 1 }],
     ]);
+  });
+
+  it('auto-scrolls at a list edge and drops against the newly reached measured target', async () => {
+    listScrollCalls.length = 0;
+    const moves: unknown[] = [];
+    const roots = Array.from({ length: 8 }, (_, index) => folder(index + 1, `Root ${index + 1}`, null, index));
+    const renderer = await renderEditor({
+      index: indexPartyPresetCatalog({ folders: roots, presets: [] }),
+      onMove: async (...args) => { moves.push(args); },
+    });
+    layoutRows(renderer.root);
+    const list = renderer.root.findByType('FlatList' as never);
+    list.props.onLayout({ nativeEvent: { layout: { height: 132 } } });
+    list.props.onContentSizeChange(320, 352);
+    const gesture = gestureFor(renderer.root, 'Root 1 폴더 위치 이동');
+    await act(async () => {
+      (gesture.config.onStart as (event: Record<string, number>) => void)({ y: 22 });
+      (gesture.config.onUpdate as (event: Record<string, number>) => void)({ y: 22, translationY: 100 });
+    });
+    assert.deepEqual(listScrollCalls, [44]);
+    await act(async () => { (gesture.config.onEnd as () => void)(); });
+    assert.deepEqual(moves, [[1, { parentFolderId: null, displayOrder: 3 }]]);
+  });
+
+  it('bounds repeated edge scrolling to the measured content size', async () => {
+    listScrollCalls.length = 0;
+    const roots = Array.from({ length: 8 }, (_, index) => folder(index + 1, `Root ${index + 1}`, null, index));
+    const renderer = await renderEditor({ index: indexPartyPresetCatalog({ folders: roots, presets: [] }) });
+    layoutRows(renderer.root);
+    const list = renderer.root.findByType('FlatList' as never);
+    list.props.onLayout({ nativeEvent: { layout: { height: 132 } } });
+    list.props.onContentSizeChange(320, 352);
+    const gesture = gestureFor(renderer.root, 'Root 1 폴더 위치 이동');
+    await act(async () => {
+      (gesture.config.onStart as (event: Record<string, number>) => void)({ y: 22 });
+      for (let index = 0; index < 8; index += 1) {
+        (gesture.config.onUpdate as (event: Record<string, number>) => void)({ y: 22, translationY: 100 });
+      }
+      (gesture.config.onFinalize as () => void)();
+    });
+    assert.deepEqual(listScrollCalls, [44, 88, 132, 176, 220]);
   });
 
   it('measures only the compact row and applies scroll offset while resolving targets', async () => {

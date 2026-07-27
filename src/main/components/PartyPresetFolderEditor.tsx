@@ -64,7 +64,10 @@ type FolderCellProps = {
   style: StyleProp<ViewStyle>;
 };
 
-const MAX_VISIBLE_INDENT = 4;
+const MAX_FOLDER_LEVELS = 5;
+const MAX_VISIBLE_INDENT = MAX_FOLDER_LEVELS - 1;
+const DRAG_EDGE_THRESHOLD = 44;
+const DRAG_SCROLL_STEP = 44;
 
 export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   disabled,
@@ -88,6 +91,11 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   const scrollOffsetRef = useRef(0);
   const dragOriginRef = useRef<DragOrigin | null>(null);
   const dropFeedbackRef = useRef<DropFeedback | null>(null);
+  const listRef = useRef<FlatList<PartyPresetFolderEditorRow>>(null);
+  const viewportHeightRef = useRef(0);
+  const contentHeightRef = useRef(0);
+  const indexRef = useRef(index);
+  indexRef.current = index;
 
   useEffect(() => {
     const currentFolderIds = new Set(index.foldersById.keys());
@@ -131,14 +139,18 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   }, [disabled, onCreate, topLevelName]);
 
   const openChildEditor = useCallback((folderId: number) => {
-    if (disabled) return;
+    if (disabled || !canCreatePartyPresetChildFolder(indexRef.current, folderId)) return;
     setChildEditorFolderId(folderId);
     setChildName('');
   }, [disabled]);
 
   const submitChild = useCallback(async (folderId: number) => {
     const name = childName.trim();
-    if (disabled || name.length === 0) return;
+    if (
+      disabled
+      || name.length === 0
+      || !canCreatePartyPresetChildFolder(indexRef.current, folderId)
+    ) return;
     await onCreate({ name, parentFolderId: folderId });
     setExpandedFolderIds((previous) => new Set(previous).add(folderId));
     setChildEditorFolderId(null);
@@ -178,30 +190,31 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
 
   const planForAccessibilityAction = useCallback((
     row: PartyPresetFolderEditorRow,
-    rowIndex: number,
     actionName: string,
   ): PartyPresetFolderDropPlan | null => {
-    if (actionName === 'decrement' && rowIndex > 0) {
-      return planPartyPresetFolderDrop(index, row.folderId, rows[rowIndex - 1]!.folderId, 'before');
+    const siblingFolderIds = index.childFolderIdsByParent.get(row.parentFolderId) ?? [];
+    const siblingIndex = siblingFolderIds.indexOf(row.folderId);
+    if (actionName === 'decrement' && siblingIndex > 0) {
+      return planPartyPresetFolderDrop(index, row.folderId, siblingFolderIds[siblingIndex - 1]!, 'before');
     }
-    if (actionName === 'increment' && rowIndex < rows.length - 1) {
-      return planPartyPresetFolderDrop(index, row.folderId, rows[rowIndex + 1]!.folderId, 'after');
+    if (actionName === 'increment' && siblingIndex >= 0 && siblingIndex < siblingFolderIds.length - 1) {
+      return planPartyPresetFolderDrop(index, row.folderId, siblingFolderIds[siblingIndex + 1]!, 'after');
     }
     if (actionName === 'escape' && row.parentFolderId != null) {
       return planPartyPresetFolderDrop(index, row.folderId, row.parentFolderId, 'after');
     }
     return null;
-  }, [index, rows]);
+  }, [index]);
 
-  const accessibilityActionsFor = useCallback((row: PartyPresetFolderEditorRow, rowIndex: number) => {
+  const accessibilityActionsFor = useCallback((row: PartyPresetFolderEditorRow) => {
     const actions: Array<{ name: 'decrement' | 'increment' | 'escape'; label: string }> = [];
-    if (planForAccessibilityAction(row, rowIndex, 'decrement') != null) {
+    if (planForAccessibilityAction(row, 'decrement') != null) {
       actions.push({ name: 'decrement', label: '같은 위치에서 위로 이동' });
     }
-    if (planForAccessibilityAction(row, rowIndex, 'increment') != null) {
+    if (planForAccessibilityAction(row, 'increment') != null) {
       actions.push({ name: 'increment', label: '같은 위치에서 아래로 이동' });
     }
-    if (planForAccessibilityAction(row, rowIndex, 'escape') != null) {
+    if (planForAccessibilityAction(row, 'escape') != null) {
       actions.push({ name: 'escape', label: '한 단계 위 폴더로 이동' });
     }
     return actions;
@@ -221,16 +234,34 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     const origin = dragOriginRef.current;
     const sourceLayout = rowLayoutsRef.current.get(folderId);
     if (origin == null || origin.folderId !== folderId || sourceLayout == null) return;
-    const contentY = sourceLayout.y
+    let contentY = sourceLayout.y
       + origin.pointerY
       + translationY
       + (scrollOffsetRef.current - origin.scrollOffset);
+    const currentScrollOffset = scrollOffsetRef.current;
+    const viewportHeight = viewportHeightRef.current;
+    const maximumScrollOffset = Math.max(0, contentHeightRef.current - viewportHeight);
+    const viewportY = contentY - currentScrollOffset;
+    let nextScrollOffset = currentScrollOffset;
+    if (viewportHeight > 0 && maximumScrollOffset > 0) {
+      if (viewportY < DRAG_EDGE_THRESHOLD) {
+        nextScrollOffset = Math.max(0, currentScrollOffset - DRAG_SCROLL_STEP);
+      } else if (viewportY > viewportHeight - DRAG_EDGE_THRESHOLD) {
+        nextScrollOffset = Math.min(maximumScrollOffset, currentScrollOffset + DRAG_SCROLL_STEP);
+      }
+    }
+    if (nextScrollOffset !== currentScrollOffset) {
+      scrollOffsetRef.current = nextScrollOffset;
+      listRef.current?.scrollToOffset({ animated: false, offset: nextScrollOffset });
+      contentY += nextScrollOffset - currentScrollOffset;
+    }
     setDragPreview({ folderId, contentY });
     const target = rows.find((row) => {
       const layout = rowLayoutsRef.current.get(row.folderId);
       return layout != null && contentY >= layout.y && contentY <= layout.y + layout.height;
     });
     if (target == null) {
+      if (dropFeedbackRef.current == null) return;
       dropFeedbackRef.current = null;
       setDropFeedback(null);
       return;
@@ -245,6 +276,12 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     const feedback = planPartyPresetFolderDrop(index, folderId, target.folderId, zone) == null
       ? null
       : { movingFolderId: folderId, targetFolderId: target.folderId, zone, contentY };
+    const previousFeedback = dropFeedbackRef.current;
+    if (
+      previousFeedback?.movingFolderId === feedback?.movingFolderId
+      && previousFeedback?.targetFolderId === feedback?.targetFolderId
+      && previousFeedback?.zone === feedback?.zone
+    ) return;
     dropFeedbackRef.current = feedback;
     setDropFeedback(feedback);
   }, [disabled, index, rows]);
@@ -267,15 +304,15 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     setDragPreview(null);
   }, []);
 
-  const renderItem = useCallback(({ item: row, index: rowIndex }: {
+  const renderItem = useCallback(({ item: row }: {
     item: PartyPresetFolderEditorRow;
-    index: number;
   }) => {
     const editingName = renameFolderId === row.folderId;
     const editingChild = childEditorFolderId === row.folderId;
     return (
       <FolderEditorRow
-        accessibilityActions={accessibilityActionsFor(row, rowIndex)}
+        accessibilityActions={accessibilityActionsFor(row)}
+        canAddChild={canCreatePartyPresetChildFolder(index, row.folderId)}
         disabled={disabled}
         dropZone={dropFeedback?.targetFolderId === row.folderId ? dropFeedback.zone : null}
         editingChild={editingChild}
@@ -284,7 +321,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
         newChildName={editingChild ? childName : ''}
         onAccessibilityAction={(actionName) => {
           if (disabled) return;
-          void moveFolder(row.folderId, planForAccessibilityAction(row, rowIndex, actionName), false)
+          void moveFolder(row.folderId, planForAccessibilityAction(row, actionName), false)
             .catch(() => undefined);
         }}
         onCancelChild={() => setChildEditorFolderId(null)}
@@ -320,6 +357,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     deleteFolder,
     disabled,
     dropFeedback,
+    index,
     moveFolder,
     onDragEnd,
     onDragStart,
@@ -384,10 +422,17 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
         keyboardShouldPersistTaps="handled"
         keyExtractor={({ folderId }) => folderId.toString()}
         ListHeaderComponent={header}
+        onContentSizeChange={(_width, height) => {
+          contentHeightRef.current = height;
+        }}
+        onLayout={(event) => {
+          viewportHeightRef.current = event.nativeEvent.layout.height;
+        }}
         onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) => {
           scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
         }}
         renderItem={renderItem}
+        ref={listRef}
         scrollEventThrottle={16}
         style={styles.list}
       />
@@ -411,6 +456,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
 
 type FolderEditorRowProps = {
   accessibilityActions: Array<{ name: 'decrement' | 'increment' | 'escape'; label: string }>;
+  canAddChild: boolean;
   disabled: boolean;
   dropZone: PartyPresetFolderDropZone | null;
   editingChild: boolean;
@@ -438,6 +484,7 @@ type FolderEditorRowProps = {
 
 const FolderEditorRow = memo(function FolderEditorRow({
   accessibilityActions,
+  canAddChild,
   disabled,
   dropZone,
   editingChild,
@@ -529,7 +576,8 @@ const FolderEditorRow = memo(function FolderEditorRow({
         <Pressable
           accessibilityLabel={`${row.name} 하위 폴더 추가`}
           accessibilityRole="button"
-          disabled={disabled}
+          accessibilityState={{ disabled: disabled || !canAddChild }}
+          disabled={disabled || !canAddChild}
           onPress={onOpenChild}
           style={styles.iconButton}
         >
@@ -595,6 +643,24 @@ const FolderEditorRow = memo(function FolderEditorRow({
     </View>
   );
 });
+
+function canCreatePartyPresetChildFolder(
+  index: PartyPresetCatalogIndex,
+  folderId: number,
+): boolean {
+  let currentFolderId: number | null = folderId;
+  let depth = 0;
+  const visited = new Set<number>();
+  while (currentFolderId != null) {
+    if (visited.has(currentFolderId)) return false;
+    visited.add(currentFolderId);
+    const folder = index.foldersById.get(currentFolderId);
+    if (folder == null) return false;
+    currentFolderId = folder.parentFolderId;
+    if (currentFolderId != null) depth += 1;
+  }
+  return depth < MAX_VISIBLE_INDENT;
+}
 
 const styles = StyleSheet.create({
   container: {
