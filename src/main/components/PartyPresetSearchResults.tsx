@@ -7,6 +7,9 @@ import { theme } from '../styles/theme';
 import type { PartyPresetResponse } from '../types/api';
 
 export type PartyPresetSearchResultsProps = {
+  disabled?: boolean;
+  emptyTitle?: string;
+  selectionLabels?: boolean;
   results: readonly PartyPresetSearchResult[];
   selectedPresetId: number | null;
   onSelectPreset: (preset: PartyPresetResponse) => void;
@@ -14,6 +17,9 @@ export type PartyPresetSearchResultsProps = {
 
 /** 현재 폴더 깊이와 무관한 전체 너비의 전역 프리셋 검색 결과다. */
 export function PartyPresetSearchResults({
+  disabled = false,
+  emptyTitle,
+  selectionLabels = false,
   results,
   selectedPresetId,
   onSelectPreset,
@@ -23,10 +29,13 @@ export function PartyPresetSearchResults({
       path={item.path}
       preset={item.preset}
       selected={item.preset.id === selectedPresetId}
+      disabled={disabled}
+      rowAccessibilityLabel={selectionLabels ? `${item.preset.name} 프리셋 선택` : undefined}
+      selectionControl={selectionLabels}
       testID="party-preset-search-result"
       onSelect={onSelectPreset}
     />
-  ), [onSelectPreset, selectedPresetId]);
+  ), [disabled, onSelectPreset, selectedPresetId, selectionLabels]);
 
   return (
     <FlatList
@@ -34,14 +43,20 @@ export function PartyPresetSearchResults({
       data={results}
       keyExtractor={presetSearchResultKeyExtractor}
       keyboardShouldPersistTaps="handled"
-      ListEmptyComponent={<PartyPresetSearchEmptyState />}
+      initialNumToRender={12}
+      ListEmptyComponent={<PartyPresetSearchEmptyState title={emptyTitle} />}
       renderItem={renderResult}
+      maxToRenderPerBatch={12}
       style={styles.list}
+      windowSize={7}
     />
   );
 }
 
 type PartyPresetRowProps = {
+  rowAccessibilityLabel?: string;
+  selectionControl?: boolean;
+  disabled?: boolean;
   path: string | null;
   preset: PartyPresetResponse;
   selected: boolean;
@@ -50,9 +65,12 @@ type PartyPresetRowProps = {
 };
 
 export const PartyPresetRow = memo(function PartyPresetRow({
+  rowAccessibilityLabel,
+  selectionControl = false,
   path,
   preset,
   selected,
+  disabled = false,
   testID,
   onSelect,
 }: PartyPresetRowProps) {
@@ -63,15 +81,19 @@ export const PartyPresetRow = memo(function PartyPresetRow({
 
   return (
     <Pressable
-      accessibilityLabel={`${preset.name}, 구성원 ${configuredMemberCount}명${preset.isPrimary ? ', 대표 프리셋' : ''}`}
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
+      accessibilityLabel={rowAccessibilityLabel ?? `${preset.name}, 구성원 ${configuredMemberCount}명${preset.isPrimary ? ', 대표 프리셋' : ''}`}
+      accessibilityRole={selectionControl ? 'radio' : 'button'}
+      accessibilityState={selectionControl
+        ? { checked: selected, disabled }
+        : { selected, ...(disabled ? { disabled: true } : {}) }}
+      disabled={disabled}
       onPress={handlePress}
       style={({ pressed }) => [
         styles.presetRow,
         styles.fullWidth,
         selected ? styles.selected : null,
-        pressed ? styles.pressed : null,
+        disabled ? styles.disabled : null,
+        pressed && !disabled ? styles.pressed : null,
       ]}
       testID={testID}
     >
@@ -92,10 +114,10 @@ export const PartyPresetRow = memo(function PartyPresetRow({
   );
 });
 
-function PartyPresetSearchEmptyState() {
+function PartyPresetSearchEmptyState({ title = '일치하는 프리셋이 없습니다.' }: { title?: string }) {
   return (
     <View accessibilityLiveRegion="polite" style={styles.emptyState}>
-      <Text style={styles.emptyTitle}>일치하는 프리셋이 없습니다.</Text>
+      <Text style={styles.emptyTitle}>{title}</Text>
       <Text style={styles.emptyCopy}>다른 프리셋 이름으로 검색해 보세요.</Text>
     </View>
   );
@@ -129,6 +151,7 @@ const styles = StyleSheet.create({
   fullWidth: { alignSelf: 'stretch', marginLeft: 0, width: '100%' },
   selected: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.accentGreen },
   pressed: { opacity: 0.82 },
+  disabled: { opacity: 0.5 },
   presetCopy: { gap: 2, minWidth: 0 },
   presetTitleRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
   presetName: { color: theme.colors.text, flex: 1, fontSize: 14, fontWeight: '900' },

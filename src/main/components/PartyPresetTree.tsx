@@ -10,6 +10,8 @@ import type { PartyPresetResponse } from '../types/api';
 export type PartyPresetExpandedPath = readonly (number | null)[];
 
 export type PartyPresetTreeProps = {
+  disabled?: boolean;
+  selectionLabels?: boolean;
   index: PartyPresetCatalogIndex;
   expandedPath: PartyPresetExpandedPath;
   selectedPresetId: number | null;
@@ -25,6 +27,8 @@ type PartyPresetTreeRow =
 
 /** 하나의 확장 경로와 그 leaf 프리셋만 표시하는 읽기 전용 카탈로그 트리다. */
 export function PartyPresetTree({
+  disabled = false,
+  selectionLabels = false,
   index,
   expandedPath,
   selectedPresetId,
@@ -63,19 +67,23 @@ export function PartyPresetTree({
           <PartyPresetFolderRow
             depth={item.depth}
             expanded={item.expanded}
+            disabled={disabled}
             folderId={item.folderId}
             name={item.name}
             onToggle={handleToggleFolder}
           />
         );
       case 'unassigned':
-        return <PartyPresetUnassignedRow expanded={item.expanded} onToggle={handleToggleUnassigned} />;
+        return <PartyPresetUnassignedRow disabled={disabled} expanded={item.expanded} onToggle={handleToggleUnassigned} />;
       case 'preset':
         return (
           <PartyPresetRow
+            rowAccessibilityLabel={selectionLabels ? `${item.preset.name} 프리셋 선택` : undefined}
+            selectionControl={selectionLabels}
             path={null}
             preset={item.preset}
             selected={item.preset.id === selectedPresetId}
+            disabled={disabled}
             testID="party-preset-row"
             onSelect={onSelectPreset}
           />
@@ -83,20 +91,24 @@ export function PartyPresetTree({
       case 'empty':
         return <PartyPresetBrowsingEmptyState unassigned={item.unassigned} />;
     }
-  }, [handleToggleFolder, handleToggleUnassigned, onSelectPreset, selectedPresetId]);
+  }, [disabled, handleToggleFolder, handleToggleUnassigned, onSelectPreset, selectedPresetId, selectionLabels]);
 
   return (
     <FlatList
       contentContainerStyle={styles.listContent}
       data={rows}
       keyExtractor={treeRowKeyExtractor}
+      initialNumToRender={12}
+      maxToRenderPerBatch={12}
       renderItem={renderRow}
       style={styles.list}
+      windowSize={7}
     />
   );
 }
 
 type PartyPresetFolderRowProps = {
+  disabled: boolean;
   depth: number;
   expanded: boolean;
   folderId: number;
@@ -106,6 +118,7 @@ type PartyPresetFolderRowProps = {
 
 const PartyPresetFolderRow = memo(function PartyPresetFolderRow({
   depth,
+  disabled,
   expanded,
   folderId,
   name,
@@ -119,13 +132,15 @@ const PartyPresetFolderRow = memo(function PartyPresetFolderRow({
     <Pressable
       accessibilityLabel={`${name} 폴더 ${expanded ? '닫기' : '열기'}`}
       accessibilityRole="button"
-      accessibilityState={{ expanded }}
+      accessibilityState={{ expanded, ...(disabled ? { disabled: true } : {}) }}
+      disabled={disabled}
       onPress={handlePress}
       style={({ pressed }) => [
         styles.folderRow,
         depthStyles[Math.min(depth, depthStyles.length - 1)],
         expanded ? styles.folderRowExpanded : null,
-        pressed ? styles.pressed : null,
+        disabled ? styles.disabled : null,
+        pressed && !disabled ? styles.pressed : null,
       ]}
       testID="party-preset-folder-row"
     >
@@ -140,21 +155,25 @@ const PartyPresetFolderRow = memo(function PartyPresetFolderRow({
 
 const PartyPresetUnassignedRow = memo(function PartyPresetUnassignedRow({
   expanded,
+  disabled,
   onToggle,
 }: {
   expanded: boolean;
+  disabled: boolean;
   onToggle: () => void;
 }) {
   return (
     <Pressable
       accessibilityLabel={`미지정 폴더 ${expanded ? '닫기' : '열기'}`}
       accessibilityRole="button"
-      accessibilityState={{ expanded }}
+      accessibilityState={{ expanded, ...(disabled ? { disabled: true } : {}) }}
+      disabled={disabled}
       onPress={onToggle}
       style={({ pressed }) => [
         styles.folderRow,
         expanded ? styles.folderRowExpanded : null,
-        pressed ? styles.pressed : null,
+        disabled ? styles.disabled : null,
+        pressed && !disabled ? styles.pressed : null,
       ]}
       testID="party-preset-unassigned-row"
     >
@@ -276,6 +295,7 @@ const styles = StyleSheet.create({
   folderRowExpanded: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong },
   folderName: { color: theme.colors.text, flex: 1, fontSize: 14, fontWeight: '900' },
   pressed: { opacity: 0.82 },
+  disabled: { opacity: 0.5 },
   emptyState: {
     alignItems: 'center',
     backgroundColor: theme.colors.surface,
