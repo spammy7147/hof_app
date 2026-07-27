@@ -64,7 +64,7 @@ describe('PartyPresetTree', () => {
     assert.equal(list.props.style.flexShrink, 1);
     assert.deepEqual(
       (list.props.data as Array<{ kind: string }>).map(({ kind }) => kind),
-      ['folder', 'unassigned', 'folder', 'folder', 'preset', 'preset'],
+      ['folder', 'folder', 'folder', 'preset', 'preset', 'unassigned'],
     );
     assert.ok(flattenPressableStyle(findAllByTestId(renderer.root, 'party-preset-folder-row')[0]!).minHeight as number >= 44);
     assert.deepEqual(
@@ -206,6 +206,37 @@ describe('PartyPresetTree', () => {
     await act(async () => { findAllByTestId(renderer.root, 'party-preset-row')[0]?.props.onPress(); });
 
     assert.deepEqual(selectedPresetIds, [12]);
+  });
+
+  it('renders the expanded branch depth-first before unrelated roots and unassigned', async () => {
+    const catalog = makeCatalog(
+      [
+        folder(1, 'A', null),
+        folder(4, 'B', null),
+        folder(2, 'A-child', 1),
+        folder(3, 'A-grandchild', 2),
+      ],
+      [preset(20, 'A-deep-preset', 3, false, 1), preset(21, 'unassigned-preset', null, false, 1)],
+    );
+    const renderer = await renderTree({ catalog, expandedPath: [1, 2, 3] });
+    const rows = findHosts(renderer.root, 'FlatList')[0]!.props.data as Array<{
+      kind: string;
+      name?: string;
+      preset?: PartyPresetResponse;
+    }>;
+
+    assert.deepEqual(rows.map((row) => {
+      if (row.kind === 'folder') return `folder:${row.name}`;
+      if (row.kind === 'preset') return `preset:${row.preset?.name}`;
+      return row.kind;
+    }), [
+      'folder:A',
+      'folder:A-child',
+      'folder:A-grandchild',
+      'preset:A-deep-preset',
+      'folder:B',
+      'unassigned',
+    ]);
   });
 });
 

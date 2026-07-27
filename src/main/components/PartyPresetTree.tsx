@@ -217,46 +217,46 @@ function buildVisibleRows(
   expandedPath: PartyPresetExpandedPath,
 ): PartyPresetTreeRow[] {
   const rows: PartyPresetTreeRow[] = [];
-  let parentFolderId: number | null = null;
+  const activeDepth = expandedPath.length - 1;
 
-  for (let depth = 0; depth <= expandedPath.length; depth += 1) {
+  function appendPresetRows(folderId: number | null) {
+    let presetCount = 0;
+    for (const presetId of index.presetIdsByFolder.get(folderId) ?? []) {
+      const preset = index.presetsById.get(presetId);
+      if (preset == null) continue;
+      rows.push({ key: `preset:${preset.id}`, kind: 'preset', preset });
+      presetCount += 1;
+    }
+    if (presetCount === 0) {
+      rows.push({ key: `empty:${folderId ?? 'unassigned'}`, kind: 'empty', unassigned: folderId == null });
+    }
+  }
+
+  function appendFolderLevel(parentFolderId: number | null, depth: number) {
     const folderIds = index.childFolderIdsByParent.get(parentFolderId) ?? [];
     for (const folderId of folderIds) {
       const folder = index.foldersById.get(folderId);
       if (folder == null) continue;
+      const expanded = expandedPath[depth] === folder.id;
       rows.push({
         key: `folder:${folder.id}`,
         kind: 'folder',
         depth,
         folderId: folder.id,
         name: folder.name,
-        expanded: expandedPath[depth] === folder.id,
+        expanded,
       });
+      if (expanded) {
+        appendFolderLevel(folder.id, depth + 1);
+        if (depth === activeDepth) appendPresetRows(folder.id);
+      }
     }
-    if (depth === 0) {
-      rows.push({
-        key: 'folder:unassigned',
-        kind: 'unassigned',
-        expanded: expandedPath.length === 1 && expandedPath[0] === null,
-      });
-    }
-    const expandedFolderId = expandedPath[depth];
-    if (expandedFolderId == null) break;
-    parentFolderId = expandedFolderId;
   }
 
-  if (expandedPath.length === 0) return rows;
-  const activeFolderId = expandedPath[expandedPath.length - 1] ?? null;
-  let presetCount = 0;
-  for (const presetId of index.presetIdsByFolder.get(activeFolderId) ?? []) {
-    const preset = index.presetsById.get(presetId);
-    if (preset == null) continue;
-    rows.push({ key: `preset:${preset.id}`, kind: 'preset', preset });
-    presetCount += 1;
-  }
-  if (presetCount === 0) {
-    rows.push({ key: `empty:${activeFolderId ?? 'unassigned'}`, kind: 'empty', unassigned: activeFolderId == null });
-  }
+  appendFolderLevel(null, 0);
+  const unassignedExpanded = expandedPath.length === 1 && expandedPath[0] === null;
+  rows.push({ key: 'folder:unassigned', kind: 'unassigned', expanded: unassignedExpanded });
+  if (unassignedExpanded) appendPresetRows(null);
   return rows;
 }
 
