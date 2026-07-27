@@ -57,11 +57,11 @@ describe('PartyPresetTree', () => {
     const renderer = await renderHarness();
 
     assert.deepEqual(
-      ['A', 'B'].map((name) => renderer.root.findByProps({ accessibilityLabel: `${name} 폴더 닫기` }).props.accessibilityState),
+      [['A', 2], ['B', 1]].map(([name, count]) => renderer.root.findByProps({ accessibilityLabel: `${name} 폴더, 프리셋 ${count}개, 닫기` }).props.accessibilityState),
       [{ expanded: true }, { expanded: true }],
     );
     assert.deepEqual(
-      renderer.root.findByProps({ accessibilityLabel: '미지정 폴더 닫기' }).props.accessibilityState,
+      renderer.root.findByProps({ accessibilityLabel: '미지정 폴더, 프리셋 1개, 닫기' }).props.accessibilityState,
       { expanded: true },
     );
     assert.equal(textCount(renderer.root, 'A direct'), 1);
@@ -77,12 +77,12 @@ describe('PartyPresetTree', () => {
   it('opens B and unassigned sequentially without closing A or either other group', async () => {
     const renderer = await renderTree({ expandedFolderIds: new Set([1]) });
 
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'B 폴더 열기' }).props.onPress(); });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '미지정 폴더 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'B 폴더, 프리셋 1개, 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '미지정 폴더, 프리셋 1개, 열기' }).props.onPress(); });
 
-    for (const name of ['A', 'B', '미지정']) {
+    for (const [name, count] of [['A', 2], ['B', 1], ['미지정', 1]] as const) {
       assert.deepEqual(
-        renderer.root.findByProps({ accessibilityLabel: `${name} 폴더 닫기` }).props.accessibilityState,
+        renderer.root.findByProps({ accessibilityLabel: `${name} 폴더, 프리셋 ${count}개, 닫기` }).props.accessibilityState,
         { expanded: true },
       );
     }
@@ -98,6 +98,9 @@ describe('PartyPresetTree', () => {
     assert.equal(folderCount(renderer.root, 'A child'), '1');
     assert.equal(folderCount(renderer.root, 'B'), '1');
     assert.equal(folderCount(renderer.root, '미지정'), '1');
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'A 폴더, 프리셋 2개, 닫기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'B 폴더, 프리셋 1개, 열기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '미지정 폴더, 프리셋 1개, 열기' }));
   });
 
   it('shows direct presets when an expanded folder also has child folders', async () => {
@@ -166,9 +169,9 @@ describe('PartyPresetTree', () => {
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '테스트 프리셋 검색' }).props.onChangeText(''); });
 
-    for (const name of ['A', 'B', '미지정']) {
+    for (const [name, count] of [['A', 2], ['B', 1], ['미지정', 1]] as const) {
       assert.deepEqual(
-        renderer.root.findByProps({ accessibilityLabel: `${name} 폴더 닫기` }).props.accessibilityState,
+        renderer.root.findByProps({ accessibilityLabel: `${name} 폴더, 프리셋 ${count}개, 닫기` }).props.accessibilityState,
         { expanded: true },
       );
     }
@@ -214,17 +217,17 @@ describe('PartyPresetTree', () => {
     assert.equal(textCount(renderer.root, 'A direct'), 1);
     assert.equal(textCount(renderer.root, 'A child direct'), 1);
     await act(async () => {
-      renderer.root.findByProps({ accessibilityLabel: 'B 폴더 열기' }).props.onPress();
+      renderer.root.findByProps({ accessibilityLabel: 'B 폴더, 프리셋 1개, 열기' }).props.onPress();
     });
 
     assert.deepEqual(changedPaths, [[1, 2, 4]]);
     assert.deepEqual(initialPath, [1, 2]);
     assert.deepEqual(
-      renderer.root.findByProps({ accessibilityLabel: 'A 폴더 닫기' }).props.accessibilityState,
+      renderer.root.findByProps({ accessibilityLabel: 'A 폴더, 프리셋 2개, 닫기' }).props.accessibilityState,
       { expanded: true },
     );
     assert.deepEqual(
-      renderer.root.findByProps({ accessibilityLabel: 'B 폴더 닫기' }).props.accessibilityState,
+      renderer.root.findByProps({ accessibilityLabel: 'B 폴더, 프리셋 1개, 닫기' }).props.accessibilityState,
       { expanded: true },
     );
   });
@@ -293,8 +296,8 @@ describe('PartyPresetTree', () => {
 
   it('uses compact green folder styling with accessible touch height', async () => {
     const renderer = await renderTree({ expandedFolderIds: new Set([1]) });
-    const openStyle = flattenPressableStyle(renderer.root.findByProps({ accessibilityLabel: 'A 폴더 닫기' }));
-    const closedStyle = flattenPressableStyle(renderer.root.findByProps({ accessibilityLabel: 'B 폴더 열기' }));
+    const openStyle = flattenPressableStyle(renderer.root.findByProps({ accessibilityLabel: 'A 폴더, 프리셋 2개, 닫기' }));
+    const closedStyle = flattenPressableStyle(renderer.root.findByProps({ accessibilityLabel: 'B 폴더, 프리셋 1개, 열기' }));
     const folderName = renderer.root.findAll((node) => (
       (node.type as unknown) === 'Text' && node.children.join('') === 'A'
     ))[0]!;
@@ -533,8 +536,7 @@ function findHosts(root: ReactTestInstance, name: string): ReactTestInstance[] {
 
 function folderCount(root: ReactTestInstance, name: string): string {
   const row = root.findAll((node) => (
-    node.props.accessibilityLabel === `${name} 폴더 열기`
-    || node.props.accessibilityLabel === `${name} 폴더 닫기`
+    node.props.accessibilityLabel?.startsWith(`${name} 폴더, 프리셋 `)
   ))[0]!;
   return findAllByTestId(row, 'party-preset-folder-count')[0]!.children.join('');
 }

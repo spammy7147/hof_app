@@ -296,7 +296,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(React.createElement(QuestMissionMapList, props)); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 2번째 맵 프리셋 선택' }).props.onPress(); });
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '공유 폴더 폴더 열기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '공유 폴더 폴더, 프리셋 0개, 열기' }));
     const retainedSelect = renderer.root.findByProps({ accessibilityLabel: 'Safe 프리셋 선택' }).props.onPress as () => void;
 
     await act(async () => {
@@ -704,7 +704,9 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.deepEqual(trigger.props.accessibilityValue, { text: '대표 프리셋 없음' });
     assert.equal(trigger.props.style.minHeight, 44);
     await act(async () => { trigger.props.onPress(); });
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '공유 폴더 폴더 열기' }));
+    assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), 'Alpha'), true);
+    assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), 'Alpha 프리셋 선택'), false);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '공유 폴더 폴더, 프리셋 0개, 열기' }));
     assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Combat 선택' }).props.accessibilityState.checked, true);
     assert.equal(dragCalls.length, 0);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Safe 프리셋 선택' }));
@@ -1393,7 +1395,7 @@ describe('HomeTabScreen mounted typed editor routing', () => {
     });
 
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }));
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '공유 폴더 폴더 열기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '공유 폴더 폴더, 프리셋 1개, 열기' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '대표 프리셋 선택' }));
   });
 

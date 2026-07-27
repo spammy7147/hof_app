@@ -810,7 +810,9 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'Modal').length, 0);
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' }).props.onPress(); });
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'Modal').length, 1);
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '공유 폴더 폴더 열기' }));
+    assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), 'Alpha'), true);
+    assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), 'Alpha 프리셋 선택'), false);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '공유 폴더 폴더, 프리셋 0개, 열기' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '대표 프리셋 선택' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Preset 100 프리셋 선택' }));
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }).props.onChangeText('100'); });

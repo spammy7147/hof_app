@@ -62,8 +62,8 @@ describe('BattlePartyPresetPicker refresh session', () => {
     });
 
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 파티 프리셋 선택' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '레이드 폴더 열기' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 1개, 열기' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '레이드 폴더, 프리셋 1개, 열기' }).props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }).props.onChangeText('화속'));
     assert.equal(findModal(renderer.root).props.visible, true);
     assert.equal(findPresetRows(renderer.root, 'party-preset-search-result').length, 1);
@@ -90,8 +90,8 @@ describe('BattlePartyPresetPicker refresh session', () => {
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }).props.value, '화속');
     assert.equal(findPresetRows(renderer.root, 'party-preset-search-result')[0]?.props.disabled, false);
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }).props.onChangeText(''));
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 폴더 닫기' }));
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '레이드 폴더 닫기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 1개, 닫기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '레이드 폴더, 프리셋 1개, 닫기' }));
     await act(async () => findPresetRows(renderer.root, 'party-preset-row')[0]?.props.onPress());
     assert.deepEqual(selected, [10]);
     assert.equal(findModal(renderer.root).props.visible, false);

@@ -167,7 +167,7 @@ const PartyPresetFolderRow = memo(function PartyPresetFolderRow({
 
   return (
     <Pressable
-      accessibilityLabel={`${name} 폴더 ${expanded ? '닫기' : '열기'}`}
+      accessibilityLabel={`${name} 폴더, 프리셋 ${count}개, ${expanded ? '닫기' : '열기'}`}
       accessibilityRole="button"
       accessibilityState={{ expanded, ...(disabled ? { disabled: true } : {}) }}
       disabled={disabled}
@@ -204,7 +204,7 @@ const PartyPresetUnassignedRow = memo(function PartyPresetUnassignedRow({
 }) {
   return (
     <Pressable
-      accessibilityLabel={`미지정 폴더 ${expanded ? '닫기' : '열기'}`}
+      accessibilityLabel={`미지정 폴더, 프리셋 ${count}개, ${expanded ? '닫기' : '열기'}`}
       accessibilityRole="button"
       accessibilityState={{ expanded, ...(disabled ? { disabled: true } : {}) }}
       disabled={disabled}

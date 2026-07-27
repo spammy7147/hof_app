@@ -268,7 +268,7 @@ describe('PartyPresetList', () => {
       },
     });
 
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '미지정 폴더 열기' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '미지정 폴더, 프리셋 2개, 열기' }).props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 구성원 0명, 대표 프리셋' }).props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 선택' }).props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 전투' }).props.onPress());
@@ -392,7 +392,7 @@ describe('PartyPresetList', () => {
     assert.equal(findAllText(renderer.root).includes('루트'), false);
 
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 편집 종료' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '미지정 폴더 열기' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '미지정 폴더, 프리셋 2개, 열기' }).props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 구성원 0명, 대표 프리셋' }).props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 선택' }).props.onPress());
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '폴더 위치 확인' }));
@@ -500,12 +500,61 @@ describe('PartyPresetList', () => {
     assert.equal(textCount(renderer.root, 'move failed'), 1);
   });
 
+  it('orders same-parent and cross-parent folder siblings optimistically before the server resolves', async () => {
+    const sameParentPending = deferred<PartyPresetCatalogResponse>();
+    const sameParentCatalog: PartyPresetCatalogResponse = {
+      folders: [folder(1, 'A', null, 0), folder(2, 'B', null, 1), folder(3, 'C', null, 2)],
+      presets: [],
+    };
+    const sameParent = await renderList({
+      partyPresetCatalog: catalogResource(sameParentCatalog),
+      onMovePartyPresetFolder: async () => sameParentPending.promise,
+    });
+    await act(async () => sameParent.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
+    await act(async () => {
+      void findHost(sameParent.root, 'PartyPresetFolderEditor').props.onMove(1, { parentFolderId: null, displayOrder: 2 });
+      await Promise.resolve();
+    });
+    assert.deepEqual(
+      findHost(sameParent.root, 'PartyPresetFolderEditor').props.index.childFolderIdsByParent.get(null),
+      [2, 3, 1],
+    );
+
+    const crossParentPending = deferred<PartyPresetCatalogResponse>();
+    const crossParentCatalog: PartyPresetCatalogResponse = {
+      folders: [
+        folder(10, '왼쪽', null, 0), folder(20, '오른쪽', null, 1),
+        folder(11, '이동', 10, 0), folder(12, '남음', 10, 1),
+        folder(21, '앞', 20, 0), folder(22, '뒤', 20, 1),
+      ],
+      presets: [],
+    };
+    const crossParent = await renderList({
+      partyPresetCatalog: catalogResource(crossParentCatalog),
+      onMovePartyPresetFolder: async () => crossParentPending.promise,
+    });
+    await act(async () => crossParent.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
+    await act(async () => {
+      void findHost(crossParent.root, 'PartyPresetFolderEditor').props.onMove(11, { parentFolderId: 20, displayOrder: 1 });
+      await Promise.resolve();
+    });
+    const index = findHost(crossParent.root, 'PartyPresetFolderEditor').props.index;
+    assert.deepEqual(index.childFolderIdsByParent.get(10), [12]);
+    assert.deepEqual(index.childFolderIdsByParent.get(20), [21, 11, 22]);
+
+    await act(async () => {
+      sameParentPending.resolve(sameParentCatalog);
+      crossParentPending.resolve(crossParentCatalog);
+      await Promise.all([sameParentPending.promise, crossParentPending.promise]);
+    });
+  });
+
   it('keeps multiple character-catalog folders open independently', async () => {
     const renderer = await renderList({ partyPresetCatalog: catalogResource(FOLDER_CATALOG) });
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '퀘스트 폴더 열기' }).props.onPress());
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 폴더 닫기' }));
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '퀘스트 폴더 닫기' }));
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 0개, 열기' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '퀘스트 폴더, 프리셋 0개, 열기' }).props.onPress());
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 0개, 닫기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '퀘스트 폴더, 프리셋 0개, 닫기' }));
   });
 
   it('submits a numeric folder id and the complete preset sibling set when reordering', async () => {
@@ -514,7 +563,7 @@ describe('PartyPresetList', () => {
       partyPresetCatalog: catalogResource(FOLDER_PRESETS_CATALOG),
       onReorderPartyPresets: async (request) => { requests.push(request); return [...FOLDER_PRESETS_CATALOG.presets].reverse(); },
     });
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 2개, 열기' }).props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 구성원 0명, 대표 프리셋' }).props.onPress());
     const draggable = findHost(renderer.root, 'DraggableFlatList');
     const rows = draggable.props.data as PartyPresetResponse[];
@@ -535,7 +584,7 @@ describe('PartyPresetList', () => {
       partyPresetCatalog: catalogResource(catalog),
       onReorderPartyPresets: async () => pending.promise,
     });
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 2개, 열기' }).props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 구성원 0명, 대표 프리셋' }).props.onPress());
     let draggable = findHost(renderer.root, 'DraggableFlatList');
     assert.deepEqual((draggable.props.data as PartyPresetResponse[]).map(({ id }) => id), [1, 2]);
@@ -560,8 +609,8 @@ describe('PartyPresetList', () => {
     const props = listProps({ partyPresetCatalog: catalogResource(FOLDER_CATALOG) });
     const renderer = await renderListProps(props);
     await act(async () => renderer.update(React.createElement(PartyPresetList, { ...props, authenticated: false })));
-    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투 폴더 열기' }).length, 0);
-    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투 폴더 열기' }).length, 0);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투 폴더, 프리셋 0개, 열기' }).length, 0);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투 폴더, 프리셋 0개, 열기' }).length, 0);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '폴더 편집 시작' }).length, 0);
   });
 
@@ -570,8 +619,8 @@ describe('PartyPresetList', () => {
     const renderer = await renderListProps(olderProps);
     const newerProps = { ...olderProps, partyPresetCatalog: catalogResource({ folders: [folder(30, '최신', null, 0)], presets: [] }) };
     await act(async () => renderer.update(React.createElement(PartyPresetList, newerProps)));
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '최신 폴더 열기' }));
-    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '오래됨 폴더 열기' }).length, 0);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '최신 폴더, 프리셋 0개, 열기' }));
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '오래됨 폴더, 프리셋 0개, 열기' }).length, 0);
   });
 
   it('isolates a pending preset mutation across auth loss and reverse relogin completion', async () => {
@@ -603,7 +652,7 @@ describe('PartyPresetList', () => {
       renderer.update(React.createElement(PartyPresetList, newProps));
       await Promise.resolve();
     });
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '최신 폴더 열기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '최신 폴더, 프리셋 0개, 열기' }));
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '프리셋 추가' }).props.onPress());
     await act(async () => {
       void findButtonByText(renderer.root, '저장').props.onPress();
@@ -673,7 +722,7 @@ describe('PartyPresetList', () => {
     const renderer = await renderList({
       partyPresetCatalog: catalogResource({ folders: [folder(10, '전투', null, 0)], presets: deepPresets }),
     });
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 12개, 열기' }).props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '프리셋 12, 구성원 0명' }).props.onPress());
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 120)); });
 
@@ -683,7 +732,7 @@ describe('PartyPresetList', () => {
 
   it('does not rebuild unrelated memoized virtual rows while editing text', async () => {
     const renderer = await renderList({ partyPresetCatalog: catalogResource(FOLDER_PRESETS_CATALOG) });
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 2개, 열기' }).props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 구성원 0명, 대표 프리셋' }).props.onPress());
     hostRenderCounts.clear();
     await act(async () => findHost(renderer.root, 'TextInput').props.onChangeText('편집 중'));
@@ -866,7 +915,7 @@ function findButtonByText(root: ReactTestInstance, text: string): ReactTestInsta
 }
 
 async function openUnassignedPreset(renderer: ReactTestRenderer, accessibilityLabel: string): Promise<void> {
-  await act(async () => renderer.root.findByProps({ accessibilityLabel: '미지정 폴더 열기' }).props.onPress());
+  await act(async () => renderer.root.findByProps({ accessibilityLabel: '미지정 폴더, 프리셋 2개, 열기' }).props.onPress());
   await act(async () => renderer.root.findByProps({ accessibilityLabel }).props.onPress());
 }
 

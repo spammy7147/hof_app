@@ -51,7 +51,7 @@ describe('BattleRunPanel party preset catalog', () => {
     });
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 파티 프리셋 선택' }).props.onPress());
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }));
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 1개, 열기' }));
     const direct = renderer.root.findByProps({ accessibilityLabel: '캐릭터 직접 선택 선택' });
     assert.deepEqual(direct.props.accessibilityState, { checked: false, disabled: false });
   });

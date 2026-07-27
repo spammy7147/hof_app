@@ -63,15 +63,15 @@ describe('PartyPresetPickerModal', () => {
   it('browses the tree and switches one global name search to zero-indent full-width results', async () => {
     const renderer = await renderPicker();
 
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: '미지정 폴더 닫기' }).props.accessibilityState.expanded, true);
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }));
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '지원 폴더 열기' }).props.onPress());
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 폴더 닫기' }).props.accessibilityState.expanded, true);
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: '지원 폴더 닫기' }).props.accessibilityState.expanded, true);
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: '미지정 폴더 닫기' }).props.accessibilityState.expanded, true);
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '레이드 폴더 열기' }));
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '레이드 폴더 열기' }).props.onPress());
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '미지정 폴더, 프리셋 1개, 닫기' }).props.accessibilityState.expanded, true);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 1개, 열기' }));
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 1개, 열기' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '지원 폴더, 프리셋 1개, 열기' }).props.onPress());
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 1개, 닫기' }).props.accessibilityState.expanded, true);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '지원 폴더, 프리셋 1개, 닫기' }).props.accessibilityState.expanded, true);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '미지정 폴더, 프리셋 1개, 닫기' }).props.accessibilityState.expanded, true);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '레이드 폴더, 프리셋 1개, 열기' }));
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '레이드 폴더, 프리셋 1개, 열기' }).props.onPress());
     assert.equal(findAllHostByTestId(renderer.root, 'party-preset-row').length, 3);
     assert.equal(textCount(renderer.root, '구성원 0명'), 0);
 
@@ -90,9 +90,9 @@ describe('PartyPresetPickerModal', () => {
     assert.equal(textCount(renderer.root, '구성원 0명'), 0);
 
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }).props.onChangeText(''));
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 폴더 닫기' }).props.accessibilityState.expanded, true);
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: '지원 폴더 닫기' }).props.accessibilityState.expanded, true);
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: '미지정 폴더 닫기' }).props.accessibilityState.expanded, true);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 1개, 닫기' }).props.accessibilityState.expanded, true);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '지원 폴더, 프리셋 1개, 닫기' }).props.accessibilityState.expanded, true);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '미지정 폴더, 프리셋 1개, 닫기' }).props.accessibilityState.expanded, true);
   });
 
   it('prefers independent initial folder ids without mutating a frozen caller array', async () => {
@@ -102,10 +102,10 @@ describe('PartyPresetPickerModal', () => {
       initialExpandedPath: [2],
     });
 
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 폴더 닫기' }));
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '지원 폴더 닫기' }));
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '미지정 폴더 닫기' }));
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '레이드 폴더 열기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 1개, 닫기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '지원 폴더, 프리셋 1개, 닫기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '미지정 폴더, 프리셋 1개, 닫기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '레이드 폴더, 프리셋 1개, 열기' }));
     assert.deepEqual(initialExpandedFolderIds, [1, 3, null]);
   });
 
@@ -129,8 +129,8 @@ describe('PartyPresetPickerModal', () => {
     assert.equal(syntheticStyle.minHeight, 44);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '특수 선택' }));
     await act(async () => synthetic.props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }).props.onPress());
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: '레이드 폴더 열기' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 1개, 열기' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '레이드 폴더, 프리셋 1개, 열기' }).props.onPress());
     await act(async () => findAllHostByTestId(renderer.root, 'party-preset-row')[0]?.props.onPress());
 
     assert.deepEqual(selected, ['primary', 10]);
@@ -209,7 +209,7 @@ describe('PartyPresetPickerModal', () => {
     await act(async () => renderer.update(React.createElement(PartyPresetPickerModal, baseProps({ visible: false }))));
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }).props.value, '');
     await act(async () => renderer.update(React.createElement(PartyPresetPickerModal, baseProps())));
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 폴더 열기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 1개, 열기' }));
     assert.equal(findAllHostByTestId(renderer.root, 'party-preset-search-result').length, 0);
   });
 });

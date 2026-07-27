@@ -706,7 +706,7 @@ describe('AdventureMapAutomationEditor', () => {
       partyPresetCatalog: presetCatalog([preset(9, '고정 파티', false)]),
     });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.onPress(); });
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '공유 폴더 폴더 열기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '공유 폴더 폴더, 프리셋 0개, 열기' }));
     const retainedSelectA = renderer.root.findByProps({ accessibilityLabel: '고정 파티 프리셋 선택' }).props.onPress as () => void;
     const retainedCloseA = renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress as () => void;
     await act(async () => { retainedCloseA(); });
@@ -719,6 +719,7 @@ describe('AdventureMapAutomationEditor', () => {
     });
 
     assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), '둘째 맵'), true);
+    assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), '둘째 맵 프리셋 선택'), false);
     assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.accessibilityValue, { text: '대표 프리셋 없음' });
     await act(async () => { currentSelectB(); });
     assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.accessibilityValue, { text: '고정 파티' });

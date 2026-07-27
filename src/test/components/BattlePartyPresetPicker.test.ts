@@ -59,6 +59,8 @@ describe('BattlePartyPresetPicker', () => {
     const modal = commonPickerCalls.at(-1)!;
     assert.equal(modal.visible, true);
     assert.equal(modal.catalog, CATALOG);
+    assert.deepEqual(modal.initialExpandedFolderIds, [null]);
+    assert.equal(modal.initialExpandedPath, undefined);
     const direct = (modal.syntheticOptions as Array<Record<string, unknown>>)[0]!;
     assert.equal(direct.label, '캐릭터 직접 선택');
     assert.equal(direct.selected, true);

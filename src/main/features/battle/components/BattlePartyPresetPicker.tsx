@@ -167,7 +167,7 @@ export function BattlePartyPresetPicker({
         busyMessage={loading ? '프리셋을 새로 고치는 중' : undefined}
         catalog={catalog}
         disabled={loading}
-        initialExpandedPath={[null]}
+        initialExpandedFolderIds={[null]}
         onClose={handleClose}
         onSelectPreset={handleSelectPreset}
         selectedPresetId={selectedPresetId}
