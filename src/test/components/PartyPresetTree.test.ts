@@ -103,6 +103,24 @@ describe('PartyPresetTree', () => {
     );
     assert.equal(findAllByTestId(renderer.root, 'party-preset-row').length, 0);
   });
+
+  it('selects the pressed preset and exposes selected state only on its matching row', async () => {
+    const selectedPresetIds: number[] = [];
+    const renderer = await renderTree({
+      selectedPresetId: 11,
+      onSelectPreset: (preset) => { selectedPresetIds.push(preset.id); },
+    });
+    const rows = findAllByTestId(renderer.root, 'party-preset-row');
+
+    assert.deepEqual(
+      rows.map(({ props }) => props.accessibilityState),
+      [{ selected: false }, { selected: true }],
+    );
+
+    await act(async () => { rows[0]?.props.onPress(); });
+
+    assert.deepEqual(selectedPresetIds, [10]);
+  });
 });
 
 describe('PartyPresetSearchResults', () => {
@@ -148,6 +166,27 @@ function CatalogHarness({ initialQuery = '' }: { initialQuery?: string }) {
 async function renderHarness(initialQuery = ''): Promise<ReactTestRenderer> {
   let renderer!: ReactTestRenderer;
   await act(async () => { renderer = create(React.createElement(CatalogHarness, { initialQuery })); });
+  return renderer;
+}
+
+async function renderTree({
+  selectedPresetId,
+  onSelectPreset,
+}: {
+  selectedPresetId: number | null;
+  onSelectPreset: (preset: PartyPresetResponse) => void;
+}): Promise<ReactTestRenderer> {
+  const index = indexPartyPresetCatalog(CATALOG);
+  let renderer!: ReactTestRenderer;
+  await act(async () => {
+    renderer = create(React.createElement(PartyPresetTree, {
+      index,
+      expandedPath: [1, 2, 3],
+      selectedPresetId,
+      onExpandedPathChange: () => undefined,
+      onSelectPreset,
+    }));
+  });
   return renderer;
 }
 
