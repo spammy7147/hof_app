@@ -98,8 +98,36 @@ describe('PartyPresetFolderEditor', () => {
     assert.equal(rowStyle.paddingVertical, 1);
     const childStyle = flattenStyle(renderer.root.findByProps({ testID: 'party-preset-folder-row-2' }).props.style);
     assert.ok((childStyle.paddingLeft as number) > (rowStyle.paddingLeft as number));
-    assert.equal(childStyle.borderLeftWidth, 2);
+    assert.equal(childStyle.borderLeftWidth ?? 0, 0);
+    assert.deepEqual(connectorLefts(renderer.root, 2), [8]);
     assert.ok(renderer.root.findByType('FlatList' as never).props.CellRendererComponent);
+
+    const row = renderer.root.findByProps({ testID: 'party-preset-folder-row-1' });
+    assert.deepEqual(hostAccessibilityLabels(row), [
+      'New1 폴더 접기',
+      'New1 폴더 이름 및 삭제 수정',
+      'New1 하위 폴더 추가',
+      'New1 폴더 위치 이동',
+    ]);
+  });
+
+  it('positions connectors at each depth and caps the five-level hierarchy', async () => {
+    const renderer = await renderEditor({
+      index: indexPartyPresetCatalog({
+        folders: [
+          folder(1, 'L1', null, 0),
+          folder(2, 'L2', 1, 0),
+          folder(3, 'L3', 2, 0),
+          folder(4, 'L4', 3, 0),
+          folder(5, 'L5', 4, 0),
+        ],
+        presets: [],
+      }),
+    });
+    assert.deepEqual(connectorLefts(renderer.root, 1), []);
+    assert.deepEqual(connectorLefts(renderer.root, 3), [8, 24]);
+    assert.deepEqual(connectorLefts(renderer.root, 5), [8, 24, 40, 56]);
+    assert.ok(connectorLefts(renderer.root, 5).length <= 5);
   });
 
   it('adds top-level and inline child folders without naming their location root', async () => {
@@ -120,6 +148,11 @@ describe('PartyPresetFolderEditor', () => {
       { name: 'top', parentFolderId: null },
       { name: 'new3', parentFolderId: 1 },
     ]);
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 하위 폴더 추가' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 하위 폴더 추가 취소' }).props.onPress(); });
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'New1 새 하위 폴더 이름' }).length, 0);
+    assert.equal(requests.length, 2);
   });
 
   it('opens a pencil panel for rename, delete, and cancel callbacks', async () => {
@@ -146,26 +179,60 @@ describe('PartyPresetFolderEditor', () => {
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'New1 폴더 이름' }).length, 0);
   });
 
-  it('keeps survivor expansion when replacing the index and shows newly created children expanded', async () => {
-    const renderer = await renderEditor();
+  it('preserves collapsed survivors and prunes deleted IDs without auto-expanding new or reintroduced folders', async () => {
+    const renderer = await renderEditor({
+      index: indexPartyPresetCatalog({
+        folders: [
+          folder(1, 'New1', null, 0), folder(2, 'new2', 1, 0),
+          folder(3, 'Other', null, 1), folder(6, 'Other child', 3, 0),
+        ],
+        presets: [],
+      }),
+    });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 접기' }).props.onPress(); });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 펼치기' }).props.onPress(); });
-
-    const replacement = indexPartyPresetCatalog({
-      folders: [
-        folder(1, 'New1', null, 0),
-        folder(2, 'new2', 1, 0),
-        folder(4, 'new3', 1, 1),
-        folder(5, 'new4', 4, 0),
-      ],
-      presets: [],
-    });
     await act(async () => {
-      renderer.update(element({ index: replacement }));
+      renderer.update(element({ index: indexPartyPresetCatalog({
+        folders: [
+          folder(1, 'New1', null, 0), folder(2, 'new2', 1, 0),
+          folder(4, 'New folder', null, 1), folder(5, 'New child', 4, 0),
+        ],
+        presets: [],
+      }) }));
     });
-    assert.equal(textCount(renderer.root, 'new2'), 1);
-    assert.equal(textCount(renderer.root, 'new3'), 1);
-    assert.equal(textCount(renderer.root, 'new4'), 1);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 펼치기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'New folder 폴더 펼치기' }));
+    assert.equal(textCount(renderer.root, 'New child'), 0);
+
+    await act(async () => {
+      renderer.update(element({ index: indexPartyPresetCatalog({
+        folders: [
+          folder(1, 'New1', null, 0), folder(2, 'new2', 1, 0),
+          folder(3, 'Other', null, 1), folder(6, 'Other child', 3, 0),
+        ],
+        presets: [],
+      }) }));
+    });
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Other 폴더 펼치기' }));
+    assert.equal(textCount(renderer.root, 'Other child'), 0);
+  });
+
+  it('toggles multiple parent disclosures independently', async () => {
+    const renderer = await renderEditor({
+      index: indexPartyPresetCatalog({
+        folders: [
+          folder(1, 'New1', null, 0), folder(2, 'new2', 1, 0),
+          folder(3, 'Other', null, 1), folder(4, 'Other child', 3, 0),
+        ],
+        presets: [],
+      }),
+    });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 접기' }).props.onPress(); });
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 펼치기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Other 폴더 접기' }));
+    assert.equal(textCount(renderer.root, 'Other child'), 1);
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Other 폴더 접기' }).props.onPress(); });
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 펼치기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Other 폴더 펼치기' }));
   });
 
   it('uses measured quarter zones and moves new2 before a top-level target', async () => {
@@ -205,6 +272,37 @@ describe('PartyPresetFolderEditor', () => {
     assert.equal(hostTestIdCount(renderer.root, 'party-preset-folder-drag-preview'), 1);
   });
 
+  it('clears a previous valid target when the pointer leaves measured rows', async () => {
+    const moves: unknown[] = [];
+    const renderer = await renderEditor({ onMove: async (...args) => { moves.push(args); } });
+    layoutRows(renderer.root);
+    const gesture = gestureFor(renderer.root, 'new2 폴더 위치 이동');
+    await act(async () => {
+      (gesture.config.onStart as (event: Record<string, number>) => void)({ y: 22 });
+      (gesture.config.onUpdate as (event: Record<string, number>) => void)({ y: 22, translationY: 24 });
+    });
+    assert.equal(hostTestIdCount(renderer.root, 'party-preset-folder-drop-line-before-3'), 1);
+    await act(async () => {
+      (gesture.config.onUpdate as (event: Record<string, number>) => void)({ y: 22, translationY: 500 });
+      (gesture.config.onEnd as () => void)();
+    });
+    assert.equal(hostTestIdCount(renderer.root, 'party-preset-folder-drop-line-before-3'), 0);
+    assert.deepEqual(moves, []);
+  });
+
+  it('moves a nested folder after a top-level target', async () => {
+    const moves: unknown[] = [];
+    const renderer = await renderEditor({ onMove: async (...args) => { moves.push(args); } });
+    layoutRows(renderer.root);
+    const gesture = gestureFor(renderer.root, 'new2 폴더 위치 이동');
+    await act(async () => {
+      (gesture.config.onStart as (event: Record<string, number>) => void)({ y: 22 });
+      (gesture.config.onUpdate as (event: Record<string, number>) => void)({ y: 22, translationY: 56 });
+      (gesture.config.onEnd as () => void)();
+    });
+    assert.deepEqual(moves, [[2, { parentFolderId: null, displayOrder: 2 }]]);
+  });
+
   it('offers accessible same-position moves and a one-level out action through the planner', async () => {
     const moves: Array<[number, { parentFolderId: number | null; displayOrder: number }]> = [];
     const renderer = await renderEditor({ onMove: async (id, request) => { moves.push([id, request]); } });
@@ -212,12 +310,40 @@ describe('PartyPresetFolderEditor', () => {
     assert.deepEqual(grip.props.accessibilityActions, [
       { name: 'decrement', label: '같은 위치에서 위로 이동' },
       { name: 'increment', label: '같은 위치에서 아래로 이동' },
-      { name: 'escape', label: '한 단계 위로 이동' },
+      { name: 'escape', label: '한 단계 위 폴더로 이동' },
     ]);
     await act(async () => {
+      grip.props.onAccessibilityAction({ nativeEvent: { actionName: 'decrement' } });
+      grip.props.onAccessibilityAction({ nativeEvent: { actionName: 'increment' } });
       grip.props.onAccessibilityAction({ nativeEvent: { actionName: 'escape' } });
+      renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 위치 이동' }).props.onAccessibilityAction({ nativeEvent: { actionName: 'decrement' } });
     });
-    assert.deepEqual(moves, [[2, { parentFolderId: null, displayOrder: 1 }]]);
+    assert.deepEqual(moves, [
+      [2, { parentFolderId: null, displayOrder: 0 }],
+      [2, { parentFolderId: null, displayOrder: 2 }],
+      [2, { parentFolderId: null, displayOrder: 1 }],
+    ]);
+  });
+
+  it('measures only the compact row and applies scroll offset while resolving targets', async () => {
+    const moves: unknown[] = [];
+    const renderer = await renderEditor({ onMove: async (...args) => { moves.push(args); } });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 및 삭제 수정' }).props.onPress(); });
+    layoutRows(renderer.root, [0, 88, 132], [88, 44, 44]);
+    const gesture = gestureFor(renderer.root, 'new2 폴더 위치 이동');
+    await act(async () => {
+      (gesture.config.onStart as (event: Record<string, number>) => void)({ y: 22 });
+      // Content y=60 lies in New1's inline editor, not its 44px folder row.
+      (gesture.config.onUpdate as (event: Record<string, number>) => void)({ y: 22, translationY: -50 });
+    });
+    assert.equal(hostTestIdCount(renderer.root, 'party-preset-folder-drop-inside-1'), 0);
+    await act(async () => {
+      renderer.root.findByType('FlatList' as never).props.onScroll({ nativeEvent: { contentOffset: { y: 44 } } });
+      // The +44 scroll delta moves this content coordinate outside the last measured row.
+      (gesture.config.onUpdate as (event: Record<string, number>) => void)({ y: 22, translationY: 24 });
+      (gesture.config.onEnd as () => void)();
+    });
+    assert.deepEqual(moves, []);
   });
 
   it('expands a collapsed destination after a successful inside drop', async () => {
@@ -241,6 +367,41 @@ describe('PartyPresetFolderEditor', () => {
       (gesture.config.onEnd as () => void)();
     });
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Other 폴더 접기' }));
+  });
+
+  it('does not expand a parent when child creation or an inside move fails', async () => {
+    const failure = new Error('expected failure');
+    const index = indexPartyPresetCatalog({
+      folders: [
+        folder(1, 'New1', null, 0), folder(2, 'new2', 1, 0),
+        folder(3, 'Other', null, 1), folder(4, 'Other child', 3, 0),
+      ],
+      presets: [],
+    });
+    const renderer = await renderEditor({
+      index,
+      onCreate: async () => { throw failure; },
+      onMove: async () => { throw failure; },
+    });
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 접기' }).props.onPress();
+      renderer.root.findByProps({ accessibilityLabel: 'Other 폴더 접기' }).props.onPress();
+    });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 하위 폴더 추가' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 새 하위 폴더 이름' }).props.onChangeText('fail'); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 하위 폴더 저장' }).props.onPress(); });
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 펼치기' }));
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 펼치기' }).props.onPress(); });
+    layoutRows(renderer.root);
+    const gesture = gestureFor(renderer.root, 'new2 폴더 위치 이동');
+    await act(async () => {
+      (gesture.config.onStart as (event: Record<string, number>) => void)({ y: 22 });
+      (gesture.config.onUpdate as (event: Record<string, number>) => void)({ y: 22, translationY: 44 });
+      (gesture.config.onEnd as () => void)();
+      await Promise.resolve();
+    });
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Other 폴더 펼치기' }));
   });
 
   it('does not mutate frozen inputs and blocks mutations while disabled', async () => {
@@ -339,11 +500,16 @@ function assertBorderless(node: ReactTestInstance): void {
   assert.equal(flat.width, 34);
 }
 
-function layoutRows(root: ReactTestInstance): void {
+function layoutRows(root: ReactTestInstance, yPositions?: number[], cellHeights?: number[]): void {
   root.findAll((node) => (
     (node.type as unknown) === 'View' && node.props.testID === 'party-preset-folder-drop-target'
   )).forEach((row, index) => {
-    row.props.onLayout({ nativeEvent: { layout: { y: index * 44, height: 44 } } });
+    row.props.onLayout({ nativeEvent: { layout: { y: yPositions?.[index] ?? index * 44, height: cellHeights?.[index] ?? 44 } } });
+  });
+  root.findAll((node) => (
+    (node.type as unknown) === 'View' && /^party-preset-folder-row-\d+$/.test(node.props.testID ?? '')
+  )).forEach((row) => {
+    row.props.onLayout({ nativeEvent: { layout: { y: 0, height: 44 } } });
   });
   root.findByType('FlatList' as never).props.onScroll({ nativeEvent: { contentOffset: { y: 0 } } });
 }
@@ -357,4 +523,16 @@ function gestureFor(root: ReactTestInstance, label: string): GestureMock {
 
 function hostTestIdCount(root: ReactTestInstance, testID: string): number {
   return root.findAll((node) => (node.type as unknown) === 'View' && node.props.testID === testID).length;
+}
+
+function connectorLefts(root: ReactTestInstance, folderId: number): number[] {
+  return root.findAll((node) => (
+    (node.type as unknown) === 'View' && node.props.testID === `party-preset-folder-connector-${folderId}`
+  )).map((node) => flattenStyle(node.props.style).left as number);
+}
+
+function hostAccessibilityLabels(root: ReactTestInstance): string[] {
+  return root.findAll((node) => (
+    (node.type as unknown) === 'Pressable' && typeof node.props.accessibilityLabel === 'string'
+  )).map((node) => node.props.accessibilityLabel as string);
 }

@@ -64,7 +64,7 @@ type FolderCellProps = {
   style: StyleProp<ViewStyle>;
 };
 
-const MAX_VISIBLE_INDENT = 4;
+const MAX_VISIBLE_INDENT = 5;
 
 export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   disabled,
@@ -84,7 +84,6 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   const [renameValue, setRenameValue] = useState('');
   const [dropFeedback, setDropFeedback] = useState<DropFeedback | null>(null);
   const [dragPreview, setDragPreview] = useState<{ folderId: number; contentY: number } | null>(null);
-  const previousFolderIdsRef = useRef(new Set(index.foldersById.keys()));
   const rowLayoutsRef = useRef(new Map<number, RowLayout>());
   const scrollOffsetRef = useRef(0);
   const dragOriginRef = useRef<DragOrigin | null>(null);
@@ -92,21 +91,20 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
 
   useEffect(() => {
     const currentFolderIds = new Set(index.foldersById.keys());
-    const previousFolderIds = previousFolderIdsRef.current;
     setExpandedFolderIds((previousExpanded) => {
       const next = new Set<number>();
       for (const folderId of previousExpanded) {
         if (currentFolderIds.has(folderId)) next.add(folderId);
       }
-      for (const folderId of currentFolderIds) {
-        if (!previousFolderIds.has(folderId)) next.add(folderId);
-      }
-      return next;
+      return next.size === previousExpanded.size ? previousExpanded : next;
     });
-    previousFolderIdsRef.current = currentFolderIds;
     for (const folderId of rowLayoutsRef.current.keys()) {
       if (!currentFolderIds.has(folderId)) rowLayoutsRef.current.delete(folderId);
     }
+  }, [index]);
+
+  useEffect(() => {
+    const currentFolderIds = new Set(index.foldersById.keys());
     if (renameFolderId != null && !currentFolderIds.has(renameFolderId)) setRenameFolderId(null);
     if (childEditorFolderId != null && !currentFolderIds.has(childEditorFolderId)) setChildEditorFolderId(null);
   }, [childEditorFolderId, index, renameFolderId]);
@@ -136,7 +134,6 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     if (disabled) return;
     setChildEditorFolderId(folderId);
     setChildName('');
-    setExpandedFolderIds((previous) => new Set(previous).add(folderId));
   }, [disabled]);
 
   const submitChild = useCallback(async (folderId: number) => {
@@ -205,7 +202,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
       actions.push({ name: 'increment', label: '같은 위치에서 아래로 이동' });
     }
     if (planForAccessibilityAction(row, rowIndex, 'escape') != null) {
-      actions.push({ name: 'escape', label: '한 단계 위로 이동' });
+      actions.push({ name: 'escape', label: '한 단계 위 폴더로 이동' });
     }
     return actions;
   }, [planForAccessibilityAction]);
@@ -233,7 +230,11 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
       const layout = rowLayoutsRef.current.get(row.folderId);
       return layout != null && contentY >= layout.y && contentY <= layout.y + layout.height;
     });
-    if (target == null) return;
+    if (target == null) {
+      dropFeedbackRef.current = null;
+      setDropFeedback(null);
+      return;
+    }
     const targetLayout = rowLayoutsRef.current.get(target.folderId)!;
     const ratio = targetLayout.height <= 0 ? 0.5 : (contentY - targetLayout.y) / targetLayout.height;
     const zone: PartyPresetFolderDropZone = ratio < 0.25
@@ -256,7 +257,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     setDragPreview(null);
     if (disabled || feedback == null || feedback.movingFolderId !== folderId) return;
     const plan = planPartyPresetFolderDrop(index, folderId, feedback.targetFolderId, feedback.zone);
-    void moveFolder(folderId, plan, feedback.zone === 'inside');
+    void moveFolder(folderId, plan, feedback.zone === 'inside').catch(() => undefined);
   }, [disabled, index, moveFolder]);
 
   const cancelDrag = useCallback(() => {
@@ -283,21 +284,29 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
         newChildName={editingChild ? childName : ''}
         onAccessibilityAction={(actionName) => {
           if (disabled) return;
-          void moveFolder(row.folderId, planForAccessibilityAction(row, rowIndex, actionName), false);
+          void moveFolder(row.folderId, planForAccessibilityAction(row, rowIndex, actionName), false)
+            .catch(() => undefined);
         }}
         onCancelChild={() => setChildEditorFolderId(null)}
         onCancelRename={() => setRenameFolderId(null)}
         onChildNameChange={setChildName}
-        onDelete={() => { void deleteFolder(row.folderId); }}
+        onDelete={() => { void deleteFolder(row.folderId).catch(() => undefined); }}
         onDragEnd={onDragEnd}
         onDragStart={onDragStart}
         onDragUpdate={onDragUpdate}
         onFinalizeDrag={cancelDrag}
         onOpenChild={() => openChildEditor(row.folderId)}
         onOpenRename={() => openRename(row)}
+        onRowLayout={(event) => {
+          const { height } = event.nativeEvent.layout;
+          rowLayoutsRef.current.set(row.folderId, {
+            y: rowLayoutsRef.current.get(row.folderId)?.y ?? 0,
+            height,
+          });
+        }}
         onRenameValueChange={setRenameValue}
-        onSubmitChild={() => { void submitChild(row.folderId); }}
-        onSubmitRename={() => { void submitRename(row.folderId); }}
+        onSubmitChild={() => { void submitChild(row.folderId).catch(() => undefined); }}
+        onSubmitRename={() => { void submitRename(row.folderId).catch(() => undefined); }}
         onToggle={() => toggleExpanded(row.folderId)}
         renameValue={editingName ? renameValue : ''}
         row={row}
@@ -329,8 +338,11 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     <View
       onLayout={(event) => {
         onLayout?.(event);
-        const { y, height } = event.nativeEvent.layout;
-        rowLayoutsRef.current.set(item.folderId, { y, height });
+        const { y } = event.nativeEvent.layout;
+        rowLayoutsRef.current.set(item.folderId, {
+          y,
+          height: rowLayoutsRef.current.get(item.folderId)?.height ?? 44,
+        });
       }}
       style={style}
       testID="party-preset-folder-drop-target"
@@ -345,7 +357,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
         accessibilityLabel="새 최상위 폴더 이름"
         editable={!disabled}
         onChangeText={setTopLevelName}
-        onSubmitEditing={() => { void submitTopLevel(); }}
+        onSubmitEditing={() => { void submitTopLevel().catch(() => undefined); }}
         placeholder="새 폴더"
         placeholderTextColor={theme.colors.textMuted}
         style={styles.createInput}
@@ -355,7 +367,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
         accessibilityLabel="최상위 폴더 추가"
         accessibilityRole="button"
         disabled={disabled}
-        onPress={() => { void submitTopLevel(); }}
+        onPress={() => { void submitTopLevel().catch(() => undefined); }}
         style={styles.topLevelAddButton}
       >
         <Plus color={theme.colors.accentGreen} size={20} />
@@ -417,6 +429,7 @@ type FolderEditorRowProps = {
   onFinalizeDrag: () => void;
   onOpenChild: () => void;
   onOpenRename: () => void;
+  onRowLayout: (event: LayoutChangeEvent) => void;
   onRenameValueChange: (name: string) => void;
   onSubmitChild: () => void;
   onSubmitRename: () => void;
@@ -443,6 +456,7 @@ const FolderEditorRow = memo(function FolderEditorRow({
   onFinalizeDrag,
   onOpenChild,
   onOpenRename,
+  onRowLayout,
   onRenameValueChange,
   onSubmitChild,
   onSubmitRename,
@@ -457,18 +471,27 @@ const FolderEditorRow = memo(function FolderEditorRow({
     .onFinalize(onFinalizeDrag)
     .runOnJS(true), [disabled, onDragEnd, onDragStart, onDragUpdate, onFinalizeDrag, row.folderId]);
   const indentation = Math.min(row.depth, MAX_VISIBLE_INDENT) * 16 + 8;
+  const connectorCount = Math.min(row.depth, MAX_VISIBLE_INDENT);
 
   return (
     <View>
       <View
+        onLayout={onRowLayout}
         style={[
           styles.folderRow,
           { paddingLeft: indentation },
-          row.depth > 0 && styles.nestedFolderRow,
           dropZone === 'inside' && styles.insideDropTarget,
         ]}
         testID={`party-preset-folder-row-${row.folderId}`}
       >
+        {Array.from({ length: connectorCount }, (_, connectorIndex) => (
+          <View
+            key={connectorIndex}
+            pointerEvents="none"
+            style={[styles.treeConnector, { left: 8 + connectorIndex * 16 }]}
+            testID={`party-preset-folder-connector-${row.folderId}`}
+          />
+        ))}
         <View pointerEvents="none" style={styles.dropFeedbackLayer}>
           {dropZone === 'before' ? (
             <View style={[styles.insertionLine, styles.insertionLineBefore]} testID={`party-preset-folder-drop-line-before-${row.folderId}`} />
@@ -614,9 +637,12 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
     position: 'relative',
   },
-  nestedFolderRow: {
-    borderLeftColor: theme.colors.borderStrong,
-    borderLeftWidth: 2,
+  treeConnector: {
+    backgroundColor: theme.colors.borderStrong,
+    bottom: 0,
+    position: 'absolute',
+    top: 0,
+    width: 2,
   },
   disclosureButton: {
     alignItems: 'center',
