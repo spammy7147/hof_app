@@ -13,6 +13,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import {
   Check,
   ChevronDown,
@@ -20,6 +21,7 @@ import {
   GripVertical,
   Pencil,
   Plus,
+  Trash2,
   X,
 } from 'lucide-react-native';
 
@@ -56,6 +58,10 @@ type DropFeedback = {
 };
 type DragOrigin = { folderId: number; pointerY: number; scrollOffset: number };
 type DragEdgeDirection = 'up' | 'down';
+type FolderAccessibilityAction = {
+  name: 'decrement' | 'increment' | 'escape' | 'delete';
+  label: string;
+};
 type FolderCellProps = {
   children: ReactNode;
   index: number;
@@ -73,6 +79,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   disabled,
   index,
   onCreate,
+  onDelete,
   onMove,
   onRename,
 }: PartyPresetFolderEditorProps) {
@@ -95,13 +102,36 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   const contentHeightRef = useRef(0);
   const indexRef = useRef(index);
   const mountedRef = useRef(true);
+  const disabledRef = useRef(disabled);
   const renamePendingRef = useRef(false);
+  const deletePendingRef = useRef(false);
+  const openSwipeableRef = useRef<SwipeableMethods | null>(null);
+  const swipeableNodesRef = useRef(new Map<number, SwipeableMethods>());
   const dragBaseContentYRef = useRef<number | null>(null);
   const dragEdgeDirectionRef = useRef<DragEdgeDirection | null>(null);
   const edgeAnimationFrameRef = useRef<number | null>(null);
   const advanceEdgeScrollRef = useRef<() => boolean>(() => false);
   const scheduleEdgeScrollRef = useRef<() => void>(() => undefined);
   indexRef.current = index;
+  disabledRef.current = disabled;
+
+  const closeOpenSwipeable = useCallback(() => {
+    openSwipeableRef.current?.close();
+    openSwipeableRef.current = null;
+  }, []);
+
+  const registerSwipeable = useCallback((folderId: number, node: SwipeableMethods | null) => {
+    if (node) swipeableNodesRef.current.set(folderId, node);
+    else {
+      swipeableNodesRef.current.delete(folderId);
+    }
+  }, []);
+
+  const prepareSwipeable = useCallback((folderId: number) => {
+    const next = swipeableNodesRef.current.get(folderId) ?? null;
+    if (openSwipeableRef.current && openSwipeableRef.current !== next) openSwipeableRef.current.close();
+    openSwipeableRef.current = next;
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -111,8 +141,10 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
         cancelAnimationFrame(edgeAnimationFrameRef.current);
         edgeAnimationFrameRef.current = null;
       }
+      closeOpenSwipeable();
+      swipeableNodesRef.current.clear();
     };
-  }, []);
+  }, [closeOpenSwipeable]);
 
   useEffect(() => {
     const currentFolderIds = new Set(index.foldersById.keys());
@@ -127,6 +159,10 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
       if (!currentFolderIds.has(folderId)) rowLayoutsRef.current.delete(folderId);
     }
   }, [index]);
+
+  useEffect(() => {
+    closeOpenSwipeable();
+  }, [closeOpenSwipeable, disabled, index]);
 
   useEffect(() => {
     const currentFolderIds = new Set(index.foldersById.keys());
@@ -158,9 +194,10 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
 
   const openChildEditor = useCallback((folderId: number) => {
     if (disabled || !canCreatePartyPresetChildFolder(indexRef.current, folderId)) return;
+    closeOpenSwipeable();
     setChildEditorFolderId(folderId);
     setChildName('');
-  }, [disabled]);
+  }, [closeOpenSwipeable, disabled]);
 
   const submitChild = useCallback(async (folderId: number) => {
     const name = childName.trim();
@@ -178,9 +215,23 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
 
   const openRename = useCallback((row: PartyPresetFolderEditorRow) => {
     if (disabled || renamePendingRef.current) return;
+    closeOpenSwipeable();
     setRenameFolderId(row.folderId);
     setRenameValue(row.name);
-  }, [disabled]);
+  }, [closeOpenSwipeable, disabled]);
+
+  const deleteFolder = useCallback(async (folderId: number) => {
+    if (disabledRef.current || deletePendingRef.current) return;
+    deletePendingRef.current = true;
+    closeOpenSwipeable();
+    try {
+      await onDelete(folderId);
+    } catch {
+      // Parent mutation handling already surfaces errors.
+    } finally {
+      deletePendingRef.current = false;
+    }
+  }, [closeOpenSwipeable, onDelete]);
 
   const finishRename = useCallback(async (row: PartyPresetFolderEditorRow) => {
     const name = renameValue.trim();
@@ -237,7 +288,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   }, [index]);
 
   const accessibilityActionsFor = useCallback((row: PartyPresetFolderEditorRow) => {
-    const actions: Array<{ name: 'decrement' | 'increment' | 'escape'; label: string }> = [];
+    const actions: FolderAccessibilityAction[] = [];
     if (planForAccessibilityAction(row, 'decrement') != null) {
       actions.push({ name: 'decrement', label: '같은 위치에서 위로 이동' });
     }
@@ -247,6 +298,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     if (planForAccessibilityAction(row, 'escape') != null) {
       actions.push({ name: 'escape', label: '한 단계 위 폴더로 이동' });
     }
+    actions.push({ name: 'delete', label: '삭제' });
     return actions;
   }, [planForAccessibilityAction]);
 
@@ -339,13 +391,14 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
 
   const onDragStart = useCallback((folderId: number, pointerY: number) => {
     if (disabled || !mountedRef.current) return;
+    closeOpenSwipeable();
     cancelEdgeScroll();
     dragOriginRef.current = { folderId, pointerY, scrollOffset: scrollOffsetRef.current };
     const sourceLayout = rowLayoutsRef.current.get(folderId);
     if (sourceLayout != null) {
       setDragPreview({ folderId, contentY: sourceLayout.y + pointerY });
     }
-  }, [cancelEdgeScroll, disabled]);
+  }, [cancelEdgeScroll, closeOpenSwipeable, disabled]);
 
   const onDragUpdate = useCallback((folderId: number, _pointerY: number, translationY: number) => {
     if (disabled || !mountedRef.current) return;
@@ -422,6 +475,10 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
         newChildName={editingChild ? childName : ''}
         onAccessibilityAction={(actionName) => {
           if (disabled) return;
+          if (actionName === 'delete') {
+            void deleteFolder(row.folderId);
+            return;
+          }
           void moveFolder(row.folderId, planForAccessibilityAction(row, actionName), false)
             .catch(() => undefined);
         }}
@@ -433,6 +490,8 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
         onFinalizeDrag={cancelDrag}
         onOpenChild={() => openChildEditor(row.folderId)}
         onOpenRename={() => openRename(row)}
+        onDelete={() => { void deleteFolder(row.folderId); }}
+        onRegisterSwipeable={registerSwipeable}
         onRowLayout={(event) => {
           const { height } = event.nativeEvent.layout;
           rowLayoutsRef.current.set(row.folderId, {
@@ -443,6 +502,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
         onRenameValueChange={setRenameValue}
         onSubmitChild={() => { void submitChild(row.folderId).catch(() => undefined); }}
         onFinishRename={() => { void finishRename(row); }}
+        onSwipeableWillOpen={prepareSwipeable}
         onToggle={() => toggleExpanded(row.folderId)}
         renameValue={editingName ? renameValue : ''}
         row={row}
@@ -454,6 +514,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     childEditorFolderId,
     childName,
     disabled,
+    deleteFolder,
     dropFeedback,
     index,
     moveFolder,
@@ -462,9 +523,11 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     onDragUpdate,
     openChildEditor,
     openRename,
+    prepareSwipeable,
     planForAccessibilityAction,
     renameFolderId,
     renameValue,
+    registerSwipeable,
     submitChild,
     finishRename,
     toggleExpanded,
@@ -553,7 +616,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
 });
 
 type FolderEditorRowProps = {
-  accessibilityActions: Array<{ name: 'decrement' | 'increment' | 'escape'; label: string }>;
+  accessibilityActions: FolderAccessibilityAction[];
   canAddChild: boolean;
   disabled: boolean;
   dropZone: PartyPresetFolderDropZone | null;
@@ -565,16 +628,19 @@ type FolderEditorRowProps = {
   onAccessibilityAction: (actionName: string) => void;
   onCancelChild: () => void;
   onChildNameChange: (name: string) => void;
+  onDelete: () => void;
   onDragEnd: (folderId: number) => void;
   onDragStart: (folderId: number, pointerY: number) => void;
   onDragUpdate: (folderId: number, pointerY: number, translationY: number) => void;
   onFinalizeDrag: () => void;
   onOpenChild: () => void;
   onOpenRename: () => void;
+  onRegisterSwipeable: (folderId: number, node: SwipeableMethods | null) => void;
   onRowLayout: (event: LayoutChangeEvent) => void;
   onRenameValueChange: (name: string) => void;
   onSubmitChild: () => void;
   onFinishRename: () => void;
+  onSwipeableWillOpen: (folderId: number) => void;
   onToggle: () => void;
 };
 
@@ -591,16 +657,19 @@ const FolderEditorRow = memo(function FolderEditorRow({
   onAccessibilityAction,
   onCancelChild,
   onChildNameChange,
+  onDelete,
   onDragEnd,
   onDragStart,
   onDragUpdate,
   onFinalizeDrag,
   onOpenChild,
   onOpenRename,
+  onRegisterSwipeable,
   onRowLayout,
   onRenameValueChange,
   onSubmitChild,
   onFinishRename,
+  onSwipeableWillOpen,
   onToggle,
 }: FolderEditorRowProps) {
   const gesture = useMemo(() => Gesture.Pan()
@@ -613,18 +682,44 @@ const FolderEditorRow = memo(function FolderEditorRow({
     .runOnJS(true), [disabled, onDragEnd, onDragStart, onDragUpdate, onFinalizeDrag, row.folderId]);
   const indentation = Math.min(row.depth, MAX_VISIBLE_INDENT) * 16 + 8;
   const connectorCount = Math.min(row.depth, MAX_VISIBLE_INDENT);
+  const registerSwipeableNode = useCallback((node: SwipeableMethods | null) => {
+    onRegisterSwipeable(row.folderId, node);
+  }, [onRegisterSwipeable, row.folderId]);
+  const prepareSwipe = useCallback(() => onSwipeableWillOpen(row.folderId), [onSwipeableWillOpen, row.folderId]);
+  const renderRightActions = useCallback(() => (
+    <Pressable
+      accessibilityLabel={`${row.name} 폴더 삭제`}
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onDelete}
+      style={({ pressed }) => [styles.swipeDeleteAction, pressed && styles.pressed]}
+    >
+      <Trash2 color={theme.colors.buttonText} size={18} />
+      <Text style={styles.swipeDeleteText}>삭제</Text>
+    </Pressable>
+  ), [disabled, onDelete, row.name]);
 
   return (
     <View>
-      <View
-        onLayout={onRowLayout}
-        style={[
-          styles.folderRow,
-          { paddingLeft: indentation },
-          dropZone === 'inside' && styles.insideDropTarget,
-        ]}
-        testID={`party-preset-folder-row-${row.folderId}`}
+      <ReanimatedSwipeable
+        enabled={!disabled && !editingName}
+        friction={2}
+        onSwipeableWillOpen={prepareSwipe}
+        overshootRight={false}
+        ref={registerSwipeableNode}
+        renderRightActions={renderRightActions}
+        rightThreshold={40}
+        testID={`party-preset-folder-swipeable-${row.folderId}`}
       >
+        <View
+          onLayout={onRowLayout}
+          style={[
+            styles.folderRow,
+            { paddingLeft: indentation },
+            dropZone === 'inside' && styles.insideDropTarget,
+          ]}
+          testID={`party-preset-folder-row-${row.folderId}`}
+        >
         {Array.from({ length: connectorCount }, (_, connectorIndex) => (
           <View
             key={connectorIndex}
@@ -702,7 +797,8 @@ const FolderEditorRow = memo(function FolderEditorRow({
             <GripVertical color={theme.colors.textMuted} size={18} />
           </Pressable>
         </GestureDetector>
-      </View>
+        </View>
+      </ReanimatedSwipeable>
       {editingChild ? (
         <View style={[styles.inlineEditor, { marginLeft: indentation + 34 }]}>
           <TextInput
@@ -830,6 +926,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 44,
     width: 34,
+  },
+  swipeDeleteAction: {
+    alignItems: 'center',
+    backgroundColor: theme.colors.danger,
+    justifyContent: 'center',
+    width: 72,
+  },
+  swipeDeleteText: {
+    color: theme.colors.buttonText,
+    fontSize: 11,
+    fontWeight: '900',
+    marginTop: 2,
+  },
+  pressed: {
+    opacity: 0.82,
   },
   inlineEditor: {
     alignItems: 'center',

@@ -83,6 +83,15 @@ const reactNativeMock = {
   View: host('View'),
 };
 const iconsMock = new Proxy({}, { get: (_target, property) => host(String(property)) });
+const closedSwipeableIds: number[] = [];
+const reanimatedSwipeable = React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
+  const folderId = Number(String(props.testID).replace('party-preset-folder-swipeable-', ''));
+  React.useImperativeHandle(ref, () => ({
+    close: () => { closedSwipeableIds.push(folderId); },
+  }), [folderId]);
+  const rightActions = (props.renderRightActions as (() => React.ReactNode) | undefined)?.();
+  return React.createElement('ReanimatedSwipeable', props, props.children as React.ReactNode, rightActions);
+});
 type Loader = (request: string, parent: NodeModule | undefined, isMain: boolean) => unknown;
 const moduleWithLoader = Module as unknown as { _load: Loader };
 const originalLoad = moduleWithLoader._load;
@@ -92,6 +101,7 @@ moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native-gesture-handler') {
     return { Gesture: { Pan: panGesture }, GestureDetector: host('GestureDetector') };
   }
+  if (request === 'react-native-gesture-handler/ReanimatedSwipeable') return reanimatedSwipeable;
   return originalLoad(request, parent, isMain);
 };
 const { PartyPresetFolderEditor } = require(
@@ -102,6 +112,97 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('PartyPresetFolderEditor', () => {
+  it('wraps each visible folder row in the common configured swipeable delete action', async () => {
+    closedSwipeableIds.length = 0;
+    const renderer = await renderEditor();
+    const swipeables = renderer.root.findAllByType('ReanimatedSwipeable' as never);
+    assert.equal(swipeables.length, 3);
+    for (const row of [
+      { id: 1, name: 'New1' }, { id: 2, name: 'new2' }, { id: 3, name: 'Other' },
+    ]) {
+      const swipeable = renderer.root.findByProps({ testID: `party-preset-folder-swipeable-${row.id}` });
+      assert.equal(swipeable.props.enabled, true);
+      assert.equal(swipeable.props.friction, 2);
+      assert.equal(swipeable.props.overshootRight, false);
+      assert.equal(swipeable.props.rightThreshold, 40);
+      const action = renderer.root.findByProps({ accessibilityLabel: `${row.name} 폴더 삭제` });
+      assert.equal(flattenStyle(action.props.style({ pressed: false })).width, 72);
+      assert.equal(flattenStyle(action.props.style({ pressed: false })).backgroundColor, '#ff7b7b');
+      assert.equal(textCount(action, '삭제'), 1);
+      assert.equal(action.findAllByType('Trash2' as never).length, 1);
+    }
+  });
+
+  it('deletes once and closes the active swipe from its right action or move-handle accessibility action', async () => {
+    closedSwipeableIds.length = 0;
+    const deleted: number[] = [];
+    const renderer = await renderEditor({ onDelete: async (folderId) => { deleted.push(folderId); } });
+    const swipeable = renderer.root.findByProps({ testID: 'party-preset-folder-swipeable-1' });
+    await act(async () => { swipeable.props.onSwipeableWillOpen(); });
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 삭제' }).props.onPress();
+      renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 위치 이동' }).props.onAccessibilityAction({ nativeEvent: { actionName: 'delete' } });
+    });
+    assert.deepEqual(deleted, [1]);
+    assert.deepEqual(closedSwipeableIds, [1]);
+  });
+
+  it('closes the previously active row when another row starts opening', async () => {
+    closedSwipeableIds.length = 0;
+    const renderer = await renderEditor();
+    await act(async () => {
+      renderer.root.findByProps({ testID: 'party-preset-folder-swipeable-1' }).props.onSwipeableWillOpen();
+      renderer.root.findByProps({ testID: 'party-preset-folder-swipeable-3' }).props.onSwipeableWillOpen();
+    });
+    assert.deepEqual(closedSwipeableIds, [1]);
+  });
+
+  it('closes an active swipe before rename, child creation, dragging, disabled rerender, catalog replacement, and unmount', async () => {
+    closedSwipeableIds.length = 0;
+    const renderer = await renderEditor();
+    const open = async () => {
+      await act(async () => { renderer.root.findByProps({ testID: 'party-preset-folder-swipeable-1' }).props.onSwipeableWillOpen(); });
+    };
+    await open();
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 수정' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름' }).props.onBlur(); });
+    await open();
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 하위 폴더 추가' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 하위 폴더 추가 취소' }).props.onPress(); });
+    await open();
+    const startDrag = gestureFor(renderer.root, 'New1 폴더 위치 이동').config.onStart as
+      | ((event: Record<string, number>) => void)
+      | undefined;
+    await act(async () => { startDrag?.({ y: 10 }); });
+    await open();
+    await act(async () => { renderer.update(element({ disabled: true })); });
+    await act(async () => { renderer.update(element()); });
+    await open();
+    await act(async () => { renderer.update(element({ index: indexPartyPresetCatalog({ folders: [folder(9, 'Replacement', null, 0)], presets: [] }) })); });
+    await act(async () => { renderer.root.findByProps({ testID: 'party-preset-folder-swipeable-9' }).props.onSwipeableWillOpen(); });
+    await act(async () => { renderer.unmount(); });
+    assert.deepEqual(closedSwipeableIds, [1, 1, 1, 1, 1, 9]);
+  });
+
+  it('keeps the child-create editor outside the swipeable and disables swipe while renaming or disabled', async () => {
+    closedSwipeableIds.length = 0;
+    const deleted: number[] = [];
+    const renderer = await renderEditor({ onDelete: async (folderId) => { deleted.push(folderId); } });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 하위 폴더 추가' }).props.onPress(); });
+    const swipeable = renderer.root.findByProps({ testID: 'party-preset-folder-swipeable-1' });
+    assert.ok(swipeable.findByProps({ testID: 'party-preset-folder-row-1' }));
+    assert.equal(swipeable.findAllByProps({ accessibilityLabel: 'New1 새 하위 폴더 이름' }).length, 0);
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 하위 폴더 추가 취소' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 이름 수정' }).props.onPress(); });
+    assert.equal(renderer.root.findByProps({ testID: 'party-preset-folder-swipeable-1' }).props.enabled, false);
+    const handle = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 위치 이동' });
+    assert.ok(handle.props.accessibilityActions.some((action: { name: string; label: string }) => action.name === 'delete' && action.label === '삭제'));
+    await act(async () => { renderer.update(element({ disabled: true })); });
+    assert.equal(renderer.root.findByProps({ testID: 'party-preset-folder-swipeable-1' }).props.enabled, false);
+    await act(async () => { handle.props.onAccessibilityAction({ nativeEvent: { actionName: 'delete' } }); });
+    assert.deepEqual(deleted, []);
+  });
+
   it('renders the full expanded tree once with compact hierarchy and exact controls', async () => {
     const renderer = await renderEditor();
     assert.equal(textCount(renderer.root, 'New1'), 1);
@@ -234,7 +335,7 @@ describe('PartyPresetFolderEditor', () => {
     assert.equal(input.props.autoFocus, true);
     assert.equal(input.props.selectTextOnFocus, true);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'New1 폴더 이름 저장' }).length, 0);
-    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'New1 폴더 삭제' }).length, 0);
+    assert.equal(row.findAllByProps({ accessibilityLabel: 'New1 폴더 삭제' }).length, 0);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'New1 폴더 수정 취소' }).length, 0);
     await act(async () => { input.props.onChangeText(' Renamed '); });
     await act(async () => { input.props.onBlur(); });
@@ -484,10 +585,12 @@ describe('PartyPresetFolderEditor', () => {
     const childGrip = renderer.root.findByProps({ accessibilityLabel: 'new2 폴더 위치 이동' });
     assert.deepEqual(childGrip.props.accessibilityActions, [
       { name: 'escape', label: '한 단계 위 폴더로 이동' },
+      { name: 'delete', label: '삭제' },
     ]);
     const rootGrip = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 위치 이동' });
     assert.deepEqual(rootGrip.props.accessibilityActions, [
       { name: 'increment', label: '같은 위치에서 아래로 이동' },
+      { name: 'delete', label: '삭제' },
     ]);
     await act(async () => {
       childGrip.props.onAccessibilityAction({ nativeEvent: { actionName: 'decrement' } });
