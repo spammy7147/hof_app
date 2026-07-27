@@ -237,7 +237,7 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: theme.radius.md + 8,
     borderTopRightRadius: theme.radius.md + 8,
     borderWidth: 1,
-    gap: theme.spacing.md,
+    gap: theme.spacing.sm,
     height: '84%',
     padding: theme.spacing.lg,
   },

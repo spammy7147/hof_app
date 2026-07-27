@@ -187,6 +187,7 @@ describe('PartyPresetPickerModal', () => {
     const panelStyle = Object.assign({}, ...(panel.props.style as Array<Record<string, unknown>>));
     assert.equal(panelStyle.height, '84%');
     assert.equal(panelStyle.maxHeight, undefined);
+    assert.equal(panelStyle.gap, 8);
     assert.equal(panelStyle.paddingBottom, 31);
     assert.equal(panelStyle.minHeight, undefined);
     const catalogArea = renderer.root.findByProps({ testID: 'party-preset-catalog-area' });
