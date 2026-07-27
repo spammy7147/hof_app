@@ -268,7 +268,9 @@ function buildVisibleRows(
       rows.push({ key: `preset:${preset.id}`, kind: 'preset', depth, preset });
       presetCount += 1;
     }
-    if (presetCount === 0) {
+    const hasChildFolders = folderId != null
+      && (index.childFolderIdsByParent.get(folderId)?.length ?? 0) > 0;
+    if (presetCount === 0 && !hasChildFolders) {
       rows.push({ key: `empty:${folderId ?? 'unassigned'}`, kind: 'empty', depth, unassigned: folderId == null });
     }
   }

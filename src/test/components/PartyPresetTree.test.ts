@@ -74,21 +74,21 @@ describe('PartyPresetTree', () => {
     assert.ok(flattenPressableStyle(findAllByTestId(renderer.root, 'party-preset-folder-row')[0]!).minHeight as number >= 44);
   });
 
-  it('opening B does not close A', async () => {
+  it('opens B and unassigned sequentially without closing A or either other group', async () => {
     const renderer = await renderTree({ expandedFolderIds: new Set([1]) });
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'B 폴더 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '미지정 폴더 열기' }).props.onPress(); });
 
-    assert.deepEqual(
-      renderer.root.findByProps({ accessibilityLabel: 'A 폴더 닫기' }).props.accessibilityState,
-      { expanded: true },
-    );
-    assert.deepEqual(
-      renderer.root.findByProps({ accessibilityLabel: 'B 폴더 닫기' }).props.accessibilityState,
-      { expanded: true },
-    );
+    for (const name of ['A', 'B', '미지정']) {
+      assert.deepEqual(
+        renderer.root.findByProps({ accessibilityLabel: `${name} 폴더 닫기` }).props.accessibilityState,
+        { expanded: true },
+      );
+    }
     assert.equal(textCount(renderer.root, 'A direct'), 1);
     assert.equal(textCount(renderer.root, 'B direct'), 1);
+    assert.equal(textCount(renderer.root, 'unassigned direct'), 1);
   });
 
   it('shows recursive folder counts and counts unassigned presets directly only', async () => {
@@ -106,6 +106,17 @@ describe('PartyPresetTree', () => {
     assert.equal(textCount(renderer.root, 'A child'), 1);
     assert.equal(textCount(renderer.root, 'A direct'), 1);
     assert.equal(textCount(renderer.root, 'A child direct'), 0);
+  });
+
+  it('does not show a direct-preset empty state when an expanded folder has child folders', async () => {
+    const catalog = makeCatalog(
+      [folder(1, 'Parent', null), folder(2, 'Child', 1)],
+      [preset(20, 'Child preset', 2, false, 1)],
+    );
+    const renderer = await renderTree({ catalog, expandedFolderIds: new Set([1]) });
+
+    assert.equal(textCount(renderer.root, 'Child'), 1);
+    assert.equal(textCount(renderer.root, '이 폴더에 프리셋이 없습니다.'), 0);
   });
 
   it('indents browsing preset rows and draws a connector at their folder depth', async () => {
