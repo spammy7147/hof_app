@@ -20,8 +20,6 @@ export function PartyPresetSearchResults({
 }: PartyPresetSearchResultsProps) {
   const renderResult = useCallback(({ item }: { item: PartyPresetSearchResult }) => (
     <PartyPresetRow
-      depth={0}
-      fullWidth
       path={item.path}
       preset={item.preset}
       selected={item.preset.id === selectedPresetId}
@@ -44,8 +42,6 @@ export function PartyPresetSearchResults({
 }
 
 type PartyPresetRowProps = {
-  depth: number;
-  fullWidth: boolean;
   path: string | null;
   preset: PartyPresetResponse;
   selected: boolean;
@@ -54,8 +50,6 @@ type PartyPresetRowProps = {
 };
 
 export const PartyPresetRow = memo(function PartyPresetRow({
-  depth,
-  fullWidth,
   path,
   preset,
   selected,
@@ -66,18 +60,16 @@ export const PartyPresetRow = memo(function PartyPresetRow({
     onSelect(preset);
   }, [onSelect, preset]);
   const configuredMemberCount = countConfiguredMembers(preset);
-  const testMetadata = { depth, fullWidth };
 
   return (
     <Pressable
-      {...testMetadata}
       accessibilityLabel={`${preset.name}, 구성원 ${configuredMemberCount}명${preset.isPrimary ? ', 대표 프리셋' : ''}`}
       accessibilityRole="button"
       accessibilityState={{ selected }}
       onPress={handlePress}
       style={({ pressed }) => [
         styles.presetRow,
-        fullWidth ? styles.fullWidth : depthStyles[Math.min(depth, depthStyles.length - 1)],
+        styles.fullWidth,
         selected ? styles.selected : null,
         pressed ? styles.pressed : null,
       ]}
@@ -119,15 +111,6 @@ function countConfiguredMembers(preset: PartyPresetResponse): number {
     0,
   );
 }
-
-const depthStyles = [
-  { marginLeft: 0 },
-  { marginLeft: theme.spacing.sm },
-  { marginLeft: theme.spacing.md },
-  { marginLeft: theme.spacing.lg },
-  { marginLeft: theme.spacing.xl },
-  { marginLeft: theme.spacing.xl + theme.spacing.sm },
-] as const;
 
 const styles = StyleSheet.create({
   list: { width: '100%' },

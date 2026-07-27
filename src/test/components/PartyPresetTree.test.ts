@@ -58,11 +58,19 @@ describe('PartyPresetTree', () => {
 
     assert.equal(findAllByTestId(renderer.root, 'party-preset-folder-row').length, 3);
     assert.equal(findAllByTestId(renderer.root, 'party-preset-row').length, 2);
+    assert.equal(findHosts(renderer.root, 'FlatList').length, 1);
+    const list = findHosts(renderer.root, 'FlatList')[0]!;
+    assert.equal(list.props.scrollEnabled, undefined);
+    assert.deepEqual(
+      (list.props.data as Array<{ kind: string }>).map(({ kind }) => kind),
+      ['folder', 'unassigned', 'folder', 'folder', 'preset', 'preset'],
+    );
+    assert.ok(flattenPressableStyle(findAllByTestId(renderer.root, 'party-preset-folder-row')[0]!).minHeight as number >= 44);
     assert.deepEqual(
       renderer.root.findByProps({ accessibilityLabel: '화속성 폴더 닫기' }).props.accessibilityState,
       { expanded: true },
     );
-    assert.equal(findAllByTestId(renderer.root, 'party-preset-row')[0]?.props.depth, 3);
+    assertFullWidth(findAllByTestId(renderer.root, 'party-preset-row')[0]!);
     assert.equal(textCount(renderer.root, '구성원 2명'), 1);
     assert.equal(textCount(renderer.root, '대표'), 1);
   });
@@ -76,8 +84,7 @@ describe('PartyPresetTree', () => {
     assert.equal(findAllByTestId(renderer.root, 'party-preset-folder-row').length, 0);
     const results = findAllByTestId(renderer.root, 'party-preset-search-result');
     assert.equal(results.length, 3);
-    assert.ok(results.every(({ props }) => props.depth === 0));
-    assert.ok(results.every(({ props }) => props.fullWidth === true));
+    results.forEach(assertFullWidth);
     assert.equal(textCount(renderer.root, '전투 › 레이드 › 화속성'), 2);
     assert.equal(textCount(renderer.root, '미지정'), 1);
 
@@ -121,6 +128,83 @@ describe('PartyPresetTree', () => {
 
     assert.deepEqual(selectedPresetIds, [10]);
   });
+
+  it('uses only the valid prefix when a refresh leaves a stale root path', async () => {
+    const normalizedPaths: Array<readonly (number | null)[]> = [];
+    const refreshed = makeCatalog(
+      [folder(2, '레이드', null), folder(3, '화속성', 2)],
+      [preset(20, '숨겨진 프리셋', 3, false, 1)],
+    );
+    const renderer = await renderTree({
+      catalog: refreshed,
+      expandedPath: [1, 2, 3],
+      onExpandedPathChange: (path) => { normalizedPaths.push(path); },
+    });
+
+    assert.deepEqual(normalizedPaths, [[]]);
+    assert.equal(findAllByTestId(renderer.root, 'party-preset-row').length, 0);
+    assert.equal(textCount(renderer.root, '숨겨진 프리셋'), 0);
+  });
+
+  it('collapses a reparented suffix and never exposes its presets through the old path', async () => {
+    const normalizedPaths: Array<readonly (number | null)[]> = [];
+    const reparented = makeCatalog(
+      [folder(1, '전투', null), folder(2, '레이드', 1), folder(3, '화속성', null)],
+      [preset(20, '레이드 프리셋', 2, false, 1), preset(21, '숨겨진 프리셋', 3, false, 1)],
+    );
+    const renderer = await renderTree({
+      catalog: reparented,
+      expandedPath: [1, 2, 3],
+      onExpandedPathChange: (path) => { normalizedPaths.push(path); },
+    });
+
+    assert.deepEqual(normalizedPaths, [[1, 2]]);
+    assert.equal(textCount(renderer.root, '레이드 프리셋'), 1);
+    assert.equal(textCount(renderer.root, '숨겨진 프리셋'), 0);
+  });
+
+  it('collapses a removed leaf and renders only its surviving parent presets', async () => {
+    const normalizedPaths: Array<readonly (number | null)[]> = [];
+    const removed = makeCatalog(
+      [folder(1, '전투', null), folder(2, '레이드', 1)],
+      [preset(20, '레이드 프리셋', 2, false, 1), preset(21, '이동된 프리셋', null, false, 1)],
+    );
+    const renderer = await renderTree({
+      catalog: removed,
+      expandedPath: [1, 2, 3],
+      onExpandedPathChange: (path) => { normalizedPaths.push(path); },
+    });
+
+    assert.deepEqual(normalizedPaths, [[1, 2]]);
+    assert.equal(textCount(renderer.root, '레이드 프리셋'), 1);
+    assert.equal(textCount(renderer.root, '이동된 프리셋'), 0);
+  });
+
+  it('announces empty normal and unassigned folders politely', async () => {
+    const normal = await renderTree({
+      catalog: makeCatalog([folder(1, '빈 폴더', null)]),
+      expandedPath: [1],
+    });
+    const unassigned = await renderTree({
+      catalog: makeCatalog([folder(1, '빈 폴더', null)]),
+      expandedPath: [null],
+    });
+
+    assert.equal(textCount(normal.root.findByProps({ accessibilityLiveRegion: 'polite' }), '이 폴더에 프리셋이 없습니다.'), 1);
+    assert.equal(textCount(unassigned.root.findByProps({ accessibilityLiveRegion: 'polite' }), '미지정 프리셋이 없습니다.'), 1);
+  });
+
+  it('selects an unassigned preset from the virtual group', async () => {
+    const selectedPresetIds: number[] = [];
+    const renderer = await renderTree({
+      expandedPath: [null],
+      onSelectPreset: (preset) => { selectedPresetIds.push(preset.id); },
+    });
+
+    await act(async () => { findAllByTestId(renderer.root, 'party-preset-row')[0]?.props.onPress(); });
+
+    assert.deepEqual(selectedPresetIds, [12]);
+  });
 });
 
 describe('PartyPresetSearchResults', () => {
@@ -130,6 +214,27 @@ describe('PartyPresetSearchResults', () => {
     const empty = renderer.root.findByProps({ accessibilityLiveRegion: 'polite' });
     assert.equal(textCount(empty, '일치하는 프리셋이 없습니다.'), 1);
     assert.equal(findAllByTestId(renderer.root, 'party-preset-search-result').length, 0);
+  });
+
+  it('selects the pressed global result and marks only the matching result selected', async () => {
+    const selectedPresetIds: number[] = [];
+    const index = indexPartyPresetCatalog(CATALOG);
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(React.createElement(PartyPresetSearchResults, {
+        results: searchPartyPresetCatalog(index, '화속'),
+        selectedPresetId: 12,
+        onSelectPreset: (preset) => { selectedPresetIds.push(preset.id); },
+      }));
+    });
+    const rows = findAllByTestId(renderer.root, 'party-preset-search-result');
+
+    assert.deepEqual(
+      rows.map(({ props }) => props.accessibilityState),
+      [{ selected: false }, { selected: false }, { selected: true }],
+    );
+    await act(async () => { rows[0]?.props.onPress(); });
+    assert.deepEqual(selectedPresetIds, [10]);
   });
 });
 
@@ -170,20 +275,26 @@ async function renderHarness(initialQuery = ''): Promise<ReactTestRenderer> {
 }
 
 async function renderTree({
-  selectedPresetId,
-  onSelectPreset,
+  catalog = CATALOG,
+  expandedPath = [1, 2, 3],
+  selectedPresetId = null,
+  onExpandedPathChange = () => undefined,
+  onSelectPreset = () => undefined,
 }: {
-  selectedPresetId: number | null;
-  onSelectPreset: (preset: PartyPresetResponse) => void;
+  catalog?: PartyPresetCatalogResponse;
+  expandedPath?: readonly (number | null)[];
+  selectedPresetId?: number | null;
+  onExpandedPathChange?: (path: readonly (number | null)[]) => void;
+  onSelectPreset?: (preset: PartyPresetResponse) => void;
 }): Promise<ReactTestRenderer> {
-  const index = indexPartyPresetCatalog(CATALOG);
+  const index = indexPartyPresetCatalog(catalog);
   let renderer!: ReactTestRenderer;
   await act(async () => {
     renderer = create(React.createElement(PartyPresetTree, {
       index,
-      expandedPath: [1, 2, 3],
+      expandedPath,
       selectedPresetId,
-      onExpandedPathChange: () => undefined,
+      onExpandedPathChange,
       onSelectPreset,
     }));
   });
@@ -202,6 +313,13 @@ const CATALOG: PartyPresetCatalogResponse = {
     preset(12, '화속성 미지정', null, false, 1),
   ],
 };
+
+function makeCatalog(
+  folders: PartyPresetFolderResponse[] = [],
+  presets: PartyPresetResponse[] = [],
+): PartyPresetCatalogResponse {
+  return { folders, presets };
+}
 
 function folder(id: number, name: string, parentFolderId: number | null): PartyPresetFolderResponse {
   return { id, name, parentFolderId, displayOrder: 0, createdAt: '', updatedAt: '' };
@@ -233,6 +351,22 @@ function preset(
 
 function findAllByTestId(root: ReactTestInstance, testID: string): ReactTestInstance[] {
   return root.findAll((node) => node.props.testID === testID && typeof node.type === 'string');
+}
+
+function findHosts(root: ReactTestInstance, name: string): ReactTestInstance[] {
+  return root.findAll((node) => (node.type as unknown) === name);
+}
+
+function assertFullWidth(row: ReactTestInstance): void {
+  const flattened = flattenPressableStyle(row);
+  assert.equal(flattened.marginLeft, 0);
+  assert.equal(flattened.width, '100%');
+  assert.equal(flattened.alignSelf, 'stretch');
+}
+
+function flattenPressableStyle(row: ReactTestInstance): Record<string, unknown> {
+  const style = row.props.style({ pressed: false }) as Array<Record<string, unknown> | null>;
+  return Object.assign({}, ...style.filter((entry) => entry != null));
 }
 
 function textCount(root: ReactTestInstance, text: string): number {
