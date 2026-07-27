@@ -50,7 +50,6 @@ describe('BattleMapPresetPickerModal', () => {
     assert.equal(modal.title, '화염 동굴');
     assert.equal(modal.catalog, CATALOG);
     assert.deepEqual(modal.initialExpandedFolderIds, [null]);
-    assert.equal(modal.initialExpandedPath, undefined);
     const primary = (modal.syntheticOptions as Array<Record<string, unknown>>)[0]!;
     assert.equal(primary.label, '대표 · 대표 파티');
     assert.equal(primary.description, undefined);

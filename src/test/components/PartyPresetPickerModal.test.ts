@@ -99,7 +99,6 @@ describe('PartyPresetPickerModal', () => {
     const initialExpandedFolderIds = Object.freeze([1, 3, null] as const);
     const renderer = await renderPicker({
       initialExpandedFolderIds,
-      initialExpandedPath: [2],
     });
 
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 1개, 닫기' }));

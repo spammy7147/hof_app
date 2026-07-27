@@ -10,7 +10,6 @@ import {
 import { theme } from '../styles/theme';
 import type { PartyPresetResponse } from '../types/api';
 
-export type PartyPresetExpandedPath = readonly (number | null)[];
 export type PartyPresetExpandedFolderIds = ReadonlySet<number | null>;
 
 type PartyPresetTreeBaseProps = {
@@ -22,20 +21,10 @@ type PartyPresetTreeBaseProps = {
   onSelectPreset: (preset: PartyPresetResponse) => void;
 };
 
-export type PartyPresetTreeProps = PartyPresetTreeBaseProps & (
-  | {
-    expandedFolderIds: PartyPresetExpandedFolderIds;
-    expandedPath?: never;
-    onExpandedFolderIdsChange: (folderIds: PartyPresetExpandedFolderIds) => void;
-    onExpandedPathChange?: never;
-  }
-  | {
-    expandedFolderIds?: never;
-    expandedPath: PartyPresetExpandedPath;
-    onExpandedFolderIdsChange?: never;
-    onExpandedPathChange: (path: PartyPresetExpandedPath) => void;
-  }
-);
+export type PartyPresetTreeProps = PartyPresetTreeBaseProps & {
+  expandedFolderIds: PartyPresetExpandedFolderIds;
+  onExpandedFolderIdsChange: (folderIds: PartyPresetExpandedFolderIds) => void;
+};
 
 type PartyPresetTreeRow =
   | { key: string; kind: 'folder'; count: number; depth: number; folderId: number; name: string; expanded: boolean }
@@ -50,48 +39,37 @@ export function PartyPresetTree({
   showMemberCount = true,
   index,
   expandedFolderIds,
-  expandedPath,
   selectedPresetId,
   onExpandedFolderIdsChange,
-  onExpandedPathChange,
   onSelectPreset,
 }: PartyPresetTreeProps) {
-  const requestedExpandedFolderIds = useMemo<PartyPresetExpandedFolderIds>(
-    () => expandedFolderIds ?? new Set(expandedPath ?? []),
-    [expandedFolderIds, expandedPath],
-  );
   const validExpandedFolderIds = useMemo(
-    () => validateExpandedFolderIds(index, requestedExpandedFolderIds),
-    [index, requestedExpandedFolderIds],
+    () => validateExpandedFolderIds(index, expandedFolderIds),
+    [expandedFolderIds, index],
   );
   const rows = useMemo(
     () => buildVisibleRows(index, validExpandedFolderIds),
     [index, validExpandedFolderIds],
   );
 
-  const notifyExpandedFolderIdsChange = useCallback((folderIds: PartyPresetExpandedFolderIds) => {
-    if (expandedFolderIds != null) onExpandedFolderIdsChange?.(folderIds);
-    else onExpandedPathChange?.([...folderIds]);
-  }, [expandedFolderIds, onExpandedFolderIdsChange, onExpandedPathChange]);
-
   useEffect(() => {
-    if (!setsEqual(requestedExpandedFolderIds, validExpandedFolderIds)) {
-      notifyExpandedFolderIdsChange(validExpandedFolderIds);
+    if (!setsEqual(expandedFolderIds, validExpandedFolderIds)) {
+      onExpandedFolderIdsChange(validExpandedFolderIds);
     }
-  }, [notifyExpandedFolderIdsChange, requestedExpandedFolderIds, validExpandedFolderIds]);
+  }, [expandedFolderIds, onExpandedFolderIdsChange, validExpandedFolderIds]);
 
   const handleToggleFolder = useCallback((folderId: number) => {
     const nextFolderIds = new Set(validExpandedFolderIds);
     if (nextFolderIds.has(folderId)) nextFolderIds.delete(folderId);
     else nextFolderIds.add(folderId);
-    notifyExpandedFolderIdsChange(nextFolderIds);
-  }, [notifyExpandedFolderIdsChange, validExpandedFolderIds]);
+    onExpandedFolderIdsChange(nextFolderIds);
+  }, [onExpandedFolderIdsChange, validExpandedFolderIds]);
   const handleToggleUnassigned = useCallback(() => {
     const nextFolderIds = new Set(validExpandedFolderIds);
     if (nextFolderIds.has(null)) nextFolderIds.delete(null);
     else nextFolderIds.add(null);
-    notifyExpandedFolderIdsChange(nextFolderIds);
-  }, [notifyExpandedFolderIdsChange, validExpandedFolderIds]);
+    onExpandedFolderIdsChange(nextFolderIds);
+  }, [onExpandedFolderIdsChange, validExpandedFolderIds]);
   const renderRow = useCallback(({ item }: { item: PartyPresetTreeRow }) => {
     switch (item.kind) {
       case 'folder':

@@ -206,44 +206,6 @@ describe('PartyPresetTree', () => {
     assert.deepEqual([...normalizedSets[0]!], [1, null]);
   });
 
-  it('keeps legacy expanded paths stateful without mutating the caller array', async () => {
-    const initialPath = Object.freeze([1, 2] as const);
-    const changedPaths: Array<readonly (number | null)[]> = [];
-    const renderer = await renderLegacyTree({
-      expandedPath: initialPath,
-      onExpandedPathChange: (path) => { changedPaths.push(path); },
-    });
-
-    assert.equal(textCount(renderer.root, 'A direct'), 1);
-    assert.equal(textCount(renderer.root, 'A child direct'), 1);
-    await act(async () => {
-      renderer.root.findByProps({ accessibilityLabel: 'B 폴더, 프리셋 1개, 열기' }).props.onPress();
-    });
-
-    assert.deepEqual(changedPaths, [[1, 2, 4]]);
-    assert.deepEqual(initialPath, [1, 2]);
-    assert.deepEqual(
-      renderer.root.findByProps({ accessibilityLabel: 'A 폴더, 프리셋 2개, 닫기' }).props.accessibilityState,
-      { expanded: true },
-    );
-    assert.deepEqual(
-      renderer.root.findByProps({ accessibilityLabel: 'B 폴더, 프리셋 1개, 닫기' }).props.accessibilityState,
-      { expanded: true },
-    );
-  });
-
-  it('prunes stale IDs through the legacy callback without mutating its input', async () => {
-    const stalePath = Object.freeze([1, 999, null] as const);
-    const changedPaths: Array<readonly (number | null)[]> = [];
-    await renderLegacyTree({
-      expandedPath: stalePath,
-      onExpandedPathChange: (path) => { changedPaths.push(path); },
-    });
-
-    assert.deepEqual(changedPaths, [[1, null]]);
-    assert.deepEqual(stalePath, [1, 999, null]);
-  });
-
   it('announces empty normal and unassigned folders politely', async () => {
     const normal = await renderTree({
       catalog: makeCatalog([folder(1, '빈 폴더', null)]),
@@ -442,37 +404,6 @@ async function renderTree({
   let renderer!: ReactTestRenderer;
   await act(async () => {
     renderer = create(React.createElement(StatefulTree));
-  });
-  return renderer;
-}
-
-async function renderLegacyTree({
-  catalog = CATALOG,
-  expandedPath,
-  onExpandedPathChange,
-}: {
-  catalog?: PartyPresetCatalogResponse;
-  expandedPath: readonly (number | null)[];
-  onExpandedPathChange: (path: readonly (number | null)[]) => void;
-}): Promise<ReactTestRenderer> {
-  const index = indexPartyPresetCatalog(catalog);
-  function StatefulLegacyTree() {
-    const [path, setPath] = useState(expandedPath);
-    const handleChange = (nextPath: readonly (number | null)[]) => {
-      onExpandedPathChange(nextPath);
-      setPath(nextPath);
-    };
-    return React.createElement(PartyPresetTree, {
-      index,
-      expandedPath: path,
-      selectedPresetId: null,
-      onExpandedPathChange: handleChange,
-      onSelectPreset: () => undefined,
-    });
-  }
-  let renderer!: ReactTestRenderer;
-  await act(async () => {
-    renderer = create(React.createElement(StatefulLegacyTree));
   });
   return renderer;
 }

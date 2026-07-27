@@ -19,7 +19,6 @@ import { PartyPresetSearchResults } from './PartyPresetSearchResults';
 import {
   PartyPresetTree,
   type PartyPresetExpandedFolderIds,
-  type PartyPresetExpandedPath,
 } from './PartyPresetTree';
 import { indexPartyPresetCatalog, searchPartyPresetCatalog } from '../domain/partyPresetCatalog';
 import { theme } from '../styles/theme';
@@ -39,8 +38,6 @@ export type PartyPresetPickerModalProps = {
   catalog: PartyPresetCatalogResponse;
   disabled?: boolean;
   initialExpandedFolderIds?: readonly (number | null)[];
-  /** @deprecated Use initialExpandedFolderIds for independent folder expansion. */
-  initialExpandedPath?: PartyPresetExpandedPath;
   onClose: () => void;
   onSelectPreset: (preset: PartyPresetResponse) => void;
   selectedPresetId: number | null;
@@ -55,7 +52,6 @@ export function PartyPresetPickerModal({
   catalog,
   disabled = false,
   initialExpandedFolderIds,
-  initialExpandedPath,
   onClose,
   onSelectPreset,
   selectedPresetId,
@@ -66,7 +62,7 @@ export function PartyPresetPickerModal({
   const { bottom } = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [expandedFolderIds, setExpandedFolderIds] = useState<PartyPresetExpandedFolderIds>(
-    () => new Set(initialExpandedFolderIds ?? initialExpandedPath ?? [null]),
+    () => new Set(initialExpandedFolderIds ?? [null]),
   );
   const titleRef = useRef<ElementRef<typeof Text>>(null);
   const index = useMemo(() => indexPartyPresetCatalog(catalog), [catalog]);
