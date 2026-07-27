@@ -236,14 +236,26 @@ describe('PartyPresetList', () => {
   });
 
   it('preserves the complete edit draft after a failed folder assignment', async () => {
+    const updateCalls: unknown[] = [];
+    const editedParty: BattlePartyMember[] = [
+      { slotIndex: 0, characterId: 'hero-alpha', patternSlot: 3 },
+      { slotIndex: 1, characterId: null, patternSlot: null },
+      { slotIndex: 2, characterId: 'hero-bravo', patternSlot: 1 },
+      { slotIndex: 3, characterId: 'hero-charlie', patternSlot: null },
+      { slotIndex: 4, characterId: null, patternSlot: null },
+    ];
     const renderer = await renderList({
       onGetPartyPresetCatalog: async () => CATALOG,
-      onUpdatePartyPreset: async () => { throw new Error('assignment failed'); },
+      onUpdatePartyPreset: async (presetId, request) => {
+        updateCalls.push({ presetId, request });
+        throw new Error('assignment failed');
+      },
     });
 
     await openUnassignedPreset(renderer, '서관, 구성원 0명, 대표 프리셋');
     const nameInput = findHost(renderer.root, 'TextInput');
     await act(async () => nameInput.props.onChangeText('대회랑'));
+    await act(async () => findHost(renderer.root, 'BattlePartySelector').props.onPartyChange(editedParty));
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 선택' }).props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 전투' }).props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 확인' }).props.onPress());
@@ -251,9 +263,13 @@ describe('PartyPresetList', () => {
 
     assert.equal(findHost(renderer.root, 'TextInput').props.value, '대회랑');
     assert.equal(textCount(renderer.root, '전투'), 1);
+    assert.deepEqual(updateCalls, [{
+      presetId: 1,
+      request: { name: '대회랑', members: editedParty, folderId: 10 },
+    }]);
     assert.deepEqual(
       (findHost(renderer.root, 'BattlePartySelector').props.party as BattlePartyMember[]),
-      PRESETS[0]!.members,
+      editedParty,
     );
   });
 
