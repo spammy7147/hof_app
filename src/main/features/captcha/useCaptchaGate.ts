@@ -80,13 +80,21 @@ export function useCaptchaGate({ authenticated, api, describeError }: UseCaptcha
     setIsLoading(true);
     try {
       const preparedCaptcha = await api.prepareCurrentCaptcha();
+      if (isCaptchaResolved(preparedCaptcha)) {
+        setCaptcha(null);
+        setVisible(false);
+        setBlocking(false);
+        setMessage('캡차 인증이 완료되었습니다.');
+        resolvePending();
+        return;
+      }
       setCaptcha(preparedCaptcha);
     } catch (error) {
       setErrorMessage(describeError(error));
     } finally {
       setIsLoading(false);
     }
-  }, [api, authenticated, describeError, rejectPending]);
+  }, [api, authenticated, describeError, rejectPending, resolvePending]);
 
   /** blocking 중 닫기 요청은 거절하고, 일반 조회 모달만 상태를 정리해 닫는다. */
   const close = useCallback(() => {
