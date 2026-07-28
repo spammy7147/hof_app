@@ -8,7 +8,7 @@ import {
   type QuestMapDraft,
 } from '../../../domain/questAutomation';
 import { theme } from '../../../styles/theme';
-import type { BattleMapResponse, PartyPresetResponse, QuestSnapshot } from '../../../types/api';
+import type { BattleMapResponse, PartyPresetCatalogResponse, QuestSnapshot } from '../../../types/api';
 import { QuestMapEditor } from './QuestMapEditor';
 
 export type QuestSummaryCardProps = {
@@ -16,7 +16,7 @@ export type QuestSummaryCardProps = {
   selected: QuestSelectionDraft | null;
   sectionLabel: string;
   catalog: BattleMapResponse[];
-  presets: PartyPresetResponse[];
+  partyPresetCatalog: PartyPresetCatalogResponse;
   disabled: boolean;
   catalogLoading: boolean;
   catalogError: string | null;
@@ -32,7 +32,7 @@ export function QuestSummaryCard({
   selected,
   sectionLabel,
   catalog,
-  presets,
+  partyPresetCatalog,
   disabled,
   catalogLoading,
   catalogError,
@@ -75,7 +75,7 @@ export function QuestSummaryCard({
             catalogError={catalogError}
             catalogLoading={catalogLoading}
             disabled={disabled}
-            presets={presets}
+            partyPresetCatalog={partyPresetCatalog}
             quest={selected}
             onAddMap={onAddMap}
             onRemoveMap={onRemoveMap}

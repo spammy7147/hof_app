@@ -30,11 +30,11 @@ import {
 } from '../../../domain/questAutomation';
 import { filterAutomationProfileCategories } from '../../../domain/automationProfiles';
 import { toUserFacingErrorMessage } from '../../../domain/userFacingErrors';
+import type { PartyPresetCatalogResource } from '../../../domain/partyPresetCatalogLoader';
 import { theme } from '../../../styles/theme';
 import type {
   BattleCategoryResponse,
   BattleMapResponse,
-  PartyPresetResponse,
   QuestSection,
   QuestSnapshot,
   TypedAutomationEntryResponse,
@@ -58,7 +58,7 @@ type Props = {
   onDelete: () => Promise<boolean>;
   onLoadBattleCategories: () => void;
   onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
-  onListPartyPresets: () => Promise<PartyPresetResponse[]>;
+  partyPresetCatalog: PartyPresetCatalogResource;
   onClearMutationMessage: () => void;
   onSave: (request: UpdateQuestAutomationRequest) => Promise<boolean>;
 };
@@ -82,7 +82,7 @@ export function QuestAutomationEditor({
   onDelete,
   onLoadBattleCategories,
   onLoadBattleMaps,
-  onListPartyPresets,
+  partyPresetCatalog,
   onClearMutationMessage,
   onSave,
 }: Props) {
@@ -90,13 +90,12 @@ export function QuestAutomationEditor({
   const [query, setQuery] = useState('');
   const [snapshots, setSnapshots] = useState<QuestSnapshot[]>([]);
   const [catalog, setCatalog] = useState<BattleMapResponse[]>([]);
-  const [presets, setPresets] = useState<PartyPresetResponse[]>([]);
   const [draft, setDraft] = useState<QuestAutomationDraft | null>(null);
   const [questLoading, setQuestLoading] = useState(true);
   const [questLoaded, setQuestLoaded] = useState(false);
   const [questError, setQuestError] = useState<string | null>(null);
-  const [presetLoading, setPresetLoading] = useState(true);
-  const [presetError, setPresetError] = useState<string | null>(null);
+  const presetLoading = partyPresetCatalog.loading;
+  const presetError = partyPresetCatalog.error;
   const [categoryRequested, setCategoryRequested] = useState(false);
   const [mapResources, setMapResources] = useState<Record<string, { loading: boolean; error: string | null }>>({});
   const [refreshWarning, setRefreshWarning] = useState(false);
@@ -108,7 +107,6 @@ export function QuestAutomationEditor({
   const draftSourceRef = useRef('');
   const mountedGenerationRef = useRef(0);
   const questGenerationRef = useRef(0);
-  const presetGenerationRef = useRef(0);
   const mapGenerationRef = useRef<Record<string, number>>({});
   const mapRequestSequenceRef = useRef(0);
   const mapResourceRef = useRef(mapResources);
@@ -179,27 +177,6 @@ export function QuestAutomationEditor({
     }
   }, [fetchQuests]);
 
-  const loadPresets = useCallback(async () => {
-    const generation = ++presetGenerationRef.current;
-    const mountedGeneration = mountedGenerationRef.current;
-    setPresetLoading(true);
-    setPresetError(null);
-    try {
-      const nextPresets = await onListPartyPresets();
-      if (mountedGeneration === mountedGenerationRef.current && generation === presetGenerationRef.current) {
-        setPresets(nextPresets);
-      }
-    } catch (error: unknown) {
-      if (mountedGeneration === mountedGenerationRef.current && generation === presetGenerationRef.current) {
-        setPresetError(toUserFacingErrorMessage(error));
-      }
-    } finally {
-      if (mountedGeneration === mountedGenerationRef.current && generation === presetGenerationRef.current) {
-        setPresetLoading(false);
-      }
-    }
-  }, [onListPartyPresets]);
-
   const loadCategoryMaps = useCallback(async (category: BattleCategoryResponse) => {
     const generation = ++mapRequestSequenceRef.current;
     mapGenerationRef.current[category.id] = generation;
@@ -227,13 +204,11 @@ export function QuestAutomationEditor({
 
   useEffect(() => {
     void loadQuests();
-    void loadPresets();
     return () => {
       mountedGenerationRef.current += 1;
       questGenerationRef.current += 1;
-      presetGenerationRef.current += 1;
     };
-  }, [loadPresets, loadQuests]);
+  }, [loadQuests]);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -353,7 +328,10 @@ export function QuestAutomationEditor({
     () => prioritizeSelectedQuests(filterQuests(snapshots, section, query), selectedQuestKeys),
     [query, section, selectedQuestKeys, snapshots],
   );
-  const presetIds = useMemo(() => presets.map(({ id }) => id), [presets]);
+  const presetIds = useMemo(
+    () => partyPresetCatalog.catalog.presets.map(({ id }) => id),
+    [partyPresetCatalog.catalog.presets],
+  );
   const validationErrors = useMemo(
     () => draft ? validateQuestAutomationDraft(draft, presetIds) : [],
     [draft, presetIds],
@@ -456,7 +434,7 @@ export function QuestAutomationEditor({
         catalogError={catalogError}
         catalogLoading={catalogLoading}
         disabled={editingDisabled}
-        presets={presets}
+        partyPresetCatalog={partyPresetCatalog.catalog}
         selected={selection ?? null}
         sectionLabel={sectionLabel(item.section)}
         snapshot={item}
@@ -467,7 +445,7 @@ export function QuestAutomationEditor({
         onUpdateMaps={(maps) => updateQuest(item.questKey, (selection) => updateQuestMaps(selection, maps))}
       />
     );
-  }, [catalog, catalogError, catalogLoading, draft, editingDisabled, presets, retryCatalog, toggleQuestSelection, updateQuest]);
+  }, [catalog, catalogError, catalogLoading, draft, editingDisabled, partyPresetCatalog.catalog, retryCatalog, toggleQuestSelection, updateQuest]);
 
   const missingSelections = draft?.quests.filter(({ missing }) => missing) ?? [];
 
@@ -586,7 +564,7 @@ export function QuestAutomationEditor({
         />
       ) : null}
       {presetError ? (
-        <ResourceWarning label="프리셋" retryLabel="프리셋 다시 불러오기" onRetry={() => loadPresets()} />
+        <ResourceWarning label="프리셋" retryLabel="프리셋 다시 불러오기" onRetry={partyPresetCatalog.retry} />
       ) : presetLoading ? <Text style={styles.muted}>프리셋 불러오는 중</Text> : null}
       {mapErrors.map((category) => (
         <ResourceWarning
@@ -703,6 +681,7 @@ export function QuestAutomationEditor({
     </View>
   );
 }
+
 
 function ResourceWarning({
   label,

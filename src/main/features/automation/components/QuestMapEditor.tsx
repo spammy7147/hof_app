@@ -8,7 +8,7 @@ import {
   type QuestSelectionDraft,
 } from '../../../domain/questAutomation';
 import { theme } from '../../../styles/theme';
-import type { BattleMapResponse, PartyPresetResponse } from '../../../types/api';
+import type { BattleMapResponse, PartyPresetCatalogResponse } from '../../../types/api';
 import { BattleMapPickerSheet } from './BattleMapPickerSheet';
 import { QuestMapList } from './QuestMissionMapList';
 
@@ -17,7 +17,7 @@ export type QuestMapEditorProps = {
   catalogError: string | null;
   catalogLoading: boolean;
   disabled: boolean;
-  presets: PartyPresetResponse[];
+  partyPresetCatalog: PartyPresetCatalogResponse;
   quest: QuestSelectionDraft;
   onAddMap: (map: BattleMapResponse) => void;
   onRemoveMap: (index: number) => void;
@@ -30,7 +30,7 @@ export function QuestMapEditor({
   catalogError,
   catalogLoading,
   disabled,
-  presets,
+  partyPresetCatalog,
   quest,
   onAddMap,
   onRemoveMap,
@@ -112,7 +112,7 @@ export function QuestMapEditor({
           disabled={disabled}
           maps={quest.maps}
           mode={quest.mapMode}
-          presets={presets}
+          partyPresetCatalog={partyPresetCatalog}
           questContext={questContext}
           onRemove={onRemoveMap}
           onUpdate={onUpdateMaps}

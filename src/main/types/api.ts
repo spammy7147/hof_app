@@ -353,14 +353,17 @@ export type PartyPresetMember = {
 export type CreatePartyPresetRequest = {
   name: string;
   members: PartyPresetMember[];
+  folderId?: number | null;
 };
 
 export type UpdatePartyPresetRequest = {
   name: string;
   members: PartyPresetMember[];
+  folderId?: number | null;
 };
 
 export type ReorderPartyPresetsRequest = {
+  folderId?: number | null;
   presetIds: number[];
 };
 
@@ -373,6 +376,40 @@ export type PartyPresetResponse = {
   members: PartyPresetMember[];
   createdAt: string;
   updatedAt: string;
+  folderId: number | null;
+};
+
+export type PartyPresetFolderResponse = {
+  id: number;
+  name: string;
+  parentFolderId: number | null;
+  displayOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PartyPresetCatalogResponse = {
+  folders: PartyPresetFolderResponse[];
+  presets: PartyPresetResponse[];
+};
+
+export type CreatePartyPresetFolderRequest = {
+  name: string;
+  parentFolderId: number | null;
+};
+
+export type RenamePartyPresetFolderRequest = {
+  name: string;
+};
+
+export type ReorderPartyPresetFoldersRequest = {
+  parentFolderId: number | null;
+  folderIds: number[];
+};
+
+export type MovePartyPresetFolderRequest = {
+  parentFolderId: number | null;
+  displayOrder: number;
 };
 
 export type HofCharacter = {

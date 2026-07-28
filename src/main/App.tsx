@@ -21,11 +21,16 @@ import type {
   BattleResultResponse,
   BattleStatsResponse,
   CreatePartyPresetRequest,
+  CreatePartyPresetFolderRequest,
   HofCharacterDetail,
   HofStatusResponse,
   HofObservedStatusResponse,
   LoadPatternResponse,
+  MovePartyPresetFolderRequest,
+  PartyPresetCatalogResponse,
   PartyPresetResponse,
+  RenamePartyPresetFolderRequest,
+  ReorderPartyPresetFoldersRequest,
   ReorderPartyPresetsRequest,
   RunBattleRequest,
   UpdatePartyPresetRequest,
@@ -177,7 +182,12 @@ export default function App() {
 
   const loadBattleStats = useCallback((): Promise<BattleStatsResponse> => api.fetchBattleStats(), [api]);
 
-  const listPartyPresets = useCallback((): Promise<PartyPresetResponse[]> => api.listPartyPresets(), [api]);
+  const getPartyPresetCatalog = useCallback((): Promise<PartyPresetCatalogResponse> => api.getPartyPresetCatalog(), [api]);
+  const createPartyPresetFolder = useCallback((request: CreatePartyPresetFolderRequest) => api.createPartyPresetFolder(request), [api]);
+  const renamePartyPresetFolder = useCallback((folderId: number, request: RenamePartyPresetFolderRequest) => api.renamePartyPresetFolder(folderId, request), [api]);
+  const reorderPartyPresetFolders = useCallback((request: ReorderPartyPresetFoldersRequest) => api.reorderPartyPresetFolders(request), [api]);
+  const movePartyPresetFolder = useCallback((folderId: number, request: MovePartyPresetFolderRequest) => api.movePartyPresetFolder(folderId, request), [api]);
+  const deletePartyPresetFolder = useCallback((folderId: number) => api.deletePartyPresetFolder(folderId), [api]);
 
   const createPartyPreset = useCallback((
     request: CreatePartyPresetRequest,
@@ -356,7 +366,12 @@ export default function App() {
         onOpenCaptcha={handleOpenCaptchaModal}
         onStatusObserved={handleStatusObserved}
         automationController={automationController}
-        onListPartyPresets={listPartyPresets}
+        onGetPartyPresetCatalog={getPartyPresetCatalog}
+        onCreatePartyPresetFolder={createPartyPresetFolder}
+        onRenamePartyPresetFolder={renamePartyPresetFolder}
+        onReorderPartyPresetFolders={reorderPartyPresetFolders}
+        onMovePartyPresetFolder={movePartyPresetFolder}
+        onDeletePartyPresetFolder={deletePartyPresetFolder}
         onCreatePartyPreset={createPartyPreset}
         onUpdatePartyPreset={updatePartyPreset}
         onMakePartyPresetPrimary={makePartyPresetPrimary}

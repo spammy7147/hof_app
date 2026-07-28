@@ -88,7 +88,9 @@ const reactNativeMock = {
   Alert: { alert: (...args: unknown[]) => { alertArguments = args; } },
   findNodeHandle: (node: unknown) => node,
   FlatList: flatList,
+  KeyboardAvoidingView: host('KeyboardAvoidingView'),
   Modal: host('Modal'),
+  Platform: { OS: 'ios' },
   Pressable: host('Pressable'),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Switch: host('Switch'),
@@ -102,6 +104,7 @@ const moduleWithLoader = Module as unknown as { _load: Loader };
 const originalLoad = moduleWithLoader._load;
 moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') return reactNativeMock;
+  if (request === 'react-native-safe-area-context') return { useSafeAreaInsets: () => ({ bottom: 0, left: 0, right: 0, top: 0 }) };
   if (request === 'lucide-react-native') return iconsMock;
   if (request === 'react-native-draggable-flatlist') return {
     __esModule: true,
@@ -206,7 +209,7 @@ describe('AdventureMapAutomationEditor', () => {
         keyCount: 114,
         availableCount: 3,
       })],
-      onListPartyPresets: async () => [preset(7, '대표 프리셋', true)],
+      partyPresetCatalog: presetCatalog([preset(7, '대표 프리셋', true)]),
     });
 
     const presetChoice = renderer.root.findByProps({ accessibilityLabel: '압축 모험 프리셋 선택 열기' });
@@ -370,7 +373,7 @@ describe('AdventureMapAutomationEditor', () => {
         setting('explicit', 1, 'EXPLICIT', 9),
       ]),
       onLoadBattleMaps: loadMaps,
-      onListPartyPresets: async () => before,
+      partyPresetCatalog: presetCatalog(before),
     });
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(React.createElement(AdventureMapAutomationEditor, base)); });
@@ -381,7 +384,7 @@ describe('AdventureMapAutomationEditor', () => {
     await act(async () => {
       renderer.update(React.createElement(AdventureMapAutomationEditor, {
         ...base,
-        onListPartyPresets: async () => after,
+        partyPresetCatalog: presetCatalog(after),
       }));
     });
 
@@ -393,11 +396,9 @@ describe('AdventureMapAutomationEditor', () => {
   it('fences older map and preset responses when loaders change', async () => {
     const oldMaps = deferred<BattleMapResponse[]>();
     const newMaps = deferred<BattleMapResponse[]>();
-    const oldPresets = deferred<PartyPresetResponse[]>();
-    const newPresets = deferred<PartyPresetResponse[]>();
     const base = editorProps({
       onLoadBattleMaps: () => oldMaps.promise,
-      onListPartyPresets: () => oldPresets.promise,
+      partyPresetCatalog: presetCatalog([preset(7, '이전 대표', true)]),
     });
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(React.createElement(AdventureMapAutomationEditor, base)); });
@@ -405,18 +406,16 @@ describe('AdventureMapAutomationEditor', () => {
       renderer.update(React.createElement(AdventureMapAutomationEditor, {
         ...base,
         onLoadBattleMaps: () => newMaps.promise,
-        onListPartyPresets: () => newPresets.promise,
+        partyPresetCatalog: presetCatalog([preset(8, '최신 대표', true)]),
       }));
     });
     await act(async () => {
       newMaps.resolve([map('new', '최신 맵')]);
-      newPresets.resolve([preset(8, '최신 대표', true)]);
-      await Promise.all([newMaps.promise, newPresets.promise]);
+      await newMaps.promise;
     });
     await act(async () => {
       oldMaps.resolve([map('old', '이전 맵')]);
-      oldPresets.resolve([preset(7, '이전 대표', true)]);
-      await Promise.all([oldMaps.promise, oldPresets.promise]);
+      await oldMaps.promise;
     });
 
     await openAdventureGroup(renderer, '기타');
@@ -527,7 +526,7 @@ describe('AdventureMapAutomationEditor', () => {
         map('second', '둘째 맵', { groupName: '그룹', mapOrder: 1 }),
         map('third', '셋째 맵', { groupName: '그룹', mapOrder: 2 }),
       ],
-      onListPartyPresets: async () => [preset(9, '고정 파티', false)],
+      partyPresetCatalog: presetCatalog([preset(9, '고정 파티', false)]),
       onSave: async (request) => { saves.push(request); return pending.promise; },
       onBack: () => { backs += 1; },
     });
@@ -704,9 +703,10 @@ describe('AdventureMapAutomationEditor', () => {
         setting('second', 1, 'PRIMARY', null),
       ]),
       maps: [map('first', '첫 맵'), map('second', '둘째 맵')],
-      onListPartyPresets: async () => [preset(9, '고정 파티', false)],
+      partyPresetCatalog: presetCatalog([preset(9, '고정 파티', false)]),
     });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.onPress(); });
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '공유 폴더 폴더, 프리셋 0개, 열기' }));
     const retainedSelectA = renderer.root.findByProps({ accessibilityLabel: '고정 파티 프리셋 선택' }).props.onPress as () => void;
     const retainedCloseA = renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress as () => void;
     await act(async () => { retainedCloseA(); });
@@ -718,7 +718,8 @@ describe('AdventureMapAutomationEditor', () => {
       retainedCloseA();
     });
 
-    assert.equal(hasText(renderer.root, '둘째 맵 프리셋 선택'), true);
+    assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), '둘째 맵'), true);
+    assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), '둘째 맵 프리셋 선택'), false);
     assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.accessibilityValue, { text: '대표 프리셋 없음' });
     await act(async () => { currentSelectB(); });
     assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.accessibilityValue, { text: '고정 파티' });
@@ -732,20 +733,20 @@ describe('AdventureMapAutomationEditor', () => {
         setting('second', 1, 'PRIMARY', null),
       ]),
       maps: [map('first', '첫 맵'), map('second', '둘째 맵')],
-      onListPartyPresets: async () => [preset(9, '고정 파티', false)],
+      partyPresetCatalog: presetCatalog([preset(9, '고정 파티', false)]),
     });
     const retainedOpenA = renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.onPress as () => void;
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.onPress(); });
     const currentSelectB = renderer.root.findByProps({ accessibilityLabel: '고정 파티 프리셋 선택' }).props.onPress as () => void;
 
     await act(async () => { retainedOpenA(); });
-    assert.equal(hasText(renderer.root, '둘째 맵 프리셋 선택'), true);
+    assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), '둘째 맵'), true);
     await act(async () => { currentSelectB(); });
     assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.accessibilityValue, { text: '고정 파티' });
     assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.accessibilityValue, { text: '대표 프리셋 없음' });
 
     await act(async () => { retainedOpenA(); });
-    assert.equal(hasText(renderer.root, '첫 맵 프리셋 선택'), true);
+    assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), '첫 맵'), true);
   });
 
   it('restores accessibility focus to each live preset trigger after every ordinary close path', async () => {
@@ -756,7 +757,7 @@ describe('AdventureMapAutomationEditor', () => {
         setting('second', 1, 'PRIMARY', null),
       ]),
       maps: [map('first', '첫 맵'), map('second', '둘째 맵')],
-      onListPartyPresets: async () => [preset(9, '고정 파티', false)],
+      partyPresetCatalog: presetCatalog([preset(9, '고정 파티', false)]),
     });
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.onPress(); });
@@ -789,7 +790,7 @@ describe('AdventureMapAutomationEditor', () => {
         setting('second', 1, 'PRIMARY', null),
       ]),
       onLoadBattleMaps: async () => [map('first', '첫 맵'), map('second', '둘째 맵')],
-      onListPartyPresets: async () => [preset(9, '고정 파티', false)],
+      partyPresetCatalog: presetCatalog([preset(9, '고정 파티', false)]),
     });
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(React.createElement(AdventureMapAutomationEditor, base)); });
@@ -1072,11 +1073,14 @@ function editorProps(overrides: Partial<React.ComponentProps<typeof AdventureMap
     onDelete: async () => true,
     onLoadBattleCategories: () => undefined,
     onLoadBattleMaps: async () => [],
-    onListPartyPresets: async () => [],
+    partyPresetCatalog: presetCatalog([]),
     onClearMutationMessage: () => undefined,
     onSave: async () => true,
     ...overrides,
   };
+}
+function presetCatalog(presets: PartyPresetResponse[]) {
+  return { catalog: { folders: [{ id: 90, name: '공유 폴더', parentFolderId: null, displayOrder: 0, createdAt: '', updatedAt: '' }], presets }, loading: false, error: null, retry: () => undefined };
 }
 function hasText(root: ReactTestInstance, text: string): boolean {
   return root.findAll((node) => (node.type as unknown) === 'Text' && node.children.join('') === text).length > 0;
@@ -1128,7 +1132,7 @@ function setting(
   return { categoryId: 'adventure_map', mapCode, displayName: mapCode, executionOrder, presetMode, partyPresetId };
 }
 function preset(id: number, name: string, isPrimary: boolean): PartyPresetResponse {
-  return { id, accountId: 1, name, displayOrder: id, isPrimary, members: [], createdAt: '', updatedAt: '' };
+  return { id, accountId: 1, name, displayOrder: id, isPrimary, members: [], createdAt: '', updatedAt: '', folderId: null };
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;

@@ -1,11 +1,16 @@
-import { ChevronDown, ChevronUp, GripVertical, Plus, Save, Star, Trash2 } from 'lucide-react-native';
-import type { ReactNode } from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ChevronDown, ChevronUp, FolderCog, GripVertical, Plus, Save, Star, Trash2 } from 'lucide-react-native';
+import type { ElementRef, ReactNode, Ref } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AccessibilityInfo, ActivityIndicator, findNodeHandle, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import type { FlatList } from 'react-native-gesture-handler';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist';
 
 import { BattlePartySelector } from './BattlePartySelector';
+import { PartyPresetFolderEditor } from './PartyPresetFolderEditor';
+import { PartyPresetFolderPicker } from './PartyPresetFolderPicker';
+import { PartyPresetSearchResults } from './PartyPresetSearchResults';
+import { PartyPresetTree, type PartyPresetExpandedFolderIds } from './PartyPresetTree';
 import { BATTLE_PARTY_SIZE, type BattlePartyMember } from '../domain/battleParty';
 import {
   buildCreatePartyPresetRequest,
@@ -14,11 +19,19 @@ import {
   formatPartyPresetSummary,
 } from '../domain/partyPresets';
 import { toUserFacingErrorMessage } from '../domain/userFacingErrors';
+import type { PartyPresetCatalogResource } from '../domain/partyPresetCatalogLoader';
+import { getPartyPresetFolderPath, indexPartyPresetCatalog, searchPartyPresetCatalog } from '../domain/partyPresetCatalog';
 import { theme } from '../styles/theme';
 import type {
   CreatePartyPresetRequest,
+  CreatePartyPresetFolderRequest,
   HofCharacter,
+  MovePartyPresetFolderRequest,
+  PartyPresetCatalogResponse,
+  PartyPresetFolderResponse,
   PartyPresetResponse,
+  RenamePartyPresetFolderRequest,
+  ReorderPartyPresetFoldersRequest,
   ReorderPartyPresetsRequest,
   UpdatePartyPresetRequest,
 } from '../types/api';
@@ -26,89 +39,187 @@ import type {
 type PartyPresetListProps = {
   authenticated: boolean;
   characters: HofCharacter[];
-  onListPartyPresets: () => Promise<PartyPresetResponse[]>;
+  partyPresetCatalog: PartyPresetCatalogResource;
   onCreatePartyPreset: (request: CreatePartyPresetRequest) => Promise<PartyPresetResponse>;
   onUpdatePartyPreset: (presetId: number, request: UpdatePartyPresetRequest) => Promise<PartyPresetResponse>;
   onMakePartyPresetPrimary: (presetId: number) => Promise<PartyPresetResponse>;
   onReorderPartyPresets: (request: ReorderPartyPresetsRequest) => Promise<PartyPresetResponse[]>;
   onDeletePartyPreset: (presetId: number) => Promise<null>;
+  onCreatePartyPresetFolder?: (request: CreatePartyPresetFolderRequest) => Promise<PartyPresetCatalogResponse>;
+  onRenamePartyPresetFolder?: (folderId: number, request: RenamePartyPresetFolderRequest) => Promise<PartyPresetCatalogResponse>;
+  onReorderPartyPresetFolders?: (request: ReorderPartyPresetFoldersRequest) => Promise<PartyPresetCatalogResponse>;
+  onMovePartyPresetFolder?: (folderId: number, request: MovePartyPresetFolderRequest) => Promise<PartyPresetCatalogResponse>;
+  onDeletePartyPresetFolder?: (folderId: number) => Promise<PartyPresetCatalogResponse>;
 };
 
 type ExpandedPresetId = number | 'new' | null;
-type NewPresetDraft = { name: string; party: BattlePartyMember[] };
+type NewPresetDraft = { name: string; party: BattlePartyMember[]; folderId: number | null };
+type PresetReorderOverlay = { base: PartyPresetResponse[]; value: PartyPresetResponse[] };
+type FolderMoveOverlay = { base: PartyPresetFolderResponse[]; value: PartyPresetFolderResponse[] };
+type PickerInvocation = { handle: ReturnType<typeof findNodeHandle> };
 
 /** 캐릭터 탭의 저장 파티 프리셋을 편집하고 정렬한다. */
 export function PartyPresetList({
   authenticated,
   characters,
-  onListPartyPresets,
+  partyPresetCatalog,
   onCreatePartyPreset,
   onUpdatePartyPreset,
   onMakePartyPresetPrimary,
   onReorderPartyPresets,
   onDeletePartyPreset,
+  onCreatePartyPresetFolder,
+  onRenamePartyPresetFolder,
+  onMovePartyPresetFolder,
+  onDeletePartyPresetFolder,
 }: PartyPresetListProps) {
-  const [presets, setPresets] = useState<PartyPresetResponse[]>([]);
+  const [presetReorderOverlay, setPresetReorderOverlay] = useState<PresetReorderOverlay | null>(null);
+  const [folderMoveOverlay, setFolderMoveOverlay] = useState<FolderMoveOverlay | null>(null);
   const [expandedPresetId, setExpandedPresetId] = useState<ExpandedPresetId>(null);
   const [newDraft, setNewDraft] = useState<NewPresetDraft | null>(null);
   const [activeSlotIndex, setActiveSlotIndex] = useState(0);
   const [draftName, setDraftName] = useState('');
   const [draftParty, setDraftParty] = useState<BattlePartyMember[]>(emptyPartyMembers());
-  const [isLoading, setIsLoading] = useState(false);
+  const [draftFolderId, setDraftFolderId] = useState<number | null>(null);
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
+  const [catalogQuery, setCatalogQuery] = useState('');
+  const [expandedFolderIds, setExpandedFolderIds] = useState<PartyPresetExpandedFolderIds>(() => new Set());
+  const [folderEditMode, setFolderEditMode] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const presetsRef = useRef(presets);
+  const canonicalPresets = authenticated ? partyPresetCatalog.catalog.presets : [];
+  const canonicalFolders = authenticated ? partyPresetCatalog.catalog.folders : [];
+  const presets = presetReorderOverlay?.base === canonicalPresets ? presetReorderOverlay.value : canonicalPresets;
+  const folders = folderMoveOverlay?.base === canonicalFolders ? folderMoveOverlay.value : canonicalFolders;
   const mutationPendingRef = useRef(false);
+  const authenticatedRef = useRef(authenticated);
+  const previousAuthenticatedRef = useRef(authenticated);
+  const accountGenerationRef = useRef(0);
   const mountedRef = useRef(true);
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const swipeableNodesRef = useRef(new Map<number, SwipeableMethods>());
-  presetsRef.current = presets;
+  const presetFolderTriggerRef = useRef<ElementRef<typeof Pressable>>(null);
+  const presetDragRefs = useRef(new Map<number, () => void>());
+  const pickerInvocationRef = useRef<PickerInvocation | null>(null);
+  const pickerVisibleRef = useRef(false);
+  const pickerFocusGenerationRef = useRef(0);
+  const pickerFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const presetListRef = useRef<FlatList<PartyPresetResponse>>(null);
+  const presetEditorNameInputRef = useRef<ElementRef<typeof TextInput>>(null);
+  const editorFocusGenerationRef = useRef(0);
+  const editorFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const presetScrollRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  pickerVisibleRef.current = folderPickerOpen;
+  const catalogIndex = useMemo(() => indexPartyPresetCatalog({ folders, presets }), [folders, presets]);
+  const activePresetFolderId = expandedPresetId === 'new'
+    ? newDraft?.folderId ?? null
+    : typeof expandedPresetId === 'number'
+      ? catalogIndex.presetsById.get(expandedPresetId)?.folderId ?? null
+      : null;
+  const visiblePresets = useMemo(
+    () => (catalogIndex.presetIdsByFolder.get(activePresetFolderId) ?? [])
+        .map((id) => catalogIndex.presetsById.get(id))
+        .filter((preset): preset is PartyPresetResponse => preset != null),
+    [activePresetFolderId, catalogIndex],
+  );
+  const visiblePresetsRef = useRef(visiblePresets);
+  visiblePresetsRef.current = visiblePresets;
+  const searchResults = useMemo(
+    () => searchPartyPresetCatalog(catalogIndex, catalogQuery),
+    [catalogIndex, catalogQuery],
+  );
+  useLayoutEffect(() => {
+    authenticatedRef.current = authenticated;
+    if (previousAuthenticatedRef.current === authenticated) return;
+    previousAuthenticatedRef.current = authenticated;
+    accountGenerationRef.current += 1;
+    mutationPendingRef.current = false;
+  }, [authenticated]);
+
+  const isCurrentAccountGeneration = useCallback((generation: number) => (
+    mountedRef.current
+    && authenticatedRef.current
+    && accountGenerationRef.current === generation
+  ), []);
 
   const closeOpenSwipeable = useCallback(() => {
     openSwipeableRef.current?.close();
     openSwipeableRef.current = null;
   }, []);
 
-  const loadPresets = useCallback(async () => {
+  useEffect(() => {
     if (!authenticated) {
-      setPresets([]);
       setExpandedPresetId(null);
       setNewDraft(null);
-      return;
+      setCatalogQuery('');
+      setExpandedFolderIds(new Set());
+      setFolderPickerOpen(false);
+      setFolderEditMode(false);
+      setErrorMessage(null);
     }
-
-    setIsLoading(true);
-    setErrorMessage(null);
-    try {
-      const loaded = await onListPartyPresets();
-      if (mountedRef.current) setPresets(loaded);
-    } catch (error) {
-      if (mountedRef.current) setErrorMessage(toUserFacingErrorMessage(error));
-    } finally {
-      if (mountedRef.current) setIsLoading(false);
-    }
-  }, [authenticated, onListPartyPresets]);
+  }, [authenticated]);
 
   useEffect(() => {
     mountedRef.current = true;
-    void loadPresets();
     return () => {
       mountedRef.current = false;
       closeOpenSwipeable();
       swipeableNodesRef.current.clear();
+      presetDragRefs.current.clear();
+      pickerFocusGenerationRef.current += 1;
+      if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
+      editorFocusGenerationRef.current += 1;
+      if (editorFocusTimerRef.current) clearTimeout(editorFocusTimerRef.current);
+      if (presetScrollRetryTimerRef.current) clearTimeout(presetScrollRetryTimerRef.current);
     };
-  }, [closeOpenSwipeable, loadPresets]);
+  }, [closeOpenSwipeable]);
+
+  useEffect(() => {
+    mutationPendingRef.current = false;
+    setIsSaving(false);
+    setExpandedPresetId(null);
+    setNewDraft(null);
+    setCatalogQuery('');
+    setExpandedFolderIds(new Set());
+    setFolderPickerOpen(false);
+    setFolderEditMode(false);
+    setPresetReorderOverlay(null);
+    setFolderMoveOverlay(null);
+    setErrorMessage(null);
+    pickerInvocationRef.current = null;
+    pickerFocusGenerationRef.current += 1;
+    if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
+    editorFocusGenerationRef.current += 1;
+    if (editorFocusTimerRef.current) clearTimeout(editorFocusTimerRef.current);
+    if (presetScrollRetryTimerRef.current) clearTimeout(presetScrollRetryTimerRef.current);
+  }, [authenticated]);
 
   useEffect(() => {
     closeOpenSwipeable();
   }, [closeOpenSwipeable, presets, isSaving]);
+
+  useEffect(() => {
+    if (typeof expandedPresetId !== 'number') return;
+    const index = visiblePresets.findIndex(({ id }) => id === expandedPresetId);
+    if (index < 0) return;
+    const generation = ++editorFocusGenerationRef.current;
+    presetListRef.current?.scrollToIndex({ animated: true, index, viewPosition: 0.1 });
+    if (editorFocusTimerRef.current) clearTimeout(editorFocusTimerRef.current);
+    editorFocusTimerRef.current = setTimeout(() => {
+      editorFocusTimerRef.current = null;
+      if (!mountedRef.current || editorFocusGenerationRef.current !== generation) return;
+      const handle = findNodeHandle(presetEditorNameInputRef.current);
+      if (handle != null) AccessibilityInfo.setAccessibilityFocus(handle);
+    }, 100);
+  }, [expandedPresetId, visiblePresets]);
 
   function openPreset(preset: PartyPresetResponse) {
     setExpandedPresetId((current) => {
       if (current === preset.id) return null;
       setDraftName(preset.name);
       setDraftParty(createPartyFromPreset(preset));
+      setDraftFolderId(preset.folderId);
       setActiveSlotIndex(0);
       return preset.id;
     });
@@ -117,7 +228,7 @@ export function PartyPresetList({
   function openNewPreset() {
     if (newDraft == null) {
       const request = buildCreatePartyPresetRequest();
-      setNewDraft({ name: request.name, party: request.members });
+      setNewDraft({ name: request.name, party: request.members, folderId: null });
     }
     setActiveSlotIndex(0);
     setExpandedPresetId('new');
@@ -127,12 +238,41 @@ export function PartyPresetList({
     setExpandedPresetId((current) => current === 'new' ? null : 'new');
   }
 
+  function openPresetFolderPicker() {
+    pickerFocusGenerationRef.current += 1;
+    if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
+    pickerInvocationRef.current = { handle: findNodeHandle(presetFolderTriggerRef.current) };
+    setFolderPickerOpen(true);
+  }
+
+  function restorePickerFocusAfterClose() {
+    const generation = ++pickerFocusGenerationRef.current;
+    if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
+    pickerFocusTimerRef.current = setTimeout(() => {
+      pickerFocusTimerRef.current = null;
+      if (!mountedRef.current || pickerVisibleRef.current || pickerFocusGenerationRef.current !== generation) return;
+      const invocation = pickerInvocationRef.current;
+      if (!invocation || invocation.handle == null) return;
+      const liveHandle = findNodeHandle(presetFolderTriggerRef.current);
+      if (liveHandle == null || liveHandle !== invocation.handle) return;
+      AccessibilityInfo.setAccessibilityFocus(liveHandle);
+      if (pickerInvocationRef.current === invocation) pickerInvocationRef.current = null;
+    }, 250);
+  }
+
+  function closePresetFolderPicker() {
+    setFolderPickerOpen(false);
+    restorePickerFocusAfterClose();
+  }
+
   async function savePreset() {
     if (!authenticated || mutationPendingRef.current) return;
+    const accountGeneration = accountGenerationRef.current;
     const editingNew = expandedPresetId === 'new';
     const name = editingNew ? newDraft?.name ?? '' : draftName;
     const party = editingNew ? newDraft?.party ?? emptyPartyMembers() : draftParty;
-    const request = { name: name.trim(), members: normalizeDraftParty(party) };
+    const folderId = editingNew ? newDraft?.folderId ?? null : draftFolderId;
+    const request = { name: name.trim(), members: normalizeDraftParty(party), folderId };
     if (!request.name) {
       setErrorMessage('프리셋 이름을 입력하세요.');
       return;
@@ -143,22 +283,22 @@ export function PartyPresetList({
     setErrorMessage(null);
     try {
       if (editingNew) {
-        const created = await onCreatePartyPreset(request);
-        if (!mountedRef.current) return;
-        setPresets((current) => [created, ...current].map((preset, displayOrder) => ({ ...preset, displayOrder })));
+        await onCreatePartyPreset(request);
+        if (!isCurrentAccountGeneration(accountGeneration)) return;
         setNewDraft(null);
         setExpandedPresetId(null);
       } else if (typeof expandedPresetId === 'number') {
-        const updated = await onUpdatePartyPreset(expandedPresetId, request);
-        if (!mountedRef.current) return;
-        setPresets((current) => current.map((preset) => preset.id === updated.id ? updated : preset));
+        await onUpdatePartyPreset(expandedPresetId, request);
+        if (!isCurrentAccountGeneration(accountGeneration)) return;
         setExpandedPresetId(null);
       }
     } catch (error) {
-      if (mountedRef.current) setErrorMessage(toUserFacingErrorMessage(error));
+      if (isCurrentAccountGeneration(accountGeneration)) setErrorMessage(toUserFacingErrorMessage(error));
     } finally {
-      mutationPendingRef.current = false;
-      if (mountedRef.current) setIsSaving(false);
+      if (isCurrentAccountGeneration(accountGeneration)) {
+        mutationPendingRef.current = false;
+        setIsSaving(false);
+      }
     }
   }
 
@@ -170,78 +310,142 @@ export function PartyPresetList({
 
   async function deletePresetById(presetId: number) {
     if (!authenticated || mutationPendingRef.current) return;
+    const accountGeneration = accountGenerationRef.current;
     closeOpenSwipeable();
     mutationPendingRef.current = true;
     setIsSaving(true);
     setErrorMessage(null);
     try {
       await onDeletePartyPreset(presetId);
-      if (!mountedRef.current) return;
-      setPresets((current) => current
-        .filter((preset) => preset.id !== presetId)
-        .map((preset, displayOrder) => ({ ...preset, displayOrder })));
+      if (!isCurrentAccountGeneration(accountGeneration)) return;
       setExpandedPresetId((current) => current === presetId ? null : current);
     } catch (error) {
-      if (mountedRef.current) setErrorMessage(toUserFacingErrorMessage(error));
+      if (isCurrentAccountGeneration(accountGeneration)) setErrorMessage(toUserFacingErrorMessage(error));
     } finally {
-      mutationPendingRef.current = false;
-      if (mountedRef.current) setIsSaving(false);
+      if (isCurrentAccountGeneration(accountGeneration)) {
+        mutationPendingRef.current = false;
+        setIsSaving(false);
+      }
     }
   }
 
   async function makePrimary(presetId: number) {
     if (!authenticated || mutationPendingRef.current) return;
-    const target = presetsRef.current.find(({ id }) => id === presetId);
+    const accountGeneration = accountGenerationRef.current;
+    const target = catalogIndex.presetsById.get(presetId);
     if (target?.isPrimary) return;
     mutationPendingRef.current = true;
     setIsSaving(true);
     setErrorMessage(null);
     try {
-      const updated = await onMakePartyPresetPrimary(presetId);
-      if (!mountedRef.current) return;
-      setPresets((current) => current.map((preset) => (
-        preset.id === updated.id
-          ? { ...updated, isPrimary: true }
-          : { ...preset, isPrimary: false }
-      )));
+      await onMakePartyPresetPrimary(presetId);
+      if (!isCurrentAccountGeneration(accountGeneration)) return;
     } catch (error) {
-      if (mountedRef.current) setErrorMessage(toUserFacingErrorMessage(error));
+      if (isCurrentAccountGeneration(accountGeneration)) setErrorMessage(toUserFacingErrorMessage(error));
     } finally {
-      mutationPendingRef.current = false;
-      if (mountedRef.current) setIsSaving(false);
+      if (isCurrentAccountGeneration(accountGeneration)) {
+        mutationPendingRef.current = false;
+        setIsSaving(false);
+      }
     }
   }
 
   async function reorderPresets(orderedPresets: PartyPresetResponse[], previous: PartyPresetResponse[]) {
     if (!authenticated || mutationPendingRef.current) return;
-    const live = presetsRef.current;
+    const accountGeneration = accountGenerationRef.current;
+    const live = visiblePresetsRef.current;
     if (live.length !== previous.length || live.some((preset, index) => preset !== previous[index])) return;
     const optimistic = orderedPresets.map((preset, displayOrder) => ({ ...preset, displayOrder }));
+    const optimisticById = new Map(optimistic.map((preset) => [preset.id, preset]));
     mutationPendingRef.current = true;
-    setPresets(optimistic);
+    setPresetReorderOverlay({
+      base: partyPresetCatalog.catalog.presets,
+      value: partyPresetCatalog.catalog.presets.map((preset) => optimisticById.get(preset.id) ?? preset),
+    });
     setIsSaving(true);
     setErrorMessage(null);
     try {
-      const saved = await onReorderPartyPresets({ presetIds: optimistic.map(({ id }) => id) });
-      if (mountedRef.current) setPresets(saved);
+      await onReorderPartyPresets({
+        folderId: activePresetFolderId,
+        presetIds: optimistic.map(({ id }) => id),
+      });
+      if (isCurrentAccountGeneration(accountGeneration)) setPresetReorderOverlay(null);
     } catch (error) {
-      if (mountedRef.current) {
-        setPresets(previous);
+      if (isCurrentAccountGeneration(accountGeneration)) {
+        setPresetReorderOverlay(null);
         setErrorMessage(toUserFacingErrorMessage(error));
         try {
-          setPresets(await onListPartyPresets());
+          partyPresetCatalog.retry();
         } catch {
           // Keep the captured pre-drag order when authoritative recovery is unavailable.
         }
       }
     } finally {
-      mutationPendingRef.current = false;
-      if (mountedRef.current) setIsSaving(false);
+      if (isCurrentAccountGeneration(accountGeneration)) {
+        mutationPendingRef.current = false;
+        setIsSaving(false);
+      }
     }
   }
 
+  async function mutateFolder(operation: () => Promise<PartyPresetCatalogResponse>): Promise<boolean> {
+    if (!authenticated || mutationPendingRef.current) return false;
+    const accountGeneration = accountGenerationRef.current;
+    mutationPendingRef.current = true;
+    setIsSaving(true);
+    setErrorMessage(null);
+    try {
+      await operation();
+      if (!isCurrentAccountGeneration(accountGeneration)) return false;
+      return true;
+    } catch (error) {
+      if (isCurrentAccountGeneration(accountGeneration)) setErrorMessage(toUserFacingErrorMessage(error));
+      return false;
+    } finally {
+      if (isCurrentAccountGeneration(accountGeneration)) {
+        mutationPendingRef.current = false;
+        setIsSaving(false);
+      }
+    }
+  }
+
+  async function createFolder(request: CreatePartyPresetFolderRequest) {
+    if (!onCreatePartyPresetFolder) return false;
+    return mutateFolder(() => onCreatePartyPresetFolder(request));
+  }
+
+  async function renameFolder(folderId: number, request: RenamePartyPresetFolderRequest) {
+    if (!onRenamePartyPresetFolder) return false;
+    return mutateFolder(() => onRenamePartyPresetFolder(folderId, request));
+  }
+
+  async function deleteFolder(folderId: number) {
+    if (!onDeletePartyPresetFolder) return false;
+    return mutateFolder(() => onDeletePartyPresetFolder(folderId));
+  }
+
+  async function moveFolder(folderId: number, request: MovePartyPresetFolderRequest) {
+    if (!authenticated || mutationPendingRef.current || !onMovePartyPresetFolder) return false;
+    const accountGeneration = accountGenerationRef.current;
+    setFolderMoveOverlay({
+      base: canonicalFolders,
+      value: optimisticallyMoveFolder(canonicalFolders, folderId, request),
+    });
+    const succeeded = await mutateFolder(() => onMovePartyPresetFolder(folderId, request));
+    if (!isCurrentAccountGeneration(accountGeneration)) return false;
+    setFolderMoveOverlay(null);
+    if (!succeeded) {
+      try {
+        partyPresetCatalog.retry();
+      } catch {
+        // Keep the authoritative pre-drag catalog when recovery is unavailable.
+      }
+    }
+    return succeeded;
+  }
+
   function movePreset(presetId: number, offset: -1 | 1) {
-    const previous = presetsRef.current;
+    const previous = visiblePresetsRef.current;
     const from = previous.findIndex(({ id }) => id === presetId);
     const to = from + offset;
     if (from < 0 || to < 0 || to >= previous.length) return;
@@ -251,91 +455,81 @@ export function PartyPresetList({
     void reorderPresets(ordered, previous);
   }
 
+  const presetRowActionsRef = useRef({
+    deletePreset: deletePresetById,
+    makePrimary,
+    movePreset,
+    openPreset: (presetId: number) => {
+      const preset = catalogIndex.presetsById.get(presetId);
+      if (preset) openPreset(preset);
+    },
+  });
+  presetRowActionsRef.current = {
+    deletePreset: deletePresetById,
+    makePrimary,
+    movePreset,
+    openPreset: (presetId) => {
+      const preset = catalogIndex.presetsById.get(presetId);
+      if (preset) openPreset(preset);
+    },
+  };
+  const dispatchPresetDelete = useCallback((presetId: number) => void presetRowActionsRef.current.deletePreset(presetId), []);
+  const dispatchPresetPrimary = useCallback((presetId: number) => void presetRowActionsRef.current.makePrimary(presetId), []);
+  const dispatchPresetMove = useCallback((presetId: number, offset: -1 | 1) => presetRowActionsRef.current.movePreset(presetId, offset), []);
+  const dispatchPresetOpen = useCallback((presetId: number) => presetRowActionsRef.current.openPreset(presetId), []);
+  const registerSwipeable = useCallback((presetId: number, node: SwipeableMethods | null) => {
+    if (node) swipeableNodesRef.current.set(presetId, node);
+    else swipeableNodesRef.current.delete(presetId);
+  }, []);
+  const prepareSwipeable = useCallback((presetId: number) => {
+    const next = swipeableNodesRef.current.get(presetId) ?? null;
+    if (openSwipeableRef.current && openSwipeableRef.current !== next) openSwipeableRef.current.close();
+    openSwipeableRef.current = next;
+  }, []);
+  const beginPresetDrag = useCallback((presetId: number) => {
+    closeOpenSwipeable();
+    setIsDragging(true);
+    presetDragRefs.current.get(presetId)?.();
+  }, [closeOpenSwipeable]);
   function renderPreset({ item: preset, drag, getIndex, isActive }: RenderItemParams<PartyPresetResponse>) {
-    const index = getIndex() ?? presetsRef.current.findIndex(({ id }) => id === preset.id);
+    presetDragRefs.current.set(preset.id, drag);
+    const index = getIndex() ?? visiblePresetsRef.current.findIndex(({ id }) => id === preset.id);
     const expanded = expandedPresetId === preset.id;
     const interactionDisabled = isSaving || isDragging || isActive;
-    const deleteAction = () => void deletePresetById(preset.id);
     return (
-      <ReanimatedSwipeable
-        ref={(node) => {
-          if (node) swipeableNodesRef.current.set(preset.id, node);
-          else swipeableNodesRef.current.delete(preset.id);
-        }}
-        containerStyle={styles.swipeContainer}
-        enabled={!interactionDisabled}
-        friction={2}
-        onSwipeableWillOpen={() => {
-          const next = swipeableNodesRef.current.get(preset.id) ?? null;
-          if (openSwipeableRef.current && openSwipeableRef.current !== next) openSwipeableRef.current.close();
-          openSwipeableRef.current = next;
-        }}
-        overshootRight={false}
-        renderRightActions={() => (
-          <Pressable
-            accessibilityLabel={`${preset.name} 삭제`}
-            accessibilityRole="button"
-            disabled={interactionDisabled}
-            onPress={deleteAction}
-            style={({ pressed }) => [styles.swipeDeleteAction, pressed && styles.pressed]}
-          >
-            <Trash2 color={theme.colors.buttonText} size={18} />
-            <Text style={styles.swipeDeleteText}>삭제</Text>
-          </Pressable>
-        )}
-        rightThreshold={40}
-      >
-        <PresetCard
-          expanded={expanded}
-          isPrimary={preset.isPrimary}
-          name={preset.name}
-          summary={formatPartyPresetSummary(preset)}
-          onMakePrimary={() => void makePrimary(preset.id)}
-          onPress={() => openPreset(preset)}
-          renderHandle={() => (
-            <Pressable
-              accessibilityActions={[
-                ...(index > 0 ? [{ name: 'decrement' as const, label: '위로 이동' }] : []),
-                ...(index < presets.length - 1 ? [{ name: 'increment' as const, label: '아래로 이동' }] : []),
-                { name: 'delete' as const, label: '삭제' },
-              ]}
-              accessibilityHint="길게 누르거나 접근성 동작으로 순서를 바꾸세요"
-              accessibilityLabel={`${preset.name} ${index + 1}번째 프리셋 순서 이동`}
-              accessibilityRole="adjustable"
-              accessibilityState={{ disabled: interactionDisabled }}
-              accessibilityValue={{ min: 1, max: presets.length, now: index + 1 }}
-              delayLongPress={120}
-              disabled={interactionDisabled}
-              onAccessibilityAction={({ nativeEvent: { actionName } }) => {
-                if (actionName === 'decrement') movePreset(preset.id, -1);
-                if (actionName === 'increment') movePreset(preset.id, 1);
-                if (actionName === 'delete') deleteAction();
-              }}
-              onLongPress={() => {
-                closeOpenSwipeable();
-                setIsDragging(true);
-                drag();
-              }}
-              style={({ pressed }) => [styles.dragHandle, pressed && styles.pressed]}
-            >
-              <GripVertical color={theme.colors.textMuted} size={18} />
-            </Pressable>
-          )}
-        >
-          {expanded ? renderEditor({
+      <PartyPresetManagedRow
+        count={visiblePresets.length}
+        disabled={interactionDisabled}
+        editor={expanded ? renderEditor({
             activeSlotIndex,
             characters,
             draftName,
             draftParty,
+            folderPath: getPartyPresetFolderPath(catalogIndex, draftFolderId),
             isSaving,
             onActiveSlotChange: setActiveSlotIndex,
-            onDelete: deleteAction,
+            onDelete: () => dispatchPresetDelete(preset.id),
             onNameChange: setDraftName,
             onPartyChange: setDraftParty,
+            folderTriggerRef: presetFolderTriggerRef,
+            nameInputRef: presetEditorNameInputRef,
+            onOpenFolderPicker: openPresetFolderPicker,
             onSave: savePreset,
           }) : null}
-        </PresetCard>
-      </ReanimatedSwipeable>
+        expanded={expanded}
+        index={index}
+        isPrimary={preset.isPrimary}
+        name={preset.name}
+        onBeginDrag={beginPresetDrag}
+        onDelete={dispatchPresetDelete}
+        onMakePrimary={dispatchPresetPrimary}
+        onMove={dispatchPresetMove}
+        onOpen={dispatchPresetOpen}
+        onRegisterSwipeable={registerSwipeable}
+        onSwipeableWillOpen={prepareSwipeable}
+        presetId={preset.id}
+        summary={formatPartyPresetSummary(preset)}
+      />
     );
   }
 
@@ -362,14 +556,33 @@ export function PartyPresetList({
             characters,
             draftName: newDraft.name,
             draftParty: newDraft.party,
+            folderPath: getPartyPresetFolderPath(catalogIndex, newDraft.folderId),
             isSaving,
             onActiveSlotChange: setActiveSlotIndex,
             onDelete: discardNewPreset,
             onNameChange: (name) => setNewDraft((current) => current ? { ...current, name } : current),
             onPartyChange: (party) => setNewDraft((current) => current ? { ...current, party } : current),
+            folderTriggerRef: presetFolderTriggerRef,
+            nameInputRef: presetEditorNameInputRef,
+            onOpenFolderPicker: openPresetFolderPicker,
             onSave: savePreset,
           }) : null}
         </PresetCard>
+      ) : null}
+      {folderPickerOpen ? (
+        <PartyPresetFolderPicker
+          index={catalogIndex}
+          onCancel={closePresetFolderPicker}
+          onConfirm={(folderId) => {
+            if (expandedPresetId === 'new') {
+              setNewDraft((current) => current ? { ...current, folderId } : current);
+            } else {
+              setDraftFolderId(folderId);
+            }
+            closePresetFolderPicker();
+          }}
+          selectedFolderId={expandedPresetId === 'new' ? newDraft?.folderId ?? null : draftFolderId}
+        />
       ) : null}
     </View>
   );
@@ -378,6 +591,18 @@ export function PartyPresetList({
     <View style={styles.root}>
       <View style={styles.toolbar}>
         <Text style={styles.toolbarTitle}>프리셋</Text>
+        {folders.length > 0 || onCreatePartyPresetFolder ? (
+          <Pressable
+            accessibilityLabel={folderEditMode ? '폴더 편집 종료' : '폴더 편집 시작'}
+            accessibilityRole="button"
+            disabled={!authenticated || isSaving}
+            onPress={() => setFolderEditMode((current) => !current)}
+            style={styles.folderModeButton}
+          >
+            <FolderCog color={theme.colors.textMuted} size={17} />
+            <Text style={styles.folderModeText}>{folderEditMode ? '완료' : '폴더 편집'}</Text>
+          </Pressable>
+        ) : null}
         <Pressable
           accessibilityLabel="프리셋 추가"
           accessibilityRole="button"
@@ -394,18 +619,58 @@ export function PartyPresetList({
         </Pressable>
       </View>
 
-      {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
-      {isLoading ? (
+      {errorMessage ?? partyPresetCatalog.error ? <Text style={styles.errorText}>{errorMessage ?? partyPresetCatalog.error}</Text> : null}
+      {partyPresetCatalog.loading ? (
         <View style={styles.stateBox}>
           <ActivityIndicator color={theme.colors.accentGreen} />
           <Text style={styles.stateText}>프리셋을 불러오는 중</Text>
         </View>
+      ) : folderEditMode ? (
+        <View style={styles.folderManager}>
+          <PartyPresetFolderEditor
+            disabled={isSaving}
+            index={catalogIndex}
+            onCreate={createFolder}
+            onDelete={deleteFolder}
+            onMove={moveFolder}
+            onRename={renameFolder}
+          />
+        </View>
+      ) : expandedPresetId == null && newDraft == null ? (
+        <View style={styles.catalogBrowser}>
+          <TextInput
+            accessibilityLabel="프리셋 이름 검색"
+            autoCapitalize="none"
+            autoCorrect={false}
+            onChangeText={setCatalogQuery}
+            placeholder="프리셋 이름 검색"
+            placeholderTextColor={theme.colors.textMuted}
+            style={styles.nameInput}
+            value={catalogQuery}
+          />
+          {catalogQuery.trim() ? (
+            <PartyPresetSearchResults
+              onSelectPreset={openPreset}
+              results={searchResults}
+              selectedPresetId={null}
+            />
+          ) : (
+            <PartyPresetTree
+              expandedFolderIds={expandedFolderIds}
+              index={catalogIndex}
+              onExpandedFolderIdsChange={setExpandedFolderIds}
+              onSelectPreset={openPreset}
+              selectedPresetId={null}
+            />
+          )}
+        </View>
       ) : (
         <DraggableFlatList
+          ref={presetListRef}
           containerStyle={styles.list}
           contentContainerStyle={styles.listContent}
           contentInsetAdjustmentBehavior="automatic"
-          data={presets}
+          data={visiblePresets}
           keyExtractor={({ id }) => id.toString()}
           ListHeaderComponent={listHeader}
           onDragBegin={() => {
@@ -415,7 +680,17 @@ export function PartyPresetList({
           onDragEnd={({ data, from, to }) => {
             setIsDragging(false);
             if (from === to) return;
-            return reorderPresets(data, presets);
+            return reorderPresets(data, visiblePresets);
+          }}
+          onScrollToIndexFailed={({ averageItemLength, index }) => {
+            const generation = editorFocusGenerationRef.current;
+            presetListRef.current?.scrollToOffset({ animated: true, offset: Math.max(0, averageItemLength * index) });
+            if (presetScrollRetryTimerRef.current) clearTimeout(presetScrollRetryTimerRef.current);
+            presetScrollRetryTimerRef.current = setTimeout(() => {
+              presetScrollRetryTimerRef.current = null;
+              if (!mountedRef.current || editorFocusGenerationRef.current !== generation) return;
+              presetListRef.current?.scrollToIndex({ animated: true, index, viewPosition: 0.1 });
+            }, 50);
           }}
           renderItem={renderPreset}
           style={styles.list}
@@ -424,7 +699,6 @@ export function PartyPresetList({
     </View>
   );
 }
-
 type PresetCardProps = {
   children: ReactNode;
   expanded: boolean;
@@ -436,7 +710,102 @@ type PresetCardProps = {
   renderHandle: (() => ReactNode) | null;
 };
 
-function PresetCard({
+type PartyPresetManagedRowProps = {
+  count: number;
+  disabled: boolean;
+  editor: ReactNode;
+  expanded: boolean;
+  index: number;
+  isPrimary: boolean;
+  name: string;
+  presetId: number;
+  summary: string;
+  onBeginDrag: (presetId: number) => void;
+  onDelete: (presetId: number) => void;
+  onMakePrimary: (presetId: number) => void;
+  onMove: (presetId: number, offset: -1 | 1) => void;
+  onOpen: (presetId: number) => void;
+  onRegisterSwipeable: (presetId: number, node: SwipeableMethods | null) => void;
+  onSwipeableWillOpen: (presetId: number) => void;
+};
+
+const PartyPresetManagedRow = memo(function PartyPresetManagedRow({
+  count,
+  disabled,
+  editor,
+  expanded,
+  index,
+  isPrimary,
+  name,
+  presetId,
+  summary,
+  onBeginDrag,
+  onDelete,
+  onMakePrimary,
+  onMove,
+  onOpen,
+  onRegisterSwipeable,
+  onSwipeableWillOpen,
+}: PartyPresetManagedRowProps) {
+  const register = useCallback((node: SwipeableMethods | null) => onRegisterSwipeable(presetId, node), [onRegisterSwipeable, presetId]);
+  const prepareSwipe = useCallback(() => onSwipeableWillOpen(presetId), [onSwipeableWillOpen, presetId]);
+  const deletePreset = useCallback(() => onDelete(presetId), [onDelete, presetId]);
+  const makePrimaryPreset = useCallback(() => onMakePrimary(presetId), [onMakePrimary, presetId]);
+  const open = useCallback(() => onOpen(presetId), [onOpen, presetId]);
+  const beginDrag = useCallback(() => onBeginDrag(presetId), [onBeginDrag, presetId]);
+  const moveUp = useCallback(() => onMove(presetId, -1), [onMove, presetId]);
+  const moveDown = useCallback(() => onMove(presetId, 1), [onMove, presetId]);
+  const renderRightActions = useCallback(() => (
+    <Pressable accessibilityLabel={`${name} 삭제`} accessibilityRole="button" disabled={disabled} onPress={deletePreset} style={({ pressed }) => [styles.swipeDeleteAction, pressed && styles.pressed]}>
+      <Trash2 color={theme.colors.buttonText} size={18} />
+      <Text style={styles.swipeDeleteText}>삭제</Text>
+    </Pressable>
+  ), [deletePreset, disabled, name]);
+  const renderHandle = useCallback(() => (
+    <Pressable
+      accessibilityActions={[
+        ...(index > 0 ? [{ name: 'decrement' as const, label: '위로 이동' }] : []),
+        ...(index < count - 1 ? [{ name: 'increment' as const, label: '아래로 이동' }] : []),
+        { name: 'delete' as const, label: '삭제' },
+      ]}
+      accessibilityHint="길게 누르거나 접근성 동작으로 순서를 바꾸세요"
+      accessibilityLabel={`${name} ${index + 1}번째 프리셋 순서 이동`}
+      accessibilityRole="adjustable"
+      accessibilityState={{ disabled }}
+      accessibilityValue={{ min: 1, max: count, now: index + 1 }}
+      delayLongPress={120}
+      disabled={disabled}
+      onAccessibilityAction={({ nativeEvent: { actionName } }) => {
+        if (actionName === 'decrement') moveUp();
+        if (actionName === 'increment') moveDown();
+        if (actionName === 'delete') deletePreset();
+      }}
+      onLongPress={beginDrag}
+      style={({ pressed }) => [styles.dragHandle, pressed && styles.pressed]}
+    >
+      <GripVertical color={theme.colors.textMuted} size={18} />
+    </Pressable>
+  ), [beginDrag, count, deletePreset, disabled, index, moveDown, moveUp, name]);
+  return (
+    <ReanimatedSwipeable
+      testID={`party-preset-managed-row-${presetId}`}
+      ref={register}
+      containerStyle={styles.swipeContainer}
+      enabled={!disabled}
+      friction={2}
+      onSwipeableWillOpen={prepareSwipe}
+      overshootRight={false}
+      renderRightActions={renderRightActions}
+      rightThreshold={40}
+    >
+      <PresetCard expanded={expanded} isPrimary={isPrimary} name={name} onMakePrimary={makePrimaryPreset} onPress={open} renderHandle={renderHandle} summary={summary}>
+        {editor}
+      </PresetCard>
+    </ReanimatedSwipeable>
+  );
+});
+
+const PresetCard = memo(function PresetCard({
   children,
   expanded,
   isPrimary,
@@ -487,35 +856,45 @@ function PresetCard({
       {expanded ? <View style={styles.cardBody}>{children}</View> : null}
     </View>
   );
-}
+});
 
 function renderEditor({
   activeSlotIndex,
   characters,
   draftName,
   draftParty,
+  folderTriggerRef,
+  nameInputRef,
+  folderPath,
   isSaving,
   onActiveSlotChange,
   onDelete,
   onNameChange,
   onPartyChange,
+  onOpenFolderPicker,
   onSave,
 }: {
   activeSlotIndex: number;
   characters: HofCharacter[];
   draftName: string;
   draftParty: BattlePartyMember[];
+  folderTriggerRef: Ref<ElementRef<typeof Pressable>>;
+  nameInputRef: Ref<ElementRef<typeof TextInput>>;
+  folderPath: string;
   isSaving: boolean;
   onActiveSlotChange: (slotIndex: number) => void;
   onDelete: () => void;
   onNameChange: (name: string) => void;
   onPartyChange: (party: BattlePartyMember[]) => void;
+  onOpenFolderPicker: () => void;
   onSave: () => void;
 }) {
   return (
     <View style={styles.editor}>
       <Text style={styles.inputLabel}>프리셋 이름</Text>
       <TextInput
+        ref={nameInputRef}
+        accessibilityLabel="프리셋 이름 입력"
         autoCapitalize="none"
         autoCorrect={false}
         onChangeText={onNameChange}
@@ -524,6 +903,18 @@ function renderEditor({
         style={styles.nameInput}
         value={draftName}
       />
+      <Text style={styles.inputLabel}>폴더 위치</Text>
+      <Pressable
+        ref={folderTriggerRef}
+        accessibilityLabel="폴더 위치 선택"
+        accessibilityRole="button"
+        disabled={isSaving}
+        onPress={onOpenFolderPicker}
+        style={styles.folderLocationButton}
+      >
+        <Text style={styles.folderLocationText}>{folderPath}</Text>
+        <ChevronDown color={theme.colors.textMuted} size={18} />
+      </Pressable>
       <BattlePartySelector
         activeSlotIndex={activeSlotIndex}
         characters={characters}
@@ -585,10 +976,46 @@ function formatDraftPartySummary(party: BattlePartyMember[]): string {
   return `${memberCount.toLocaleString('en-US')}명 설정`;
 }
 
+function optimisticallyMoveFolder(
+  folders: PartyPresetFolderResponse[],
+  folderId: number,
+  request: MovePartyPresetFolderRequest,
+): PartyPresetFolderResponse[] {
+  const moving = folders.find((folder) => folder.id === folderId);
+  if (!moving) return folders;
+  const byOrder = (left: PartyPresetFolderResponse, right: PartyPresetFolderResponse) => (
+    left.displayOrder - right.displayOrder || left.id - right.id
+  );
+  const orders = new Map<number, { parentFolderId: number | null; displayOrder: number }>();
+  const previousSiblings = folders
+    .filter((folder) => folder.parentFolderId === moving.parentFolderId && folder.id !== folderId)
+    .sort(byOrder);
+  previousSiblings.forEach((folder, displayOrder) => {
+    orders.set(folder.id, { parentFolderId: folder.parentFolderId, displayOrder });
+  });
+  const targetSiblings = (request.parentFolderId === moving.parentFolderId
+    ? previousSiblings
+    : folders
+        .filter((folder) => folder.parentFolderId === request.parentFolderId && folder.id !== folderId)
+        .sort(byOrder));
+  const insertionIndex = Math.max(0, Math.min(request.displayOrder, targetSiblings.length));
+  const nextTargetSiblings = [...targetSiblings];
+  nextTargetSiblings.splice(insertionIndex, 0, moving);
+  nextTargetSiblings.forEach((folder, displayOrder) => {
+    orders.set(folder.id, { parentFolderId: request.parentFolderId, displayOrder });
+  });
+  return folders.map((folder) => {
+    const order = orders.get(folder.id);
+    return order == null ? folder : { ...folder, ...order };
+  });
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, gap: theme.spacing.sm },
   toolbar: { minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md },
   toolbarTitle: { color: theme.colors.text, fontSize: 20, fontWeight: '900' },
+  folderModeButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs, borderRadius: theme.radius.md, borderCurve: 'continuous', paddingHorizontal: theme.spacing.sm },
+  folderModeText: { color: theme.colors.textMuted, fontSize: 13, fontWeight: '900' },
   addButton: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs, borderRadius: theme.radius.md, backgroundColor: theme.colors.accentGreen, paddingHorizontal: 12 },
   addButtonText: { color: theme.colors.background, fontSize: 14, fontWeight: '900' },
   list: { flex: 1 },
@@ -610,6 +1037,10 @@ const styles = StyleSheet.create({
   editor: { gap: theme.spacing.sm },
   inputLabel: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '900' },
   nameInput: { minHeight: 38, borderWidth: 1, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, color: theme.colors.text, backgroundColor: theme.colors.surfaceAlt, fontSize: 14, fontWeight: '800', paddingHorizontal: theme.spacing.md },
+  folderLocationButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.sm, borderWidth: 1, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderCurve: 'continuous', backgroundColor: theme.colors.surfaceAlt, paddingHorizontal: theme.spacing.md },
+  folderLocationText: { minWidth: 0, flex: 1, color: theme.colors.text, fontSize: 14, fontWeight: '800' },
+  folderManager: { flex: 1, gap: theme.spacing.sm },
+  catalogBrowser: { flex: 1, gap: theme.spacing.sm },
   editorActions: { flexDirection: 'row', gap: theme.spacing.sm },
   primaryActionButton: { minHeight: 36, flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.spacing.xs, borderRadius: theme.radius.md, backgroundColor: theme.colors.accentGreen },
   secondaryActionButton: { minHeight: 36, flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.spacing.xs, borderWidth: 1, borderColor: theme.colors.danger, borderRadius: theme.radius.md },

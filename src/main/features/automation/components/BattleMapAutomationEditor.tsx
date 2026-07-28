@@ -31,12 +31,12 @@ import {
 } from '../../../domain/battleMapAutomation';
 import { buildBattleMapCatalogRows, type BattleMapCatalogRow } from '../../../domain/battleMapCatalog';
 import { toUserFacingErrorMessage } from '../../../domain/userFacingErrors';
+import type { PartyPresetCatalogResource } from '../../../domain/partyPresetCatalogLoader';
 import { formatAutomationPresetSelection } from '../../../domain/partyPresets';
 import { theme } from '../../../styles/theme';
 import type {
   BattleCategoryResponse,
   BattleMapResponse,
-  PartyPresetResponse,
   TypedAutomationEntryResponse,
   UpdateBattleMapAutomationRequest,
 } from '../../../types/api';
@@ -61,7 +61,7 @@ type Props = {
   onDelete: () => Promise<boolean>;
   onLoadBattleCategories: () => void;
   onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
-  onListPartyPresets: () => Promise<PartyPresetResponse[]>;
+  partyPresetCatalog: PartyPresetCatalogResource;
   onClearMutationMessage: () => void;
   onSave: (request: UpdateBattleMapAutomationRequest) => Promise<boolean>;
 };
@@ -86,7 +86,7 @@ export function BattleMapAutomationEditor({
   onDelete,
   onLoadBattleCategories,
   onLoadBattleMaps,
-  onListPartyPresets,
+  partyPresetCatalog,
   onClearMutationMessage,
   onSave,
 }: Props) {
@@ -96,8 +96,7 @@ export function BattleMapAutomationEditor({
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
   const [expandedGroupKeys, setExpandedGroupKeys] = useState<string[]>([]);
   const [activePresetIdentity, setActivePresetIdentity] = useState<string | null>(null);
-  const [presets, setPresets] = useState<PartyPresetResponse[]>([]);
-  const [presetState, setPresetState] = useState<ResourceState>({ loading: true, error: null });
+  const presetState = { loading: partyPresetCatalog.loading, error: partyPresetCatalog.error };
   const [mapStates, setMapStates] = useState<Record<string, ResourceState>>({});
   const [localBusy, setLocalBusy] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
@@ -107,7 +106,6 @@ export function BattleMapAutomationEditor({
   const baselineRef = useRef(serializeEditableDraft(draft));
   const entrySettingsRef = useRef(serializeEntrySettings(entry));
   const mountedGenerationRef = useRef(0);
-  const presetGenerationRef = useRef(0);
   const mapGenerationRef = useRef<Record<string, number>>({});
   const mapSequenceRef = useRef(0);
   const eligibleIdsRef = useRef(new Set<string>());
@@ -131,23 +129,6 @@ export function BattleMapAutomationEditor({
     if (controlsDisabledRef.current) return;
     updateDraft((current) => controlsDisabledRef.current ? current : updater(current));
   }, [updateDraft]);
-
-  const loadPresets = useCallback(async () => {
-    const generation = ++presetGenerationRef.current;
-    const mountedGeneration = mountedGenerationRef.current;
-    setPresetState({ loading: true, error: null });
-    try {
-      const next = await onListPartyPresets();
-      if (mountedGeneration === mountedGenerationRef.current && generation === presetGenerationRef.current) {
-        setPresets(next);
-        setPresetState({ loading: false, error: null });
-      }
-    } catch (error: unknown) {
-      if (mountedGeneration === mountedGenerationRef.current && generation === presetGenerationRef.current) {
-        setPresetState({ loading: false, error: toUserFacingErrorMessage(error) });
-      }
-    }
-  }, [onListPartyPresets]);
 
   const loadCategoryMaps = useCallback(async (category: BattleCategoryResponse) => {
     const generation = ++mapSequenceRef.current;
@@ -178,7 +159,6 @@ export function BattleMapAutomationEditor({
     return () => {
       mountedRef.current = false;
       mountedGenerationRef.current += 1;
-      presetGenerationRef.current += 1;
       mapGenerationRef.current = {};
       presetFocusGenerationRef.current += 1;
       presetTriggerNodesRef.current.clear();
@@ -189,10 +169,6 @@ export function BattleMapAutomationEditor({
       }
     };
   }, []);
-
-  useEffect(() => {
-    void loadPresets();
-  }, [loadPresets]);
 
   useEffect(() => {
     if (!areBattleCategoriesLoaded && battleCategories.length === 0 && !isBattleCategoriesLoading
@@ -272,7 +248,10 @@ export function BattleMapAutomationEditor({
     }
   }, [catalog, entry, updateDraft]);
 
-  const validPresetIds = useMemo(() => presets.map(({ id }) => id), [presets]);
+  const validPresetIds = useMemo(
+    () => partyPresetCatalog.catalog.presets.map(({ id }) => id),
+    [partyPresetCatalog.catalog.presets],
+  );
   const presetsVerified = !presetState.loading && presetState.error == null;
   const validationErrors = useMemo(
     () => validateBattleMapAutomationDraft(
@@ -463,13 +442,13 @@ export function BattleMapAutomationEditor({
     const dailyTarget = validBattleDailyTarget(setting.dailyTargetCount);
     const progress = dailyTarget == null ? null : buildBattleProgress({ target: dailyTarget, successes });
     const selectedPreset = setting.presetMode === 'EXPLICIT'
-      ? presets.find(({ id }) => id === setting.partyPresetId)
+      ? partyPresetCatalog.catalog.presets.find(({ id }) => id === setting.partyPresetId)
       : null;
     const presetSummary = presetState.loading
       ? '프리셋 확인 중'
       : presetState.error
         ? '프리셋 확인 불가'
-        : formatAutomationPresetSelection(setting, presets);
+        : formatAutomationPresetSelection(setting, partyPresetCatalog.catalog.presets);
     const progressSummary = buildBattleProgressSummary(setting, successes, dailyTarget, progress?.remaining ?? null);
     return (
       <>
@@ -510,7 +489,7 @@ export function BattleMapAutomationEditor({
         </Pressable>
       </>
     );
-  }, [draft.dailyProgress, openPresetPicker, presets, presetsVerified, presetState.error, presetState.loading, updateEditableDraft]);
+  }, [draft.dailyProgress, openPresetPicker, partyPresetCatalog.catalog.presets, presetsVerified, presetState.error, presetState.loading, updateEditableDraft]);
 
   const renderListItem = useCallback(({ item }: { item: EditorListItem }) => {
     if (item.kind === 'HEADING') return <Text style={styles.sectionTitle}>{item.title}</Text>;
@@ -577,7 +556,7 @@ export function BattleMapAutomationEditor({
       {serverRefreshWarning ? <Text accessibilityLabel="전투 맵 자동화 서버 갱신 알림" accessibilityLiveRegion="polite" accessibilityRole="alert" style={styles.problem}>새 서버 설정이 있지만 편집 중인 변경은 유지했습니다.</Text> : null}
       {categoryLoading ? <Text style={styles.muted}>맵 카테고리 불러오는 중</Text> : null}
       {battleCategoriesError ? <ResourceWarning label="맵 카테고리" retryLabel="맵 카테고리 다시 불러오기" onRetry={onLoadBattleCategories} /> : null}
-      {presetState.error ? <ResourceWarning label="프리셋" retryLabel="프리셋 다시 불러오기" onRetry={loadPresets} /> : presetState.loading ? <Text style={styles.muted}>프리셋 불러오는 중</Text> : null}
+      {presetState.error ? <ResourceWarning label="프리셋" retryLabel="프리셋 다시 불러오기" onRetry={partyPresetCatalog.retry} /> : presetState.loading ? <Text style={styles.muted}>프리셋 불러오는 중</Text> : null}
 
       <TextInput accessibilityLabel="전투 맵 검색" editable onChangeText={(value) => {
         queryRef.current = value;
@@ -597,7 +576,7 @@ export function BattleMapAutomationEditor({
           updateEditableDraft((current) => updatePreset(current, activePresetIdentity, presetId));
           closePresetPicker(true);
         }}
-        presets={presets}
+        catalog={partyPresetCatalog.catalog}
         selectedPresetId={activePresetSetting?.partyPresetId ?? null}
         selectedPresetMode={activePresetSetting?.presetMode ?? 'PRIMARY'}
         visible={activePresetSetting != null && !controlsDisabled}
@@ -611,6 +590,7 @@ export function BattleMapAutomationEditor({
     </View>
   );
 }
+
 
 function ResourceWarning({ label, retryLabel, onRetry }: { label: string; retryLabel: string; onRetry: () => void | Promise<unknown> }) {
   return <View style={styles.warningRow}><Text style={styles.problem}>{label}을 불러오지 못했어요.</Text><Pressable accessibilityLabel={retryLabel} accessibilityRole="button" onPress={() => { void onRetry(); }} style={styles.secondaryButton}><Text style={styles.secondaryText}>다시 시도</Text></Pressable></View>;

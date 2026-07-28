@@ -12,6 +12,7 @@ import type {
   CharacterSyncEventType,
   CharacterSyncJobResponse,
   CreateAutomationEntryRequest,
+  CreatePartyPresetFolderRequest,
   CreatePartyPresetRequest,
   HofCharacter,
   HofCharacterDetail,
@@ -20,9 +21,13 @@ import type {
   HofStatusResponse,
   LoadPatternResponse,
   QuestSnapshot,
+  MovePartyPresetFolderRequest,
+  PartyPresetCatalogResponse,
   PartyPresetResponse,
   RunBattleRequest,
   RegisterAndroidPushTargetRequest,
+  RenamePartyPresetFolderRequest,
+  ReorderPartyPresetFoldersRequest,
   ReorderPartyPresetsRequest,
   SubmitCaptchaAnswerRequest,
   DevicePushTargetResponse,
@@ -301,6 +306,60 @@ export class BackendApiClient {
    */
   listPartyPresets(): Promise<PartyPresetResponse[]> {
     return this.request('/api/party-presets');
+  }
+
+  /** 현재 계정의 파티 프리셋 폴더와 프리셋을 한 번에 조회한다. */
+  getPartyPresetCatalog(): Promise<PartyPresetCatalogResponse> {
+    return this.request('/api/party-presets/catalog');
+  }
+
+  /** 새 파티 프리셋 폴더를 만들고 갱신된 catalog를 받는다. */
+  createPartyPresetFolder(
+    request: CreatePartyPresetFolderRequest,
+  ): Promise<PartyPresetCatalogResponse> {
+    return this.request('/api/party-preset-folders', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  /** 파티 프리셋 폴더 이름을 바꾸고 갱신된 catalog를 받는다. */
+  renamePartyPresetFolder(
+    folderId: number,
+    request: RenamePartyPresetFolderRequest,
+  ): Promise<PartyPresetCatalogResponse> {
+    return this.request(`/api/party-preset-folders/${folderId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(request),
+    });
+  }
+
+  /** nullable 부모 아래의 모든 폴더를 요청 배열 순서로 저장한다. */
+  reorderPartyPresetFolders(
+    request: ReorderPartyPresetFoldersRequest,
+  ): Promise<PartyPresetCatalogResponse> {
+    return this.request('/api/party-preset-folders/order', {
+      method: 'PUT',
+      body: JSON.stringify(request),
+    });
+  }
+
+  /** 폴더를 다른 nullable 부모와 표시 위치로 옮긴다. */
+  movePartyPresetFolder(
+    folderId: number,
+    request: MovePartyPresetFolderRequest,
+  ): Promise<PartyPresetCatalogResponse> {
+    return this.request(`/api/party-preset-folders/${folderId}/location`, {
+      method: 'PUT',
+      body: JSON.stringify(request),
+    });
+  }
+
+  /** 폴더를 안전하게 삭제하고 갱신된 catalog를 받는다. */
+  deletePartyPresetFolder(folderId: number): Promise<PartyPresetCatalogResponse> {
+    return this.request(`/api/party-preset-folders/${folderId}`, {
+      method: 'DELETE',
+    });
   }
 
   /**

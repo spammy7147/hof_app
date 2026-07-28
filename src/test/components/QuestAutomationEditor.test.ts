@@ -125,6 +125,32 @@ const { QuestMapList, QuestMissionMapList } = require(
 ) as typeof import('../../main/features/automation/components/QuestMissionMapList');
 moduleWithLoader._load = originalLoad;
 
+const homeDashboardMock = (props: Record<string, unknown>) => React.createElement(
+  'Pressable',
+  { accessibilityLabel: '홈 퀘스트 열기', onPress: () => (props.onOpenModule as (entryId: number) => void)(1) },
+);
+moduleWithLoader._load = (request, parent, isMain) => {
+  if (request === 'react-native') return reactNativeMock;
+  if (request === 'react-native-safe-area-context') return { useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
+  if (request === 'lucide-react-native') return iconsMock;
+  if (request === 'react-native-gesture-handler/ReanimatedSwipeable') return { __esModule: true, default: reanimatedSwipeable };
+  if (request === 'react-native-draggable-flatlist') return {
+    __esModule: true,
+    default: draggableFlatList,
+    NestableScrollContainer: host('NestableScrollContainer'),
+  };
+  if (request.endsWith('/UnifiedAutomationDashboard')) return { UnifiedAutomationDashboard: homeDashboardMock };
+  if (request.endsWith('/UnifiedAutomationSettings')) return { UnifiedAutomationSettings: host('UnifiedAutomationSettings') };
+  return originalLoad(request, parent, isMain);
+};
+const homeTabScreenPath = require.resolve('../../main/screens/HomeTabScreen');
+delete require.cache[homeTabScreenPath];
+const { HomeTabScreen: ActualHomeTabScreen } = require(
+  '../../main/screens/HomeTabScreen',
+) as typeof import('../../main/screens/HomeTabScreen');
+delete require.cache[homeTabScreenPath];
+moduleWithLoader._load = originalLoad;
+
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('QuestAutomationEditor mounted behavior', () => {
@@ -136,7 +162,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
         disabled: false,
         maps: [questMap('battle_map', 'a', 0)],
         mode: 'AUTO',
-        presets: [preset(7, 'Safe')],
+        partyPresetCatalog: presetCatalog([preset(7, 'Safe')]).catalog,
         questContext: 'Quest',
         onUpdate: () => undefined,
       }));
@@ -155,7 +181,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
         disabled: false,
         maps: [questMap('battle_map', 'a', 0), questMap('battle_map', 'b', 1)],
         mode: 'MANUAL',
-        presets: [preset(7, 'Safe')],
+        partyPresetCatalog: presetCatalog([preset(7, 'Safe')]).catalog,
         questContext: 'Quest',
         onUpdate: () => undefined,
       }));
@@ -264,12 +290,13 @@ describe('QuestAutomationEditor mounted behavior', () => {
     const updates: QuestMapSettingRequest[][] = [];
     const props = missionMapListProps({
       maps: [first, second],
-      presets: [preset(7, 'Safe'), preset(8, 'Speed')],
+      partyPresetCatalog: presetCatalog([preset(7, 'Safe'), preset(8, 'Speed')]).catalog,
       onUpdate: (maps) => { updates.push(maps); },
     });
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(React.createElement(QuestMissionMapList, props)); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 2번째 맵 프리셋 선택' }).props.onPress(); });
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '공유 폴더 폴더, 프리셋 0개, 열기' }));
     const retainedSelect = renderer.root.findByProps({ accessibilityLabel: 'Safe 프리셋 선택' }).props.onPress as () => void;
 
     await act(async () => {
@@ -373,7 +400,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
       entry: questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [alpha, beta] }]),
       quests: [quest],
       maps: [catalogMap('battle_map', 'a', 'Alpha'), catalogMap('battle_map', 'b', 'Beta')],
-      presets: [preset(7, 'Explicit')],
+      partyPresetCatalog: presetCatalog([preset(7, 'Explicit')]),
       onSave: async (request) => { saves.push(request); return true; },
     });
 
@@ -545,7 +572,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
       entry,
       quests: [quest],
       maps: [catalogMap('battle_map', 'a', 'Alpha'), catalogMap('battle_map', 'b', 'Beta')],
-      presets: [preset(7, 'Explicit')],
+      partyPresetCatalog: presetCatalog([preset(7, 'Explicit')]),
       onSave: async () => saving.promise,
     });
     assert.equal(hasText(renderer.root, '여러 맵을 실행 가능한 순서대로 확인하고 전투 횟수를 고르게 분배해요'), false);
@@ -668,7 +695,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
       entry,
       quests: [quest],
       maps: [catalogMap('battle_map', 'a', 'Alpha')],
-      presets: [preset(7, 'Safe'), preset(8, 'Speed')],
+      partyPresetCatalog: presetCatalog([preset(7, 'Safe'), preset(8, 'Speed')]),
       onSave: async (request) => { saves.push(request); return true; },
     });
 
@@ -677,6 +704,9 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.deepEqual(trigger.props.accessibilityValue, { text: '대표 프리셋 없음' });
     assert.equal(trigger.props.style.minHeight, 44);
     await act(async () => { trigger.props.onPress(); });
+    assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), 'Alpha'), true);
+    assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), 'Alpha 프리셋 선택'), false);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '공유 폴더 폴더, 프리셋 0개, 열기' }));
     assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Combat 선택' }).props.accessibilityState.checked, true);
     assert.equal(dragCalls.length, 0);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Safe 프리셋 선택' }));
@@ -724,7 +754,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
         entry: questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [first, second] }]),
         quests: [quest],
         maps: [catalogMap('battle_map', 'a', 'Alpha')],
-        presets: [preset(7, 'Safe'), preset(8, 'Speed')],
+        partyPresetCatalog: presetCatalog([preset(7, 'Safe'), preset(8, 'Speed')]),
         onSave: async (request) => { saves.push(request); return true; },
       });
     } finally {
@@ -744,7 +774,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
       entry: questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]),
       quests: [quest],
       maps: [catalogMap('battle_map', 'a', 'Alpha')],
-      presets: [preset(7, 'Safe')],
+      partyPresetCatalog: presetCatalog([preset(7, 'Safe')]),
     });
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat 1번째 맵 프리셋 선택' }).props.onPress(); });
@@ -761,7 +791,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
       entry: questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]),
       quests: [quest],
       maps: [catalogMap('battle_map', 'a', 'Alpha')],
-      presets: [preset(7, 'Safe')],
+      partyPresetCatalog: presetCatalog([preset(7, 'Safe')]),
     });
 
     const label = 'Combat 1번째 맵 프리셋 선택';
@@ -1193,7 +1223,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
       entry,
       quests: [],
       maps: [catalogMap('battle_map', 'a', 'Alpha')],
-      presets: [preset(7, 'Existing')],
+      partyPresetCatalog: presetCatalog([preset(7, 'Existing')]),
       onSave: async (request) => { saves.push(request); return true; },
     });
     assert.equal(hasText(renderer.root, '저장된 반복 퀘스트 · 현재 목록에 없음'), true);
@@ -1205,13 +1235,13 @@ describe('QuestAutomationEditor mounted behavior', () => {
   });
 
   it('keeps quests visible across independent preset/map failures and targeted retries', async () => {
-    let presetAttempts = 0;
+    let presetAttempts = 1;
     let mapAttempts = 0;
     const hofUnavailable = 'HOF 서버 연결이 일시적으로 원활하지 않습니다. 잠시 후 다시 시도해 주세요.';
     const quest = snapshot('noncombat', 'Noncombat', 'ACTIVE', [mission('now', 'IMMEDIATE', null)]);
     const renderer = await renderEditor({
       quests: [quest],
-      onListPartyPresets: async () => { presetAttempts += 1; if (presetAttempts === 1) throw new Error('preset down'); return []; },
+      partyPresetCatalog: presetCatalog([], '프리셋을 불러오지 못했어요.', () => { presetAttempts += 1; }),
       onLoadBattleMaps: async () => { mapAttempts += 1; if (mapAttempts === 1) throw new Error(hofUnavailable); return []; },
     });
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Noncombat 선택' }));
@@ -1284,7 +1314,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
       entry,
       quests,
       maps: [catalogMap('battle_map', 'a', 'Alpha'), catalogMap('battle_map', 'b', 'Beta')],
-      presets: [preset(7, 'Explicit')],
+      partyPresetCatalog: presetCatalog([preset(7, 'Explicit')]),
     });
 
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'One Quest · Alpha 삭제' }));
@@ -1296,6 +1326,79 @@ describe('QuestAutomationEditor mounted behavior', () => {
 });
 
 describe('HomeTabScreen mounted typed editor routing', () => {
+  it('opens the actual shared preset tree and search from the home quest entry', async () => {
+    const entry = questEntry([{
+      questKey: 'combat',
+      enabled: true,
+      sourceOrder: 0,
+      maps: [mapSetting('kill', 'a', 0)],
+    }]);
+    const aggregate = {
+      entries: [entry],
+      runtime: {
+        lifecycle: 'PAUSED' as const,
+        stopReason: null,
+        nextAttemptAt: null,
+        warnings: [],
+        lastError: null,
+        currentAction: null,
+        dailyRefresh: { status: 'PENDING' as const, refreshDate: null, refreshedAt: null },
+      },
+    };
+    const controllerSnapshot = {
+      aggregate,
+      loading: false,
+      actionSaving: false,
+      savingEntryIds: [],
+      savingTypes: [],
+      reordering: false,
+      error: null,
+      message: null,
+    };
+    const controller = {
+      subscribe: () => () => undefined,
+      getSnapshot: () => controllerSnapshot,
+      load: async () => undefined,
+      reset: () => undefined,
+      clearMessage: () => undefined,
+      showMessage: () => undefined,
+      isEntryBusy: () => false,
+      fetchQuests: async () => [snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'A')])],
+      saveQuestSettings: async () => true,
+      saveBattleMapSettings: async () => true,
+      saveAdventureMapSettings: async () => true,
+      deleteEntry: async () => true,
+      createEntry: async () => true,
+      reorderEntries: () => undefined,
+      changeState: async () => undefined,
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(React.createElement(ActualHomeTabScreen, {
+        authenticated: true,
+        automationController: controller as never,
+        battleCategories: [{ id: 'battle_map', label: '전투맵', description: '', order: 0, enabled: true }],
+        areBattleCategoriesLoaded: true,
+        isBattleCategoriesLoading: false,
+        battleCategoriesError: null,
+        onLoadBattleCategories: () => undefined,
+        onLoadBattleMaps: async () => [catalogMap('battle_map', 'a', 'Alpha')],
+        partyPresetCatalog: presetCatalog([{ ...preset(7, 'Safe'), folderId: 90 }]),
+        onOpenCaptcha: () => undefined,
+      }));
+    });
+
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '홈 퀘스트 열기' }).props.onPress(); });
+    await act(async () => undefined);
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: 'Combat 1번째 맵 프리셋 선택' }).props.onPress();
+    });
+
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '공유 폴더 폴더, 프리셋 1개, 열기' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '대표 프리셋 선택' }));
+  });
+
   it('routes QUEST, BATTLE_MAP, and ADVENTURE_MAP to their typed saves', async () => {
     const settingsMock = (props: Record<string, unknown>) => React.createElement(
       'UnifiedAutomationSettings',
@@ -1378,7 +1481,7 @@ describe('HomeTabScreen mounted typed editor routing', () => {
       battleCategoriesError: null,
       onLoadBattleCategories: () => undefined,
       onLoadBattleMaps: async () => [],
-      onListPartyPresets: async () => [],
+      partyPresetCatalog: presetCatalog([]),
       onOpenCaptcha: () => undefined,
       onDetailModeChange,
     };
@@ -1454,10 +1557,9 @@ type EditorOverrides = {
   onBack?: () => void;
   onDelete?: () => Promise<boolean>;
   entry?: TypedAutomationEntryResponse;
-  presets?: ReturnType<typeof preset>[];
   isBattleCategoriesLoading?: boolean;
   battleCategoriesError?: string | null;
-  onListPartyPresets?: () => Promise<ReturnType<typeof preset>[]>;
+  partyPresetCatalog?: React.ComponentProps<typeof QuestAutomationEditor>['partyPresetCatalog'];
   onLoadBattleMaps?: (categoryId: string) => Promise<BattleMapResponse[]>;
   mutationMessage?: string | null;
   onClearMutationMessage?: () => void;
@@ -1481,12 +1583,16 @@ function editorProps(overrides: EditorOverrides = {}) {
     onDelete: overrides.onDelete ?? (async () => true),
     onLoadBattleCategories: overrides.onLoadBattleCategories ?? (() => undefined),
     onLoadBattleMaps: overrides.onLoadBattleMaps ?? (async () => overrides.maps ?? []),
-    onListPartyPresets: overrides.onListPartyPresets ?? (async () => overrides.presets ?? []),
+    partyPresetCatalog: overrides.partyPresetCatalog ?? presetCatalog([]),
     onSave: overrides.onSave ?? (async () => true),
     mutationMessage: overrides.mutationMessage ?? null,
     onClearMutationMessage: overrides.onClearMutationMessage ?? (() => undefined),
   };
 }
+function presetCatalog(presets: ReturnType<typeof preset>[], error: string | null = null, retry = () => undefined) {
+  return { catalog: { folders: [presetFolder()], presets }, loading: false, error, retry };
+}
+function presetFolder() { return { id: 90, name: '공유 폴더', parentFolderId: null, displayOrder: 0, createdAt: '', updatedAt: '' }; }
 
 function missionMapListProps(overrides: Partial<React.ComponentProps<typeof QuestMissionMapList>> = {}): React.ComponentProps<typeof QuestMissionMapList> {
   return {
@@ -1494,7 +1600,7 @@ function missionMapListProps(overrides: Partial<React.ComponentProps<typeof Ques
     disabled: false,
     maps: [mapSetting('kill', 'a', 0)],
     missionKey: 'kill',
-    presets: [preset(7, 'Safe')],
+    partyPresetCatalog: presetCatalog([preset(7, 'Safe')]).catalog,
     questContext: 'Combat',
     onUpdate: () => undefined,
     ...overrides,
@@ -1586,6 +1692,6 @@ function questEntry(quests: QuestSelectionFixture[] = []): TypedAutomationEntryR
 function mapSetting(missionKey: string, mapCode: string, executionOrder: number) { return { missionKey, categoryId: 'battle_map', mapCode, executionOrder, manuallyOverridden: true, presetMode: 'PRIMARY' as const, partyPresetId: null }; }
 function questMap(categoryId: string, mapCode: string, executionOrder: number) { return { categoryId, mapCode, executionOrder, presetMode: 'PRIMARY' as const, partyPresetId: null }; }
 function catalogMap(categoryId: string, mapCode: string, name: string): BattleMapResponse { return { categoryId, mapCode, name, groupName: null, groupOrder: 0, mapOrder: 0, recommendedLevel: null, availableCount: null, attemptCount: null, winCount: null, cooldownRemainingText: null, cooldownRemainingSeconds: null, keyMode: 'NOT_REQUIRED', keyCount: null, requiredTime: null, supportsThreeBattles: false, enabled: true, resolved: true, iconUrl: null, rawHref: '' }; }
-function preset(id: number, name: string) { return { id, accountId: 1, name, displayOrder: id, isPrimary: false, members: [], createdAt: '', updatedAt: '' }; }
+function preset(id: number, name: string) { return { id, accountId: 1, name, displayOrder: id, isPrimary: false, members: [], createdAt: '', updatedAt: '', folderId: null as number | null }; }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; }
 function delay(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }

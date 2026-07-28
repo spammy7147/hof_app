@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { after, afterEach, describe, it } from 'node:test';
 
+import type { PartyPresetResponse } from '../../main/types/api';
 import { makeCaptchaChallenge, makeHofCharacter, makeHofCharacterDetail } from '../fixtures/api';
+
+const partyPresetFolderIdIsRequired: (
+  {} extends Pick<PartyPresetResponse, 'folderId'> ? false : true
+) = true;
 
 type BackendApiModule = typeof import('../../main/services/backendApi');
 
@@ -528,6 +533,7 @@ describe('BackendApiClient', () => {
       id: 7,
       accountId: 1,
       name: '고블린 범용 파티',
+      folderId: null,
       displayOrder: 0,
       isPrimary: false,
       members: [
@@ -552,23 +558,29 @@ describe('BackendApiClient', () => {
     await client.createPartyPreset({
       name: '고블린 범용 파티',
       members: preset.members,
+      folderId: null,
     });
 
     assert.equal(requests[1]?.url, 'http://backend.test/api/party-presets');
     assert.equal(requests[1]?.init.method, 'POST');
     assert.equal(
       requests[1]?.init.body,
-      '{"name":"고블린 범용 파티","members":[{"slotIndex":0,"characterId":"char-1","patternSlot":0},{"slotIndex":1,"characterId":"char-2","patternSlot":1},{"slotIndex":2,"characterId":null,"patternSlot":null},{"slotIndex":3,"characterId":null,"patternSlot":null},{"slotIndex":4,"characterId":null,"patternSlot":null}]}',
+      '{"name":"고블린 범용 파티","members":[{"slotIndex":0,"characterId":"char-1","patternSlot":0},{"slotIndex":1,"characterId":"char-2","patternSlot":1},{"slotIndex":2,"characterId":null,"patternSlot":null},{"slotIndex":3,"characterId":null,"patternSlot":null},{"slotIndex":4,"characterId":null,"patternSlot":null}],"folderId":null}',
     );
 
     mockFetchWithCapture({ ...preset, name: '모험 기본 파티' }, requests);
     await client.updatePartyPreset(7, {
       name: '모험 기본 파티',
       members: preset.members,
+      folderId: 2,
     });
 
     assert.equal(requests[2]?.url, 'http://backend.test/api/party-presets/7');
     assert.equal(requests[2]?.init.method, 'PATCH');
+    assert.equal(
+      requests[2]?.init.body,
+      '{"name":"모험 기본 파티","members":[{"slotIndex":0,"characterId":"char-1","patternSlot":0},{"slotIndex":1,"characterId":"char-2","patternSlot":1},{"slotIndex":2,"characterId":null,"patternSlot":null},{"slotIndex":3,"characterId":null,"patternSlot":null},{"slotIndex":4,"characterId":null,"patternSlot":null}],"folderId":2}',
+    );
 
     mockFetchWithCapture({ ...preset, isPrimary: true }, requests);
     await client.makePartyPresetPrimary(7);
@@ -577,17 +589,91 @@ describe('BackendApiClient', () => {
     assert.equal(requests[3]?.init.method, 'POST');
 
     mockFetchWithCapture([preset], requests);
-    await client.reorderPartyPresets({ presetIds: [7] });
+    await client.reorderPartyPresets({ folderId: null, presetIds: [7] });
 
     assert.equal(requests[4]?.url, 'http://backend.test/api/party-presets/order');
     assert.equal(requests[4]?.init.method, 'PUT');
-    assert.equal(requests[4]?.init.body, '{"presetIds":[7]}');
+    assert.equal(requests[4]?.init.body, '{"folderId":null,"presetIds":[7]}');
 
     mockFetchWithCapture(null, requests);
     await client.deletePartyPreset(7);
 
     assert.equal(requests[5]?.url, 'http://backend.test/api/party-presets/7');
     assert.equal(requests[5]?.init.method, 'DELETE');
+  });
+
+  it('uses catalog and folder endpoints for the party preset hierarchy', async () => {
+    assert.equal(partyPresetFolderIdIsRequired, true);
+    const { BackendApiClient } = await loadBackendApi();
+    const requests: CapturedRequest[] = [];
+    const catalog = {
+      folders: [{
+        id: 2,
+        name: '레이드',
+        parentFolderId: null,
+        displayOrder: 0,
+        createdAt: '2026-07-27T00:00:00Z',
+        updatedAt: '2026-07-27T00:00:00Z',
+      }],
+      presets: [{
+        id: 7,
+        accountId: 1,
+        name: '미지정 프리셋',
+        folderId: null,
+        displayOrder: 0,
+        isPrimary: false,
+        members: [
+          { slotIndex: 0, characterId: 'char-1', patternSlot: 0 },
+          { slotIndex: 1, characterId: null, patternSlot: null },
+          { slotIndex: 2, characterId: null, patternSlot: null },
+          { slotIndex: 3, characterId: null, patternSlot: null },
+          { slotIndex: 4, characterId: null, patternSlot: null },
+        ],
+        createdAt: '2026-07-27T00:00:00Z',
+        updatedAt: '2026-07-27T00:00:00Z',
+      }],
+    };
+    const client = new BackendApiClient('http://backend.test');
+
+    mockFetchWithCapture(catalog, requests);
+    const response = await client.getPartyPresetCatalog();
+
+    assert.equal(response.folders[0]?.name, '레이드');
+    assert.equal(response.folders[0]?.parentFolderId, null);
+    assert.equal(response.presets[0]?.folderId, null);
+    assert.equal(requests[0]?.url, 'http://backend.test/api/party-presets/catalog');
+    assert.equal(requests[0]?.init.method, undefined);
+    assert.equal(requests[0]?.init.body, undefined);
+
+    mockFetchWithCapture(catalog, requests);
+    await client.createPartyPresetFolder({ name: '보스', parentFolderId: null });
+    assert.equal(requests[1]?.url, 'http://backend.test/api/party-preset-folders');
+    assert.equal(requests[1]?.init.method, 'POST');
+    assert.equal(requests[1]?.init.body, '{"name":"보스","parentFolderId":null}');
+
+    mockFetchWithCapture(catalog, requests);
+    await client.renamePartyPresetFolder(4, { name: '매일 보스' });
+    assert.equal(requests[2]?.url, 'http://backend.test/api/party-preset-folders/4');
+    assert.equal(requests[2]?.init.method, 'PATCH');
+    assert.equal(requests[2]?.init.body, '{"name":"매일 보스"}');
+
+    mockFetchWithCapture(catalog, requests);
+    await client.reorderPartyPresetFolders({ parentFolderId: null, folderIds: [4, 2] });
+    assert.equal(requests[3]?.url, 'http://backend.test/api/party-preset-folders/order');
+    assert.equal(requests[3]?.init.method, 'PUT');
+    assert.equal(requests[3]?.init.body, '{"parentFolderId":null,"folderIds":[4,2]}');
+
+    mockFetchWithCapture(catalog, requests);
+    await client.movePartyPresetFolder(4, { parentFolderId: 2, displayOrder: 1 });
+    assert.equal(requests[4]?.url, 'http://backend.test/api/party-preset-folders/4/location');
+    assert.equal(requests[4]?.init.method, 'PUT');
+    assert.equal(requests[4]?.init.body, '{"parentFolderId":2,"displayOrder":1}');
+
+    mockFetchWithCapture(catalog, requests);
+    await client.deletePartyPresetFolder(4);
+    assert.equal(requests[5]?.url, 'http://backend.test/api/party-preset-folders/4');
+    assert.equal(requests[5]?.init.method, 'DELETE');
+    assert.equal(requests[5]?.init.body, undefined);
   });
 });
 
