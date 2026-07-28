@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   FlatList,
   Pressable,
@@ -63,6 +63,12 @@ type FolderAccessibilityAction = {
   name: 'decrement' | 'increment' | 'escape' | 'delete';
   label: string;
 };
+type FolderInteractionSnapshot = {
+  disabled: boolean;
+  index: PartyPresetCatalogIndex;
+  onDelete: PartyPresetFolderEditorProps['onDelete'];
+  token: symbol;
+};
 type FolderCellProps = {
   children: ReactNode;
   index: number;
@@ -104,10 +110,8 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   const indexRef = useRef(index);
   const mountedRef = useRef(true);
   const disabledRef = useRef(disabled);
-  const onDeleteRef = useRef(onDelete);
-  const interactionGenerationRef = useRef(0);
-  const interactionIndexRef = useRef(index);
-  const interactionDisabledRef = useRef(disabled);
+  const interactionToken = useMemo(() => Symbol('party-preset-folder-interaction'), [disabled, index]);
+  const committedInteractionRef = useRef<FolderInteractionSnapshot | null>(null);
   const renamePendingRef = useRef(false);
   const renameSessionRef = useRef<RenameSession | null>(null);
   const nextRenameSessionTokenRef = useRef(0);
@@ -119,14 +123,25 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   const edgeAnimationFrameRef = useRef<number | null>(null);
   const advanceEdgeScrollRef = useRef<() => boolean>(() => false);
   const scheduleEdgeScrollRef = useRef<() => void>(() => undefined);
-  if (interactionIndexRef.current !== index || interactionDisabledRef.current !== disabled) {
-    interactionGenerationRef.current += 1;
-    interactionIndexRef.current = index;
-    interactionDisabledRef.current = disabled;
-  }
-  indexRef.current = index;
-  disabledRef.current = disabled;
-  onDeleteRef.current = onDelete;
+
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      committedInteractionRef.current = null;
+    };
+  }, []);
+
+  useLayoutEffect(() => {
+    indexRef.current = index;
+    disabledRef.current = disabled;
+    committedInteractionRef.current = {
+      disabled,
+      index,
+      onDelete,
+      token: interactionToken,
+    };
+  }, [disabled, index, interactionToken, onDelete]);
 
   const isMutationBlocked = useCallback(() => (
     !mountedRef.current
@@ -163,9 +178,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   }, [isMutationBlocked]);
 
   useEffect(() => {
-    mountedRef.current = true;
     return () => {
-      mountedRef.current = false;
       renameSessionRef.current = null;
       if (edgeAnimationFrameRef.current != null) {
         cancelAnimationFrame(edgeAnimationFrameRef.current);
@@ -262,16 +275,19 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     setRenameValue(row.name);
   }, [closeOpenSwipeable, isMutationBlocked]);
 
-  const deleteFolder = useCallback(async (folderId: number, generation: number) => {
+  const deleteFolder = useCallback(async (folderId: number, token: symbol) => {
+    const interaction = committedInteractionRef.current;
     if (
-      generation !== interactionGenerationRef.current
+      interaction == null
+      || token !== interaction.token
       || isMutationBlocked()
-      || !indexRef.current.foldersById.has(folderId)
+      || interaction.disabled
+      || !interaction.index.foldersById.has(folderId)
     ) return;
     deletePendingRef.current = true;
     closeOpenSwipeable();
     try {
-      await onDeleteRef.current(folderId);
+      await interaction.onDelete(folderId);
     } catch {
       // Parent mutation handling already surfaces errors.
     } finally {
@@ -519,7 +535,6 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   }) => {
     const editingName = renameFolderId === row.folderId;
     const editingChild = childEditorFolderId === row.folderId;
-    const interactionGeneration = interactionGenerationRef.current;
     const renameSession = editingName ? renameSessionRef.current : null;
     return (
       <FolderEditorRow
@@ -534,7 +549,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
         onAccessibilityAction={(actionName) => {
           if (disabled) return;
           if (actionName === 'delete') {
-            void deleteFolder(row.folderId, interactionGeneration);
+            void deleteFolder(row.folderId, interactionToken);
             return;
           }
           void moveFolder(row.folderId, planForAccessibilityAction(row, actionName), false)
@@ -548,7 +563,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
         onFinalizeDrag={cancelDrag}
         onOpenChild={() => openChildEditor(row.folderId)}
         onOpenRename={() => openRename(row)}
-        onDelete={() => { void deleteFolder(row.folderId, interactionGeneration); }}
+        onDelete={() => { void deleteFolder(row.folderId, interactionToken); }}
         onRegisterSwipeable={registerSwipeable}
         onRowLayout={(event) => {
           const { height } = event.nativeEvent.layout;
@@ -577,7 +592,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     deleteFolder,
     dropFeedback,
     index,
-    interactionGenerationRef,
+    interactionToken,
     moveFolder,
     onDragEnd,
     onDragStart,

@@ -183,6 +183,64 @@ describe('PartyPresetFolderEditor', () => {
     assert.deepEqual(latestDeletes, [1]);
   });
 
+  it('keeps committed delete semantics when a concurrent replacement render is abandoned', async () => {
+    const index = indexPartyPresetCatalog(catalog());
+    const replacementIndex = indexPartyPresetCatalog({
+      folders: [folder(1, 'Replacement', null, 0)],
+      presets: [],
+    });
+    const committedDeletes: number[] = [];
+    const abandonedDeletes: number[] = [];
+    const neverSettles = new Promise<void>(() => undefined);
+    function SuspendForever(): React.ReactNode {
+      throw neverSettles;
+    }
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        React.createElement(
+          React.Suspense,
+          { fallback: null },
+          React.cloneElement(element({ index, onDelete: async (folderId) => { committedDeletes.push(folderId); } }), { key: 'editor' }),
+        ),
+        { unstable_isConcurrent: true } as never,
+      );
+    });
+    const retainedRightAction = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 삭제' }).props.onPress as () => void;
+    await act(async () => {
+      React.startTransition(() => {
+        renderer.update(React.createElement(
+          React.Suspense,
+          { fallback: null },
+          React.cloneElement(element({
+            disabled: true,
+            index: replacementIndex,
+            onDelete: async (folderId) => { abandonedDeletes.push(folderId); },
+          }), { key: 'editor' }),
+          React.createElement(SuspendForever, { key: 'suspender' }),
+        ));
+      });
+      await Promise.resolve();
+    });
+    await act(async () => { retainedRightAction(); });
+    assert.deepEqual(committedDeletes, [1]);
+    assert.deepEqual(abandonedDeletes, []);
+    await act(async () => { renderer.unmount(); });
+  });
+
+  it('fences retained right-action and accessibility deletes after unmount', async () => {
+    const deletes: number[] = [];
+    const renderer = await renderEditor({ onDelete: async (folderId) => { deletes.push(folderId); } });
+    const retainedRightAction = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 삭제' }).props.onPress as () => void;
+    const retainedAccessibilityAction = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 위치 이동' }).props.onAccessibilityAction as (event: unknown) => void;
+    await act(async () => { renderer.unmount(); });
+    await act(async () => {
+      retainedRightAction();
+      retainedAccessibilityAction({ nativeEvent: { actionName: 'delete' } });
+    });
+    assert.deepEqual(deletes, []);
+  });
+
   it('fences duplicate pending deletes, reopens after false or rejection, and safely settles after unmount', async () => {
     const first = deferred<boolean | void>();
     const second = deferred<boolean | void>();
