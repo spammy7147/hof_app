@@ -198,12 +198,12 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     const selectedMapButton = renderer.root.findByProps({ accessibilityLabel: '저택 서관(놀이방) 맵 선택 해제' });
     assert.equal(selectedMapButton.props.accessibilityRole, 'button');
     assert.deepEqual(selectedMapButton.props.accessibilityState, { disabled: false, selected: true });
-    assert.equal(hasText(renderer.root, '선택됨'), false);
+    assert.equal(hasText(selectedMapButton, '선택한 맵'), true);
     assert.equal(selectedMapButton.findAll((node) => node.props.accessibilityRole === 'checkbox').length, 0);
     const selectedMapStyle = flattenStyle(selectedMapButton.props.style);
     assert.notEqual(selectedMapStyle.backgroundColor, theme.colors.accentGreen);
-    assert.equal(selectedMapStyle.backgroundColor, theme.colors.surface);
     assert.equal(selectedMapStyle.borderColor, theme.colors.accentGreen);
+    assert.equal(selectedMapStyle.borderLeftWidth, 3);
     assert.equal(flattenStyle(findTextNode(renderer.root, '저택 서관(놀이방)').props.style).color, theme.colors.text);
     assert.equal(flattenStyle(findTextNode(renderer.root, 'key 8 · Time 10').props.style).color, theme.colors.textMuted);
     const disabledMapButton = renderer.root.findByProps({ accessibilityLabel: '잠긴 맵 맵 선택' });

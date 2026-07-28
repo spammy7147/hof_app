@@ -106,7 +106,12 @@ export function BattleMapCatalogMapRow({ map, selected, disabled, onPress }: Bat
     >
       <View style={styles.rowContent}>
         <Text numberOfLines={2} style={styles.mapName}>{name}</Text>
-        {meta ? <Text style={styles.meta}>{meta}</Text> : null}
+        {selected || meta ? (
+          <View style={styles.metaRow}>
+            {selected ? <Text style={styles.selectedMeta}>선택한 맵</Text> : null}
+            {meta ? <Text numberOfLines={1} style={styles.meta}>{meta}</Text> : null}
+          </View>
+        ) : null}
       </View>
     </Pressable>
   );
@@ -198,11 +203,17 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.sm,
   },
   mapName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
-  mapSelected: { backgroundColor: theme.colors.surface, borderColor: theme.colors.accentGreen },
-  meta: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16, marginTop: 2 },
+  mapSelected: {
+    backgroundColor: 'rgba(124, 224, 181, 0.10)',
+    borderColor: theme.colors.accentGreen,
+    borderLeftWidth: 3,
+  },
+  meta: { color: theme.colors.textMuted, flexShrink: 1, fontSize: 11, lineHeight: 16 },
+  metaRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs, marginTop: 2 },
   retry: { justifyContent: 'center', minHeight: 44, paddingHorizontal: theme.spacing.sm },
   retryText: { color: theme.colors.accentGreen, fontSize: 12, fontWeight: '900' },
   rowContent: { flex: 1 },
+  selectedMeta: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '800' },
   state: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, minHeight: 44, paddingHorizontal: theme.spacing.xl },
   stateText: { color: theme.colors.textMuted, fontSize: 12 },
   trailing: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },

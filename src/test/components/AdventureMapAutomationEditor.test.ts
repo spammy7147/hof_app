@@ -194,10 +194,11 @@ describe('AdventureMapAutomationEditor', () => {
     const selectedMapButton = renderer.root.findByProps({ accessibilityLabel: '긴 모험맵 이름 모험맵 선택 해제' });
     assert.equal(selectedMapButton.props.accessibilityRole, 'button');
     assert.deepEqual(selectedMapButton.props.accessibilityState, { disabled: false, selected: true });
-    assert.equal(hasText(selectedMapButton, '선택됨'), false);
+    assert.equal(hasText(selectedMapButton, '선택한 맵'), true);
     const selectedStyle = flattenStyle(selectedMapButton.props.style);
     assert.notEqual(selectedStyle.backgroundColor, theme.colors.accentGreen);
     assert.equal(selectedStyle.borderColor, theme.colors.accentGreen);
+    assert.equal(selectedStyle.borderLeftWidth, 3);
   });
 
   it('mounts one compact selected-card metadata and preset row without placeholders', async () => {
