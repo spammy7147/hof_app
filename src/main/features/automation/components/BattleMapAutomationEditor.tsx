@@ -11,7 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { ArrowLeft, ChevronRight, Save, Trash2 } from 'lucide-react-native';
+import { ArrowLeft, ChevronRight, Save } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
 
 import {
@@ -41,6 +41,7 @@ import type {
   UpdateBattleMapAutomationRequest,
 } from '../../../types/api';
 import { BattleMapPresetPickerModal } from './BattleMapPresetPickerModal';
+import { AutomationMapEditorTabs, type AutomationMapEditorTab } from './AutomationMapEditorTabs';
 import {
   BattleMapCatalogCategoryRow,
   BattleMapCatalogGroupRow,
@@ -58,7 +59,6 @@ type Props = {
   mutationMessage: string | null;
   saving: boolean;
   onBack: () => void;
-  onDelete: () => Promise<boolean>;
   onLoadBattleCategories: () => void;
   onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
   partyPresetCatalog: PartyPresetCatalogResource;
@@ -83,7 +83,6 @@ export function BattleMapAutomationEditor({
   mutationMessage,
   saving,
   onBack,
-  onDelete,
   onLoadBattleCategories,
   onLoadBattleMaps,
   partyPresetCatalog,
@@ -93,6 +92,7 @@ export function BattleMapAutomationEditor({
   const [draft, setDraft] = useState<BattleMapAutomationDraft>(() => buildBattleMapAutomationDraft(entry, []));
   const [catalog, setCatalog] = useState<BattleMapResponse[]>([]);
   const [query, setQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<AutomationMapEditorTab>('SELECTED');
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
   const [expandedGroupKeys, setExpandedGroupKeys] = useState<string[]>([]);
   const [activePresetIdentity, setActivePresetIdentity] = useState<string | null>(null);
@@ -354,11 +354,13 @@ export function BattleMapAutomationEditor({
         : [...current, groupKey];
     });
   }, []);
-  const listItems = useMemo<EditorListItem[]>(() => [
+  const selectedItems = useMemo<EditorListItem[]>(() => [
     { key: 'selected-heading', kind: 'HEADING', title: '선택한 맵 · 실행 순서' },
     ...(draft.maps.length === 0
       ? [{ key: 'selected-empty', kind: 'SELECTED_EMPTY' } as const]
       : [{ key: 'selected-list', kind: 'SELECTED_LIST' } as const]),
+  ], [draft.maps.length]);
+  const catalogItems = useMemo<EditorListItem[]>(() => [
     { key: 'catalog-heading', kind: 'HEADING', title: '맵 찾기' },
     ...catalogResult.rows.map((row) => ({
       key: `catalog:${row.key}`,
@@ -368,7 +370,7 @@ export function BattleMapAutomationEditor({
     ...(catalogSearchEmpty
       ? [{ key: 'catalog-empty', kind: 'CATALOG_EMPTY' } as const]
       : []),
-  ], [catalogResult.rows, catalogSearchEmpty, draft.maps]);
+  ], [catalogResult.rows, catalogSearchEmpty]);
 
   useEffect(() => {
     if (activePresetIdentity != null && (controlsDisabled || activePresetSetting == null)) {
@@ -382,24 +384,6 @@ export function BattleMapAutomationEditor({
     Alert.alert('변경 사항을 버릴까요?', '저장하지 않은 전투 맵 설정이 있습니다.', [
       { text: '계속 편집', style: 'cancel' },
       { text: '나가기', style: 'destructive', onPress: onBack },
-    ]);
-  }
-
-  function confirmDelete() {
-    if (controlsDisabled) return;
-    Alert.alert('전투 맵 자동화를 삭제할까요?', '맵 설정은 삭제되지만 오늘 성공 횟수는 서버에 유지됩니다.', [
-      { text: '취소', style: 'cancel' },
-      { text: '삭제', style: 'destructive', onPress: async () => {
-        if (controlsDisabledRef.current) return;
-        controlsDisabledRef.current = true;
-        onClearMutationMessage();
-        setLocalBusy(true);
-        try {
-          if (await onDelete()) onBack();
-        } finally {
-          setLocalBusy(false);
-        }
-      } },
     ]);
   }
 
@@ -494,7 +478,7 @@ export function BattleMapAutomationEditor({
   const renderListItem = useCallback(({ item }: { item: EditorListItem }) => {
     if (item.kind === 'HEADING') return <Text style={styles.sectionTitle}>{item.title}</Text>;
     if (item.kind === 'SELECTED_EMPTY') {
-      return <Text style={styles.muted}>아래 목록에서 실행할 맵을 선택해 주세요.</Text>;
+      return <Text style={styles.muted}>맵 추가 탭에서 실행할 맵을 추가해 주세요.</Text>;
     }
     if (item.kind === 'CATALOG_EMPTY') return <Text style={styles.muted}>검색 가능한 맵이 없습니다.</Text>;
     if (item.kind === 'CATALOG_ROW') {
@@ -558,13 +542,15 @@ export function BattleMapAutomationEditor({
       {battleCategoriesError ? <ResourceWarning label="맵 카테고리" retryLabel="맵 카테고리 다시 불러오기" onRetry={onLoadBattleCategories} /> : null}
       {presetState.error ? <ResourceWarning label="프리셋" retryLabel="프리셋 다시 불러오기" onRetry={partyPresetCatalog.retry} /> : presetState.loading ? <Text style={styles.muted}>프리셋 불러오는 중</Text> : null}
 
-      <TextInput accessibilityLabel="전투 맵 검색" editable onChangeText={(value) => {
+      <AutomationMapEditorTabs activeTab={activeTab} onChange={setActiveTab} selectedCount={draft.maps.length} />
+      {activeTab === 'CATALOG' ? <TextInput accessibilityLabel="전투 맵 검색" editable onChangeText={(value) => {
         queryRef.current = value;
         setQuery(value);
-      }} placeholder="추가할 맵 이름, 그룹, 추천 레벨 검색" placeholderTextColor={theme.colors.textMuted} style={styles.search} value={query} />
+      }} placeholder="추가할 맵 이름, 그룹, 추천 레벨 검색" placeholderTextColor={theme.colors.textMuted} style={styles.search} value={query} /> : null}
 
       <NestableScrollContainer contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" style={styles.scroller}>
-        {listItems.map((item) => <Fragment key={item.key}>{renderListItem({ item })}</Fragment>)}
+        {(activeTab === 'SELECTED' ? selectedItems : catalogItems)
+          .map((item) => <Fragment key={item.key}>{renderListItem({ item })}</Fragment>)}
       </NestableScrollContainer>
 
       <BattleMapPresetPickerModal
@@ -584,7 +570,6 @@ export function BattleMapAutomationEditor({
 
       {validationErrors.length > 0 ? <Text accessibilityLabel="전투 맵 자동화 입력 오류" accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.problem}>{validationErrors[0]}</Text> : null}
       <View style={styles.footer}>
-        <Pressable accessibilityLabel="전투 맵 자동화 삭제" accessibilityRole="button" accessibilityState={{ disabled: controlsDisabled }} disabled={controlsDisabled} onPress={confirmDelete} style={[styles.deleteButton, controlsDisabled && styles.disabled]}><Trash2 color={theme.colors.danger} size={17} /><Text style={styles.deleteText}>삭제</Text></Pressable>
         <Pressable accessibilityLabel="전투 맵 자동화 저장" accessibilityRole="button" accessibilityState={{ busy, disabled: saveDisabled }} disabled={saveDisabled} onPress={() => save()} style={[styles.saveButton, saveDisabled && styles.disabled]}>{busy ? <ActivityIndicator color={theme.colors.buttonText} size="small" /> : <Save color={theme.colors.buttonText} size={17} />}<Text style={styles.saveText}>저장</Text></Pressable>
       </View>
     </View>
@@ -663,7 +648,7 @@ const styles = StyleSheet.create({
   mapName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
   progressRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },
   progressSummary: { color: theme.colors.textMuted, flex: 1, fontSize: 11, lineHeight: 16 },
-  compactTargetInput: { borderColor: theme.colors.borderStrong, borderRadius: 9, borderWidth: 1, color: theme.colors.text, minHeight: 32, paddingHorizontal: 4, textAlign: 'center', width: 44 },
+  compactTargetInput: { borderColor: theme.colors.borderStrong, borderRadius: 9, borderWidth: 1, color: theme.colors.text, minHeight: 32, paddingHorizontal: 0, textAlign: 'center', textAlignVertical: 'center', width: 44 },
   complete: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '900' },
   choice: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: 9, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, minHeight: 32, paddingHorizontal: theme.spacing.xs },
   choiceActive: { borderColor: theme.colors.accentGreen },
@@ -676,8 +661,6 @@ const styles = StyleSheet.create({
   muted: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
   problem: { color: theme.colors.accentAmber, fontSize: 11, lineHeight: 16 },
   footer: { flexDirection: 'row', gap: theme.spacing.sm },
-  deleteButton: { alignItems: 'center', borderColor: theme.colors.danger, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, minHeight: 48, justifyContent: 'center', paddingHorizontal: theme.spacing.lg },
-  deleteText: { color: theme.colors.danger, fontWeight: '800' },
   saveButton: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, flex: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: 48, justifyContent: 'center' },
   saveText: { color: theme.colors.buttonText, fontWeight: '900' },
   disabled: { opacity: 0.45 },

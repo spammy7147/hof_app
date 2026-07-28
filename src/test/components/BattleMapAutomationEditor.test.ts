@@ -244,12 +244,37 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '압축 전투 오늘 진행률' }).length, 0);
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '압축 전투 1번째 맵 순서 이동' }).props.accessibilityRole, 'adjustable');
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '압축 전투 삭제' }));
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 삭제' }));
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투 맵 자동화 삭제' }).length, 0);
 
     const scroller = renderer.root.find((node) => (node.type as unknown) === 'NestableScrollContainer');
     assert.equal(flattenStyle(scroller.props.contentContainerStyle).gap, 6);
     const nestedList = renderer.root.find((node) => (node.type as unknown) === 'NestableDraggableFlatList');
     assert.equal(nestedList.props.activationDistance, 20);
+  });
+
+  it('separates selected maps from the grouped catalog and centers daily targets', async () => {
+    const renderer = await renderEditor({
+      entry: battleEntry([setting('a', 5, 0)]),
+      maps: [catalogMap('a', 'Alpha'), catalogMap('b', 'Beta')],
+    });
+
+    assert.ok(findPressable(renderer.root, '선택 맵 1개 탭'));
+    const target = renderer.root.findByProps({ accessibilityLabel: 'Alpha 일일 목표' });
+    const targetStyle = flattenStyle(target.props.style);
+    assert.equal(targetStyle.textAlign, 'center');
+    assert.equal(targetStyle.textAlignVertical, 'center');
+    assert.equal(targetStyle.paddingHorizontal, 0);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투 맵 검색' }).length, 0);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투 맵 자동화 삭제' }).length, 0);
+
+    await act(async () => { findPressable(renderer.root, '맵 추가 탭').props.onPress(); });
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 맵 검색' }));
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Alpha 일일 목표' }).length, 0);
+
+    await openCatalogGroup(renderer);
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 맵 선택' }).props.onPress(); });
+    assert.ok(findPressable(renderer.root, '선택 맵 2개 탭'));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Beta 맵 선택 해제' }));
   });
 
   it('saves the identity order produced by a selected-map drag', async () => {
@@ -289,12 +314,14 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
 
     assert.equal(hasText(renderer.root, '오늘 3/5 · 2회 남음 · 다음 3회 전투'), true);
     assert.equal(hasText(renderer.root, 'missing'), true);
+    await openCatalogTab(renderer);
     assert.equal(renderer.root.findAll((node) => (
       (node.type as unknown) === 'TextInput'
       && node.props.accessibilityLabel === '전투 맵 검색'
     )).length, 1);
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투 맵 검색' }).props.onChangeText('forest'); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 맵 선택' }).props.onPress(); });
+    await openSelectedTab(renderer);
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 일일 목표' }).props.onChangeText('4'); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 프리셋 선택 열기' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }).props.onChangeText('raid'); });
@@ -332,18 +359,18 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '프리셋 다시 불러오기' }).props.onPress(); });
     assert.equal(mapAttempts, 2);
     assert.equal(presetAttempts, 2);
+    await openSelectedTab(renderer);
     assert.equal(hasText(renderer.root, 'saved'), true);
     await openCatalogGroup(renderer);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'New Map 맵 선택' }));
   });
 
-  it('confirms dirty back, disables all mutations while busy or invalid, and deletes before navigating', async () => {
+  it('confirms dirty back, disables mutations while busy, and omits whole deletion', async () => {
     alertArguments = null;
     let backs = 0;
-    let deletes = 0;
     const renderer = await renderEditor({
       entry: battleEntry([setting('a', 3, 0)]), maps: [catalogMap('a', 'Alpha')],
-      onBack: () => { backs += 1; }, onDelete: async () => { deletes += 1; return true; },
+      onBack: () => { backs += 1; },
     });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Alpha 일일 목표' }).props.onChangeText('0'); });
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.disabled, true);
@@ -352,21 +379,16 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     const backButtons = alertArguments?.[2] as unknown as Array<{ text: string; onPress?: () => void }>;
     backButtons.find(({ text }) => text === '나가기')?.onPress?.();
     assert.equal(backs, 1);
-
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 삭제' }).props.onPress(); });
-    const deleteButtons = alertArguments?.[2] as unknown as Array<{ text: string; onPress?: () => Promise<void> }>;
-    await act(async () => { await deleteButtons.find(({ text }) => text === '삭제')?.onPress?.(); });
-    assert.equal(deletes, 1);
-    assert.equal(backs, 2);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투 맵 자동화 삭제' }).length, 0);
 
     const busy = await renderEditor({ saving: true, entry: battleEntry([setting('a', 3, 0)]), maps: [catalogMap('a', 'Alpha')] });
-    for (const label of ['전투 맵 자동화 뒤로', '전투 맵 자동화 삭제', 'Alpha 삭제', 'Alpha 일일 목표']) {
+    for (const label of ['전투 맵 자동화 뒤로', 'Alpha 삭제', 'Alpha 일일 목표']) {
       const control = busy.root.findByProps({ accessibilityLabel: label });
       assert.equal(control.props.disabled ?? !control.props.editable, true, label);
     }
     assert.equal(busy.root.findByProps({ accessibilityLabel: '전투 맵 자동화 사용' }).props.disabled, true);
+    await openCatalogTab(busy);
     assert.equal(busy.root.findByProps({ accessibilityLabel: '전투 맵 검색' }).props.editable, true);
-    assert.equal(busy.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' }).props.disabled, true);
     await openCatalogGroup(busy);
     assert.equal(busy.root.findByProps({ accessibilityLabel: 'Alpha 맵 선택 해제' }).props.disabled, true);
   });
@@ -567,8 +589,9 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(renderer.root.findByProps({ accessibilityLabel: 'a 일일 목표' }).props.editable, false);
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 사용' }).props.disabled, true);
     assert.equal(renderer.root.findByProps({ accessibilityLabel: 'a 삭제' }).props.disabled, true);
+    await openCatalogTab(renderer);
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 맵 검색' }).props.editable, true);
-    assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 삭제' }).props.disabled, true);
+    await openSelectedTab(renderer);
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.disabled, true);
 
     await act(async () => {
@@ -736,10 +759,12 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     const failed = await renderEditor({
       onLoadBattleMaps: async () => { throw new Error('맵 연결 실패'); },
     });
+    await openCatalogTab(failed);
     await act(async () => { failed.root.findByProps({ accessibilityLabel: '전투 맵 검색' }).props.onChangeText('없는 맵'); });
     assert.equal(hasText(failed.root, '검색 가능한 맵이 없습니다.'), false);
 
     const settled = await renderEditor({ maps: [catalogMap('a', 'Alpha')] });
+    await openCatalogTab(settled);
     await act(async () => { settled.root.findByProps({ accessibilityLabel: '전투 맵 검색' }).props.onChangeText('없는 맵'); });
     assert.equal(hasText(settled.root, '검색 가능한 맵이 없습니다.'), true);
   });
@@ -951,7 +976,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(refresh.props.accessibilityLiveRegion, 'polite');
   });
 
-  it('stays mounted after failed save/delete and ignores late resource responses after unmount', async () => {
+  it('stays mounted after a failed save and ignores late resource responses after unmount', async () => {
     let backs = 0;
     const renderer = await renderEditor({
       entry: battleEntry([setting('a', 3, 0)]),
@@ -959,15 +984,10 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
       mutationMessage: '저장 실패',
       onBack: () => { backs += 1; },
       onSave: async () => false,
-      onDelete: async () => false,
     });
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.onPress(); });
     assert.equal(backs, 0);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 작업 오류' }));
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 삭제' }).props.onPress(); });
-    const buttons = alertArguments?.[2] as unknown as Array<{ text: string; onPress?: () => Promise<void> }>;
-    await act(async () => { await buttons.find(({ text }) => text === '삭제')?.onPress?.(); });
-    assert.equal(backs, 0);
 
     const maps = deferred<BattleMapResponse[]>();
     const late = await renderEditor({ onLoadBattleMaps: async () => maps.promise });
@@ -985,7 +1005,7 @@ type Overrides = {
   onLoadBattleMaps?: (categoryId: string) => Promise<BattleMapResponse[]>;
   partyPresetCatalog?: React.ComponentProps<typeof BattleMapAutomationEditor>['partyPresetCatalog'];
   onSave?: (request: UpdateBattleMapAutomationRequest) => Promise<boolean>;
-  onBack?: () => void; onDelete?: () => Promise<boolean>;
+  onBack?: () => void;
   battleCategories?: Array<{ id: string; label: string; description: string; order: number; enabled: boolean }>;
   areBattleCategoriesLoaded?: boolean; isBattleCategoriesLoading?: boolean; battleCategoriesError?: string | null;
   onLoadBattleCategories?: () => void;
@@ -1012,7 +1032,6 @@ function editorProps(overrides: Overrides = {}) {
     partyPresetCatalog: overrides.partyPresetCatalog ?? presetCatalog([]),
     onClearMutationMessage: () => undefined,
     onSave: overrides.onSave ?? (async () => true), onBack: overrides.onBack ?? (() => undefined),
-    onDelete: overrides.onDelete ?? (async () => true),
   };
 }
 function presetCatalog(presets: ReturnType<typeof preset>[], error: string | null = null, retry = () => undefined) {
@@ -1028,6 +1047,12 @@ function textCount(root: ReactTestInstance, text: string): number {
 }
 function findTextNode(root: ReactTestInstance, text: string): ReactTestInstance {
   return root.find((node) => (node.type as unknown) === 'Text' && node.children.join('') === text);
+}
+function findPressable(root: ReactTestInstance, accessibilityLabel: string): ReactTestInstance {
+  return root.find((node) => (
+    (node.type as unknown) === 'Pressable'
+    && node.props.accessibilityLabel === accessibilityLabel
+  ));
 }
 function flattenStyle(style: unknown): Record<string, unknown> {
   if (Array.isArray(style)) {
@@ -1058,10 +1083,23 @@ function catalogMap(mapCode: string, name: string, overrides: Partial<BattleMapR
   return { categoryId: 'battle', mapCode, name, groupName: '기타', groupOrder: 0, mapOrder: 0, recommendedLevel: null, availableCount: null, attemptCount: null, winCount: null, cooldownRemainingText: null, cooldownRemainingSeconds: null, keyMode: 'NOT_REQUIRED', keyCount: null, requiredTime: null, enabled: true, resolved: true, iconUrl: null, rawHref: '', ...overrides, supportsThreeBattles: overrides.supportsThreeBattles ?? false };
 }
 async function openCatalogGroup(renderer: ReactTestRenderer, categoryLabel = '전투맵', groupName = '기타'): Promise<void> {
+  await openCatalogTab(renderer);
   const category = renderer.root.findAllByProps({ accessibilityLabel: `${categoryLabel} 카테고리 열기` })[0];
   if (category) await act(async () => { category.props.onPress(); });
   const group = renderer.root.findAllByProps({ accessibilityLabel: `${groupName} 그룹 열기` })[0];
   if (group) await act(async () => { group.props.onPress(); });
+}
+async function openCatalogTab(renderer: ReactTestRenderer): Promise<void> {
+  await act(async () => { findPressable(renderer.root, '맵 추가 탭').props.onPress(); });
+}
+async function openSelectedTab(renderer: ReactTestRenderer): Promise<void> {
+  const selectedTab = renderer.root.findAll((node) => (
+    (node.type as unknown) === 'Pressable'
+    && typeof node.props.accessibilityLabel === 'string'
+    && /^선택 맵 \d+개 탭$/.test(node.props.accessibilityLabel)
+  ))[0];
+  assert.ok(selectedTab);
+  await act(async () => { selectedTab.props.onPress(); });
 }
 function preset(id: number, name: string) { return { id, accountId: 1, name, displayOrder: id, isPrimary: false, members: [], createdAt: '', updatedAt: '', folderId: null }; }
 function deferred<T>() {
