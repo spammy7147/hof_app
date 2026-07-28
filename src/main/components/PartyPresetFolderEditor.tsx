@@ -171,8 +171,11 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   }, []);
 
   const prepareSwipeable = useCallback((folderId: number) => {
-    if (isMutationBlocked()) return;
     const next = swipeableNodesRef.current.get(folderId) ?? null;
+    if (isMutationBlocked()) {
+      next?.close();
+      return;
+    }
     if (openSwipeableRef.current && openSwipeableRef.current !== next) openSwipeableRef.current.close();
     openSwipeableRef.current = next;
   }, [isMutationBlocked]);

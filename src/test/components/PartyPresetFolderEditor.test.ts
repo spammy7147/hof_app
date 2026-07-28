@@ -572,7 +572,7 @@ describe('PartyPresetFolderEditor', () => {
     assert.deepEqual(creates, []);
     assert.deepEqual(deletes, []);
     assert.deepEqual(moves, []);
-    assert.deepEqual(closedSwipeableIds, []);
+    assert.deepEqual(closedSwipeableIds, [1, 3]);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Other 새 하위 폴더 이름' }).length, 0);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Other 폴더 이름' }).length, 0);
     assert.equal(hostTestIdCount(renderer.root, 'party-preset-folder-drag-preview'), 0);
@@ -580,9 +580,9 @@ describe('PartyPresetFolderEditor', () => {
 
     await act(async () => { completion.resolve(); await completion.promise; });
     await act(async () => { renderer.root.findByProps({ testID: 'party-preset-folder-swipeable-1' }).props.onSwipeableWillOpen(); });
-    assert.deepEqual(closedSwipeableIds, []);
+    assert.deepEqual(closedSwipeableIds, [1, 3]);
     await act(async () => { renderer.root.findByProps({ testID: 'party-preset-folder-swipeable-3' }).props.onSwipeableWillOpen(); });
-    assert.deepEqual(closedSwipeableIds, [1]);
+    assert.deepEqual(closedSwipeableIds, [1, 3, 1]);
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '최상위 폴더 추가' }).props.onPress(); });
     assert.deepEqual(creates, [{ name: 'top', parentFolderId: null }]);
   });
