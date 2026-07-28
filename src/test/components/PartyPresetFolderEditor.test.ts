@@ -126,6 +126,7 @@ describe('PartyPresetFolderEditor', () => {
       assert.equal(swipeable.props.overshootRight, false);
       assert.equal(swipeable.props.rightThreshold, 40);
       assert.equal(flattenStyle(swipeable.props.containerStyle).overflow, 'hidden');
+      assert.equal(flattenStyle(swipeable.props.childrenContainerStyle).backgroundColor, '#1d2430');
       const action = renderer.root.findByProps({ accessibilityLabel: `${row.name} 폴더 삭제` });
       assert.equal(flattenStyle(action.props.style({ pressed: false })).width, 72);
       assert.equal(flattenStyle(action.props.style({ pressed: false })).backgroundColor, '#ff7b7b');
@@ -146,6 +147,72 @@ describe('PartyPresetFolderEditor', () => {
     });
     assert.deepEqual(deleted, [1]);
     assert.deepEqual(closedSwipeableIds, [1]);
+  });
+
+  it('fences retained right-action and accessibility delete callbacks after an index replacement with the same id', async () => {
+    const oldDeletes: number[] = [];
+    const replacementDeletes: number[] = [];
+    const renderer = await renderEditor({ onDelete: async (folderId) => { oldDeletes.push(folderId); } });
+    const retainedRightAction = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 삭제' }).props.onPress as () => void;
+    const retainedAccessibilityAction = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 위치 이동' }).props.onAccessibilityAction as (event: unknown) => void;
+    await act(async () => {
+      renderer.update(element({
+        index: indexPartyPresetCatalog({ folders: [folder(1, 'Replacement', null, 0)], presets: [] }),
+        onDelete: async (folderId) => { replacementDeletes.push(folderId); },
+      }));
+    });
+    await act(async () => {
+      retainedRightAction();
+      retainedAccessibilityAction({ nativeEvent: { actionName: 'delete' } });
+    });
+    assert.deepEqual(oldDeletes, []);
+    assert.deepEqual(replacementDeletes, []);
+  });
+
+  it('fences duplicate pending deletes, reopens after false or rejection, and safely settles after unmount', async () => {
+    const first = deferred<boolean | void>();
+    const second = deferred<boolean | void>();
+    const third = deferred<boolean | void>();
+    const outcomes = [first.promise, second.promise, third.promise];
+    const deletes: number[] = [];
+    const renderer = await renderEditor({ onDelete: (folderId) => {
+      deletes.push(folderId);
+      return outcomes.shift()!;
+    } });
+    const rightAction = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 삭제' }).props.onPress as () => void;
+    const accessibilityAction = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 위치 이동' }).props.onAccessibilityAction as (event: unknown) => void;
+    await act(async () => {
+      rightAction();
+      accessibilityAction({ nativeEvent: { actionName: 'delete' } });
+    });
+    assert.deepEqual(deletes, [1]);
+    await act(async () => { first.resolve(false); await first.promise; });
+    await act(async () => { accessibilityAction({ nativeEvent: { actionName: 'delete' } }); });
+    assert.deepEqual(deletes, [1, 1]);
+    await act(async () => {
+      second.reject(new Error('delete failed'));
+      await Promise.resolve();
+    });
+    await act(async () => { rightAction(); });
+    assert.deepEqual(deletes, [1, 1, 1]);
+    await act(async () => { third.resolve(); await third.promise; });
+
+    const pendingAfterUnmount = deferred<boolean | void>();
+    const unmounted = await renderEditor({ onDelete: () => pendingAfterUnmount.promise });
+    const unmountedRightAction = unmounted.root.findByProps({ accessibilityLabel: 'New1 폴더 삭제' }).props.onPress as () => void;
+    await act(async () => { unmountedRightAction(); });
+    await act(async () => { unmounted.unmount(); });
+    await act(async () => {
+      pendingAfterUnmount.reject(new Error('delete failed after unmount'));
+      await Promise.resolve();
+    });
+
+    const resolvedAfterUnmount = deferred<boolean | void>();
+    const resolved = await renderEditor({ onDelete: () => resolvedAfterUnmount.promise });
+    const resolvedRightAction = resolved.root.findByProps({ accessibilityLabel: 'New1 폴더 삭제' }).props.onPress as () => void;
+    await act(async () => { resolvedRightAction(); });
+    await act(async () => { resolved.unmount(); });
+    await act(async () => { resolvedAfterUnmount.resolve(); await resolvedAfterUnmount.promise; });
   });
 
   it('closes the previously active row when another row starts opening', async () => {

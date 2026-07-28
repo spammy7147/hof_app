@@ -103,6 +103,10 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   const indexRef = useRef(index);
   const mountedRef = useRef(true);
   const disabledRef = useRef(disabled);
+  const onDeleteRef = useRef(onDelete);
+  const interactionGenerationRef = useRef(0);
+  const interactionIndexRef = useRef(index);
+  const interactionDisabledRef = useRef(disabled);
   const renamePendingRef = useRef(false);
   const deletePendingRef = useRef(false);
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
@@ -112,8 +116,14 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   const edgeAnimationFrameRef = useRef<number | null>(null);
   const advanceEdgeScrollRef = useRef<() => boolean>(() => false);
   const scheduleEdgeScrollRef = useRef<() => void>(() => undefined);
+  if (interactionIndexRef.current !== index || interactionDisabledRef.current !== disabled) {
+    interactionGenerationRef.current += 1;
+    interactionIndexRef.current = index;
+    interactionDisabledRef.current = disabled;
+  }
   indexRef.current = index;
   disabledRef.current = disabled;
+  onDeleteRef.current = onDelete;
 
   const closeOpenSwipeable = useCallback(() => {
     openSwipeableRef.current?.close();
@@ -220,18 +230,23 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     setRenameValue(row.name);
   }, [closeOpenSwipeable, disabled]);
 
-  const deleteFolder = useCallback(async (folderId: number) => {
-    if (disabledRef.current || deletePendingRef.current) return;
+  const deleteFolder = useCallback(async (folderId: number, generation: number) => {
+    if (
+      generation !== interactionGenerationRef.current
+      || disabledRef.current
+      || !indexRef.current.foldersById.has(folderId)
+      || deletePendingRef.current
+    ) return;
     deletePendingRef.current = true;
     closeOpenSwipeable();
     try {
-      await onDelete(folderId);
+      await onDeleteRef.current(folderId);
     } catch {
       // Parent mutation handling already surfaces errors.
     } finally {
       deletePendingRef.current = false;
     }
-  }, [closeOpenSwipeable, onDelete]);
+  }, [closeOpenSwipeable]);
 
   const finishRename = useCallback(async (row: PartyPresetFolderEditorRow) => {
     const name = renameValue.trim();
@@ -463,6 +478,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   }) => {
     const editingName = renameFolderId === row.folderId;
     const editingChild = childEditorFolderId === row.folderId;
+    const interactionGeneration = interactionGenerationRef.current;
     return (
       <FolderEditorRow
         accessibilityActions={accessibilityActionsFor(row)}
@@ -476,7 +492,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
         onAccessibilityAction={(actionName) => {
           if (disabled) return;
           if (actionName === 'delete') {
-            void deleteFolder(row.folderId);
+            void deleteFolder(row.folderId, interactionGeneration);
             return;
           }
           void moveFolder(row.folderId, planForAccessibilityAction(row, actionName), false)
@@ -490,7 +506,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
         onFinalizeDrag={cancelDrag}
         onOpenChild={() => openChildEditor(row.folderId)}
         onOpenRename={() => openRename(row)}
-        onDelete={() => { void deleteFolder(row.folderId); }}
+        onDelete={() => { void deleteFolder(row.folderId, interactionGeneration); }}
         onRegisterSwipeable={registerSwipeable}
         onRowLayout={(event) => {
           const { height } = event.nativeEvent.layout;
@@ -517,6 +533,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     deleteFolder,
     dropFeedback,
     index,
+    interactionGenerationRef,
     moveFolder,
     onDragEnd,
     onDragStart,
@@ -703,6 +720,7 @@ const FolderEditorRow = memo(function FolderEditorRow({
     <View>
       <ReanimatedSwipeable
         containerStyle={styles.swipeContainer}
+        childrenContainerStyle={styles.swipeContent}
         enabled={!disabled && !editingName}
         friction={2}
         onSwipeableWillOpen={prepareSwipe}
@@ -930,6 +948,9 @@ const styles = StyleSheet.create({
   },
   swipeContainer: {
     overflow: 'hidden',
+  },
+  swipeContent: {
+    backgroundColor: theme.colors.surface,
   },
   swipeDeleteAction: {
     alignItems: 'center',
