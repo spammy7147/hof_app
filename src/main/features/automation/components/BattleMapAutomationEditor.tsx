@@ -442,6 +442,7 @@ export function BattleMapAutomationEditor({
           <TextInput
             accessibilityLabel={`${setting.displayName} 일일 목표`}
             editable={!disabled}
+            hitSlop={{ bottom: 8, left: 4, right: 4, top: 8 }}
             keyboardType="number-pad"
             onChangeText={(value) => updateEditableDraft((current) => ({
               ...current,
@@ -648,7 +649,7 @@ const styles = StyleSheet.create({
   mapName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
   progressRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },
   progressSummary: { color: theme.colors.textMuted, flex: 1, fontSize: 11, lineHeight: 16 },
-  compactTargetInput: { borderColor: theme.colors.borderStrong, borderRadius: 9, borderWidth: 1, color: theme.colors.text, minHeight: 32, paddingHorizontal: 0, textAlign: 'center', textAlignVertical: 'center', width: 44 },
+  compactTargetInput: { borderColor: theme.colors.borderStrong, borderRadius: 9, borderWidth: 1, color: theme.colors.text, minHeight: 28, paddingHorizontal: 0, textAlign: 'center', textAlignVertical: 'center', width: 38 },
   complete: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '900' },
   choice: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: 9, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, minHeight: 32, paddingHorizontal: theme.spacing.xs },
   choiceActive: { borderColor: theme.colors.accentGreen },

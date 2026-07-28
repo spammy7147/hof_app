@@ -237,8 +237,9 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(hasText(progressSummary, '오늘 2/10 · 8회 남음 · 다음 3회 전투'), true);
     const targetInput = renderer.root.findByProps({ accessibilityLabel: '압축 전투 일일 목표' });
     assert.equal(targetInput.props.value, '10');
-    assert.equal(flattenStyle(targetInput.props.style).minHeight, 32);
-    assert.equal(flattenStyle(targetInput.props.style).width, 44);
+    assert.equal(flattenStyle(targetInput.props.style).minHeight, 28);
+    assert.equal(flattenStyle(targetInput.props.style).width, 38);
+    assert.deepEqual(targetInput.props.hitSlop, { bottom: 8, left: 4, right: 4, top: 8 });
     assert.equal(hasText(renderer.root, '20%'), false);
     assert.equal(hasText(renderer.root, '3회 전투 지원'), false);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '압축 전투 오늘 진행률' }).length, 0);

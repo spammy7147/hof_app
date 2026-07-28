@@ -235,7 +235,7 @@ describe('AdventureMapAutomationEditor', () => {
     });
 
     const presetChoice = renderer.root.findByProps({ accessibilityLabel: '압축 모험 프리셋 선택 열기' });
-    assert.equal(flattenStyle(presetChoice.props.style).minHeight, 44);
+    assert.equal(flattenStyle(presetChoice.props.style).minHeight, 32);
     assert.equal(hasText(renderer.root, '압축 모험'), true);
     const selectedCard = presetChoice.parent!;
     const summary = findTextNode(selectedCard, '수정 동굴 · 실행 가능 · 키 114개 · 가능 3회');

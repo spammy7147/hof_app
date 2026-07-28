@@ -580,7 +580,7 @@ const styles = StyleSheet.create({
   muted: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
   problem: { color: theme.colors.accentAmber, fontSize: 11, lineHeight: 16 },
   iconButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
-  choice: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: 44, paddingHorizontal: theme.spacing.sm },
+  choice: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: 32, paddingHorizontal: theme.spacing.sm },
   choiceLabel: { color: theme.colors.textMuted, fontSize: 10, fontWeight: '700' },
   choiceText: { color: theme.colors.text, flex: 1, fontSize: 12, fontWeight: '800' },
   warning: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between' },
