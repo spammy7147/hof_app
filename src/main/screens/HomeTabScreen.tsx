@@ -216,7 +216,6 @@ export function HomeTabScreen({
         mutationMessage={message ?? error}
         saving={savingEntryIds.includes(entry.id) || savingTypes.includes('ADVENTURE_MAP')}
         onBack={closeEditor}
-        onDelete={() => automationController.deleteEntry(entry.id)}
         partyPresetCatalog={partyPresetCatalog}
         onClearMutationMessage={() => automationController.clearMessage()}
         onLoadBattleCategories={onLoadBattleCategories}

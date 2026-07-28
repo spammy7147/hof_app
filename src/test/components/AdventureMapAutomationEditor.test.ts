@@ -143,6 +143,27 @@ describe('AdventureMapAutomationEditor', () => {
     assert.equal(nestedList.props.activationDistance, 20);
   });
 
+  it('separates selected maps from the grouped catalog and omits whole deletion', async () => {
+    const renderer = await renderEditor({
+      entry: entry([setting('a', 0, 'PRIMARY', null)]),
+      maps: [map('a', 'Alpha'), map('b', 'Beta')],
+    });
+
+    assert.ok(findPressable(renderer.root, '선택 맵 1개 탭'));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Alpha 1번째 맵 순서 이동' }));
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '모험맵 검색' }).length, 0);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '모험맵 자동화 삭제' }).length, 0);
+
+    await act(async () => { findPressable(renderer.root, '맵 추가 탭').props.onPress(); });
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '모험맵 검색' }));
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Alpha 1번째 맵 순서 이동' }).length, 0);
+
+    await openAdventureGroup(renderer, '기타');
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 모험맵 선택' }).props.onPress(); });
+    assert.ok(findPressable(renderer.root, '선택 맵 2개 탭'));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Beta 모험맵 선택 해제' }));
+  });
+
   it('mounts compact full-card catalog rows with selected button semantics', async () => {
     const catalogMap = { ...map('compact', '긴 모험맵 이름', {
       groupName: '이벤트',
@@ -233,7 +254,7 @@ describe('AdventureMapAutomationEditor', () => {
     assert.equal(flattenStyle(list.props.contentContainerStyle).gap, 6);
   });
 
-  it('uses one-line B-layout metadata with a drag handle and swipe delete while keeping whole deletion', async () => {
+  it('uses one-line B-layout metadata with a drag handle and swipe delete', async () => {
     const renderer = await renderEditor({
       entry: entry([
         setting('first', 0, 'PRIMARY', null),
@@ -257,7 +278,7 @@ describe('AdventureMapAutomationEditor', () => {
     assert.equal(summary.props.numberOfLines, 1);
     assert.equal(summary.props.ellipsizeMode, 'tail');
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '첫 맵 삭제' }));
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '모험맵 자동화 삭제' }));
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '모험맵 자동화 삭제' }).length, 0);
   });
 
   it('saves the identity order produced by a selected-map drag', async () => {
@@ -341,6 +362,7 @@ describe('AdventureMapAutomationEditor', () => {
     assert.equal(cooldown.props.disabled, false);
     await act(async () => { cooldown.props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '무제한 맵 모험맵 선택' }).props.onPress(); });
+    await openSelectedTab(renderer);
     await act(async () => {
       renderer.root.findByProps({ accessibilityLabel: '무제한 맵 2번째 맵 순서 이동' })
         .props.onAccessibilityAction({ nativeEvent: { actionName: 'decrement' } });
@@ -438,6 +460,7 @@ describe('AdventureMapAutomationEditor', () => {
       onSave: async (request) => { saves.push(request); return true; },
     });
 
+    await openCatalogTab(renderer);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '앞 그룹 그룹 열기' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '뒤 그룹 그룹 열기' }));
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '선순위 맵 모험맵 선택' }).length, 0);
@@ -531,14 +554,15 @@ describe('AdventureMapAutomationEditor', () => {
       onSave: async (request) => { saves.push(request); return pending.promise; },
       onBack: () => { backs += 1; },
     });
-    await openAdventureGroup(renderer, '그룹');
     const retainedFirstAction = renderer.root.findByProps({ accessibilityLabel: '첫 맵 1번째 맵 순서 이동' })
       .props.onAccessibilityAction as (event: { nativeEvent: { actionName: string } }) => void;
     const retainedSecondAction = renderer.root.findByProps({ accessibilityLabel: '둘째 맵 2번째 맵 순서 이동' })
       .props.onAccessibilityAction as (event: { nativeEvent: { actionName: string } }) => void;
     const retainedRemove = renderer.root.findByProps({ accessibilityLabel: '첫 맵 삭제' }).props.onPress as () => void;
     const retainedEnabled = renderer.root.findByProps({ accessibilityLabel: '모험맵 자동화 사용' }).props.onValueChange as (value: boolean) => void;
+    await openAdventureGroup(renderer, '그룹');
     const retainedCatalog = renderer.root.findByProps({ accessibilityLabel: '셋째 맵 모험맵 선택' }).props.onPress as () => void;
+    await openSelectedTab(renderer);
     const retainedOpen = renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.onPress as () => void;
     await act(async () => { retainedOpen(); });
     const retainedPreset = renderer.root.findByProps({ accessibilityLabel: '고정 파티 프리셋 선택' }).props.onPress as () => void;
@@ -572,6 +596,7 @@ describe('AdventureMapAutomationEditor', () => {
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '모험맵 자동화 사용' }).props.value, true);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '첫 맵 삭제' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '둘째 맵 삭제' }));
+    await openCatalogTab(renderer);
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '셋째 맵 모험맵 선택' }).props.accessibilityState.selected, false);
 
     await act(async () => { pending.resolve(true); await saving; });
@@ -857,26 +882,7 @@ describe('AdventureMapAutomationEditor', () => {
     await act(async () => { pending.resolve(false); await saving; });
   });
 
-  it('does not navigate when a confirmed delete succeeds after unmount', async () => {
-    alertArguments = null;
-    const pending = deferred<boolean>();
-    let backs = 0;
-    const renderer = await renderEditor({
-      onBack: () => { backs += 1; },
-      onDelete: async () => pending.promise,
-    });
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '모험맵 자동화 삭제' }).props.onPress(); });
-    const buttons = alertArguments?.[2] as unknown as Array<{ text: string; onPress?: () => Promise<void> }>;
-    const remove = buttons.find(({ text }) => text === '삭제')?.onPress;
-    assert.ok(remove);
-    let deleting!: Promise<void>;
-    await act(async () => { deleting = remove!(); });
-    await act(async () => { renderer.unmount(); });
-    await act(async () => { pending.resolve(true); await deleting; });
-    assert.equal(backs, 0);
-  });
-
-  it('fences duplicate save and confirmed delete callbacks synchronously', async () => {
+  it('fences duplicate save callbacks synchronously', async () => {
     alertArguments = null;
     const savePending = deferred<boolean>();
     let saves = 0;
@@ -889,24 +895,12 @@ describe('AdventureMapAutomationEditor', () => {
     assert.equal(saves, 1);
     await act(async () => { savePending.resolve(true); await firstSave; });
 
-    const deletePending = deferred<boolean>();
-    let deletes = 0;
-    const deleteRenderer = await renderEditor({
-      onDelete: async () => { deletes += 1; return deletePending.promise; },
-    });
-    await act(async () => { deleteRenderer.root.findByProps({ accessibilityLabel: '모험맵 자동화 삭제' }).props.onPress(); });
-    const buttons = alertArguments?.[2] as unknown as Array<{ text: string; onPress?: () => Promise<void> }>;
-    const remove = buttons.find(({ text }) => text === '삭제')?.onPress;
-    assert.ok(remove);
-    let firstDelete!: Promise<void>;
-    await act(async () => { firstDelete = remove!(); void remove!(); });
-    assert.equal(deletes, 1);
-    await act(async () => { deletePending.resolve(false); await firstDelete; });
   });
 
   it('shows the search-only empty message after a settled query has no matches', async () => {
     const renderer = await renderEditor({ maps: [map('forest', '숲 모험', { groupName: '숲' })] });
 
+    await openCatalogTab(renderer);
     assert.equal(hasText(renderer.root, '검색 가능한 모험맵이 없습니다.'), false);
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '모험맵 검색' }).props.onChangeText('없는 맵'); });
     assert.equal(hasText(renderer.root, '검색 가능한 모험맵이 없습니다.'), true);
@@ -1055,9 +1049,26 @@ async function renderEditor({
 }
 
 async function openAdventureGroup(renderer: ReactTestRenderer, name: string): Promise<void> {
+  if (renderer.root.findAllByProps({ accessibilityLabel: `${name} 그룹 열기` }).length === 0) {
+    await openCatalogTab(renderer);
+  }
   await act(async () => {
     renderer.root.findByProps({ accessibilityLabel: `${name} 그룹 열기` }).props.onPress();
   });
+}
+
+async function openCatalogTab(renderer: ReactTestRenderer): Promise<void> {
+  await act(async () => { findPressable(renderer.root, '맵 추가 탭').props.onPress(); });
+}
+
+async function openSelectedTab(renderer: ReactTestRenderer): Promise<void> {
+  const selectedTab = renderer.root.findAll((node) => (
+    (node.type as unknown) === 'Pressable'
+    && typeof node.props.accessibilityLabel === 'string'
+    && /^선택 맵 \d+개 탭$/.test(node.props.accessibilityLabel)
+  ))[0];
+  assert.ok(selectedTab);
+  await act(async () => { selectedTab.props.onPress(); });
 }
 
 function editorProps(overrides: Partial<React.ComponentProps<typeof AdventureMapAutomationEditor>> = {}) {
@@ -1071,7 +1082,6 @@ function editorProps(overrides: Partial<React.ComponentProps<typeof AdventureMap
     mutationMessage: null,
     saving: false,
     onBack: () => undefined,
-    onDelete: async () => true,
     onLoadBattleCategories: () => undefined,
     onLoadBattleMaps: async () => [],
     partyPresetCatalog: presetCatalog([]),
@@ -1091,6 +1101,12 @@ function textCount(root: ReactTestInstance, text: string): number {
 }
 function findTextNode(root: ReactTestInstance, text: string): ReactTestInstance {
   return root.find((node) => (node.type as unknown) === 'Text' && node.children.join('') === text);
+}
+function findPressable(root: ReactTestInstance, accessibilityLabel: string): ReactTestInstance {
+  return root.find((node) => (
+    (node.type as unknown) === 'Pressable'
+    && node.props.accessibilityLabel === accessibilityLabel
+  ));
 }
 function flattenStyle(style: unknown): Record<string, unknown> {
   if (Array.isArray(style)) {

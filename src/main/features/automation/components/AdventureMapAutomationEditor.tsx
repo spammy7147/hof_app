@@ -11,7 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { ArrowLeft, ChevronRight, Save, Trash2 } from 'lucide-react-native';
+import { ArrowLeft, ChevronRight, Save } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
 
 import {
@@ -45,6 +45,7 @@ import type {
   UpdateAdventureMapAutomationRequest,
 } from '../../../types/api';
 import { BattleMapPresetPickerModal } from './BattleMapPresetPickerModal';
+import { AutomationMapEditorTabs, type AutomationMapEditorTab } from './AutomationMapEditorTabs';
 import { AutomationMapOrderList } from './AutomationMapOrderList';
 import {
   AdventureMapCatalogGroupRow,
@@ -61,7 +62,6 @@ type Props = {
   mutationMessage: string | null;
   saving: boolean;
   onBack: () => void;
-  onDelete: () => Promise<boolean>;
   onLoadBattleCategories: () => void;
   onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
   partyPresetCatalog: PartyPresetCatalogResource;
@@ -88,7 +88,6 @@ export function AdventureMapAutomationEditor({
   mutationMessage,
   saving,
   onBack,
-  onDelete,
   onLoadBattleCategories,
   onLoadBattleMaps,
   partyPresetCatalog,
@@ -100,6 +99,7 @@ export function AdventureMapAutomationEditor({
   const [mapState, setMapState] = useState<ResourceState>({ loading: true, error: null });
   const presetState = { loading: partyPresetCatalog.loading, error: partyPresetCatalog.error };
   const [query, setQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<AutomationMapEditorTab>('SELECTED');
   const [expandedGroupKeys, setExpandedGroupKeys] = useState<string[]>([]);
   const [activePresetSession, setActivePresetSession] = useState<PresetSession | null>(null);
   const [localBusy, setLocalBusy] = useState(false);
@@ -268,17 +268,19 @@ export function AdventureMapAutomationEditor({
     expandedGroupKeys,
     query,
   }), [catalog, expandedGroupKeys, query]);
-  const items = useMemo<ListItem[]>(() => [
+  const selectedItems = useMemo<ListItem[]>(() => [
     { key: 'selected-title', kind: 'HEADING', title: '선택한 모험맵 · 실행 순서' },
     ...(draft.maps.length === 0
       ? [{ key: 'empty', kind: 'EMPTY' } as const]
       : [{ key: 'selected-list', kind: 'SELECTED_LIST' } as const]),
+  ], [draft.maps.length]);
+  const catalogItems = useMemo<ListItem[]>(() => [
     { key: 'catalog-title', kind: 'HEADING', title: '모험맵 찾기' },
     ...catalogRows.rows,
     ...(searching && !mapState.loading && mapState.error == null && battleCategoriesError == null && catalogRows.matchCount === 0
       ? [{ key: 'catalog-no-results', kind: 'NO_RESULTS' } as const]
       : []),
-  ], [battleCategoriesError, catalogRows.matchCount, catalogRows.rows, draft.maps, mapState.error, mapState.loading, searching]);
+  ], [battleCategoriesError, catalogRows.matchCount, catalogRows.rows, mapState.error, mapState.loading, searching]);
 
   const closePresetPicker = useCallback((session: PresetSession | null, restoreFocus = true) => {
     if (!isSamePresetSession(presetSessionRef.current, session)) return;
@@ -358,25 +360,6 @@ export function AdventureMapAutomationEditor({
     ]);
   }
 
-  function confirmDelete() {
-    if (controlsDisabledRef.current) return;
-    Alert.alert('모험맵 자동화를 삭제할까요?', '선택한 모험맵 설정이 삭제됩니다.', [
-      { text: '취소', style: 'cancel' },
-      { text: '삭제', style: 'destructive', onPress: async () => {
-        if (controlsDisabledRef.current) return;
-        controlsDisabledRef.current = true;
-        busyRef.current = true;
-        setLocalBusy(true);
-        onClearMutationMessage();
-        try {
-          if (await onDelete() && mountedRef.current) onBack();
-        } finally {
-          if (mountedRef.current) setLocalBusy(false);
-        }
-      } },
-    ]);
-  }
-
   async function save() {
     if (saveDisabled || controlsDisabledRef.current) return;
     controlsDisabledRef.current = true;
@@ -441,7 +424,7 @@ export function AdventureMapAutomationEditor({
 
   const renderItem = useCallback(({ item }: { item: ListItem }) => {
     if (item.kind === 'HEADING') return <Text style={styles.sectionTitle}>{item.title}</Text>;
-    if (item.kind === 'EMPTY') return <Text style={styles.muted}>아래 목록에서 실행할 모험맵을 추가해 주세요.</Text>;
+    if (item.kind === 'EMPTY') return <Text style={styles.muted}>맵 추가 탭에서 실행할 맵을 추가해 주세요.</Text>;
     if (item.kind === 'NO_RESULTS') return <Text style={styles.muted}>검색 가능한 모험맵이 없습니다.</Text>;
     if (item.kind === 'GROUP') {
       return (
@@ -502,9 +485,11 @@ export function AdventureMapAutomationEditor({
       {battleCategoriesError ? <ResourceWarning label="맵 카테고리" onRetry={onLoadBattleCategories} /> : null}
       {mapState.error ? <ResourceWarning label="모험맵" onRetry={loadMaps} /> : null}
       {presetState.error ? <ResourceWarning label="프리셋" onRetry={partyPresetCatalog.retry} /> : presetState.loading ? <Text style={styles.muted}>프리셋 불러오는 중</Text> : null}
-      <TextInput accessibilityLabel="모험맵 검색" editable={!controlsDisabled} onChangeText={(nextQuery) => { queryRef.current = nextQuery; setQuery(nextQuery); }} placeholder="추가할 모험맵 이름, 그룹, 추천 레벨 검색" placeholderTextColor={theme.colors.textMuted} style={styles.search} value={query} />
+      <AutomationMapEditorTabs activeTab={activeTab} onChange={setActiveTab} selectedCount={draft.maps.length} />
+      {activeTab === 'CATALOG' ? <TextInput accessibilityLabel="모험맵 검색" editable={!controlsDisabled} onChangeText={(nextQuery) => { queryRef.current = nextQuery; setQuery(nextQuery); }} placeholder="추가할 모험맵 이름, 그룹, 추천 레벨 검색" placeholderTextColor={theme.colors.textMuted} style={styles.search} value={query} /> : null}
       <NestableScrollContainer contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" style={styles.scroller}>
-        {items.map((item) => <Fragment key={item.key}>{renderItem({ item })}</Fragment>)}
+        {(activeTab === 'SELECTED' ? selectedItems : catalogItems)
+          .map((item) => <Fragment key={item.key}>{renderItem({ item })}</Fragment>)}
       </NestableScrollContainer>
       <BattleMapPresetPickerModal
         disabled={controlsDisabled}
@@ -529,7 +514,6 @@ export function AdventureMapAutomationEditor({
       />
       {errors.length > 0 ? <Text accessibilityRole="alert" style={styles.problem}>{errors[0]}</Text> : null}
       <View style={styles.footer}>
-        <Pressable accessibilityLabel="모험맵 자동화 삭제" disabled={controlsDisabled} onPress={confirmDelete} style={styles.deleteButton}><Trash2 color={theme.colors.danger} size={17} /><Text style={styles.deleteText}>삭제</Text></Pressable>
         <Pressable accessibilityLabel="모험맵 자동화 저장" disabled={saveDisabled} onPress={() => save()} style={[styles.saveButton, saveDisabled && styles.disabled]}>{busy ? <ActivityIndicator color={theme.colors.buttonText} size="small" /> : <Save color={theme.colors.buttonText} size={17} />}<Text style={styles.saveText}>저장</Text></Pressable>
       </View>
     </View>
@@ -601,8 +585,6 @@ const styles = StyleSheet.create({
   choiceText: { color: theme.colors.text, flex: 1, fontSize: 12, fontWeight: '800' },
   warning: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between' },
   footer: { flexDirection: 'row', gap: theme.spacing.sm },
-  deleteButton: { alignItems: 'center', borderColor: theme.colors.danger, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, minHeight: 48, justifyContent: 'center', paddingHorizontal: theme.spacing.lg },
-  deleteText: { color: theme.colors.danger, fontWeight: '800' },
   saveButton: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, flex: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: 48, justifyContent: 'center' },
   saveText: { color: theme.colors.buttonText, fontWeight: '900' },
   disabled: { opacity: 0.45 },
