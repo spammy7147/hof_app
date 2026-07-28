@@ -950,7 +950,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   swipeContent: {
-    backgroundColor: theme.colors.surface,
+    backgroundColor: theme.colors.background,
   },
   swipeDeleteAction: {
     alignItems: 'center',

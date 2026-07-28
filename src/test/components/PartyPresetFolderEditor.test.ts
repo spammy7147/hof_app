@@ -126,7 +126,7 @@ describe('PartyPresetFolderEditor', () => {
       assert.equal(swipeable.props.overshootRight, false);
       assert.equal(swipeable.props.rightThreshold, 40);
       assert.equal(flattenStyle(swipeable.props.containerStyle).overflow, 'hidden');
-      assert.equal(flattenStyle(swipeable.props.childrenContainerStyle).backgroundColor, '#1d2430');
+      assert.equal(flattenStyle(swipeable.props.childrenContainerStyle).backgroundColor, '#0f141b');
       const action = renderer.root.findByProps({ accessibilityLabel: `${row.name} 폴더 삭제` });
       assert.equal(flattenStyle(action.props.style({ pressed: false })).width, 72);
       assert.equal(flattenStyle(action.props.style({ pressed: false })).backgroundColor, '#ff7b7b');
@@ -167,6 +167,20 @@ describe('PartyPresetFolderEditor', () => {
     });
     assert.deepEqual(oldDeletes, []);
     assert.deepEqual(replacementDeletes, []);
+  });
+
+  it('uses the latest delete callback for a retained current right action', async () => {
+    const index = indexPartyPresetCatalog(catalog());
+    const oldDeletes: number[] = [];
+    const latestDeletes: number[] = [];
+    const renderer = await renderEditor({ index, onDelete: async (folderId) => { oldDeletes.push(folderId); } });
+    const retainedRightAction = renderer.root.findByProps({ accessibilityLabel: 'New1 폴더 삭제' }).props.onPress as () => void;
+    await act(async () => {
+      renderer.update(element({ index, onDelete: async (folderId) => { latestDeletes.push(folderId); } }));
+    });
+    await act(async () => { retainedRightAction(); });
+    assert.deepEqual(oldDeletes, []);
+    assert.deepEqual(latestDeletes, [1]);
   });
 
   it('fences duplicate pending deletes, reopens after false or rejection, and safely settles after unmount', async () => {
