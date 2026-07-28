@@ -125,6 +125,7 @@ describe('PartyPresetFolderEditor', () => {
       assert.equal(swipeable.props.friction, 2);
       assert.equal(swipeable.props.overshootRight, false);
       assert.equal(swipeable.props.rightThreshold, 40);
+      assert.equal(flattenStyle(swipeable.props.containerStyle).overflow, 'hidden');
       const action = renderer.root.findByProps({ accessibilityLabel: `${row.name} 폴더 삭제` });
       assert.equal(flattenStyle(action.props.style({ pressed: false })).width, 72);
       assert.equal(flattenStyle(action.props.style({ pressed: false })).backgroundColor, '#ff7b7b');

@@ -702,6 +702,7 @@ const FolderEditorRow = memo(function FolderEditorRow({
   return (
     <View>
       <ReanimatedSwipeable
+        containerStyle={styles.swipeContainer}
         enabled={!disabled && !editingName}
         friction={2}
         onSwipeableWillOpen={prepareSwipe}
@@ -926,6 +927,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     minHeight: 44,
     width: 34,
+  },
+  swipeContainer: {
+    overflow: 'hidden',
   },
   swipeDeleteAction: {
     alignItems: 'center',
