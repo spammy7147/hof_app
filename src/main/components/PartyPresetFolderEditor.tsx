@@ -58,6 +58,7 @@ type DropFeedback = {
 };
 type DragOrigin = { folderId: number; pointerY: number; scrollOffset: number };
 type DragEdgeDirection = 'up' | 'down';
+type RenameSession = { token: number; folderId: number; baseName: string };
 type FolderAccessibilityAction = {
   name: 'decrement' | 'increment' | 'escape' | 'delete';
   label: string;
@@ -108,6 +109,8 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   const interactionIndexRef = useRef(index);
   const interactionDisabledRef = useRef(disabled);
   const renamePendingRef = useRef(false);
+  const renameSessionRef = useRef<RenameSession | null>(null);
+  const nextRenameSessionTokenRef = useRef(0);
   const deletePendingRef = useRef(false);
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const swipeableNodesRef = useRef(new Map<number, SwipeableMethods>());
@@ -125,6 +128,21 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   disabledRef.current = disabled;
   onDeleteRef.current = onDelete;
 
+  const isMutationBlocked = useCallback(() => (
+    !mountedRef.current
+    || disabledRef.current
+    || renamePendingRef.current
+    || deletePendingRef.current
+  ), []);
+
+  const clearRenameSession = useCallback((session: RenameSession) => {
+    if (renameSessionRef.current?.token !== session.token) return;
+    renameSessionRef.current = null;
+    if (!mountedRef.current) return;
+    setRenameFolderId(null);
+    setRenameValue('');
+  }, []);
+
   const closeOpenSwipeable = useCallback(() => {
     openSwipeableRef.current?.close();
     openSwipeableRef.current = null;
@@ -138,15 +156,17 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   }, []);
 
   const prepareSwipeable = useCallback((folderId: number) => {
+    if (isMutationBlocked()) return;
     const next = swipeableNodesRef.current.get(folderId) ?? null;
     if (openSwipeableRef.current && openSwipeableRef.current !== next) openSwipeableRef.current.close();
     openSwipeableRef.current = next;
-  }, []);
+  }, [isMutationBlocked]);
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      renameSessionRef.current = null;
       if (edgeAnimationFrameRef.current != null) {
         cancelAnimationFrame(edgeAnimationFrameRef.current);
         edgeAnimationFrameRef.current = null;
@@ -176,9 +196,13 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
 
   useEffect(() => {
     const currentFolderIds = new Set(index.foldersById.keys());
-    if (renameFolderId != null && !currentFolderIds.has(renameFolderId)) setRenameFolderId(null);
+    const renameSession = renameSessionRef.current;
+    if (
+      renameSession != null
+      && index.foldersById.get(renameSession.folderId)?.name !== renameSession.baseName
+    ) clearRenameSession(renameSession);
     if (childEditorFolderId != null && !currentFolderIds.has(childEditorFolderId)) setChildEditorFolderId(null);
-  }, [childEditorFolderId, index, renameFolderId]);
+  }, [childEditorFolderId, clearRenameSession, index]);
 
   const rows = useMemo(
     () => buildPartyPresetFolderEditorRows(index, expandedFolderIds),
@@ -196,23 +220,23 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
 
   const submitTopLevel = useCallback(async () => {
     const name = topLevelName.trim();
-    if (disabled || name.length === 0) return;
+    if (isMutationBlocked() || name.length === 0) return;
     const succeeded = await onCreate({ name, parentFolderId: null });
     if (succeeded === false) return;
     setTopLevelName('');
-  }, [disabled, onCreate, topLevelName]);
+  }, [isMutationBlocked, onCreate, topLevelName]);
 
   const openChildEditor = useCallback((folderId: number) => {
-    if (disabled || !canCreatePartyPresetChildFolder(indexRef.current, folderId)) return;
+    if (isMutationBlocked() || !canCreatePartyPresetChildFolder(indexRef.current, folderId)) return;
     closeOpenSwipeable();
     setChildEditorFolderId(folderId);
     setChildName('');
-  }, [closeOpenSwipeable, disabled]);
+  }, [closeOpenSwipeable, isMutationBlocked]);
 
   const submitChild = useCallback(async (folderId: number) => {
     const name = childName.trim();
     if (
-      disabled
+      isMutationBlocked()
       || name.length === 0
       || !canCreatePartyPresetChildFolder(indexRef.current, folderId)
     ) return;
@@ -221,21 +245,28 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     setExpandedFolderIds((previous) => new Set(previous).add(folderId));
     setChildEditorFolderId(null);
     setChildName('');
-  }, [childName, disabled, onCreate]);
+  }, [childName, isMutationBlocked, onCreate]);
 
   const openRename = useCallback((row: PartyPresetFolderEditorRow) => {
-    if (disabled || renamePendingRef.current) return;
+    const currentFolder = indexRef.current.foldersById.get(row.folderId);
+    if (isMutationBlocked() || currentFolder?.name !== row.name) return;
+    const session = {
+      token: nextRenameSessionTokenRef.current + 1,
+      folderId: row.folderId,
+      baseName: currentFolder.name,
+    };
+    nextRenameSessionTokenRef.current = session.token;
+    renameSessionRef.current = session;
     closeOpenSwipeable();
     setRenameFolderId(row.folderId);
     setRenameValue(row.name);
-  }, [closeOpenSwipeable, disabled]);
+  }, [closeOpenSwipeable, isMutationBlocked]);
 
   const deleteFolder = useCallback(async (folderId: number, generation: number) => {
     if (
       generation !== interactionGenerationRef.current
-      || disabledRef.current
+      || isMutationBlocked()
       || !indexRef.current.foldersById.has(folderId)
-      || deletePendingRef.current
     ) return;
     deletePendingRef.current = true;
     closeOpenSwipeable();
@@ -246,18 +277,28 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     } finally {
       deletePendingRef.current = false;
     }
-  }, [closeOpenSwipeable]);
+  }, [closeOpenSwipeable, isMutationBlocked]);
 
-  const finishRename = useCallback(async (row: PartyPresetFolderEditorRow) => {
+  const finishRename = useCallback(async (
+    row: PartyPresetFolderEditorRow,
+    session: RenameSession,
+  ) => {
     const name = renameValue.trim();
-    const clearRename = () => {
-      if (!mountedRef.current) return;
-      setRenameFolderId(null);
-      setRenameValue('');
-    };
-    if (disabled || renameFolderId !== row.folderId || renamePendingRef.current) return;
-    if (name.length === 0 || name === row.name) {
-      clearRename();
+    const currentFolder = indexRef.current.foldersById.get(session.folderId);
+    if (
+      !mountedRef.current
+      || disabledRef.current
+      || deletePendingRef.current
+      || renamePendingRef.current
+      || renameSessionRef.current?.token !== session.token
+      || row.folderId !== session.folderId
+    ) return;
+    if (currentFolder?.name !== session.baseName) {
+      clearRenameSession(session);
+      return;
+    }
+    if (name.length === 0 || name === session.baseName) {
+      clearRenameSession(session);
       return;
     }
     renamePendingRef.current = true;
@@ -267,22 +308,22 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
       // Parent mutation handling already surfaces errors.
     } finally {
       renamePendingRef.current = false;
-      clearRename();
+      clearRenameSession(session);
     }
-  }, [disabled, onRename, renameFolderId, renameValue]);
+  }, [clearRenameSession, onRename, renameValue]);
 
   const moveFolder = useCallback(async (
     folderId: number,
     plan: PartyPresetFolderDropPlan | null,
     expandInsideParent: boolean,
   ) => {
-    if (disabled || plan == null) return;
+    if (isMutationBlocked() || plan == null) return;
     const succeeded = await onMove(folderId, plan);
     if (succeeded === false) return;
     if (mountedRef.current && expandInsideParent && plan.parentFolderId != null) {
       setExpandedFolderIds((previous) => new Set(previous).add(plan.parentFolderId!));
     }
-  }, [disabled, onMove]);
+  }, [isMutationBlocked, onMove]);
 
   const planForAccessibilityAction = useCallback((
     row: PartyPresetFolderEditorRow,
@@ -327,7 +368,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   }, []);
 
   const updateDragPresentation = useCallback((folderId: number, contentY: number) => {
-    if (!mountedRef.current) return;
+    if (isMutationBlocked()) return;
     setDragPreview({ folderId, contentY });
     const target = rows.find((row) => {
       const layout = rowLayoutsRef.current.get(row.folderId);
@@ -357,13 +398,13 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     ) return;
     dropFeedbackRef.current = feedback;
     setDropFeedback(feedback);
-  }, [index, rows]);
+  }, [index, isMutationBlocked, rows]);
 
   const advanceEdgeScroll = useCallback((): boolean => {
     const origin = dragOriginRef.current;
     const baseContentY = dragBaseContentYRef.current;
     const direction = dragEdgeDirectionRef.current;
-    if (!mountedRef.current || disabled || origin == null || baseContentY == null || direction == null) {
+    if (isMutationBlocked() || origin == null || baseContentY == null || direction == null) {
       return false;
     }
 
@@ -387,7 +428,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
       baseContentY + nextScrollOffset - origin.scrollOffset,
     );
     return direction === 'up' ? nextScrollOffset > 0 : nextScrollOffset < maximumScrollOffset;
-  }, [disabled, updateDragPresentation]);
+  }, [isMutationBlocked, updateDragPresentation]);
   advanceEdgeScrollRef.current = advanceEdgeScroll;
 
   const scheduleEdgeScroll = useCallback(() => {
@@ -405,7 +446,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   scheduleEdgeScrollRef.current = scheduleEdgeScroll;
 
   const onDragStart = useCallback((folderId: number, pointerY: number) => {
-    if (disabled || !mountedRef.current) return;
+    if (isMutationBlocked()) return;
     closeOpenSwipeable();
     cancelEdgeScroll();
     dragOriginRef.current = { folderId, pointerY, scrollOffset: scrollOffsetRef.current };
@@ -413,10 +454,10 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     if (sourceLayout != null) {
       setDragPreview({ folderId, contentY: sourceLayout.y + pointerY });
     }
-  }, [cancelEdgeScroll, closeOpenSwipeable, disabled]);
+  }, [cancelEdgeScroll, closeOpenSwipeable, isMutationBlocked]);
 
   const onDragUpdate = useCallback((folderId: number, _pointerY: number, translationY: number) => {
-    if (disabled || !mountedRef.current) return;
+    if (isMutationBlocked()) return;
     const origin = dragOriginRef.current;
     const sourceLayout = rowLayoutsRef.current.get(folderId);
     if (origin == null || origin.folderId !== folderId || sourceLayout == null) return;
@@ -443,7 +484,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
       return;
     }
     if (advanceEdgeScrollRef.current()) scheduleEdgeScrollRef.current();
-  }, [disabled, updateDragPresentation]);
+  }, [isMutationBlocked, updateDragPresentation]);
 
   const onDragEnd = useCallback((folderId: number) => {
     const feedback = dropFeedbackRef.current;
@@ -454,10 +495,10 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
       setDropFeedback(null);
       setDragPreview(null);
     }
-    if (!mountedRef.current || disabled || feedback == null || feedback.movingFolderId !== folderId) return;
+    if (isMutationBlocked() || feedback == null || feedback.movingFolderId !== folderId) return;
     const plan = planPartyPresetFolderDrop(index, folderId, feedback.targetFolderId, feedback.zone);
     void moveFolder(folderId, plan, feedback.zone === 'inside').catch(() => undefined);
-  }, [cancelEdgeScroll, disabled, index, moveFolder]);
+  }, [cancelEdgeScroll, index, isMutationBlocked, moveFolder]);
 
   const cancelDrag = useCallback(() => {
     cancelEdgeScroll();
@@ -479,6 +520,7 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
     const editingName = renameFolderId === row.folderId;
     const editingChild = childEditorFolderId === row.folderId;
     const interactionGeneration = interactionGenerationRef.current;
+    const renameSession = editingName ? renameSessionRef.current : null;
     return (
       <FolderEditorRow
         accessibilityActions={accessibilityActionsFor(row)}
@@ -517,7 +559,9 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
         }}
         onRenameValueChange={setRenameValue}
         onSubmitChild={() => { void submitChild(row.folderId).catch(() => undefined); }}
-        onFinishRename={() => { void finishRename(row); }}
+        onFinishRename={() => {
+          if (renameSession != null) void finishRename(row, renameSession);
+        }}
         onSwipeableWillOpen={prepareSwipeable}
         onToggle={() => toggleExpanded(row.folderId)}
         renameValue={editingName ? renameValue : ''}
