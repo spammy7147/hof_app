@@ -87,7 +87,12 @@ export function AdventureMapCatalogMapRow({
         <Text numberOfLines={2} style={styles.mapName}>{map.name}</Text>
         <Text style={state.kind === 'RUNNABLE' || state.kind === 'UNLIMITED' ? styles.runnable : styles.state}>{state.label}</Text>
       </View>
-      {metadata ? <Text style={styles.meta}>{metadata}</Text> : null}
+      {selected || metadata ? (
+        <View style={styles.metaRow}>
+          {selected ? <Text style={styles.selectedMeta}>선택한 맵</Text> : null}
+          {metadata ? <Text numberOfLines={1} style={styles.meta}>{metadata}</Text> : null}
+        </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -121,8 +126,14 @@ const styles = StyleSheet.create({
   },
   mapHeading: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs, justifyContent: 'space-between' },
   mapName: { color: theme.colors.text, flex: 1, fontSize: 13, fontWeight: '800' },
-  mapSelected: { backgroundColor: 'rgba(124, 224, 181, 0.10)', borderColor: theme.colors.accentGreen },
-  meta: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16, marginTop: 2 },
+  mapSelected: {
+    backgroundColor: 'rgba(124, 224, 181, 0.10)',
+    borderColor: theme.colors.accentGreen,
+    borderLeftWidth: 3,
+  },
+  meta: { color: theme.colors.textMuted, flexShrink: 1, fontSize: 11, lineHeight: 16 },
+  metaRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs, marginTop: 2 },
   runnable: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '800' },
+  selectedMeta: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '800' },
   state: { color: theme.colors.accentAmber, fontSize: 11, fontWeight: '800' },
 });
