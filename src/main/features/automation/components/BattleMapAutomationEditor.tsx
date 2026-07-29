@@ -651,7 +651,7 @@ const styles = StyleSheet.create({
   progressSummary: { color: theme.colors.textMuted, flex: 1, fontSize: 11, lineHeight: 16 },
   compactTargetInput: { borderColor: theme.colors.borderStrong, borderRadius: 9, borderWidth: 1, color: theme.colors.text, minHeight: 28, paddingHorizontal: 0, textAlign: 'center', textAlignVertical: 'center', width: 38 },
   complete: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '900' },
-  choice: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: 9, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, minHeight: 32, paddingHorizontal: theme.spacing.xs },
+  choice: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: 9, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, marginTop: 4, minHeight: 32, paddingHorizontal: theme.spacing.xs },
   choiceActive: { borderColor: theme.colors.accentGreen },
   choiceLabel: { color: theme.colors.textMuted, fontSize: 10, fontWeight: '700' },
   choiceText: { color: theme.colors.text, flex: 1, fontSize: 11, fontWeight: '700' },

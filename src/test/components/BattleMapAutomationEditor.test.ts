@@ -226,6 +226,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     });
 
     const presetChoice = renderer.root.findByProps({ accessibilityLabel: '압축 전투 프리셋 선택 열기' });
+    assert.equal(flattenStyle(presetChoice.props.style).marginTop, 4);
     assert.equal(flattenStyle(presetChoice.props.style).minHeight, 32);
     assert.equal(hasText(presetChoice, '프리셋'), true);
     assert.equal(textCount(renderer.root, '대표 · 대표 프리셋'), 1);
