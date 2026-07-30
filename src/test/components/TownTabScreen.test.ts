@@ -4,9 +4,17 @@ import { afterEach, describe, it } from 'node:test';
 import React from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 
-const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => (
-  React.createElement(name, { ...props, ref }, props.children as React.ReactNode)
-));
+const focusCalls: Array<Record<string, unknown>> = [];
+const scrollToCalls: Array<{ animated?: boolean; y?: number }> = [];
+let hardwareBackHandler: (() => boolean) | null = null;
+const host = (name: string) => React.forwardRef<Record<string, unknown>, Record<string, unknown>>((props, ref) => {
+  React.useImperativeHandle(ref, () => ({
+    accessibilityLabel: props.accessibilityLabel,
+    host: name,
+    testID: props.testID,
+  }));
+  return React.createElement(name, props, props.children as React.ReactNode);
+});
 const flatList = React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
   const data = props.data as Array<{ id: string }>;
   const renderItem = props.renderItem as (info: { item: { id: string }; index: number }) => React.ReactNode;
@@ -23,14 +31,30 @@ const flatList = React.forwardRef<unknown, Record<string, unknown>>((props, ref)
     content,
   );
 });
+const scrollView = React.forwardRef<Record<string, unknown>, Record<string, unknown>>((props, ref) => {
+  React.useImperativeHandle(ref, () => ({
+    scrollTo: (options: { animated?: boolean; y?: number }) => scrollToCalls.push(options),
+  }));
+  return React.createElement('ScrollView', props, props.children as React.ReactNode);
+});
 const reactNativeMock = {
+  AccessibilityInfo: {
+    setAccessibilityFocus: (handle: Record<string, unknown>) => focusCalls.push(handle),
+  },
+  BackHandler: {
+    addEventListener: (_event: string, handler: () => boolean) => {
+      hardwareBackHandler = handler;
+      return { remove: () => { if (hardwareBackHandler === handler) hardwareBackHandler = null; } };
+    },
+  },
   FlatList: flatList,
   Pressable: host('Pressable'),
-  ScrollView: host('ScrollView'),
+  ScrollView: scrollView,
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: host('Text'),
   TextInput: host('TextInput'),
   View: host('View'),
+  findNodeHandle: (node: Record<string, unknown> | null) => node,
 };
 type Loader = (request: string, parent: NodeModule | undefined, isMain: boolean) => unknown;
 const moduleWithLoader = Module as unknown as { _load: Loader };
@@ -51,6 +75,9 @@ moduleWithLoader._load = (request, parent, isMain) => {
 const { TownTabScreen } = require(
   '../../main/screens/TownTabScreen',
 ) as typeof import('../../main/screens/TownTabScreen');
+const { TownTabScrollContainer } = require(
+  '../../main/screens/TownTabScrollContainer',
+) as typeof import('../../main/screens/TownTabScrollContainer');
 moduleWithLoader._load = originalLoad;
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -58,6 +85,9 @@ moduleWithLoader._load = originalLoad;
 let mountedRenderer: ReactTestRenderer | null = null;
 
 afterEach(async () => {
+  focusCalls.length = 0;
+  scrollToCalls.length = 0;
+  hardwareBackHandler = null;
   if (!mountedRenderer) return;
   const renderer = mountedRenderer;
   mountedRenderer = null;
@@ -78,21 +108,61 @@ describe('TownTabScreen', () => {
   });
 
   it('filters by category and query, opens detail, then restores the list state', async () => {
-    const renderer = await renderTown();
+    const scrollEvents: string[] = [];
+    const renderer = await renderTown({
+      onCaptureListScroll: () => scrollEvents.push('capture'),
+      onRestoreListScroll: () => scrollEvents.push('restore'),
+    });
     await press(renderer.root, '카드 가게 분류');
     const input = findHost(renderer.root, 'TextInput');
     await act(async () => input.props.onChangeText('강화'));
 
     assert.deepEqual(menuButtonLabels(renderer.root), ['카드 강화']);
     await press(renderer.root, '카드 강화 열기');
+    assert.deepEqual(scrollEvents, ['capture']);
     assert.equal(allText(renderer.root).includes('카드 강화'), true);
     assert.equal(findHosts(renderer.root, 'TextInput').length, 0);
+    assert.equal(focusCalls.at(-1)?.testID, 'town-detail-title');
 
     await press(renderer.root, '마을 메뉴 목록으로');
+    assert.deepEqual(scrollEvents, ['capture', 'restore']);
     assert.equal(findHost(renderer.root, 'TextInput').props.value, '강화');
     assert.equal(selectedCategoryLabel(renderer.root), '카드 가게');
     assert.deepEqual(menuButtonLabels(renderer.root), ['카드 강화']);
     assert.equal(menuButton(renderer.root, '카드 강화').props.accessibilityState.selected, true);
+    assert.equal(focusCalls.at(-1)?.accessibilityLabel, '카드 강화 열기');
+  });
+
+  it('uses Android hardware back to close detail and restore the list contract', async () => {
+    const scrollEvents: string[] = [];
+    const renderer = await renderTown({
+      onCaptureListScroll: () => scrollEvents.push('capture'),
+      onRestoreListScroll: () => scrollEvents.push('restore'),
+    });
+    await press(renderer.root, '낚시터 열기');
+
+    assert.ok(hardwareBackHandler);
+    let handled = false;
+    await act(async () => { handled = hardwareBackHandler?.() ?? false; });
+
+    assert.equal(handled, true);
+    assert.deepEqual(scrollEvents, ['capture', 'restore']);
+    assert.equal(findHost(renderer.root, 'TextInput').props.accessibilityLabel, '마을 메뉴 검색');
+    assert.equal(focusCalls.at(-1)?.accessibilityLabel, '낚시터 열기');
+  });
+
+  it('captures the external town ScrollView offset and restores it after detail', async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(TownTabScrollContainer)); });
+    mountedRenderer = renderer;
+    const scroller = renderer.root.find((node) => node.props.accessibilityLabel === '마을 화면 스크롤');
+    await act(async () => scroller.props.onScroll({ nativeEvent: { contentOffset: { y: 384 } } }));
+
+    await press(renderer.root, '낚시터 열기');
+    await act(async () => scroller.props.onScroll({ nativeEvent: { contentOffset: { y: 0 } } }));
+    await press(renderer.root, '마을 메뉴 목록으로');
+
+    assert.deepEqual(scrollToCalls, [{ animated: false, y: 384 }]);
   });
 
   it('shows a friendly empty state and allows clearing the search', async () => {
@@ -118,9 +188,9 @@ describe('TownTabScreen', () => {
   });
 });
 
-async function renderTown(): Promise<ReactTestRenderer> {
+async function renderTown(props: React.ComponentProps<typeof TownTabScreen> = {}): Promise<ReactTestRenderer> {
   let renderer!: ReactTestRenderer;
-  await act(async () => { renderer = create(React.createElement(TownTabScreen)); });
+  await act(async () => { renderer = create(React.createElement(TownTabScreen, props)); });
   mountedRenderer = renderer;
   return renderer;
 }

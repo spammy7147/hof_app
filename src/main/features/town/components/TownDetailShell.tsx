@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef } from 'react';
+import { AccessibilityInfo, findNodeHandle, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { TownMenu } from '../../../domain/townMenus';
 import { theme } from '../../../styles/theme';
@@ -12,11 +13,19 @@ type TownDetailShellProps = {
 
 /** 하단 마을 탭을 유지하면서 기능별 panel을 담는 공통 상세 화면이다. */
 export function TownDetailShell({ menu, onBack, children }: TownDetailShellProps) {
+  const titleRef = useRef<Text>(null);
+
+  useEffect(() => {
+    const titleHandle = findNodeHandle(titleRef.current);
+    if (titleHandle != null) AccessibilityInfo.setAccessibilityFocus(titleHandle);
+  }, []);
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Pressable
           accessibilityLabel="마을 메뉴 목록으로"
+          accessibilityHint="이전 마을 메뉴 목록으로 돌아갑니다."
           accessibilityRole="button"
           onPress={onBack}
           style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
@@ -25,7 +34,9 @@ export function TownDetailShell({ menu, onBack, children }: TownDetailShellProps
           <Text style={styles.backLabel}>목록</Text>
         </Pressable>
         <View style={styles.heading}>
-          <Text style={styles.title}>{menu.label}</Text>
+          <Text accessibilityRole="header" accessible ref={titleRef} style={styles.title} testID="town-detail-title">
+            {menu.label}
+          </Text>
           <Text style={styles.subtitle}>마을 · {categoryLabel(menu.categoryId)}</Text>
         </View>
       </View>

@@ -40,7 +40,7 @@ import { BattleTabScreen } from './BattleTabScreen';
 import { DataTabScreen } from './DataTabScreen';
 import { HomeTabScreen } from './HomeTabScreen';
 import { SettingsTabScreen } from './SettingsTabScreen';
-import { TownTabScreen } from './TownTabScreen';
+import { TownTabScrollContainer } from './TownTabScrollContainer';
 
 type MainSession = {
   loggedIn: boolean;
@@ -665,11 +665,7 @@ function renderActiveTab({
         </View>
       );
     case 'town':
-      return (
-        <TabScrollContainer>
-          <TownTabScreen />
-        </TabScrollContainer>
-      );
+      return <TownTabScrollContainer />;
     case 'data':
       return (
         <DataTabScreen

@@ -1,5 +1,15 @@
-import { useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AccessibilityInfo,
+  BackHandler,
+  findNodeHandle,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  type View as NativeView,
+} from 'react-native';
 
 import {
   DEFAULT_TOWN_CATEGORY_ID,
@@ -13,18 +23,48 @@ import { TownDetailShell } from '../features/town/components/TownDetailShell';
 import { TownMenuGrid } from '../features/town/components/TownMenuGrid';
 import { theme } from '../styles/theme';
 
+export type TownTabScreenProps = {
+  onCaptureListScroll?: () => void;
+  onRestoreListScroll?: () => void;
+};
+
 /** 승인된 모든 마을 기능을 한 화면에서 검색하고 상세로 여는 단일 shell이다. */
-export function TownTabScreen() {
+export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll }: TownTabScreenProps) {
   const [categoryId, setCategoryId] = useState<TownCategoryFilterId>(DEFAULT_TOWN_CATEGORY_ID);
   const [query, setQuery] = useState('');
   const [menuId, setMenuId] = useState<TownMenuId | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const menuTriggerRefs = useRef(new Map<TownMenuId, NativeView>());
+  const pendingFocusRestore = useRef<TownMenuId | null>(null);
 
   const visibleMenus = useMemo(() => searchTownMenus(query, categoryId), [categoryId, query]);
   const selectedMenu = menuId == null ? null : getTownMenuById(menuId) ?? null;
 
+  const closeDetail = useCallback(() => {
+    pendingFocusRestore.current = menuId;
+    setDetailOpen(false);
+  }, [menuId]);
+
+  useEffect(() => {
+    if (!detailOpen) return;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      closeDetail();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [closeDetail, detailOpen]);
+
+  useEffect(() => {
+    const restoreMenuId = pendingFocusRestore.current;
+    if (detailOpen || restoreMenuId == null) return;
+    pendingFocusRestore.current = null;
+    onRestoreListScroll?.();
+    const triggerHandle = findNodeHandle(menuTriggerRefs.current.get(restoreMenuId) ?? null);
+    if (triggerHandle != null) AccessibilityInfo.setAccessibilityFocus(triggerHandle);
+  }, [detailOpen, onRestoreListScroll]);
+
   if (detailOpen && selectedMenu != null) {
-    return <TownDetailShell menu={selectedMenu} onBack={() => setDetailOpen(false)} />;
+    return <TownDetailShell menu={selectedMenu} onBack={closeDetail} />;
   }
 
   return (
@@ -76,8 +116,13 @@ export function TownTabScreen() {
       <TownMenuGrid
         menus={visibleMenus}
         onSelectMenu={(nextMenuId) => {
+          onCaptureListScroll?.();
           setMenuId(nextMenuId);
           setDetailOpen(true);
+        }}
+        onMenuTriggerRef={(nextMenuId, node) => {
+          if (node == null) menuTriggerRefs.current.delete(nextMenuId);
+          else menuTriggerRefs.current.set(nextMenuId, node);
         }}
         selectedMenuId={menuId}
       />

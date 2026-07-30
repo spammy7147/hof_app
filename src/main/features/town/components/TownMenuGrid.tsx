@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View, type View as NativeView } from 'react-native';
 
 import type { TownMenu, TownMenuId } from '../../../domain/townMenus';
 import { TOWN_ICON_SOURCES } from '../../../screens/townAssets';
@@ -9,10 +9,16 @@ type TownMenuGridProps = {
   menus: readonly TownMenu[];
   selectedMenuId: TownMenuId | null;
   onSelectMenu: (menuId: TownMenuId) => void;
+  onMenuTriggerRef?: (menuId: TownMenuId, node: NativeView | null) => void;
 };
 
 /** 마을 기능을 긴 이름도 읽을 수 있는 모바일 2열 카드로 표시한다. */
-export function TownMenuGrid({ menus, selectedMenuId, onSelectMenu }: TownMenuGridProps) {
+export function TownMenuGrid({
+  menus,
+  selectedMenuId,
+  onSelectMenu,
+  onMenuTriggerRef,
+}: TownMenuGridProps) {
   return (
     <FlatList
       columnWrapperStyle={styles.row}
@@ -29,6 +35,7 @@ export function TownMenuGrid({ menus, selectedMenuId, onSelectMenu }: TownMenuGr
               accessibilityRole="button"
               accessibilityState={{ selected }}
               onPress={() => onSelectMenu(item.id)}
+              ref={(node) => onMenuTriggerRef?.(item.id, node)}
               style={({ pressed }) => [
                 styles.card,
                 selected && styles.selectedCard,

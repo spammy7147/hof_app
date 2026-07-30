@@ -31,6 +31,47 @@ describe('town menu catalog', () => {
     assert.equal(TOWN_MENUS.every(({ featureKind }) => featureKind.length > 0), true);
   });
 
+  it('locks every menu identity, category, label, and feature kind in approved order', () => {
+    assert.deepEqual(
+      TOWN_MENUS.map(({ id, categoryId, label, featureKind }) => [id, categoryId, label, featureKind]),
+      [
+        ['fishing', 'life', '낚시터', 'fishing'],
+        ['fishingExchange', 'life', '낚시 교환소', 'fishing'],
+        ['restRoom', 'life', '휴식처', 'home'],
+        ['generalShop', 'market', '일반상점', 'shop'],
+        ['sundriesShop', 'market', '잡화점', 'shop'],
+        ['darkShop', 'market', '암흑상점', 'shop'],
+        ['sell', 'market', '판매', 'shop'],
+        ['combine', 'market', '조합소', 'shop'],
+        ['auction', 'market', '옥션', 'auction'],
+        ['auctionMarket', 'market', '낙찰 시세', 'auction'],
+        ['colosseumBattle', 'pvp', '콜로세움 전투', 'pvp'],
+        ['colosseumExchange', 'pvp', '콜로세움 교환소', 'pvp'],
+        ['adventureAgency', 'agency', '모험 알선소', 'agency'],
+        ['talentAgency', 'agency', '인재 알선소', 'agency'],
+        ['homeManagement', 'home', '자택 관리', 'home'],
+        ['workbase', 'home', '작업장-재봉틀', 'crafting'],
+        ['refineWorkshop', 'smithy', '제련공방', 'crafting'],
+        ['createWorkshop', 'smithy', '제작공방', 'crafting'],
+        ['veteranSmithy', 'smithy', '장로대장간', 'crafting'],
+        ['emblemShop', 'arcade', '교환상점', 'exchange'],
+        ['eventShop', 'arcade', '특별 교환상점', 'exchange'],
+        ['sewingShop', 'arcade', '클라리스의 재봉실', 'crafting'],
+        ['legacyShop', 'arcade', '유물 가게', 'exchange'],
+        ['annShop', 'arcade', '앤의 가게', 'exchange'],
+        ['cardIdentify', 'card', '카드 감정', 'card'],
+        ['cardUpgrade', 'card', '카드 강화', 'card'],
+        ['cardChange', 'card', '카드 변화', 'card'],
+        ['cardSell', 'card', '카드 판매', 'card'],
+        ['soulEcho', 'card', '소울 에코 교환', 'card'],
+        ['orbExchange', 'special', '오브 교환소', 'reward'],
+        ['stash', 'special', '상자 열기', 'reward'],
+        ['raidInfo', 'special', '전투 정보실', 'raid'],
+        ['pantheon', 'special', '신전 거리', 'pantheon'],
+      ],
+    );
+  });
+
   it('keeps PVP and special-facility menus independent', () => {
     assert.deepEqual(getTownMenusForCategory('pvp').map(({ label }) => label), [
       '콜로세움 전투',
