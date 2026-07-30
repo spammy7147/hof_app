@@ -675,6 +675,24 @@ describe('BackendApiClient', () => {
     assert.equal(requests[5]?.init.method, 'DELETE');
     assert.equal(requests[5]?.init.body, undefined);
   });
+
+  it('uses authenticated JSON transport for typed town resource and action endpoints', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const requests: CapturedRequest[] = [];
+    const client = new BackendApiClient('http://backend.test');
+
+    mockFetchWithCapture({ rows: [] }, requests);
+    await client.fetchTownResource<{ rows: [] }>('/api/town/fishing');
+
+    mockFetchWithCapture({ status: 'SUCCESS', messages: [] }, requests);
+    await client.submitTownAction('/api/town/fishing/catch', { candidateId: 'fish-1' });
+
+    assert.equal(requests[0]?.url, 'http://backend.test/api/town/fishing');
+    assert.equal(requests[0]?.init.method, undefined);
+    assert.equal(requests[1]?.url, 'http://backend.test/api/town/fishing/catch');
+    assert.equal(requests[1]?.init.method, 'POST');
+    assert.equal(requests[1]?.init.body, '{"candidateId":"fish-1"}');
+  });
 });
 
 function loadBackendApi(): Promise<BackendApiModule> {

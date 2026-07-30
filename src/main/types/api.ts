@@ -178,6 +178,37 @@ export type SubmitCaptchaAnswerRequest = {
   preparationVersion: number;
 };
 
+/** 마을 공통 목록에서 HOF가 실제 선택 control을 제공한 행만 selectable이다. */
+export type TownRowResponse = {
+  id: string;
+  label: string;
+  selectable: boolean;
+  detail: string | null;
+  imageUrl: string | null;
+  price: number | null;
+  quantity: number | null;
+};
+
+export type TownResultStatus = 'SUCCESS' | 'FAILURE' | 'INFORMATIONAL' | 'UNKNOWN';
+
+export type TownResultItemResponse = {
+  name: string;
+  quantity: number | null;
+  imageUrl: string | null;
+  detail: string | null;
+};
+
+/** HOF 문서나 form 필드를 포함하지 않는 마을 action 공통 표시 결과다. */
+export type TownActionResultResponse = {
+  status: TownResultStatus;
+  messages: string[];
+  items: TownResultItemResponse[];
+  refreshRequired: boolean;
+};
+
+/** 앱이 호출할 수 있는 backend 마을 namespace만 표현하며 HOF URL은 받을 수 없다. */
+export type TownApiPath = `/api/town/${string}`;
+
 /** 저장 가능한 자동화는 백엔드가 소유하는 세 가지 singleton 유형으로 제한된다. */
 export type AutomationType = 'QUEST' | 'BATTLE_MAP' | 'ADVENTURE_MAP';
 

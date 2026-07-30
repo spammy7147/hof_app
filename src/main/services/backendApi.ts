@@ -30,6 +30,7 @@ import type {
   ReorderPartyPresetFoldersRequest,
   ReorderPartyPresetsRequest,
   SubmitCaptchaAnswerRequest,
+  TownApiPath,
   DevicePushTargetResponse,
   UnifiedAutomationAction,
   TypedAutomationAggregateResponse,
@@ -153,6 +154,22 @@ export class BackendApiClient {
    */
   fetchStatus(): Promise<HofStatusResponse> {
     return this.request('/api/status');
+  }
+
+  /** 기능별 town client가 인증·401 복구를 공유하며 typed 조회 DTO를 받는다. */
+  fetchTownResource<TResponse>(path: TownApiPath): Promise<TResponse> {
+    return this.request(path);
+  }
+
+  /** 기능별 request DTO를 town namespace에 제출한다. 임의 HOF URL/form은 받지 않는다. */
+  submitTownAction<TRequest, TResponse>(
+    path: TownApiPath,
+    request: TRequest,
+  ): Promise<TResponse> {
+    return this.request(path, {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
   }
 
   /**
