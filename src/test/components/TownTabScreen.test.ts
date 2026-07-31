@@ -343,7 +343,7 @@ describe('TownTabScreen', () => {
       load: async (path: string) => {
         paths.push(path);
         return {
-          raids: [], applied: false, applyWaitSeconds: null, myStatus: null,
+          raids: [], applied: false, applyWait: false, applyWaitSeconds: null, myStatus: null,
           globalActions: [], result: null,
         };
       },

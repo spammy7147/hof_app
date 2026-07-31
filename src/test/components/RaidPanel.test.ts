@@ -61,6 +61,25 @@ describe('RaidPanel', () => {
     assert.equal(loads, 2);
   });
 
+  it('남은 초를 파싱하지 못해도 applyWait 상태면 REGISTER를 안내하고 차단한다', async () => {
+    let loads = 0; let submits = 0;
+    await render(React.createElement(RaidPanel, { api: api(
+      async () => ++loads === 1 ? raidData() : raidData(null, true),
+      async () => { submits += 1; return raidData(); },
+    ) }));
+    await press('등록');
+    assert.equal(visibleModal().length, 1);
+    await press('갱신');
+    assert.equal(text().includes('남은 시간은 HOF에서 확인할 수 없습니다.'), true);
+    assert.equal(button('등록')[0]!.props.accessibilityState.disabled, true);
+
+    await pressLast('등록');
+    assert.equal(submits, 0);
+    assert.equal(visibleModal().length, 0);
+    await press('등록');
+    assert.equal(visibleModal().length, 0);
+  });
+
   it('빠른 중복 확인은 POST를 한 번만 보낸다', async () => {
     const pending = deferred<unknown>(); let calls = 0;
     await render(React.createElement(RaidPanel, { api: api(async () => raidData(), async () => { calls += 1; return pending.promise; }) }));
@@ -119,7 +138,7 @@ describe('RaidPanel', () => {
   });
 });
 
-function raidData(applyWaitSeconds: number | null = null) { return { raids: [{ id: 'RaidGoblin', name: '고블린 전투 마차', playable: true, difficulty: '평범 레벨 40', maxPartySize: 6, rewardDamage: '100000+', status: 'RECRUITING' as const, statusText: '모집 중', waitSeconds: null, applicants: ['공민이'], joined: true, actions: ['REGISTER' as const, 'LEAVE' as const], battleTarget: { categoryId: 'raid', mapCode: 'RaidGoblin' } }, { id: 'RaidTest', name: '시험 레이드', playable: false, difficulty: null, maxPartySize: null, rewardDamage: null, status: 'TESTING' as const, statusText: '신청 안됨', waitSeconds: null, applicants: [], joined: false, actions: [], battleTarget: null }], applied: true, applyWaitSeconds, myStatus: '신청 완료', globalActions: ['REFRESH' as const, 'REWARD' as const], result: null }; }
+function raidData(applyWaitSeconds: number | null = null, applyWait = applyWaitSeconds != null) { return { raids: [{ id: 'RaidGoblin', name: '고블린 전투 마차', playable: true, difficulty: '평범 레벨 40', maxPartySize: 6, rewardDamage: '100000+', status: 'RECRUITING' as const, statusText: '모집 중', waitSeconds: null, applicants: ['공민이'], joined: true, actions: ['REGISTER' as const, 'LEAVE' as const], battleTarget: { categoryId: 'raid', mapCode: 'RaidGoblin' } }, { id: 'RaidTest', name: '시험 레이드', playable: false, difficulty: null, maxPartySize: null, rewardDamage: null, status: 'TESTING' as const, statusText: '신청 안됨', waitSeconds: null, applicants: [], joined: false, actions: [], battleTarget: null }], applied: true, applyWait, applyWaitSeconds, myStatus: '신청 완료', globalActions: ['REFRESH' as const, 'REWARD' as const], result: null }; }
 function result(message = '완료') { return { status: 'SUCCESS' as const, messages: [message], items: [], refreshRequired: true }; }
 function api(load: (path: string) => Promise<unknown>, submit: (path: string, request: unknown) => Promise<unknown> = async () => { throw new Error('unexpected'); }) { return { load, submit } as never; }
 async function render(node: React.ReactElement) { await act(async () => { mounted = create(node); }); await act(async () => { await Promise.resolve(); }); }

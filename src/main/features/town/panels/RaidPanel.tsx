@@ -24,6 +24,7 @@ export function RaidPanel({ api, resolveCaptcha, onOpenBattle }: Props) {
   const [now, setNow] = useState(() => Date.now());
   const staged = useRef<RaidPubResponse | null>(null);
   const responseSequence = useRef(0);
+  const registerBlockedRef = useRef(false);
   const zeroReloaded = useRef(false);
   const activeApi = useRef(api); activeApi.current = api;
   const load = useCallback(() => api.load<RaidPubResponse>('/api/town/raid'), [api]);
@@ -66,6 +67,16 @@ export function RaidPanel({ api, resolveCaptcha, onOpenBattle }: Props) {
   if (!data) return <LoadState loading={town.status === 'loading'} error={town.error} reload={town.reload} />;
   const selected = data.raids.find((raid) => raid.id === selectedId) ?? null;
   const remaining = (seconds: number | null) => seconds == null ? null : Math.max(0, seconds - elapsed);
+  const applyWaitRemaining = remaining(data.applyWaitSeconds);
+  const registerBlocked = data.applyWait || (applyWaitRemaining != null && applyWaitRemaining > 0);
+  registerBlockedRef.current = registerBlocked;
+  const applyWaitMessage = data.applyWait
+    ? applyWaitRemaining == null
+      ? '레이드 신청 대기 중입니다. 남은 시간은 HOF에서 확인할 수 없습니다.'
+      : applyWaitRemaining > 0
+        ? `신청 가능까지 ${formatDuration(applyWaitRemaining)}`
+        : '레이드 신청 대기 상태를 갱신하고 있습니다.'
+    : applyWaitRemaining == null ? null : `신청 가능까지 ${formatDuration(applyWaitRemaining)}`;
   const rows = data.raids.map((raid): TownRowResponse => {
     const wait = remaining(raid.waitSeconds);
     const detail = [raid.difficulty, raid.maxPartySize == null ? null : `${raid.applicants.length}/${raid.maxPartySize}명`, raid.rewardDamage ? `특별 보상 ${raid.rewardDamage}` : null,
@@ -73,9 +84,13 @@ export function RaidPanel({ api, resolveCaptcha, onOpenBattle }: Props) {
       raid.applicants.length ? `신청자 ${raid.applicants.join(', ')}` : '신청자 없음'].filter(Boolean).join(' · ');
     return { id: raid.id, label: raid.name, accessibilityLabel: `${raid.name}${raid.joined ? ' 내가 참가 중' : ''}${raid.playable && !busy ? ' 선택' : ' 선택 불가'}`, detail, imageUrl: null, price: null, quantity: null, selectable: raid.playable && !busy };
   });
-  const ask = (action: RaidAction, raidId: string | null, detail: string) => setConfirm({ apiKey, action, raidId, title: ACTION_LABEL[action], detail });
+  const ask = (action: RaidAction, raidId: string | null, detail: string) => {
+    if (action === 'REGISTER' && registerBlockedRef.current) return;
+    setConfirm({ apiKey, action, raidId, title: ACTION_LABEL[action], detail });
+  };
   const perform = () => {
     if (!activeConfirm) return;
+    if (activeConfirm.action === 'REGISTER' && registerBlockedRef.current) { setConfirm(null); return; }
     const request = { action: activeConfirm.action, raidId: activeConfirm.raidId };
     const submissionApi = api; staged.current = null;
     responseSequence.current += 1;
@@ -102,14 +117,14 @@ export function RaidPanel({ api, resolveCaptcha, onOpenBattle }: Props) {
     <TownItemList rows={rows} selectionMode="single" selectedIds={selectedId ? [selectedId] : []} onSelectionChange={(ids) => setSelectedId(ids[0] ?? null)}
       header={<View style={styles.section}><Text style={styles.title}>전투 정보실</Text><Text style={styles.hint}>레이드 모집 상태를 확인하고 기존 RAID 전투 화면으로 연결합니다.</Text>
         {data.myStatus ? <Text accessibilityLiveRegion="polite" style={styles.status}>{data.myStatus}</Text> : null}
-        {data.applyWaitSeconds != null ? <Text accessibilityLiveRegion="polite" style={styles.wait}>신청 가능까지 {formatDuration(remaining(data.applyWaitSeconds) ?? 0)}</Text> : null}
+        {applyWaitMessage ? <Text accessibilityLiveRegion="polite" style={styles.wait}>{applyWaitMessage}</Text> : null}
         <View style={styles.actions}><ActionButton label="갱신" disabled={busy} onPress={refresh} />
           {data.globalActions.includes('REWARD') ? <ActionButton label="보상 확인" disabled={busy} onPress={() => ask('REWARD', null, '레이드 보상을 확인합니다.')} /> : null}
           {data.globalActions.includes('WAIT_RESET') ? <ActionButton label="대기 리셋" disabled={busy} onPress={() => ask('WAIT_RESET', null, '신청 대기시간을 초기화합니다.')} /> : null}</View>
       </View>}
       footer={<View style={styles.section}>
         {selected ? <><Text style={styles.selectedTitle}>{selected.name}</Text><View style={styles.actions}>
-          {selected.actions.map((action) => <ActionButton key={action} label={ACTION_LABEL[action]} disabled={busy || action === 'REGISTER' && data.applyWaitSeconds != null && remaining(data.applyWaitSeconds)! > 0} onPress={() => ask(action, selected.id, `${selected.name}에서 ${ACTION_LABEL[action]} 동작을 실행합니다.`)} />)}
+          {selected.actions.map((action) => <ActionButton key={action} label={ACTION_LABEL[action]} disabled={busy || action === 'REGISTER' && registerBlocked} onPress={() => ask(action, selected.id, `${selected.name}에서 ${ACTION_LABEL[action]} 동작을 실행합니다.`)} />)}
         </View>{battleTarget && onOpenBattle ? <ActionButton label="RAID 전투 화면 열기" disabled={busy} onPress={() => onOpenBattle(battleTarget)} /> : null}</> : null}
         {data.result ? <TownActionResult result={data.result} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}
       </View>} emptyMessage="현재 표시할 레이드가 없습니다." />

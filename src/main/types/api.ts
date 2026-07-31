@@ -448,7 +448,7 @@ export type RaidPubRaidResponse = {
   applicants: string[]; joined: boolean; actions: RaidAction[]; battleTarget: FishingBattleTarget | null;
 };
 export type RaidPubResponse = {
-  raids: RaidPubRaidResponse[]; applied: boolean; applyWaitSeconds: number | null; myStatus: string | null;
+  raids: RaidPubRaidResponse[]; applied: boolean; applyWait: boolean; applyWaitSeconds: number | null; myStatus: string | null;
   globalActions: RaidAction[]; result: TownActionResultResponse | null;
 };
 export type RaidPubActionRequest = { action: RaidAction; raidId: string | null };
