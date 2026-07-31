@@ -7,7 +7,8 @@ import type {
   TownRowResponse,
 } from '../../../types/api';
 
-type TownBackendTransport = Pick<BackendApiClient, 'fetchTownResource' | 'submitTownAction'>;
+type TownBackendTransport = Pick<BackendApiClient, 'fetchTownResource' | 'submitTownAction'> &
+  Partial<Pick<BackendApiClient, 'fetchQuests' | 'acceptQuest' | 'claimQuest'>>;
 
 export type TownApi = ReturnType<typeof createTownApi>;
 
@@ -19,6 +20,18 @@ export function createTownApi(backend: TownBackendTransport) {
     },
     submit<TRequest, TResponse>(path: TownApiPath, request: TRequest): Promise<TResponse> {
       return backend.submitTownAction<TRequest, TResponse>(path, request);
+    },
+    loadQuests() {
+      if (!backend.fetchQuests) return Promise.reject(new Error('퀘스트 API가 연결되지 않았습니다.'));
+      return backend.fetchQuests();
+    },
+    acceptQuest(actionNo: string) {
+      if (!backend.acceptQuest) return Promise.reject(new Error('퀘스트 수락 API가 연결되지 않았습니다.'));
+      return backend.acceptQuest(actionNo);
+    },
+    claimQuest(actionNo: string) {
+      if (!backend.claimQuest) return Promise.reject(new Error('퀘스트 완료 API가 연결되지 않았습니다.'));
+      return backend.claimQuest(actionNo);
     },
   };
 }

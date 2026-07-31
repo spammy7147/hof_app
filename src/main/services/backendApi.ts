@@ -301,6 +301,20 @@ export class BackendApiClient {
     return snapshots.map(normalizeQuestSnapshot);
   }
 
+  async acceptQuest(actionNo: string): Promise<QuestSnapshot[]> {
+    const snapshots = await this.request<Array<Omit<QuestSnapshot, 'rewards'> & { rewards?: unknown }>>(
+      `/api/quests/${encodeURIComponent(actionNo)}/accept`, { method: 'POST' },
+    );
+    return snapshots.map(normalizeQuestSnapshot);
+  }
+
+  async claimQuest(actionNo: string): Promise<QuestSnapshot[]> {
+    const snapshots = await this.request<Array<Omit<QuestSnapshot, 'rewards'> & { rewards?: unknown }>>(
+      `/api/quests/${encodeURIComponent(actionNo)}/claim`, { method: 'POST' },
+    );
+    return snapshots.map(normalizeQuestSnapshot);
+  }
+
   /** 통합 자동화를 시작, 일시정지, 재개 또는 종료한다. */
   changeUnifiedAutomationState(
     action: UnifiedAutomationAction,

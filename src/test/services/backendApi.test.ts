@@ -474,6 +474,10 @@ describe('BackendApiClient', () => {
     }
     mockFetchWithCapture([], requests);
     await client.fetchQuests();
+    mockFetchWithCapture([], requests);
+    await client.acceptQuest('quest 351');
+    mockFetchWithCapture([], requests);
+    await client.claimQuest('R/610');
 
     assert.deepEqual(
       requests.map((request) => [request.url, request.init.method ?? 'GET']),
@@ -490,6 +494,8 @@ describe('BackendApiClient', () => {
         ['http://backend.test/api/automation/unified/resume', 'POST'],
         ['http://backend.test/api/automation/unified/stop', 'POST'],
         ['http://backend.test/api/quests', 'GET'],
+        ['http://backend.test/api/quests/quest%20351/accept', 'POST'],
+        ['http://backend.test/api/quests/R%2F610/claim', 'POST'],
       ],
     );
     assert.equal(requests[1]?.init.body, '{"type":"QUEST"}');

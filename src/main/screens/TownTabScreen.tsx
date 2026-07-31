@@ -27,6 +27,8 @@ import { AuctionPanel } from '../features/town/panels/AuctionPanel';
 import { CardPanel } from '../features/town/panels/CardPanel';
 import { RewardPanel } from '../features/town/panels/RewardPanel';
 import { CraftingPanel } from '../features/town/panels/CraftingPanel';
+import { AgencyPanel } from '../features/town/panels/AgencyPanel';
+import { HomePanel } from '../features/town/panels/HomePanel';
 import type { TownApi } from '../features/town/api/townApi';
 import type { FishingBattleTarget } from '../types/api';
 import { theme } from '../styles/theme';
@@ -112,6 +114,8 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
         : selectedMenu.id === 'refineWorkshop' ? 'refine'
           : selectedMenu.id === 'createWorkshop' ? 'create'
             : selectedMenu.id === 'veteranSmithy' ? 'veteran' : null;
+    const homeMode = selectedMenu.id === 'homeManagement' ? 'home'
+      : selectedMenu.id === 'restRoom' ? 'rest' : null;
     const detail = (
       <TownDetailShell menu={selectedMenu} onBack={closeDetail}>
         {fishingMode && townApi ? (
@@ -132,12 +136,16 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
           <RewardPanel api={townApi} mode={rewardMode} resolveCaptcha={resolveCaptcha} />
         ) : craftingMode && townApi ? (
           <CraftingPanel api={townApi} mode={craftingMode} resolveCaptcha={resolveCaptcha} />
+        ) : selectedMenu.id === 'adventureAgency' && townApi ? (
+          <AgencyPanel api={townApi} resolveCaptcha={resolveCaptcha} />
+        ) : homeMode && townApi ? (
+          <HomePanel api={townApi} mode={homeMode} resolveCaptcha={resolveCaptcha} />
         ) : (
           <><Text style={styles.detailTitle}>{selectedMenu.label}</Text><Text style={styles.hint}>기능 연결을 준비하고 있습니다.</Text></>
         )}
       </TownDetailShell>
     );
-    return renderContent?.(detail, shopMode != null || auctionMode != null || cardMode != null || rewardMode != null || craftingMode != null) ?? detail;
+    return renderContent?.(detail, shopMode != null || auctionMode != null || cardMode != null || rewardMode != null || craftingMode != null || homeMode != null || selectedMenu.id === 'adventureAgency') ?? detail;
   }
 
   const list = (
