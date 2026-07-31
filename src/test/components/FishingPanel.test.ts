@@ -70,6 +70,19 @@ describe('FishingPanel', () => {
     assert.equal(allText().includes('물고기가 도망쳤습니다.'), true);
   });
 
+  it('획득 물고기의 이름 수량 사용횟수 효과를 결과에 표시한다', async () => {
+    const caught = {
+      ...fishing('START', ['START']),
+      catches: [{ name: 'Rank Fish', quantity: 2, remainingUses: 100, effect: 'HP+3000, HP Regen+2%' }],
+    };
+    await render(React.createElement(FishingPanel, { api: fakeApi({ load: async () => caught }) }));
+
+    const text = allText();
+    assert.equal(text.includes('Rank Fish × 2'), true);
+    assert.equal(text.includes('남은 사용 횟수 100회'), true);
+    assert.equal(text.includes('효과 HP+3000, HP Regen+2%'), true);
+  });
+
   it('전투 중에는 낚시 버튼을 숨기고 전투 CTA만 연결한다', async () => {
     const opened: Array<{ categoryId: string; mapCode: string }> = [];
     const battle = { ...fishing('NONE', []), blockedByBattle: true, battleTarget: { categoryId: 'battle_map', mapCode: 'fishing_12' } };
@@ -118,6 +131,21 @@ describe('FishingPanel', () => {
     await act(async () => { await Promise.resolve(); });
     assert.deepEqual(calls, [{ candidateId: 'rank', quantity: 3 }]);
   });
+
+  for (const invalid of ['', '0', '-1', '1.5', 'abc']) {
+    it(`잘못된 교환 수량 ${JSON.stringify(invalid)}은 확인과 제출을 차단한다`, async () => {
+      const calls: unknown[] = [];
+      const response = { items: [{ id: 'rank', label: 'Rank Fish', selectable: true, detail: null, imageUrl: null, price: 100, quantity: 4, materials: [] }], result: null };
+      await render(React.createElement(FishingPanel, { api: fakeApi({ load: async () => response, submit: async (_path, request) => { calls.push(request); return response; } }), mode: 'exchange' }));
+      await press('Rank Fish 선택');
+      await act(async () => button('교환 수량').props.onChangeText(invalid));
+
+      assert.equal(button('선택한 낚시 품목 교환').props.disabled, true);
+      assert.equal(allText().includes('수량은 1 이상의 10진 정수로 입력하세요.'), true);
+      assert.equal(mounted!.root.find((node) => String(node.type) === 'Modal').props.visible, false);
+      assert.deepEqual(calls, []);
+    });
+  }
 });
 
 function fishing(primaryAction: 'START' | 'CATCH' | 'NONE', availableActions: string[]) {

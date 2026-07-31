@@ -302,6 +302,7 @@ export function MainScreen({
   }, [adoptPartyPresetCatalog, onDeletePartyPresetFolder]);
   const [activeTabId, setActiveTabId] = useState<MainTabId>(DEFAULT_MAIN_TAB_ID);
   const [pendingBattleTarget, setPendingBattleTarget] = useState<FishingBattleTarget | null>(null);
+  const consumePendingBattleTarget = useCallback(() => setPendingBattleTarget(null), []);
   const [characterSubTabId, setCharacterSubTabId] = useState<CharacterSubTabId>('characters');
   const [selectedCharacter, setSelectedCharacter] = useState<HofCharacter | null>(null);
   const [selectedCharacterDetail, setSelectedCharacterDetail] = useState<HofCharacterDetail | null>(null);
@@ -418,6 +419,7 @@ export function MainScreen({
           townApi,
           resolveCaptcha,
           pendingBattleTarget,
+          consumePendingBattleTarget,
           onOpenFishingBattle: (target) => {
             setPendingBattleTarget(target);
             setActiveTabId('battle');
@@ -540,6 +542,7 @@ type RenderActiveTabArgs = {
   resolveCaptcha?: () => Promise<void>;
   onOpenFishingBattle: (target: FishingBattleTarget) => void;
   pendingBattleTarget: FishingBattleTarget | null;
+  consumePendingBattleTarget: () => void;
 };
 
 /**
@@ -589,6 +592,7 @@ function renderActiveTab({
   resolveCaptcha,
   onOpenFishingBattle,
   pendingBattleTarget,
+  consumePendingBattleTarget,
 }: RenderActiveTabArgs) {
   switch (activeTabId) {
     case 'home':
@@ -621,6 +625,7 @@ function renderActiveTab({
           partyPresetCatalog={partyPresetCatalog}
           onRunBattle={onRunBattle}
           initialTarget={pendingBattleTarget}
+          onInitialTargetConsumed={consumePendingBattleTarget}
         />
       );
     case 'characters':

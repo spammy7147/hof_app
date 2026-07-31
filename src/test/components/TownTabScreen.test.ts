@@ -154,6 +154,25 @@ describe('TownTabScreen', () => {
     assert.equal(focusCalls.at(-1)?.accessibilityLabel, '낚시터 열기');
   });
 
+  it('낚시터와 교환소 내부 이동 때 상세 제목과 접근성 포커스를 갱신한다', async () => {
+    const townApi = {
+      load: async (path: string) => path.endsWith('fishing-exchange')
+        ? { items: [], result: null }
+        : { ...fishingSnapshot(), catches: [] },
+      submit: async () => { throw new Error('unexpected submit'); },
+    } as never;
+    const renderer = await renderTown({ townApi });
+    await press(renderer.root, '낚시터 열기');
+    const focusCount = focusCalls.length;
+    assert.equal(allText(renderer.root).includes('낚시터'), true);
+
+    await press(renderer.root, '낚시 교환소로 이동');
+    await act(async () => { await Promise.resolve(); });
+    assert.equal(allText(renderer.root).includes('낚시 교환소'), true);
+    assert.equal(focusCalls.length, focusCount + 1);
+    assert.equal(focusCalls.at(-1)?.testID, 'town-detail-title');
+  });
+
   it('captures the external town ScrollView offset and restores it after detail', async () => {
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(React.createElement(TownTabScrollContainer)); });
@@ -247,4 +266,12 @@ function flattenChildren(value: unknown): string[] {
   if (typeof value === 'string' || typeof value === 'number') return [String(value)];
   if (Array.isArray(value)) return value.flatMap(flattenChildren);
   return [];
+}
+
+function fishingSnapshot() {
+  return {
+    notice: null, remainingCasts: 17, waterStatus: '수면이 빛난다.', baitCount: 0, shiningBaitCount: 0,
+    escapeSeconds: null, combo: null, locationName: '일반 낚시터', primaryAction: 'START', availableActions: ['START'],
+    lastOutcome: null, blockedByBattle: false, battleTarget: null, result: null,
+  };
 }

@@ -18,7 +18,7 @@ export function TownDetailShell({ menu, onBack, children }: TownDetailShellProps
   useEffect(() => {
     const titleHandle = findNodeHandle(titleRef.current);
     if (titleHandle != null) AccessibilityInfo.setAccessibilityFocus(titleHandle);
-  }, []);
+  }, [menu.id]);
 
   return (
     <View style={styles.container}>

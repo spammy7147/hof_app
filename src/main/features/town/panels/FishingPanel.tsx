@@ -90,6 +90,18 @@ function FishingLoopPanel({ api, resolveCaptcha, onOpenBattle, onNavigateMode }:
         </View>
       ) : null}
       {state.lastOutcome === 'ESCAPED' ? <Text style={styles.muted}>물고기가 도망쳤습니다. 다음 낚시를 시작할 수 있습니다.</Text> : null}
+      {state.catches.length > 0 ? (
+        <View accessibilityLabel="낚시 획득 결과" style={styles.catchList}>
+          <Text style={styles.heading}>획득한 물고기</Text>
+          {state.catches.map((caught, index) => (
+            <View key={`${caught.name}-${index}`} style={styles.catchCard}>
+              <Text style={styles.heading}>{caught.name} × {caught.quantity}</Text>
+              <Text style={styles.info}>남은 사용 횟수 {caught.remainingUses === null ? '확인 불가' : `${caught.remainingUses}회`}</Text>
+              <Text style={styles.info}>효과 {caught.effect ?? '확인 불가'}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
       {state.result ? <TownActionResult onRefresh={() => { setActionState(null); void town.reload(); }} result={state.result} /> : null}
       {town.error ? <Text style={styles.error}>{town.error}</Text> : null}
       <NavigateButton label="낚시 교환소로 이동" onPress={() => onNavigateMode?.('exchange')} />
@@ -121,17 +133,20 @@ function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<Fish
   if (!data) return <ErrorState message={town.error} onRetry={town.reload} />;
   const selected = selectedIds[0];
   const selectedItem = data.items.find((item) => item.id === selected);
-  const parsedQuantity = Math.max(1, Number.parseInt(quantity, 10) || 1);
+  const quantityValid = /^[1-9]\d*$/.test(quantity) && Number.isSafeInteger(Number(quantity));
+  const parsedQuantity = quantityValid ? Number(quantity) : null;
+  const quantityError = quantityValid ? null : '수량은 1 이상의 10진 정수로 입력하세요.';
   return (
     <View style={styles.container}>
       <TownItemList rows={data.items} selectedIds={selectedIds} selectionMode="single" onSelectionChange={setSelectedIds} />
       <TextInput accessibilityLabel="교환 수량" keyboardType="number-pad" onChangeText={setQuantity} style={styles.quantityInput} value={quantity} />
+      {quantityError ? <Text accessibilityLiveRegion="polite" style={styles.error}>{quantityError}</Text> : null}
       <Pressable
         accessibilityLabel="선택한 낚시 품목 교환"
         accessibilityRole="button"
-        disabled={!selected || town.status === 'submitting'}
-        onPress={() => selected && setConfirming(true)}
-        style={[styles.primaryButton, !selected && styles.disabled]}
+        disabled={!selected || !quantityValid || town.status === 'submitting'}
+        onPress={() => selected && quantityValid && setConfirming(true)}
+        style={[styles.primaryButton, (!selected || !quantityValid) && styles.disabled]}
       ><Text style={styles.primaryText}>교환</Text></Pressable>
       {data.result ? <TownActionResult result={data.result} /> : null}
       {town.error ? <Text style={styles.error}>{town.error}</Text> : null}
@@ -140,19 +155,19 @@ function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<Fish
         confirmLabel="교환"
         details={selectedItem ? [
           { label: '품목', value: selectedItem.label },
-          { label: '수량', value: `${parsedQuantity}개` },
-          ...(selectedItem.price !== null ? [{ label: '비용', value: `$${(selectedItem.price * parsedQuantity).toLocaleString()}` }] : []),
+          { label: '수량', value: `${parsedQuantity ?? 0}개` },
+          ...(selectedItem.price !== null && parsedQuantity !== null ? [{ label: '비용', value: `$${(selectedItem.price * parsedQuantity).toLocaleString()}` }] : []),
           ...(selectedItem.materials.length ? [{ label: '재료', value: selectedItem.materials.join(', ') }] : []),
         ] : []}
         message="선택한 낚시 품목을 교환합니다."
         onCancel={() => setConfirming(false)}
         onConfirm={() => {
-          if (!selected) return;
+          if (!selected || parsedQuantity === null) return;
           void town.submit({ candidateId: selected, quantity: parsedQuantity }).catch(() => undefined);
         }}
         submitting={town.status === 'submitting'}
         title="교환 확인"
-        visible={confirming && selectedItem != null}
+        visible={confirming && selectedItem != null && quantityValid}
       />
     </View>
   );
@@ -198,5 +213,7 @@ const styles = StyleSheet.create({
   buttonText: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
   disabled: { opacity: 0.45 },
   pressed: { opacity: 0.8 },
+  catchList: { gap: theme.spacing.sm },
+  catchCard: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.md },
   quantityInput: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md },
 });

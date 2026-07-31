@@ -51,6 +51,7 @@ type BattleTabScreenProps = {
   partyPresetCatalog: PartyPresetCatalogResource;
   onRunBattle: (request: RunBattleRequest) => Promise<BattleResultResponse>;
   initialTarget?: FishingBattleTarget | null;
+  onInitialTargetConsumed?: () => void;
 };
 
 const categoryIcons: Record<string, LucideIcon> = {
@@ -104,6 +105,7 @@ export function BattleTabScreen({
   partyPresetCatalog,
   onRunBattle,
   initialTarget,
+  onInitialTargetConsumed,
 }: BattleTabScreenProps) {
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
   const [mapsByCategory, setMapsByCategory] = useState<Record<string, BattleMapResponse[]>>({});
@@ -137,13 +139,14 @@ export function BattleTabScreen({
       const group = groupBattleMaps(maps).find((candidate) => candidate.maps.some((map) => map.mapCode === initialTarget.mapCode));
       setExpandedGroupKeys(group ? [group.key] : []);
       setExpandedMapKey(buildBattleMapStateKey(targetMap));
+      onInitialTargetConsumed?.();
     }).catch((error) => {
       if (!cancelled) setMapErrorsByCategory((current) => ({ ...current, [category.id]: error instanceof Error ? error.message : '맵 목록을 불러오지 못했습니다.' }));
     }).finally(() => {
       if (!cancelled) setLoadingCategoryId((current) => current === category.id ? null : current);
     });
     return () => { cancelled = true; };
-  }, [authenticated, categories, initialTarget?.categoryId, initialTarget?.mapCode, onLoadMaps]);
+  }, [authenticated, categories, initialTarget?.categoryId, initialTarget?.mapCode, onInitialTargetConsumed, onLoadMaps]);
 
   /**
    * 선택한 전투 카테고리의 하위 맵 목록을 서버에서 불러온다.

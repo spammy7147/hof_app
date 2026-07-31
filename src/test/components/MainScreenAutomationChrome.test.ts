@@ -56,6 +56,12 @@ describe('MainScreen automation editor chrome', () => {
 
     const battle = renderer.root.find((node) => String(node.type) === 'BattleTabScreen');
     assert.deepEqual(battle.props.initialTarget, target);
+    await act(async () => battle.props.onInitialTargetConsumed());
+    assert.equal(renderer.root.find((node) => String(node.type) === 'BattleTabScreen').props.initialTarget, null);
+
+    await act(async () => tabs.props.onChangeTab('town'));
+    await act(async () => tabs.props.onChangeTab('battle'));
+    assert.equal(renderer.root.find((node) => String(node.type) === 'BattleTabScreen').props.initialTarget, null);
   });
 
   it('loads one account catalog and shares the same resource with home and battle', async () => {
