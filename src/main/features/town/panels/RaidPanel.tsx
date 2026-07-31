@@ -1,0 +1,108 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { toUserFacingErrorMessage } from '../../../domain/userFacingErrors';
+import { theme } from '../../../styles/theme';
+import type { FishingBattleTarget, RaidAction, RaidPubActionRequest, RaidPubResponse, TownActionResultResponse, TownRowResponse } from '../../../types/api';
+import type { TownApi } from '../api/townApi';
+import { TownActionResult } from '../components/TownActionResult';
+import { TownConfirmSheet } from '../components/TownConfirmSheet';
+import { TownItemList } from '../components/TownItemList';
+import { TownMutationBusyError, useTownFeature } from '../hooks/useTownFeature';
+
+type Props = { api: TownApi; resolveCaptcha?: () => Promise<void>; onOpenBattle?: (target: FishingBattleTarget) => void };
+type Confirm = { action: RaidAction; raidId: string | null; title: string; detail: string } | null;
+const apiKeys = new WeakMap<object, number>(); let nextApiKey = 1;
+
+export function RaidPanel({ api, resolveCaptcha, onOpenBattle }: Props) {
+  const apiKey = identifyApi(api);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<Confirm>(null);
+  const [response, setResponse] = useState<RaidPubResponse | null>(null);
+  const [loadedAt, setLoadedAt] = useState(() => Date.now());
+  const [now, setNow] = useState(() => Date.now());
+  const staged = useRef<RaidPubResponse | null>(null);
+  const zeroReloaded = useRef(false);
+  const activeApi = useRef(api); activeApi.current = api;
+  const load = useCallback(() => api.load<RaidPubResponse>('/api/town/raid'), [api]);
+  const submitAction = useCallback(async (request: RaidPubActionRequest) => {
+    const next = await api.submit<RaidPubActionRequest, RaidPubResponse>('/api/town/raid/actions', request);
+    if (activeApi.current === api) staged.current = next;
+    return next.result ?? info('전투 정보실 상태를 갱신했습니다.');
+  }, [api]);
+  const town = useTownFeature<RaidPubResponse, RaidPubActionRequest>({ load, submitAction, resolveCaptcha, featureKey: `raidpub-${apiKey}`, describeError: toUserFacingErrorMessage });
+  const data = response ?? town.data;
+
+  useEffect(() => { setResponse(null); setSelectedId(null); setConfirm(null); staged.current = null; }, [api]);
+  useEffect(() => {
+    if (!data) return;
+    setLoadedAt(Date.now()); setNow(Date.now()); zeroReloaded.current = false;
+    setSelectedId((current) => current && data.raids.some((raid) => raid.id === current) ? current : data.raids.find((raid) => raid.joined)?.id ?? data.raids[0]?.id ?? null);
+  }, [data]);
+
+  const hasCountdown = Boolean(data && (positive(data.applyWaitSeconds) || data.raids.some((raid) => positive(raid.waitSeconds))));
+  useEffect(() => {
+    if (!hasCountdown) return;
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [hasCountdown, data]);
+  const elapsed = Math.max(0, Math.floor((now - loadedAt) / 1_000));
+  const reachedZero = Boolean(data && [data.applyWaitSeconds, ...data.raids.map((raid) => raid.waitSeconds)]
+    .some((seconds) => positive(seconds) && Math.max(0, seconds! - elapsed) === 0));
+  useEffect(() => {
+    if (!reachedZero || zeroReloaded.current) return;
+    zeroReloaded.current = true;
+    void town.reload().then((next) => { if (activeApi.current === api) setResponse(next); }).catch(() => undefined);
+  }, [api, reachedZero, town.reload]);
+
+  if (!data) return <LoadState loading={town.status === 'loading'} error={town.error} reload={town.reload} />;
+  const busy = town.status === 'loading' || town.status === 'submitting';
+  const selected = data.raids.find((raid) => raid.id === selectedId) ?? null;
+  const remaining = (seconds: number | null) => seconds == null ? null : Math.max(0, seconds - elapsed);
+  const rows = data.raids.map((raid): TownRowResponse => {
+    const wait = remaining(raid.waitSeconds);
+    const detail = [raid.difficulty, raid.maxPartySize == null ? null : `${raid.applicants.length}/${raid.maxPartySize}명`, raid.rewardDamage ? `특별 보상 ${raid.rewardDamage}` : null,
+      wait != null ? (wait > 0 ? `${formatDuration(wait)} 후 출발` : '출발 가능') : raid.statusText,
+      raid.applicants.length ? `신청자 ${raid.applicants.join(', ')}` : '신청자 없음'].filter(Boolean).join(' · ');
+    return { id: raid.id, label: raid.name, accessibilityLabel: `${raid.name}${raid.joined ? ' 내가 참가 중' : ''}${raid.playable && !busy ? ' 선택' : ' 선택 불가'}`, detail, imageUrl: null, price: null, quantity: null, selectable: raid.playable && !busy };
+  });
+  const ask = (action: RaidAction, raidId: string | null, detail: string) => setConfirm({ action, raidId, title: ACTION_LABEL[action], detail });
+  const perform = () => {
+    if (!confirm) return;
+    const request = { action: confirm.action, raidId: confirm.raidId };
+    const submissionApi = api; staged.current = null;
+    void town.submit(request).then(() => {
+      if (activeApi.current !== submissionApi) return;
+      if (staged.current) setResponse(staged.current);
+      staged.current = null; setConfirm(null);
+    }).catch((error: unknown) => { if (!(error instanceof TownMutationBusyError) && activeApi.current === submissionApi) setConfirm(null); });
+  };
+  const refresh = () => { void town.reload().then((next) => { if (activeApi.current === api) setResponse(next); }).catch(() => undefined); };
+
+  return <View style={styles.container}>
+    <TownItemList rows={rows} selectionMode="single" selectedIds={selectedId ? [selectedId] : []} onSelectionChange={(ids) => setSelectedId(ids[0] ?? null)}
+      header={<View style={styles.section}><Text style={styles.title}>전투 정보실</Text><Text style={styles.hint}>레이드 모집 상태를 확인하고 기존 RAID 전투 화면으로 연결합니다.</Text>
+        {data.myStatus ? <Text accessibilityLiveRegion="polite" style={styles.status}>{data.myStatus}</Text> : null}
+        {data.applyWaitSeconds != null ? <Text accessibilityLiveRegion="polite" style={styles.wait}>신청 가능까지 {formatDuration(remaining(data.applyWaitSeconds) ?? 0)}</Text> : null}
+        <View style={styles.actions}><ActionButton label="갱신" disabled={busy} onPress={refresh} />
+          {data.globalActions.includes('REWARD') ? <ActionButton label="보상 확인" disabled={busy} onPress={() => ask('REWARD', null, '레이드 보상을 확인합니다.')} /> : null}
+          {data.globalActions.includes('WAIT_RESET') ? <ActionButton label="대기 리셋" disabled={busy} onPress={() => ask('WAIT_RESET', null, '신청 대기시간을 초기화합니다.')} /> : null}</View>
+      </View>}
+      footer={<View style={styles.section}>
+        {selected ? <><Text style={styles.selectedTitle}>{selected.name}</Text><View style={styles.actions}>
+          {selected.actions.map((action) => <ActionButton key={action} label={ACTION_LABEL[action]} disabled={busy || action === 'REGISTER' && data.applyWaitSeconds != null && remaining(data.applyWaitSeconds)! > 0} onPress={() => ask(action, selected.id, `${selected.name}에서 ${ACTION_LABEL[action]} 동작을 실행합니다.`)} />)}
+        </View>{selected.battleTarget && onOpenBattle ? <ActionButton label="RAID 전투 화면 열기" disabled={busy} onPress={() => onOpenBattle(selected.battleTarget!)} /> : null}</> : null}
+        {data.result ? <TownActionResult result={data.result} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}
+      </View>} emptyMessage="현재 표시할 레이드가 없습니다." />
+    <TownConfirmSheet visible={confirm != null} title={`${confirm?.title ?? ''} 확인`} message="HOF 서버에 이 동작을 한 번 요청합니다." confirmLabel={confirm?.title ?? '실행'} destructive={confirm?.action !== 'REWARD'} submitting={town.status === 'submitting'} details={confirm ? [{ label: '동작', value: confirm.detail }] : []} onCancel={() => setConfirm(null)} onConfirm={perform} />
+  </View>;
+}
+
+function ActionButton({ label, disabled, onPress }: { label: string; disabled: boolean; onPress: () => void }) { return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}><Text style={styles.buttonText}>{label}</Text></Pressable>; }
+function LoadState({ loading, error, reload }: { loading: boolean; error: string | null; reload: () => Promise<unknown> }) { return <View style={styles.container}><Text accessibilityRole={error ? 'alert' : undefined} style={error ? styles.error : styles.hint}>{loading ? '전투 정보실을 불러오는 중...' : error ?? '전투 정보실 정보가 없습니다.'}</Text>{!loading ? <ActionButton label="다시 시도" disabled={false} onPress={() => void reload().catch(() => undefined)} /> : null}</View>; }
+function positive(value: number | null): value is number { return value != null && value > 0; }
+function formatDuration(seconds: number) { const safe = Math.max(0, seconds); const hour = Math.floor(safe / 3600); const minute = Math.floor((safe % 3600) / 60); const second = safe % 60; return [hour ? `${hour}시간` : '', minute ? `${minute}분` : '', !hour || (!minute && second) ? `${second}초` : ''].filter(Boolean).join(' '); }
+function info(message: string): TownActionResultResponse { return { status: 'INFORMATIONAL', messages: [message], items: [], refreshRequired: true }; }
+function identifyApi(api: TownApi) { const key = api as object; const old = apiKeys.get(key); if (old != null) return old; const next = nextApiKey++; apiKeys.set(key, next); return next; }
+const ACTION_LABEL: Record<RaidAction, string> = { REGISTER: '등록', LEAVE: '나오기', START: '전투 시작', RESET: '리셋', REWARD: '보상 확인', WAIT_RESET: '대기 리셋', REFRESH: '갱신' };
+const styles = StyleSheet.create({ container: { flex: 1, gap: theme.spacing.md }, section: { gap: theme.spacing.sm, paddingVertical: theme.spacing.sm }, title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' }, hint: { color: theme.colors.textMuted, lineHeight: 20 }, status: { color: theme.colors.accentGreen, fontWeight: '800' }, wait: { color: theme.colors.accentAmber, fontWeight: '800' }, error: { color: theme.colors.danger, lineHeight: 20 }, selectedTitle: { color: theme.colors.text, fontSize: 17, fontWeight: '900' }, actions: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }, button: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, justifyContent: 'center', minHeight: 46, minWidth: 110, paddingHorizontal: theme.spacing.md }, buttonText: { color: theme.colors.background, fontWeight: '900' }, disabled: { opacity: 0.45 } });

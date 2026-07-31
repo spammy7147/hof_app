@@ -440,6 +440,19 @@ export type ColosseumShopResponse = {
 };
 export type ColosseumTradeRequest = { candidateId: string; categoryCandidateId: string | null; quantity: number };
 
+export type RaidAction = 'REGISTER' | 'LEAVE' | 'START' | 'RESET' | 'REWARD' | 'WAIT_RESET' | 'REFRESH';
+export type RaidStatus = 'RECRUITING' | 'WAITING' | 'READY' | 'IN_BATTLE' | 'COMPLETED' | 'CLOSED' | 'TESTING' | 'UNKNOWN';
+export type RaidPubRaidResponse = {
+  id: string; name: string; playable: boolean; difficulty: string | null; maxPartySize: number | null;
+  rewardDamage: string | null; status: RaidStatus; statusText: string | null; waitSeconds: number | null;
+  applicants: string[]; joined: boolean; actions: RaidAction[]; battleTarget: FishingBattleTarget | null;
+};
+export type RaidPubResponse = {
+  raids: RaidPubRaidResponse[]; applied: boolean; applyWaitSeconds: number | null; myStatus: string | null;
+  globalActions: RaidAction[]; result: TownActionResultResponse | null;
+};
+export type RaidPubActionRequest = { action: RaidAction; raidId: string | null };
+
 /** 저장 가능한 자동화는 백엔드가 소유하는 세 가지 singleton 유형으로 제한된다. */
 export type AutomationType = 'QUEST' | 'BATTLE_MAP' | 'ADVENTURE_MAP';
 
