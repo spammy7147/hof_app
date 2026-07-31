@@ -1,0 +1,69 @@
+import assert from 'node:assert/strict';
+import Module from 'node:module';
+import { afterEach, describe, it } from 'node:test';
+import React from 'react';
+import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
+
+const host = (name: string) => (props: Record<string, unknown>) => React.createElement(name, props, props.children as React.ReactNode);
+const reactNativeMock = {
+  ActivityIndicator: host('ActivityIndicator'),
+  FlatList: (props: Record<string, unknown>) => React.createElement('FlatList', props, props.ListHeaderComponent as React.ReactNode, (props.data as Array<{ id: string }>).map((item) => React.createElement(React.Fragment, { key: item.id }, (props.renderItem as Function)({ item }))), props.ListFooterComponent as React.ReactNode),
+  Modal: host('Modal'), Pressable: host('Pressable'), ScrollView: host('ScrollView'), StyleSheet: { create: <T,>(styles: T) => styles }, Text: host('Text'), View: host('View'),
+};
+type Loader = (request: string, parent: NodeModule | undefined, isMain: boolean) => unknown;
+const moduleWithLoader = Module as unknown as { _load: Loader }; const originalLoad = moduleWithLoader._load;
+moduleWithLoader._load = (request, parent, isMain) => { if (request === 'react-native') return reactNativeMock; if (request === 'react-native-safe-area-context') return { useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) }; if (request === 'expo-image') return { Image: host('Image') }; return originalLoad(request, parent, isMain); };
+const { RewardPanel } = require('../../main/features/town/panels/RewardPanel') as typeof import('../../main/features/town/panels/RewardPanel'); moduleWithLoader._load = originalLoad;
+(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+let mounted: ReactTestRenderer | null = null; afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; });
+
+describe('RewardPanel', () => {
+  it('상자 1개와 서버가 제공한 고정 action을 확인한 뒤 한 번만 제출한다', async () => {
+    const calls: unknown[] = [];
+    const data = { boxes: [{ id: 'box', label: 'Treasure Box', selectable: true, owned: 76, cost: 0, detail: 'Treasure Box x76' }, { id: 'display', label: '선택 불가', selectable: false, owned: null, cost: 0, detail: null }], actions: [{ action: 'ONE', label: '1개 열기' }, { action: 'THOUSAND', label: '1000개 열기' }], result: null } as const;
+    await render(React.createElement(RewardPanel, { api: api(async () => data, async (_path, request) => { calls.push(request); return { ...data, result: result() }; }), mode: 'stash' }));
+
+    assert.equal(button('선택 불가 선택 불가').props.disabled, true);
+    await press('Treasure Box 선택');
+    await press('1000개 열기');
+    assert.deepEqual(calls, []);
+    await pressLast('열기');
+    assert.deepEqual(calls, [{ boxCandidateId: 'box', action: 'THOUSAND' }]);
+  });
+
+  it('오브가 부족해 보여도 버튼을 비활성화하지 않고 색상별 1000개 비용을 확인한다', async () => {
+    const calls: unknown[] = [];
+    const data = orbData({ red: 10, blue: 20, green: 30 }, false);
+    await render(React.createElement(RewardPanel, { api: api(async () => data, async (_path, request) => { calls.push(request); return { ...data, displayedOrbs: { red: 0, blue: 0, green: 0 }, orbCountsEstimated: true, outcomes: [{ text: 'Funds Bag($ 1,000)', quantity: 1, success: true, inferred: true }], result: result() }; }), mode: 'orbs' }));
+
+    assert.equal(button('오브를 기부한다').props.disabled, false);
+    await press('오브를 기부한다');
+    assert.equal(text().includes('색상별 1,000개'), true);
+    await pressLast('교환');
+    assert.deepEqual(calls, [{ action: 'ONE' }]);
+    assert.equal(text().includes('계산값입니다'), true);
+    assert.equal(text().includes('수량 변화로 추론'), true);
+  });
+
+  it('계산 오브는 사용자 새로고침의 다음 GET 실제값으로 교체한다', async () => {
+    let loads = 0;
+    const actual = orbData({ red: 9_000, blue: 8_000, green: 7_000 }, false);
+    const calculated = { ...actual, displayedOrbs: { red: 8_000, blue: 7_000, green: 6_000 }, orbCountsEstimated: true, result: result() };
+    await render(React.createElement(RewardPanel, { api: api(async () => { loads += 1; return actual; }, async () => calculated), mode: 'orbs' }));
+    await press('오브를 기부한다'); await pressLast('교환');
+    assert.equal(text().includes('계산값입니다'), true);
+    await press('마을 정보 새로고침');
+    assert.equal(loads, 2);
+    assert.equal(text().includes('계산값입니다'), false);
+    assert.equal(text().includes('9,000개'), true);
+  });
+});
+
+function orbData(counts: { red: number; blue: number; green: number }, estimated: boolean) { return { displayedOrbs: counts, orbCountsEstimated: estimated, remainingRewards: 2, rewardMonth: '2026년 7월', rewards: [{ key: 'event', label: 'Event Box', remaining: 2, unlimited: false }, { key: 'funds', label: 'Funds Bag($ 1,000)', remaining: null, unlimited: true }], actions: [{ action: 'ONE', label: '오브를 기부한다', repetitions: 1 }, { action: 'FIVE', label: '오브를 5회 기부한다', repetitions: 5 }], outcomes: [], lastAction: null, result: null } as const; }
+function result() { return { status: 'SUCCESS' as const, messages: ['완료'], items: [], refreshRequired: true }; }
+function api(load: (path: string) => Promise<unknown>, submit: (path: string, request: unknown) => Promise<unknown> = async () => { throw new Error('unexpected'); }) { return { load, submit } as never; }
+async function render(node: React.ReactElement) { await act(async () => { mounted = create(node); }); await act(async () => { await Promise.resolve(); }); }
+function button(label: string): ReactTestInstance { return mounted!.root.find((node) => node.props.accessibilityLabel === label); }
+async function press(label: string) { await act(async () => button(label).props.onPress()); await act(async () => { await Promise.resolve(); }); }
+async function pressLast(label: string) { const nodes = mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0); await act(async () => nodes.at(-1)!.props.onPress()); await act(async () => { await Promise.resolve(); }); }
+function text() { return mounted!.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join('')).join(' '); }

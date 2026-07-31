@@ -324,6 +324,27 @@ export type SoulEchoResponse = {
 };
 export type SoulEchoFuseRequest = { recipeCandidateId: string; categoryCandidateId: string };
 
+export type StashOpenAction = 'ONE' | 'TWENTY' | 'HUNDRED' | 'THOUSAND' | 'ALL';
+export type StashResponse = {
+  boxes: Array<{ id: string; label: string; selectable: boolean; owned: number | null; cost: number | null; detail: string | null }>;
+  actions: Array<{ action: StashOpenAction; label: string }>;
+  result: TownActionResultResponse | null;
+};
+export type StashOpenRequest = { boxCandidateId: string; action: StashOpenAction };
+export type OrbExchangeAction = 'ONE' | 'FIVE';
+export type OrbExchangeResponse = {
+  displayedOrbs: { red: number | null; blue: number | null; green: number | null };
+  orbCountsEstimated: boolean;
+  remainingRewards: number | null;
+  rewardMonth: string | null;
+  rewards: Array<{ key: string; label: string; remaining: number | null; unlimited: boolean }>;
+  actions: Array<{ action: OrbExchangeAction; label: string; repetitions: 1 | 5 }>;
+  outcomes: Array<{ text: string; quantity: number; success: boolean; inferred: boolean }>;
+  lastAction: OrbExchangeAction | null;
+  result: TownActionResultResponse | null;
+};
+export type OrbExchangeRequest = { action: OrbExchangeAction };
+
 /** 저장 가능한 자동화는 백엔드가 소유하는 세 가지 singleton 유형으로 제한된다. */
 export type AutomationType = 'QUEST' | 'BATTLE_MAP' | 'ADVENTURE_MAP';
 

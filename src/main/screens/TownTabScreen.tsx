@@ -25,6 +25,7 @@ import { FishingPanel } from '../features/town/panels/FishingPanel';
 import { ShopPanel } from '../features/town/panels/ShopPanel';
 import { AuctionPanel } from '../features/town/panels/AuctionPanel';
 import { CardPanel } from '../features/town/panels/CardPanel';
+import { RewardPanel } from '../features/town/panels/RewardPanel';
 import type { TownApi } from '../features/town/api/townApi';
 import type { FishingBattleTarget } from '../types/api';
 import { theme } from '../styles/theme';
@@ -103,6 +104,8 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
         : selectedMenu.id === 'cardChange' ? 'change'
           : selectedMenu.id === 'cardSell' ? 'sell'
             : selectedMenu.id === 'soulEcho' ? 'soul-echo' : null;
+    const rewardMode = selectedMenu.id === 'stash' ? 'stash'
+      : selectedMenu.id === 'orbExchange' ? 'orbs' : null;
     const detail = (
       <TownDetailShell menu={selectedMenu} onBack={closeDetail}>
         {fishingMode && townApi ? (
@@ -119,12 +122,14 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
           <AuctionPanel api={townApi} mode={auctionMode} resolveCaptcha={resolveCaptcha} />
         ) : cardMode && townApi ? (
           <CardPanel api={townApi} mode={cardMode} resolveCaptcha={resolveCaptcha} />
+        ) : rewardMode && townApi ? (
+          <RewardPanel api={townApi} mode={rewardMode} resolveCaptcha={resolveCaptcha} />
         ) : (
           <><Text style={styles.detailTitle}>{selectedMenu.label}</Text><Text style={styles.hint}>기능 연결을 준비하고 있습니다.</Text></>
         )}
       </TownDetailShell>
     );
-    return renderContent?.(detail, shopMode != null || auctionMode != null || cardMode != null) ?? detail;
+    return renderContent?.(detail, shopMode != null || auctionMode != null || cardMode != null || rewardMode != null) ?? detail;
   }
 
   const list = (
