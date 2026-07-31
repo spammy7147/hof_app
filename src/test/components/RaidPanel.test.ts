@@ -37,6 +37,19 @@ describe('RaidPanel', () => {
     assert.deepEqual(targets, [{ categoryId: 'raid', mapCode: 'RaidGoblin' }]);
   });
 
+  it('참가하지 않았거나 RAID 카테고리가 아닌 battle target은 전투 CTA로 노출하지 않는다', async () => {
+    const data = raidData();
+    data.raids[0]!.joined = false;
+    await render(React.createElement(RaidPanel, { api: api(async () => data), onOpenBattle: () => assert.fail('must not navigate') }));
+    assert.equal(button('RAID 전투 화면 열기').length, 0);
+
+    const invalidCategory = raidData();
+    invalidCategory.raids[0]!.battleTarget = { categoryId: 'battle_map', mapCode: 'RaidGoblin' };
+    await act(async () => mounted!.update(React.createElement(RaidPanel, { api: api(async () => invalidCategory), onOpenBattle: () => assert.fail('must not navigate') })));
+    await act(async () => { await Promise.resolve(); });
+    assert.equal(button('RAID 전투 화면 열기').length, 0);
+  });
+
   it('countdown은 로컬에서 표시하고 0에 도달할 때 GET을 한 번만 갱신한다', async () => {
     let loads = 0;
     await render(React.createElement(RaidPanel, { api: api(async () => { loads += 1; return raidData(loads === 1 ? 1 : null); }) }));
@@ -58,15 +71,62 @@ describe('RaidPanel', () => {
     pending.resolve({ ...raidData(), result: result() });
     await act(async () => { await pending.promise; });
   });
+
+  it('action과 겹친 이전 갱신 응답이 같은 패널의 최신 결과를 덮어쓰지 않는다', async () => {
+    const staleReload = deferred<unknown>(); let loads = 0;
+    await render(React.createElement(RaidPanel, { api: api(
+      async () => ++loads === 1 ? raidData() : staleReload.promise,
+      async () => ({ ...raidData(), result: result() }),
+    ) }));
+    await press('등록');
+    await press('갱신');
+    await pressLast('등록');
+    assert.equal(text().includes('완료'), true);
+
+    staleReload.resolve(raidData());
+    await act(async () => { await staleReload.promise; await Promise.resolve(); });
+    assert.equal(text().includes('완료'), true);
+  });
+
+  it('계정 API 변경 뒤 이전 계정의 확인과 늦은 action 완료를 폐기한다', async () => {
+    const oldAction = deferred<unknown>(); let oldCalls = 0;
+    const oldData = raidData(); oldData.raids[0]!.name = '이전 계정 레이드';
+    const newData = raidData(); newData.raids[0]!.name = '새 계정 레이드';
+    const oldApi = api(async () => oldData, async () => { oldCalls += 1; return oldAction.promise; });
+    const newApi = api(async () => newData);
+    await render(React.createElement(RaidPanel, { api: oldApi }));
+    await press('등록');
+    await pressLast('등록');
+    assert.equal(oldCalls, 1);
+
+    await act(async () => mounted!.update(React.createElement(RaidPanel, { api: newApi })));
+    await act(async () => { await Promise.resolve(); });
+    assert.equal(text().includes('새 계정 레이드'), true);
+    assert.equal(visibleModal().length, 0);
+
+    oldAction.resolve({ ...oldData, result: result('이전 계정 결과') });
+    await act(async () => { await oldAction.promise; await Promise.resolve(); });
+    assert.equal(text().includes('이전 계정 결과'), false);
+    assert.equal(text().includes('새 계정 레이드'), true);
+  });
+
+  it('action 오류를 같은 패널에 표시하고 확인창을 닫는다', async () => {
+    await render(React.createElement(RaidPanel, { api: api(async () => raidData(), async () => { throw new Error('레이드 요청 실패'); }) }));
+    await press('등록');
+    await pressLast('등록');
+    assert.equal(text().includes('레이드 요청 실패'), true);
+    assert.equal(visibleModal().length, 0);
+  });
 });
 
 function raidData(applyWaitSeconds: number | null = null) { return { raids: [{ id: 'RaidGoblin', name: '고블린 전투 마차', playable: true, difficulty: '평범 레벨 40', maxPartySize: 6, rewardDamage: '100000+', status: 'RECRUITING' as const, statusText: '모집 중', waitSeconds: null, applicants: ['공민이'], joined: true, actions: ['REGISTER' as const, 'LEAVE' as const], battleTarget: { categoryId: 'raid', mapCode: 'RaidGoblin' } }, { id: 'RaidTest', name: '시험 레이드', playable: false, difficulty: null, maxPartySize: null, rewardDamage: null, status: 'TESTING' as const, statusText: '신청 안됨', waitSeconds: null, applicants: [], joined: false, actions: [], battleTarget: null }], applied: true, applyWaitSeconds, myStatus: '신청 완료', globalActions: ['REFRESH' as const, 'REWARD' as const], result: null }; }
-function result() { return { status: 'SUCCESS' as const, messages: ['완료'], items: [], refreshRequired: true }; }
+function result(message = '완료') { return { status: 'SUCCESS' as const, messages: [message], items: [], refreshRequired: true }; }
 function api(load: (path: string) => Promise<unknown>, submit: (path: string, request: unknown) => Promise<unknown> = async () => { throw new Error('unexpected'); }) { return { load, submit } as never; }
 async function render(node: React.ReactElement) { await act(async () => { mounted = create(node); }); await act(async () => { await Promise.resolve(); }); }
 function button(label: string): ReactTestInstance[] { return mounted!.root.findAll((node) => node.props.accessibilityLabel === label); }
 async function press(label: string) { const node = button(label).at(-1); assert.ok(node, `missing ${label}`); await act(async () => node.props.onPress()); await act(async () => { await Promise.resolve(); }); }
 async function pressLast(label: string) { const node = pressableWithText(label); await act(async () => node.props.onPress()); await act(async () => { await Promise.resolve(); }); }
 function pressableWithText(label: string): ReactTestInstance { return mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0).at(-1)!; }
+function visibleModal(): ReactTestInstance[] { return mounted!.root.findAll((node) => String(node.type) === 'Modal' && node.props.visible === true); }
 function text() { return mounted!.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join('')).join(' '); }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((next) => { resolve = next; }); return { promise, resolve }; }
