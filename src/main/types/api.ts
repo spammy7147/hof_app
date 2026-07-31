@@ -212,6 +212,8 @@ export type TownApiPath = `/api/town/${string}`;
 export type FishingAction = 'START' | 'CATCH' | 'STATUS' | 'FILTER';
 export type FishingPrimaryAction = 'START' | 'CATCH' | 'NONE';
 export type FishingOutcome = 'STARTED' | 'CAUGHT' | 'ESCAPED' | 'INFORMATIONAL';
+export type FishingBattleTarget = { categoryId: string; mapCode: string };
+export type FishingCatchItem = { name: string; quantity: number; remainingUses: number | null; effect: string | null };
 
 export type FishingResponse = {
   notice: string | null;
@@ -226,12 +228,13 @@ export type FishingResponse = {
   availableActions: FishingAction[];
   lastOutcome: FishingOutcome | null;
   blockedByBattle: boolean;
-  battleLink: string | null;
+  battleTarget: FishingBattleTarget | null;
+  catches: FishingCatchItem[];
   result: TownActionResultResponse | null;
 };
 
 export type FishingExchangeResponse = {
-  items: TownRowResponse[];
+  items: Array<TownRowResponse & { materials: string[] }>;
   result: TownActionResultResponse | null;
 };
 

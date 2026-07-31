@@ -34,6 +34,7 @@ import type {
   BattleCategoryResponse,
   BattleMapResponse,
   BattleResultResponse,
+  FishingBattleTarget,
   HofCharacter,
   RunBattleRequest,
 } from '../types/api';
@@ -49,6 +50,7 @@ type BattleTabScreenProps = {
   onLoadMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
   partyPresetCatalog: PartyPresetCatalogResource;
   onRunBattle: (request: RunBattleRequest) => Promise<BattleResultResponse>;
+  initialTarget?: FishingBattleTarget | null;
 };
 
 const categoryIcons: Record<string, LucideIcon> = {
@@ -101,6 +103,7 @@ export function BattleTabScreen({
   onLoadMaps,
   partyPresetCatalog,
   onRunBattle,
+  initialTarget,
 }: BattleTabScreenProps) {
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
   const [mapsByCategory, setMapsByCategory] = useState<Record<string, BattleMapResponse[]>>({});
@@ -118,6 +121,29 @@ export function BattleTabScreen({
   }, [categories.length, errorMessage, isLoading, onLoadCategories]);
 
   const orderedCategories = useMemo(() => orderBattleCategories(categories), [categories]);
+
+  useEffect(() => {
+    if (!initialTarget || !authenticated) return;
+    const category = categories.find((candidate) => candidate.id === initialTarget.categoryId);
+    if (!category) return;
+    let cancelled = false;
+    setExpandedCategoryId(category.id);
+    setLoadingCategoryId(category.id);
+    onLoadMaps(category.id).then((maps) => {
+      if (cancelled) return;
+      setMapsByCategory((current) => ({ ...current, [category.id]: maps }));
+      const targetMap = maps.find((map) => map.mapCode === initialTarget.mapCode);
+      if (!targetMap) return;
+      const group = groupBattleMaps(maps).find((candidate) => candidate.maps.some((map) => map.mapCode === initialTarget.mapCode));
+      setExpandedGroupKeys(group ? [group.key] : []);
+      setExpandedMapKey(buildBattleMapStateKey(targetMap));
+    }).catch((error) => {
+      if (!cancelled) setMapErrorsByCategory((current) => ({ ...current, [category.id]: error instanceof Error ? error.message : '맵 목록을 불러오지 못했습니다.' }));
+    }).finally(() => {
+      if (!cancelled) setLoadingCategoryId((current) => current === category.id ? null : current);
+    });
+    return () => { cancelled = true; };
+  }, [authenticated, categories, initialTarget?.categoryId, initialTarget?.mapCode, onLoadMaps]);
 
   /**
    * 선택한 전투 카테고리의 하위 맵 목록을 서버에서 불러온다.

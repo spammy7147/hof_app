@@ -23,6 +23,7 @@ import { TownDetailShell } from '../features/town/components/TownDetailShell';
 import { TownMenuGrid } from '../features/town/components/TownMenuGrid';
 import { FishingPanel } from '../features/town/panels/FishingPanel';
 import type { TownApi } from '../features/town/api/townApi';
+import type { FishingBattleTarget } from '../types/api';
 import { theme } from '../styles/theme';
 
 export type TownTabScreenProps = {
@@ -30,7 +31,7 @@ export type TownTabScreenProps = {
   onRestoreListScroll?: () => void;
   townApi?: TownApi;
   resolveCaptcha?: () => Promise<void>;
-  onOpenFishingBattle?: (battleLink: string) => void;
+  onOpenFishingBattle?: (target: FishingBattleTarget) => void;
 };
 
 /** 승인된 모든 마을 기능을 한 화면에서 검색하고 상세로 여는 단일 shell이다. */
@@ -79,6 +80,7 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
             api={townApi}
             mode={fishingMode}
             onOpenBattle={onOpenFishingBattle}
+            onNavigateMode={(nextMode) => setMenuId(nextMode === 'fishing' ? 'fishing' : 'fishingExchange')}
             resolveCaptcha={resolveCaptcha}
           />
         ) : (

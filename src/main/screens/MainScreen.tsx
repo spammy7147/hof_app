@@ -20,6 +20,7 @@ import type {
   BattleMapResponse,
   BattleResultResponse,
   BattleStatsResponse,
+  FishingBattleTarget,
   CreatePartyPresetRequest,
   CreatePartyPresetFolderRequest,
   HofCharacter,
@@ -300,6 +301,7 @@ export function MainScreen({
     return catalog;
   }, [adoptPartyPresetCatalog, onDeletePartyPresetFolder]);
   const [activeTabId, setActiveTabId] = useState<MainTabId>(DEFAULT_MAIN_TAB_ID);
+  const [pendingBattleTarget, setPendingBattleTarget] = useState<FishingBattleTarget | null>(null);
   const [characterSubTabId, setCharacterSubTabId] = useState<CharacterSubTabId>('characters');
   const [selectedCharacter, setSelectedCharacter] = useState<HofCharacter | null>(null);
   const [selectedCharacterDetail, setSelectedCharacterDetail] = useState<HofCharacterDetail | null>(null);
@@ -415,7 +417,11 @@ export function MainScreen({
           setSelectedCharacter,
           townApi,
           resolveCaptcha,
-          onOpenFishingBattle: () => setActiveTabId('battle'),
+          pendingBattleTarget,
+          onOpenFishingBattle: (target) => {
+            setPendingBattleTarget(target);
+            setActiveTabId('battle');
+          },
           onAutomationEditorModeChange: setAutomationEditorOpen,
         })}
       </View>
@@ -532,7 +538,8 @@ type RenderActiveTabArgs = {
   onAutomationEditorModeChange: (active: boolean) => void;
   townApi?: TownApi;
   resolveCaptcha?: () => Promise<void>;
-  onOpenFishingBattle: (battleLink: string) => void;
+  onOpenFishingBattle: (target: FishingBattleTarget) => void;
+  pendingBattleTarget: FishingBattleTarget | null;
 };
 
 /**
@@ -581,6 +588,7 @@ function renderActiveTab({
   townApi,
   resolveCaptcha,
   onOpenFishingBattle,
+  pendingBattleTarget,
 }: RenderActiveTabArgs) {
   switch (activeTabId) {
     case 'home':
@@ -612,6 +620,7 @@ function renderActiveTab({
           onLoadMaps={onLoadBattleMaps}
           partyPresetCatalog={partyPresetCatalog}
           onRunBattle={onRunBattle}
+          initialTarget={pendingBattleTarget}
         />
       );
     case 'characters':

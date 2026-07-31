@@ -1,9 +1,10 @@
-import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { theme } from '../../../styles/theme';
 import type {
   FishingAction,
+  FishingBattleTarget,
   FishingExchangeRequest,
   FishingExchangeResponse,
   FishingResponse,
@@ -11,6 +12,7 @@ import type {
 } from '../../../types/api';
 import type { TownApi } from '../api/townApi';
 import { TownActionResult } from '../components/TownActionResult';
+import { TownConfirmSheet } from '../components/TownConfirmSheet';
 import { TownItemList } from '../components/TownItemList';
 import { useTownFeature } from '../hooks/useTownFeature';
 
@@ -18,16 +20,17 @@ type FishingPanelProps = {
   api: TownApi;
   mode?: 'fishing' | 'exchange';
   resolveCaptcha?: () => Promise<void>;
-  onOpenBattle?: (battleLink: string) => void;
+  onOpenBattle?: (target: FishingBattleTarget) => void;
+  onNavigateMode?: (mode: 'fishing' | 'exchange') => void;
 };
 
-export function FishingPanel({ api, mode = 'fishing', resolveCaptcha, onOpenBattle }: FishingPanelProps) {
+export function FishingPanel({ api, mode = 'fishing', resolveCaptcha, onOpenBattle, onNavigateMode }: FishingPanelProps) {
   return mode === 'exchange'
-    ? <FishingExchangePanel api={api} resolveCaptcha={resolveCaptcha} />
-    : <FishingLoopPanel api={api} onOpenBattle={onOpenBattle} resolveCaptcha={resolveCaptcha} />;
+    ? <FishingExchangePanel api={api} onNavigateMode={onNavigateMode} resolveCaptcha={resolveCaptcha} />
+    : <FishingLoopPanel api={api} onNavigateMode={onNavigateMode} onOpenBattle={onOpenBattle} resolveCaptcha={resolveCaptcha} />;
 }
 
-function FishingLoopPanel({ api, resolveCaptcha, onOpenBattle }: Omit<FishingPanelProps, 'mode'>) {
+function FishingLoopPanel({ api, resolveCaptcha, onOpenBattle, onNavigateMode }: Omit<FishingPanelProps, 'mode'>) {
   const [actionState, setActionState] = useState<FishingResponse | null>(null);
   const load = useCallback(() => api.load<FishingResponse>('/api/town/fishing'), [api]);
   const submitAction = useCallback(async (action: FishingAction): Promise<TownActionResultResponse> => {
@@ -65,7 +68,8 @@ function FishingLoopPanel({ api, resolveCaptcha, onOpenBattle }: Omit<FishingPan
           <Pressable
             accessibilityLabel="낚시 전투로 이동"
             accessibilityRole="button"
-            onPress={() => state.battleLink && onOpenBattle?.(state.battleLink)}
+            disabled={!state.battleTarget}
+            onPress={() => state.battleTarget && onOpenBattle?.(state.battleTarget)}
             style={styles.battleButton}
           ><Text style={styles.buttonText}>전투로 이동</Text></Pressable>
         </View>
@@ -88,38 +92,74 @@ function FishingLoopPanel({ api, resolveCaptcha, onOpenBattle }: Omit<FishingPan
       {state.lastOutcome === 'ESCAPED' ? <Text style={styles.muted}>물고기가 도망쳤습니다. 다음 낚시를 시작할 수 있습니다.</Text> : null}
       {state.result ? <TownActionResult onRefresh={() => { setActionState(null); void town.reload(); }} result={state.result} /> : null}
       {town.error ? <Text style={styles.error}>{town.error}</Text> : null}
+      <NavigateButton label="낚시 교환소로 이동" onPress={() => onNavigateMode?.('exchange')} />
     </View>
   );
 }
 
-function FishingExchangePanel({ api, resolveCaptcha }: Pick<FishingPanelProps, 'api' | 'resolveCaptcha'>) {
+function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<FishingPanelProps, 'api' | 'resolveCaptcha' | 'onNavigateMode'>) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [quantity, setQuantity] = useState('1');
+  const [confirming, setConfirming] = useState(false);
   const [actionResponse, setActionResponse] = useState<FishingExchangeResponse | null>(null);
   const load = useCallback(() => api.load<FishingExchangeResponse>('/api/town/fishing-exchange'), [api]);
   const submitAction = useCallback(async (request: FishingExchangeRequest): Promise<TownActionResultResponse> => {
     const response = await api.submit<FishingExchangeRequest, FishingExchangeResponse>('/api/town/fishing-exchange', request);
     setActionResponse(response);
+    setSelectedIds((current) => current.filter((id) => response.items.some((item) => item.id === id && item.selectable)).slice(0, 1));
+    setConfirming(false);
     return response.result ?? informational('교환 결과를 갱신했습니다.');
   }, [api]);
   const town = useTownFeature({ load, submitAction, resolveCaptcha, featureKey: 'fishing-exchange' });
   const data = actionResponse ?? town.data;
+  useEffect(() => {
+    if (!data) return;
+    setSelectedIds((current) => current.filter((id) => data.items.some((item) => item.id === id && item.selectable)).slice(0, 1));
+    setConfirming(false);
+  }, [data]);
   if (!data && town.status === 'loading') return <Text style={styles.muted}>낚시 교환소를 불러오는 중...</Text>;
   if (!data) return <ErrorState message={town.error} onRetry={town.reload} />;
   const selected = selectedIds[0];
+  const selectedItem = data.items.find((item) => item.id === selected);
+  const parsedQuantity = Math.max(1, Number.parseInt(quantity, 10) || 1);
   return (
     <View style={styles.container}>
       <TownItemList rows={data.items} selectedIds={selectedIds} selectionMode="single" onSelectionChange={setSelectedIds} />
+      <TextInput accessibilityLabel="교환 수량" keyboardType="number-pad" onChangeText={setQuantity} style={styles.quantityInput} value={quantity} />
       <Pressable
         accessibilityLabel="선택한 낚시 품목 교환"
         accessibilityRole="button"
         disabled={!selected || town.status === 'submitting'}
-        onPress={() => selected && void town.submit({ candidateId: selected, quantity: 1 }).catch(() => undefined)}
+        onPress={() => selected && setConfirming(true)}
         style={[styles.primaryButton, !selected && styles.disabled]}
       ><Text style={styles.primaryText}>교환</Text></Pressable>
       {data.result ? <TownActionResult result={data.result} /> : null}
       {town.error ? <Text style={styles.error}>{town.error}</Text> : null}
+      <NavigateButton label="낚시터로 이동" onPress={() => onNavigateMode?.('fishing')} />
+      <TownConfirmSheet
+        confirmLabel="교환"
+        details={selectedItem ? [
+          { label: '품목', value: selectedItem.label },
+          { label: '수량', value: `${parsedQuantity}개` },
+          ...(selectedItem.price !== null ? [{ label: '비용', value: `$${(selectedItem.price * parsedQuantity).toLocaleString()}` }] : []),
+          ...(selectedItem.materials.length ? [{ label: '재료', value: selectedItem.materials.join(', ') }] : []),
+        ] : []}
+        message="선택한 낚시 품목을 교환합니다."
+        onCancel={() => setConfirming(false)}
+        onConfirm={() => {
+          if (!selected) return;
+          void town.submit({ candidateId: selected, quantity: parsedQuantity }).catch(() => undefined);
+        }}
+        submitting={town.status === 'submitting'}
+        title="교환 확인"
+        visible={confirming && selectedItem != null}
+      />
     </View>
   );
+}
+
+function NavigateButton({ label, onPress }: { label: string; onPress: () => void }) {
+  return <Pressable accessibilityLabel={label} accessibilityRole="button" onPress={onPress} style={styles.secondaryButton}><Text style={styles.buttonText}>{label}</Text></Pressable>;
 }
 
 function SecondaryAction({ action, enabled, label, onPress }: {
@@ -158,4 +198,5 @@ const styles = StyleSheet.create({
   buttonText: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
   disabled: { opacity: 0.45 },
   pressed: { opacity: 0.8 },
+  quantityInput: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md },
 });

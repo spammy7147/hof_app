@@ -45,6 +45,19 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('MainScreen automation editor chrome', () => {
+  it('passes the exact fishing battle target from town into the battle screen', async () => {
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => { renderer = create(React.createElement(MainScreen, mainProps({}))); });
+    const tabs = renderer.root.find((node) => String(node.type) === 'BottomTabBar');
+    await act(async () => tabs.props.onChangeTab('town'));
+    const town = renderer.root.find((node) => String(node.type) === 'TownTabScreen');
+    const target = { categoryId: 'battle_map', mapCode: 'fishing_12' };
+    await act(async () => town.props.onOpenFishingBattle(target));
+
+    const battle = renderer.root.find((node) => String(node.type) === 'BattleTabScreen');
+    assert.deepEqual(battle.props.initialTarget, target);
+  });
+
   it('loads one account catalog and shares the same resource with home and battle', async () => {
     const catalog = { folders: [], presets: [{ id: 7, name: '공유', folderId: null, displayOrder: 0, isPrimary: true, members: [], createdAt: '', updatedAt: '' }] };
     let loads = 0;

@@ -38,6 +38,7 @@ const scrollView = React.forwardRef<Record<string, unknown>, Record<string, unkn
   return React.createElement('ScrollView', props, props.children as React.ReactNode);
 });
 const reactNativeMock = {
+  ActivityIndicator: host('ActivityIndicator'),
   AccessibilityInfo: {
     setAccessibilityFocus: (handle: Record<string, unknown>) => focusCalls.push(handle),
   },
@@ -48,6 +49,7 @@ const reactNativeMock = {
     },
   },
   FlatList: flatList,
+  Modal: host('Modal'),
   Pressable: host('Pressable'),
   ScrollView: scrollView,
   StyleSheet: { create: <T,>(styles: T) => styles },
@@ -61,6 +63,7 @@ const moduleWithLoader = Module as unknown as { _load: Loader };
 const originalLoad = moduleWithLoader._load;
 moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') return reactNativeMock;
+  if (request === 'react-native-safe-area-context') return { useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
   if (request === 'expo-image') return { Image: host('Image') };
   if (request.endsWith('/townAssets')) {
     return {
