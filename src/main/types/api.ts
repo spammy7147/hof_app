@@ -345,6 +345,27 @@ export type OrbExchangeResponse = {
 };
 export type OrbExchangeRequest = { action: OrbExchangeAction };
 
+export type CraftingMode = 'workbase' | 'claris' | 'refine' | 'create' | 'veteran';
+export type CraftingResponse = {
+  mode: 'WORKBASE' | 'CLARIS' | 'REFINE' | 'CREATE' | 'VETERAN';
+  categories: Array<{ id: string; label: string; current: boolean }>;
+  currentCategoryId: string | null;
+  rows: Array<{ id: string; label: string; selectable: boolean; detail: string | null; cost: number | null; owned: number | null; workSeconds: number | null }>;
+  minQuantity: number;
+  maxQuantity: number;
+  activeJob: { label: string; remainingSeconds: number | null; completionAvailable: boolean } | null;
+  allowedRefineCounts: number[];
+  additionalMaterials: Array<{ id: string; label: string; selectable: boolean; owned: number | null; detail: string | null }>;
+  additionalMaterialsOptional: boolean;
+  warningCode: 'NO_ADDITIONAL_MATERIAL' | null;
+  history: string[];
+  result: TownActionResultResponse | null;
+};
+export type WorkbaseStartRequest = { candidateId: string; categoryCandidateId: string; quantity: number };
+export type ClarisCraftRequest = WorkbaseStartRequest;
+export type RefineRequest = { candidateId: string; categoryCandidateId: string; refineCount: number };
+export type CreateCraftRequest = { recipeCandidateId: string; categoryCandidateId: string; quantity: number; additionalMaterialCandidateId: string | null };
+
 /** 저장 가능한 자동화는 백엔드가 소유하는 세 가지 singleton 유형으로 제한된다. */
 export type AutomationType = 'QUEST' | 'BATTLE_MAP' | 'ADVENTURE_MAP';
 
