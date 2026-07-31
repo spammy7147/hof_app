@@ -28,6 +28,7 @@ export function normalizeTownRow(value: Partial<TownRowResponse>): TownRowRespon
   return {
     id: normalizeIdentifier(value.id),
     label: normalizeDisplayText(value.label) ?? '이름 없는 항목',
+    accessibilityLabel: normalizeDisplayText(value.accessibilityLabel) ?? undefined,
     selectable: value.selectable === true,
     detail: normalizeDisplayText(value.detail),
     imageUrl: normalizeImageUrl(value.imageUrl),

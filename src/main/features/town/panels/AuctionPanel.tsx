@@ -30,6 +30,11 @@ function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
   const [confirm, setConfirm] = useState<TradeRequest | null>(null); const [response, setResponse] = useState<AuctionResponse | null>(null);
   const [exhibit, setExhibit] = useState<AuctionExhibitResponse | null>(null); const [exhibitSelected, setExhibitSelected] = useState<string[]>([]);
   const [amount, setAmount] = useState('1'); const [startPrice, setStartPrice] = useState(''); const [duration, setDuration] = useState(''); const [comment, setComment] = useState('');
+  useEffect(() => {
+    setDuration((current) => exhibit?.durations.some((option) => option.value === current)
+      ? current
+      : exhibit?.durations[0]?.value ?? '');
+  }, [exhibit]);
   const liveRef = useRef(0); useEffect(() => { liveRef.current += 1; return () => { liveRef.current += 1; }; }, [appliedQuery]);
   const load = useCallback(() => api.load<AuctionResponse>(`/api/town/auction${appliedQuery ? `?query=${encodeURIComponent(appliedQuery)}` : ''}`), [api, appliedQuery]);
   const submitAction = useCallback(async (request: TradeRequest) => {
@@ -39,7 +44,7 @@ function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
     const next = await api.submit<TradeRequest['body'], AuctionResponse | AuctionExhibitResponse>(path, request.body);
     if (generation === liveRef.current) {
       if (request.kind === 'OPEN_EXHIBIT' || request.kind === 'EXHIBIT') {
-        const nextExhibit = next as AuctionExhibitResponse; setExhibit(nextExhibit); setDuration((value) => value || nextExhibit.durations[0]?.value || '');
+        const nextExhibit = next as AuctionExhibitResponse; setExhibit(nextExhibit);
         if (request.kind === 'EXHIBIT') setExhibitSelected([]);
       } else { setResponse(next as AuctionResponse); setSelected([]); setBidPrice(''); }
       setConfirm(null);
@@ -53,15 +58,17 @@ function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
   const rows = useMemo<TownRowResponse[]>(() => data?.listings.map(listingRow) ?? [], [data]);
   const exhibitRows = useMemo<TownRowResponse[]>(() => exhibit?.items.map((item) => ({ ...listingRow(item), price: null })) ?? [], [exhibit]);
   if (!data) return <LoadState loading={town.status === 'loading'} error={town.error} retry={town.reload} />;
-  const bid = chosen && validWhole(bidPrice, 0) ? { kind: 'BID', body: { actionId: chosen.actionId, listingId: chosen.listingId!, bidPrice: Number(bidPrice) } } as const : null;
-  const exhibitRequest = exhibitItem?.candidateId && exhibit?.actionId && validWhole(amount, 1) && validWhole(startPrice, 0) && duration
-    ? { kind: 'EXHIBIT', body: { actionId: exhibit.actionId, candidateId: exhibitItem.candidateId, amount: Number(amount), exhibitTime: duration, startPrice: Number(startPrice), comment } } as const : null;
+  const bid = chosen && validWhole(bidPrice, 1) ? { kind: 'BID', body: { actionId: chosen.actionId, listingId: chosen.listingId!, bidPrice: Number(bidPrice) } } as const : null;
+  const durationAllowed = exhibit?.durations.some((option) => option.value === duration) === true;
+  const exhibitRequest = exhibitItem?.candidateId && exhibit?.actionId && validWhole(amount, 1, 100_000)
+    && validWhole(startPrice, 1) && durationAllowed && comment.length <= 300
+    ? { kind: 'EXHIBIT', body: { entryActionId: exhibit.entryActionId, actionId: exhibit.actionId, candidateId: exhibitItem.candidateId, amount: Number(amount), exhibitTime: duration, startPrice: Number(startPrice), comment } } as const : null;
   return <View style={styles.container}>
     <TownItemList rows={exhibit ? exhibitRows : rows} selectionMode="single" selectedIds={exhibit ? exhibitSelected : selected}
       onSelectionChange={(ids) => { if (!busy) (exhibit ? setExhibitSelected : setSelected)(ids); }}
       header={<View style={styles.section}>
-        <TextInput accessibilityLabel="옥션 검색어" editable={!busy} value={query} onChangeText={setQuery} placeholder="품목명 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} />
-        <ActionButton label="옥션 검색" disabled={busy || town.status === 'loading'} onPress={() => { setResponse(null); setSelected([]); setAppliedQuery(query.trim()); }} />
+        <TextInput accessibilityLabel="옥션 검색어" editable={!busy && !exhibit} value={query} onChangeText={setQuery} placeholder="품목명 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} />
+        <ActionButton label="옥션 검색" disabled={busy || town.status === 'loading' || exhibit != null} onPress={() => { setResponse(null); setSelected([]); setAppliedQuery(query.trim()); }} />
         {!exhibit && data.capabilities.exhibitEntryActionId ? <ActionButton label="출품 준비" disabled={busy} onPress={() => void town.submit({ kind: 'OPEN_EXHIBIT', body: { actionId: data.capabilities.exhibitEntryActionId! } }).catch(() => undefined)} /> : null}
         {!exhibit && data.capabilities.claimItemActionId ? <ActionButton label="낙찰 아이템 수령" disabled={busy} onPress={() => setConfirm({ kind: 'CLAIM_ITEM', body: { actionId: data.capabilities.claimItemActionId! } })} /> : null}
         {!exhibit && data.capabilities.claimFundsActionId ? <ActionButton label="Funds 수령" disabled={busy} onPress={() => setConfirm({ kind: 'CLAIM_FUNDS', body: { actionId: data.capabilities.claimFundsActionId! } })} /> : null}
@@ -71,8 +78,9 @@ function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
         {!exhibit && chosen ? <><Field label="입찰가" value={bidPrice} setValue={setBidPrice} disabled={busy} numeric /><ActionButton label="입찰 확인" disabled={busy || !bid} onPress={() => bid && setConfirm(bid)} /></> : null}
         {exhibit && exhibitItem ? <>
           <Field label="출품 수량" value={amount} setValue={setAmount} disabled={busy} numeric /><Field label="개시가" value={startPrice} setValue={setStartPrice} disabled={busy} numeric />
-          <TextInput accessibilityLabel="출품 기간" editable={!busy} value={duration} onChangeText={setDuration} placeholder="기간 값" placeholderTextColor={theme.colors.textMuted} style={styles.input} />
-          <TextInput accessibilityLabel="출품 설명" editable={!busy} value={comment} onChangeText={setComment} placeholder="코멘트(선택)" placeholderTextColor={theme.colors.textMuted} style={styles.input} />
+          <Text style={styles.fieldLabel}>출품 기간</Text>
+          <View style={styles.durationOptions}>{exhibit.durations.map((option) => <Pressable key={option.value} accessibilityLabel={`출품 기간 ${option.label}`} accessibilityRole="radio" accessibilityState={{ checked: duration === option.value, disabled: busy }} disabled={busy} onPress={() => setDuration(option.value)} style={[styles.durationOption, duration === option.value && styles.durationSelected]}><Text style={styles.durationText}>{option.label}</Text></Pressable>)}</View>
+          <TextInput accessibilityLabel="출품 설명" editable={!busy} maxLength={300} value={comment} onChangeText={setComment} placeholder="코멘트(선택, 최대 300자)" placeholderTextColor={theme.colors.textMuted} style={styles.input} />
           <ActionButton label="출품 확인" disabled={busy || !exhibitRequest} onPress={() => exhibitRequest && setConfirm(exhibitRequest)} />
         </> : null}
         {town.result ? <TownActionResult result={town.result} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}
@@ -84,12 +92,15 @@ function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
 
 function AuctionMarketPanel({ api }: Pick<Props, 'api'>) {
   const [query, setQuery] = useState(''); const [appliedQuery, setAppliedQuery] = useState('');
+  const [selected, setSelected] = useState<string[]>([]);
   const load = useCallback(() => api.load<AuctionMarketResponse>(`/api/town/auction-market${appliedQuery ? `?query=${encodeURIComponent(appliedQuery)}` : ''}`), [api, appliedQuery]);
   const town = useTownFeature<AuctionMarketResponse>({ load, featureKey: `auction-market-${appliedQuery}` });
   const rows = town.data?.items.map(marketRow) ?? [];
   if (!town.data) return <LoadState loading={town.status === 'loading'} error={town.error} retry={town.reload} />;
-  return <View style={styles.container}><TownItemList rows={rows} selectionMode="none" emptyMessage="최근 30일 익명 시세가 없습니다."
-    header={<View style={styles.section}><Text style={styles.notice}>판매자·입찰자 정보 없이 서버에 저장된 관측치만 표시합니다.</Text><TextInput accessibilityLabel="낙찰 시세 검색어" value={query} onChangeText={setQuery} placeholder="품목명 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} /><ActionButton label="낙찰 시세 검색" disabled={town.status === 'loading'} onPress={() => setAppliedQuery(query.trim())} />{town.data.items.slice(0, 8).map((item) => <PriceChart item={item} key={item.itemKey} />)}</View>} />
+  const selectedItem = town.data.items.find((item) => item.itemKey === selected[0]) ?? null;
+  return <View style={styles.container}><TownItemList rows={rows} selectionMode="single" selectedIds={selected} onSelectionChange={setSelected} emptyMessage="최근 30일 익명 시세가 없습니다."
+    header={<View style={styles.section}><Text style={styles.notice}>판매자·입찰자 정보 없이 서버에 저장된 관측치만 표시합니다.</Text><TextInput accessibilityLabel="낙찰 시세 검색어" value={query} onChangeText={setQuery} placeholder="품목명 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} /><ActionButton label="낙찰 시세 검색" disabled={town.status === 'loading'} onPress={() => { setSelected([]); setAppliedQuery(query.trim()); }} /></View>}
+    footer={selectedItem ? <PriceChart item={selectedItem} /> : null} />
   </View>;
 }
 
@@ -99,9 +110,13 @@ function PriceChart({ item }: { item: AuctionMarketItem }) {
 }
 
 function listingRow(item: AuctionListingResponse): TownRowResponse { return { id: key(item), label: item.name, selectable: true, imageUrl: null, detail: `총액 $${item.totalPrice.toLocaleString()} · 단가 $${item.unitPrice.toLocaleString()} · 수량 ${item.quantity.toLocaleString()}개`, price: item.totalPrice, quantity: item.quantity }; }
-function marketRow(item: AuctionMarketItem): TownRowResponse { return { id: item.itemKey, label: item.name, selectable: false, imageUrl: null, price: item.latestUnitPrice, quantity: item.volume, detail: `최근 단가 $${item.latestUnitPrice.toLocaleString()} · 평균 $${item.averageUnitPrice.toLocaleString()} · 총 거래량 ${item.volume.toLocaleString()}개 · ${item.tradeCount.toLocaleString()}건` }; }
+function marketRow(item: AuctionMarketItem): TownRowResponse {
+  const latestTotal = item.points.at(-1)?.totalPrice;
+  const detail = `최근 총액 ${latestTotal == null ? '-' : `$${latestTotal.toLocaleString()}`} · 최근 단가 $${item.latestUnitPrice.toLocaleString()} · 평균 $${item.averageUnitPrice.toLocaleString()} · 최저 $${item.minimumUnitPrice.toLocaleString()} · 최고 $${item.maximumUnitPrice.toLocaleString()} · 총 거래량 ${item.volume.toLocaleString()}개 · ${item.tradeCount.toLocaleString()}건`;
+  return { id: item.itemKey, label: item.name, accessibilityLabel: `${item.name} 시세 이력 열기. ${detail}`, selectable: true, imageUrl: null, price: null, quantity: null, detail };
+}
 function key(item: AuctionListingResponse) { return item.rowKey; }
-function validWhole(value: string, min: number) { return /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) >= min; }
+function validWhole(value: string, min: number, max = Number.MAX_SAFE_INTEGER) { return /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) >= min && Number(value) <= max; }
 function Field({ label, value, setValue, disabled, numeric }: { label: string; value: string; setValue: (value: string) => void; disabled: boolean; numeric?: boolean }) { return <TextInput accessibilityLabel={label} editable={!disabled} keyboardType={numeric ? 'number-pad' : 'default'} value={value} onChangeText={setValue} placeholder={label} placeholderTextColor={theme.colors.textMuted} style={styles.input} />; }
 function confirmLabel(request: TradeRequest | null) { return request?.kind === 'BID' ? '입찰' : request?.kind === 'EXHIBIT' ? '출품' : request?.kind === 'CLAIM_ITEM' ? '아이템 수령' : request?.kind === 'CLAIM_FUNDS' ? 'Funds 수령' : '실행'; }
 function confirmDetails(request: TradeRequest | null, listing: AuctionListingResponse | null, exhibit: AuctionListingResponse | null) { if (!request) return []; if (request.kind === 'BID') return [{ label: '품목', value: listing?.name ?? request.body.listingId }, { label: '입찰가', value: `$${request.body.bidPrice.toLocaleString()}`, warning: true }]; if (request.kind === 'EXHIBIT') return [{ label: '품목', value: exhibit?.name ?? request.body.candidateId }, { label: '수량', value: `${request.body.amount}개` }, { label: '개시가', value: `$${request.body.startPrice.toLocaleString()}`, warning: true }, { label: '기간', value: request.body.exhibitTime }]; return [{ label: '작업', value: confirmLabel(request), warning: true }]; }
@@ -113,5 +128,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, gap: theme.spacing.md }, section: { gap: theme.spacing.md, paddingVertical: theme.spacing.md }, muted: { color: theme.colors.textMuted }, error: { color: theme.colors.danger }, notice: { color: theme.colors.accentBlue, fontSize: 12 },
   input: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md },
   button: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, justifyContent: 'center', minHeight: 48, padding: theme.spacing.md }, buttonText: { color: theme.colors.background, fontWeight: '900' }, disabled: { opacity: 0.45 },
+  fieldLabel: { color: theme.colors.text, fontWeight: '800' }, durationOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }, durationOption: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, minHeight: 44, paddingHorizontal: theme.spacing.md, justifyContent: 'center' }, durationSelected: { borderColor: theme.colors.accentGreen, borderWidth: 2 }, durationText: { color: theme.colors.text, fontWeight: '700' },
   chart: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.sm, gap: theme.spacing.sm, padding: theme.spacing.md }, chartTitle: { color: theme.colors.text, fontWeight: '800' }, bars: { alignItems: 'flex-end', flexDirection: 'row', gap: 3, height: 52 }, bar: { backgroundColor: theme.colors.accentBlue, flex: 1, minWidth: 3 },
 });

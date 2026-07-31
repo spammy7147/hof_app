@@ -182,6 +182,7 @@ export type SubmitCaptchaAnswerRequest = {
 export type TownRowResponse = {
   id: string;
   label: string;
+  accessibilityLabel?: string;
   selectable: boolean;
   detail: string | null;
   imageUrl: string | null;
@@ -284,9 +285,9 @@ export type AuctionResponse = {
 };
 export type AuctionBidRequest = { actionId: string; listingId: string; bidPrice: number };
 export type AuctionExhibitOpenRequest = { actionId: string };
-export type AuctionExhibitRequest = { actionId: string; candidateId: string; amount: number; exhibitTime: string; startPrice: number; comment: string };
+export type AuctionExhibitRequest = { entryActionId: string; actionId: string; candidateId: string; amount: number; exhibitTime: string; startPrice: number; comment: string };
 export type AuctionClaimRequest = { actionId: string };
-export type AuctionExhibitResponse = { items: AuctionListingResponse[]; durations: Array<{ value: string; label: string }>; actionId: string | null; result: TownActionResultResponse | null };
+export type AuctionExhibitResponse = { items: AuctionListingResponse[]; durations: Array<{ value: string; label: string }>; entryActionId: string; actionId: string | null; result: TownActionResultResponse | null };
 export type AuctionMarketPoint = {
   totalPrice: number; unitPrice: number; quantity: number; observedAt: string; kind: AuctionObservationKind;
 };
