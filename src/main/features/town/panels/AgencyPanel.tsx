@@ -69,28 +69,32 @@ function AdventureAgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolveCa
 }
 
 type RecruitConfirmation = RecruitCharacterRequest & { jobName: string; genderLabel: string; price: number };
+type OwnedRecruitmentResponse = { owner: number; value: RecruitmentResponse };
 
 function RecruitmentAgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolveCaptcha?: () => Promise<void> }) {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [selectedGenderId, setSelectedGenderId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [confirmation, setConfirmation] = useState<RecruitConfirmation | null>(null);
-  const [response, setResponse] = useState<RecruitmentResponse | null>(null);
-  const staged = useRef<RecruitmentResponse | null>(null);
   const apiKey = identifyApi(api);
+  const [response, setResponse] = useState<OwnedRecruitmentResponse | null>(null);
+  const staged = useRef<OwnedRecruitmentResponse | null>(null);
+  const activeApiKey = useRef(apiKey);
+  activeApiKey.current = apiKey;
   const load = useCallback(() => api.load<RecruitmentResponse>('/api/town/agency/recruitment'), [api]);
   const submitAction = useCallback(async (request: RecruitCharacterRequest) => {
     const next = await api.submit<RecruitCharacterRequest, RecruitmentResponse>('/api/town/agency/recruitment', request);
-    staged.current = next;
+    if (activeApiKey.current === apiKey) staged.current = { owner: apiKey, value: next };
     return next.result ?? information('모집 요청 후 인재 알선소 정보를 갱신했습니다.');
-  }, [api]);
+  }, [api, apiKey]);
   const town = useTownFeature<RecruitmentResponse, RecruitCharacterRequest>({
     load,
     submitAction,
     resolveCaptcha,
     featureKey: `agency-recruitment-${apiKey}`,
   });
-  const data = response ?? town.data;
+  // api 객체는 로그인 계정에 귀속된다. effect 정리 전 렌더에서도 이전 계정 응답을 노출하지 않는다.
+  const data = response?.owner === apiKey ? response.value : town.data;
 
   useEffect(() => {
     staged.current = null;
@@ -114,8 +118,9 @@ function RecruitmentAgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolve
   const selectedJob = data.jobs.find((job) => job.id === selectedJobId);
   const selectedGender = data.genders.find((gender) => gender.id === selectedGenderId);
   const normalizedName = name.trim();
+  const nameWidth = recruitmentNameWidth(normalizedName);
   const full = data.currentCharacters != null && data.capacity != null && data.currentCharacters >= data.capacity;
-  const validName = normalizedName.length >= data.nameMinLength && normalizedName.length <= data.nameMaxLength;
+  const validName = nameWidth != null && nameWidth >= data.nameMinLength && nameWidth <= data.nameMaxLength;
   const canRecruit = data.recruitmentAvailable && !full && selectedJob != null && selectedGender != null && validName && town.status !== 'submitting';
   const rows: TownRowResponse[] = data.jobs.map((job) => ({
     id: job.id,
@@ -131,7 +136,7 @@ function RecruitmentAgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolve
     if (!confirmation) return;
     void town.submit({ jobId: confirmation.jobId, name: confirmation.name, genderId: confirmation.genderId })
       .then((result) => {
-        if (staged.current) setResponse(staged.current);
+        if (staged.current?.owner === apiKey) setResponse(staged.current);
         staged.current = null;
         setConfirmation(null);
         setSelectedJobId(null);
@@ -146,15 +151,25 @@ function RecruitmentAgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolve
     <Text style={styles.sectionLabel}>새 캐릭터 이름</Text>
     <TextInput
       accessibilityLabel="새 캐릭터 이름"
+      accessibilityHint={`영문과 숫자는 1칸, 한글과 일본어 등은 2칸으로 계산해 ${data.nameMinLength}~${data.nameMaxLength}칸으로 입력합니다.`}
       autoCapitalize="none"
       autoCorrect={false}
       maxLength={data.nameMaxLength}
       onChangeText={setName}
-      placeholder={`${data.nameMinLength}~${data.nameMaxLength}자`}
+      placeholder={`${data.nameMinLength}~${data.nameMaxLength}칸`}
       placeholderTextColor={theme.colors.textMuted}
+      returnKeyType="done"
       style={styles.input}
       value={name}
     />
+    <Text
+      accessibilityLiveRegion="polite"
+      style={name.length > 0 && !validName ? styles.error : styles.hint}
+    >
+      {name.length > 0 && !validName
+        ? `캐릭터 이름은 영문·숫자 1칸, 한글·일본어 등은 2칸으로 계산해 ${data.nameMinLength}~${data.nameMaxLength}칸으로 입력해 주세요.`
+        : `이름 ${nameWidth ?? 0}/${data.nameMaxLength}칸`}
+    </Text>
     <Text style={styles.sectionLabel}>성별</Text>
     <View accessibilityRole="radiogroup" style={styles.genderRow}>{data.genders.map((gender) => <Pressable
       key={gender.id}
@@ -195,6 +210,15 @@ function rowId(quest: QuestSnapshot) { return `quest:${quest.questKey}:${quest.s
 function toRow(quest: QuestSnapshot): TownRowResponse { const progress = quest.missions.map((mission) => mission.progress ? `${mission.target ?? '미션'} ${mission.progress.current}/${mission.progress.required}` : mission.target).filter(Boolean).join(' · '); return { id: rowId(quest), label: quest.name, accessibilityLabel: `${quest.name} ${quest.state === 'CLAIMABLE' ? '완료 가능' : tabState(quest)}`, selectable: quest.actionNo != null && (quest.state === 'AVAILABLE' || quest.state === 'CLAIMABLE'), detail: [quest.displayCode, progress, quest.rewards.length ? `보상 ${quest.rewards.join(', ')}` : null].filter(Boolean).join(' · '), imageUrl: null, price: null, quantity: null }; }
 function tabState(quest: QuestSnapshot) { return quest.section === 'ACTIVE' ? '진행 중' : quest.section === 'AVAILABLE' ? '수락 가능' : '대기 중'; }
 function information(message: string): TownActionResultResponse { return { status: 'INFORMATIONAL', messages: [message], items: [], refreshRequired: true }; }
+const unsafeRecruitmentNameCharacter = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}]/u;
+function recruitmentNameWidth(value: string): number | null {
+  let width = 0;
+  for (const character of value) {
+    if (unsafeRecruitmentNameCharacter.test(character)) return null;
+    width += character.codePointAt(0)! <= 0x7f ? 1 : 2;
+  }
+  return width;
+}
 const apiKeys = new WeakMap<object, number>(); let nextApiKey = 1;
 function identifyApi(api: TownApi) { const object = api as object; const known = apiKeys.get(object); if (known != null) return known; const next = nextApiKey++; apiKeys.set(object, next); return next; }
 function ActionButton({ label, disabled, onPress }: { label: string; disabled: boolean; onPress: () => void }) { return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}><Text style={styles.buttonText}>{label}</Text></Pressable>; }

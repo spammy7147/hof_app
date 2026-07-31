@@ -260,6 +260,39 @@ describe('TownTabScreen', () => {
     assert.equal(findHosts(renderer.root, 'FlatList').length, 1);
   });
 
+  it('인재 알선소를 모험 알선소와 분리된 모집 mode 및 endpoint로 연결한다', async () => {
+    const paths: string[] = [];
+    let questLoads = 0;
+    const townApi = {
+      loadQuests: async () => { questLoads += 1; return []; },
+      load: async (path: string) => {
+        paths.push(path);
+        return {
+          currentCharacters: 2,
+          capacity: 45,
+          jobs: [{ id: 'monk', name: 'Monk', price: 10_000, imageUrl: null }],
+          genders: [{ id: 'male', label: '남성' }, { id: 'female', label: '여성' }],
+          nameMinLength: 1,
+          nameMaxLength: 16,
+          recruitmentAvailable: true,
+          result: null,
+        };
+      },
+      submit: async () => { throw new Error('unexpected submit'); },
+    } as never;
+
+    const renderer = await renderTown({ townApi, controlledMenuId: 'talentAgency', controlledDetailOpen: true });
+    await act(async () => { await Promise.resolve(); });
+
+    assert.deepEqual(paths, ['/api/town/agency/recruitment']);
+    assert.equal(questLoads, 0);
+    const renderedText = allText(renderer.root).join('');
+    assert.match(renderedText, /인재 알선소/);
+    assert.match(renderedText, /현재 2 \/ 최대 45/);
+    assert.equal(renderedText.includes('진행 중'), false);
+    assert.equal(findHosts(renderer.root, 'FlatList').length, 1);
+  });
+
   it('제작 시설 다섯 메뉴를 각각의 typed mode와 가상 목록으로 연결한다', async () => {
     const paths: string[] = [];
     const townApi = {

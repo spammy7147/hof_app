@@ -45,7 +45,7 @@ describe('TownItemList', () => {
     await act(async () => {
       renderer = create(React.createElement(TownItemList, {
         rows: [
-          { id: 'selectable', label: '교환 가능', selectable: true, detail: null, imageUrl: null, price: null, quantity: null },
+          { id: 'selectable', label: '교환 가능', selectable: true, detail: null, imageUrl: 'https://sic.zerosic.com/item.png', price: null, quantity: null },
           { id: 'display-only', label: '교환 불가', selectable: false, detail: null, imageUrl: null, price: null, quantity: null },
         ],
         selectionMode: 'single',
@@ -60,6 +60,8 @@ describe('TownItemList', () => {
     );
 
     assert.equal(list.props.data.length, 2);
+    assert.equal(list.props.keyboardShouldPersistTaps, 'handled');
+    assert.equal(renderer.root.find((node) => String(node.type) === 'Image').props.accessible, false);
     assert.equal(disabledRow.props.disabled, true);
     assert.equal(disabledRow.props.accessibilityRole, 'radio');
     assert.deepEqual(disabledRow.props.accessibilityState, { disabled: true, checked: false });

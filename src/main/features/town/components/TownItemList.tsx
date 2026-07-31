@@ -36,6 +36,7 @@ export function TownItemList({
     <FlatList
       data={rows}
       keyExtractor={(row) => row.id}
+      keyboardShouldPersistTaps="handled"
       nestedScrollEnabled
       initialNumToRender={12}
       windowSize={7}
@@ -88,7 +89,7 @@ export function TownItemList({
               pressed && !disabled && styles.pressedRow,
             ]}
           >
-            {item.imageUrl ? <Image source={{ uri: item.imageUrl }} style={styles.image} /> : null}
+            {item.imageUrl ? <Image accessible={false} source={{ uri: item.imageUrl }} style={styles.image} /> : null}
             <View style={styles.content}>
               <Text style={styles.label}>{item.label}</Text>
               {item.detail ? <Text style={styles.detail}>{item.detail}</Text> : null}
