@@ -232,6 +232,34 @@ describe('TownTabScreen', () => {
     assert.equal(focusCalls.at(-1)?.accessibilityLabel, '일반상점 열기');
   });
 
+  it('모험 알선소와 자택·휴식처를 독립 조회 계약과 가상 목록으로 연결한다', async () => {
+    const paths: string[] = [];
+    let questLoads = 0;
+    const townApi = {
+      loadQuests: async () => { questLoads += 1; return []; },
+      acceptQuest: async () => [],
+      claimQuest: async () => [],
+      load: async (path: string) => {
+        paths.push(path);
+        return path === '/api/town/home'
+          ? { mode: 'HOME', quests: [], actions: [], restStatus: null, result: null }
+          : { mode: 'REST', quests: [], actions: [], restStatus: null, result: null };
+      },
+      submit: async () => { throw new Error('unexpected submit'); },
+    } as never;
+    let renderer = await renderTown({ townApi, controlledMenuId: 'adventureAgency', controlledDetailOpen: true });
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => renderer.update(React.createElement(TownTabScreen, { townApi, controlledMenuId: 'homeManagement', controlledDetailOpen: true })));
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => renderer.update(React.createElement(TownTabScreen, { townApi, controlledMenuId: 'restRoom', controlledDetailOpen: true })));
+    await act(async () => { await Promise.resolve(); });
+
+    assert.equal(questLoads, 1);
+    assert.deepEqual(paths, ['/api/town/home', '/api/town/rest']);
+    assert.equal(allText(renderer.root).includes('기능 연결을 준비하고 있습니다.'), false);
+    assert.equal(findHosts(renderer.root, 'FlatList').length, 1);
+  });
+
   it('제작 시설 다섯 메뉴를 각각의 typed mode와 가상 목록으로 연결한다', async () => {
     const paths: string[] = [];
     const townApi = {

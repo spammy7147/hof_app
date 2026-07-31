@@ -369,9 +369,10 @@ export type CreateCraftRequest = { recipeCandidateId: string; categoryCandidateI
 export type HomeMode = 'HOME' | 'REST';
 export type HomeQuestState = 'AVAILABLE' | 'ACTIVE' | 'CLAIMABLE' | 'COMPLETED' | 'WAITING';
 export type HomeActionType = 'ACCEPT' | 'CLAIM' | 'RESTORE';
-export type HomeQuestResponse = { id: string; name: string; state: HomeQuestState; mission: string | null; reward: string | null; actionId: string | null };
+export type HomeQuestResponse = { id: string; name: string; state: HomeQuestState; mission: string | null; reward: string | null; details: string[]; actionId: string | null };
 export type HomeActionResponse = { id: string; type: HomeActionType; label: string };
-export type HomeResponse = { mode: HomeMode; quests: HomeQuestResponse[]; actions: HomeActionResponse[]; result: TownActionResultResponse | null };
+export type RestStatusResponse = { currentTime: number | null; maxTime: number | null; baseRecovery: number | null; facilityRecovery: number | null; usedToday: boolean | null; facilities: string[] };
+export type HomeResponse = { mode: HomeMode; quests: HomeQuestResponse[]; actions: HomeActionResponse[]; restStatus: RestStatusResponse | null; result: TownActionResultResponse | null };
 export type HomeActionRequest = { actionId: string };
 
 /** 저장 가능한 자동화는 백엔드가 소유하는 세 가지 singleton 유형으로 제한된다. */

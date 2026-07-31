@@ -10,7 +10,7 @@ import { TownItemList } from '../components/TownItemList';
 import { TownMutationBusyError, useTownFeature } from '../hooks/useTownFeature';
 
 type Tab = 'ACTIVE' | 'AVAILABLE' | 'WAITING';
-type Mutation = { actionNo: string; action: 'accept' | 'claim' };
+type Mutation = { actionNo: string; action: 'accept' | 'claim'; questName: string };
 
 export function AgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolveCaptcha?: () => Promise<void> }) {
   const [tab, setTab] = useState<Tab>('ACTIVE');
@@ -24,7 +24,7 @@ export function AgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolveCapt
   const submitAction = useCallback(async (mutation: Mutation) => {
     const next = mutation.action === 'accept' ? await api.acceptQuest(mutation.actionNo) : await api.claimQuest(mutation.actionNo);
     staged.current = next;
-    return information(mutation.action === 'accept' ? '퀘스트를 수락했습니다.' : '퀘스트 완료 보상을 받았습니다.');
+    return information(mutation.action === 'accept' ? '퀘스트 수락 요청 후 목록을 갱신했습니다.' : '퀘스트 완료 요청 후 목록을 갱신했습니다.');
   }, [api]);
   const town = useTownFeature<QuestSnapshot[], Mutation>({ load, submitAction, resolveCaptcha, featureKey: `agency-manual-${apiKey}` });
   const data = response ?? town.data ?? [];
@@ -38,7 +38,7 @@ export function AgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolveCapt
     .filter((quest) => `${quest.displayCode} ${quest.name} ${quest.missions.map((mission) => mission.target ?? '').join(' ')}`.toLocaleLowerCase('ko-KR').includes(query.trim().toLocaleLowerCase('ko-KR'))), [data, query, tab]);
   const selected = data.find((item) => rowId(item) === selectedId);
   const mutation = selected?.actionNo && (selected.state === 'AVAILABLE' || selected.state === 'CLAIMABLE')
-    ? { actionNo: selected.actionNo, action: selected.state === 'AVAILABLE' ? 'accept' as const : 'claim' as const }
+    ? { actionNo: selected.actionNo, action: selected.state === 'AVAILABLE' ? 'accept' as const : 'claim' as const, questName: selected.name }
     : null;
   const rows = filtered.map(toRow);
   const finish = (result: TownActionResultResponse) => {
@@ -58,7 +58,7 @@ export function AgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolveCapt
     <TextInput accessibilityLabel="퀘스트명 또는 미션 검색" value={query} onChangeText={setQuery} placeholder="퀘스트명 또는 미션 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} />
     <TownItemList rows={rows} selectionMode="single" selectedIds={selectedId ? [selectedId] : []} onSelectionChange={(ids) => setSelectedId(ids[0] ?? null)} emptyMessage="해당 상태의 퀘스트가 없습니다."
       footer={<View style={styles.footer}>{mutation ? <ActionButton label={mutation.action === 'accept' ? '수동 수락' : '수동 완료'} disabled={town.status === 'submitting'} onPress={() => setConfirmation(mutation)} /> : <Text style={styles.hint}>수락 또는 완료 가능한 퀘스트를 선택하세요.</Text>}{town.result ? <TownActionResult result={town.result} onRefresh={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}</View>} />
-    <TownConfirmSheet visible={confirmation != null} title={confirmation?.action === 'accept' ? '퀘스트 수락 확인' : '퀘스트 완료 확인'} message="HOF에 이 action을 한 번만 요청합니다." confirmLabel={confirmation?.action === 'accept' ? '수락' : '완료'} submitting={town.status === 'submitting'} details={[{ label: '퀘스트', value: selected?.name ?? '선택 없음' }]} onCancel={() => setConfirmation(null)} onConfirm={submit} />
+    <TownConfirmSheet visible={confirmation != null} title={confirmation?.action === 'accept' ? '퀘스트 수락 확인' : '퀘스트 완료 확인'} message="HOF에 이 action을 한 번만 요청합니다." confirmLabel={confirmation?.action === 'accept' ? '수락' : '완료'} submitting={town.status === 'submitting'} details={[{ label: '퀘스트', value: confirmation?.questName ?? '선택 없음' }]} onCancel={() => setConfirmation(null)} onConfirm={submit} />
   </View>;
 }
 
@@ -67,7 +67,7 @@ function tabLabel(tab: Tab) { return tab === 'ACTIVE' ? '진행 중' : tab === '
 function rowId(quest: QuestSnapshot) { return `quest:${quest.questKey}:${quest.sourceOrder}`; }
 function toRow(quest: QuestSnapshot): TownRowResponse { const progress = quest.missions.map((mission) => mission.progress ? `${mission.target ?? '미션'} ${mission.progress.current}/${mission.progress.required}` : mission.target).filter(Boolean).join(' · '); return { id: rowId(quest), label: quest.name, accessibilityLabel: `${quest.name} ${quest.state === 'CLAIMABLE' ? '완료 가능' : tabState(quest)}`, selectable: quest.actionNo != null && (quest.state === 'AVAILABLE' || quest.state === 'CLAIMABLE'), detail: [quest.displayCode, progress, quest.rewards.length ? `보상 ${quest.rewards.join(', ')}` : null].filter(Boolean).join(' · '), imageUrl: null, price: null, quantity: null }; }
 function tabState(quest: QuestSnapshot) { return quest.section === 'ACTIVE' ? '진행 중' : quest.section === 'AVAILABLE' ? '수락 가능' : '대기 중'; }
-function information(message: string): TownActionResultResponse { return { status: 'SUCCESS', messages: [message], items: [], refreshRequired: true }; }
+function information(message: string): TownActionResultResponse { return { status: 'INFORMATIONAL', messages: [message], items: [], refreshRequired: true }; }
 const apiKeys = new WeakMap<object, number>(); let nextApiKey = 1;
 function identifyApi(api: TownApi) { const object = api as object; const known = apiKeys.get(object); if (known != null) return known; const next = nextApiKey++; apiKeys.set(object, next); return next; }
 function ActionButton({ label, disabled, onPress }: { label: string; disabled: boolean; onPress: () => void }) { return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}><Text style={styles.buttonText}>{label}</Text></Pressable>; }

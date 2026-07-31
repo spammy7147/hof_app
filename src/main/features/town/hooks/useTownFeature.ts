@@ -46,6 +46,16 @@ export function useTownFeature<TData, TRequest = never>({
   const [data, setData] = useState<TData | null>(null);
   const [result, setResult] = useState<TownActionResultResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const renderedFeatureKeyRef = useRef(featureKey);
+  const featureGenerationRef = useRef(0);
+  if (renderedFeatureKeyRef.current !== featureKey) {
+    renderedFeatureKeyRef.current = featureKey;
+    featureGenerationRef.current += 1;
+  }
+  const featureGeneration = featureGenerationRef.current;
+  const dataOwnerRef = useRef(featureGeneration);
+  const resultOwnerRef = useRef(featureGeneration);
+  const errorOwnerRef = useRef(featureGeneration);
   const lifecycleRef = useRef(0);
   const loadSequenceRef = useRef(0);
   const latestLoadPendingRef = useRef(false);
@@ -70,6 +80,7 @@ export function useTownFeature<TData, TRequest = never>({
     const loadSequence = ++loadSequenceRef.current;
     latestLoadPendingRef.current = true;
     if (!mutationBusyRef.current) setStatus('loading');
+    errorOwnerRef.current = featureGeneration;
     setError(null);
 
     const isCancelled = () => (
@@ -84,18 +95,20 @@ export function useTownFeature<TData, TRequest = never>({
     ).then((nextData) => {
       if (isCancelled()) throw new TownRequestCancelledError();
       latestLoadPendingRef.current = false;
+      dataOwnerRef.current = featureGeneration;
       setData(nextData);
       if (!mutationBusyRef.current) setStatus('ready');
       return nextData;
     }).catch((cause: unknown) => {
       if (!isCancelled()) {
         latestLoadPendingRef.current = false;
+        errorOwnerRef.current = featureGeneration;
         setError(describeErrorRef.current(cause));
         if (!mutationBusyRef.current) setStatus('error');
       }
       throw cause;
     });
-  }, [featureKey]);
+  }, [featureGeneration, featureKey]);
 
   /** busy ref를 Promise 생성 전에 선점해 같은 event turn의 double tap도 두 번째 POST를 만들지 않는다. */
   const submit = useCallback((request: TRequest): Promise<TownActionResultResponse> => {
@@ -108,6 +121,7 @@ export function useTownFeature<TData, TRequest = never>({
     const mutationSequence = ++mutationSequenceRef.current;
     mutationBusyRef.current = true;
     setStatus('submitting');
+    errorOwnerRef.current = featureGeneration;
     setError(null);
 
     const isCancelled = () => (
@@ -126,11 +140,13 @@ export function useTownFeature<TData, TRequest = never>({
         if (isCancelled()) throw new TownRequestCancelledError();
         const nextResult = normalizeTownResult(rawResult);
         mutationSucceeded = true;
+        resultOwnerRef.current = featureGeneration;
         setResult(nextResult);
         return nextResult;
       })
       .catch((cause: unknown) => {
         if (!isCancelled()) {
+          errorOwnerRef.current = featureGeneration;
           setError(describeErrorRef.current(cause));
           setStatus('error');
         }
@@ -143,13 +159,15 @@ export function useTownFeature<TData, TRequest = never>({
           setStatus(latestLoadPendingRef.current ? 'loading' : mutationSucceeded ? 'ready' : 'error');
         }
       });
-  }, [featureKey]);
+  }, [featureGeneration, featureKey]);
 
   const resetOutcome = useCallback(() => {
     if (featureKeyRef.current !== featureKey) return;
+    resultOwnerRef.current = featureGeneration;
+    errorOwnerRef.current = featureGeneration;
     setResult(null);
     setError(null);
-  }, [featureKey]);
+  }, [featureGeneration, featureKey]);
 
   useEffect(() => {
     const lifecycle = ++lifecycleRef.current;
@@ -166,7 +184,15 @@ export function useTownFeature<TData, TRequest = never>({
     };
   }, [autoLoad, featureKey, reload]);
 
-  return { status, data, result, error, reload, submit, resetOutcome };
+  return {
+    status,
+    data: dataOwnerRef.current === featureGeneration ? data : null,
+    result: resultOwnerRef.current === featureGeneration ? result : null,
+    error: errorOwnerRef.current === featureGeneration ? error : null,
+    reload,
+    submit,
+    resetOutcome,
+  };
 }
 
 type CaptchaRetryOptions = { isCancelled?: () => boolean };

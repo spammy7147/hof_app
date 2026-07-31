@@ -34,12 +34,12 @@ export function TownConfirmSheet({
   return (
     <Modal
       animationType="slide"
-      onRequestClose={onCancel}
+      onRequestClose={submitting ? () => undefined : onCancel}
       transparent
       visible={visible}
     >
       <View style={styles.root}>
-        <Pressable accessibilityLabel="확인창 닫기" onPress={onCancel} style={styles.backdrop} />
+        <Pressable accessibilityLabel="확인창 닫기" accessibilityState={{ disabled: submitting }} disabled={submitting} onPress={submitting ? () => undefined : onCancel} style={styles.backdrop} />
         <View
           accessibilityViewIsModal
           style={[styles.sheet, { paddingBottom: theme.spacing.lg + insets.bottom }]}

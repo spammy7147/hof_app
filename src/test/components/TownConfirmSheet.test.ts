@@ -63,4 +63,25 @@ describe('TownConfirmSheet', () => {
     assert.ok(actions);
     act(() => { renderer.unmount(); });
   });
+
+  it('does not dismiss a destructive request while it is submitting', () => {
+    let cancellations = 0;
+    let renderer!: ReactTestRenderer;
+    act(() => {
+      renderer = create(React.createElement(TownConfirmSheet, {
+        visible: true,
+        title: '처리 중',
+        submitting: true,
+        onCancel: () => { cancellations += 1; },
+        onConfirm: () => undefined,
+      }));
+    });
+
+    const modal = renderer.root.find((node) => String(node.type) === 'Modal');
+    const backdrop = renderer.root.findByProps({ accessibilityLabel: '확인창 닫기' });
+    act(() => { backdrop.props.onPress(); modal.props.onRequestClose(); });
+    assert.equal(backdrop.props.disabled, true);
+    assert.equal(cancellations, 0);
+    act(() => { renderer.unmount(); });
+  });
 });

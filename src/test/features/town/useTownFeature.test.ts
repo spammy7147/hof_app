@@ -283,6 +283,44 @@ describe('useTownFeature CAPTCHA retry contract', () => {
     await act(async () => { renderer.unmount(); });
   });
 
+  it('hides data owned by the previous feature before the next load settles', async () => {
+    const nextLoad = deferred<{ value: string }>();
+    const returningLoad = deferred<{ value: string }>();
+    let homeLoads = 0;
+    let feature!: ReturnType<typeof useTownFeature<{ value: string }>>;
+    const Harness = ({ featureKey }: { featureKey: string }) => {
+      feature = useTownFeature({
+        featureKey,
+        load: async () => featureKey === 'home'
+          ? ++homeLoads === 1 ? { value: '이전 자택' } : returningLoad.promise
+          : nextLoad.promise,
+      });
+      return null;
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(Harness, { featureKey: 'home' })); });
+    await act(async () => { await Promise.resolve(); });
+    assert.deepEqual(feature.data, { value: '이전 자택' });
+
+    await act(async () => { renderer.update(React.createElement(Harness, { featureKey: 'rest' })); });
+    assert.equal(feature.data, null);
+
+    await act(async () => {
+      nextLoad.resolve({ value: '새 휴식처' });
+      await Promise.resolve();
+    });
+    assert.deepEqual(feature.data, { value: '새 휴식처' });
+
+    await act(async () => { renderer.update(React.createElement(Harness, { featureKey: 'home' })); });
+    assert.equal(feature.data, null, '같은 feature key로 돌아와도 이전 세대 data를 재사용하지 않는다');
+    await act(async () => {
+      returningLoad.resolve({ value: '갱신 자택' });
+      await Promise.resolve();
+    });
+    assert.deepEqual(feature.data, { value: '갱신 자택' });
+    await act(async () => { renderer.unmount(); });
+  });
+
   it('does not let a retained reset callback clear a newer feature outcome', async () => {
     let feature!: ReturnType<typeof useTownFeature<null, { id: string }>>;
     const Harness = ({ featureKey }: { featureKey: string }) => {

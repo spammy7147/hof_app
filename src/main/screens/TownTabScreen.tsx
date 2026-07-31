@@ -137,9 +137,9 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
         ) : craftingMode && townApi ? (
           <CraftingPanel api={townApi} mode={craftingMode} resolveCaptcha={resolveCaptcha} />
         ) : selectedMenu.id === 'adventureAgency' && townApi ? (
-          <AgencyPanel api={townApi} resolveCaptcha={resolveCaptcha} />
+          <AgencyPanel key={selectedMenu.id} api={townApi} resolveCaptcha={resolveCaptcha} />
         ) : homeMode && townApi ? (
-          <HomePanel api={townApi} mode={homeMode} resolveCaptcha={resolveCaptcha} />
+          <HomePanel key={`${selectedMenu.id}-${homeMode}`} api={townApi} mode={homeMode} resolveCaptcha={resolveCaptcha} />
         ) : (
           <><Text style={styles.detailTitle}>{selectedMenu.label}</Text><Text style={styles.hint}>기능 연결을 준비하고 있습니다.</Text></>
         )}
