@@ -50,7 +50,7 @@ export function TownItemList({
           : { disabled, checked: isSelected };
         return (
           <Pressable
-            accessibilityLabel={`${item.label}${disabled ? ' 선택 불가' : ' 선택'}`}
+            accessibilityLabel={`${selectionMode === 'grouped-single' && item.detail ? `${item.detail} ` : ''}${item.label}${disabled ? ' 선택 불가' : ' 선택'}`}
             accessibilityRole={accessibilityRole}
             accessibilityState={accessibilityState}
             disabled={disabled}

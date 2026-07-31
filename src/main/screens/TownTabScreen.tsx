@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import {
   AccessibilityInfo,
   BackHandler,
@@ -36,10 +36,11 @@ export type TownTabScreenProps = {
   controlledMenuId?: TownMenuId | null;
   controlledDetailOpen?: boolean;
   onDetailStateChange?: (menuId: TownMenuId | null, open: boolean) => void;
+  renderContent?: (content: ReactElement, virtualized: boolean) => ReactElement;
 };
 
 /** 승인된 모든 마을 기능을 한 화면에서 검색하고 상세로 여는 단일 shell이다. */
-export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townApi, resolveCaptcha, onOpenFishingBattle, controlledMenuId, controlledDetailOpen, onDetailStateChange }: TownTabScreenProps) {
+export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townApi, resolveCaptcha, onOpenFishingBattle, controlledMenuId, controlledDetailOpen, onDetailStateChange, renderContent }: TownTabScreenProps) {
   const [categoryId, setCategoryId] = useState<TownCategoryFilterId>(DEFAULT_TOWN_CATEGORY_ID);
   const [query, setQuery] = useState('');
   const [internalMenuId, setInternalMenuId] = useState<TownMenuId | null>(null);
@@ -55,7 +56,6 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
   const closeDetail = useCallback(() => {
     pendingFocusRestore.current = menuId;
     if (onDetailStateChange) {
-      if (menuId != null && VIRTUALIZED_SHOP_MENUS.has(menuId)) onRestoreListScroll?.();
       onDetailStateChange(menuId, false);
     } else {
       setInternalDetailOpen(false);
@@ -94,7 +94,7 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
         : selectedMenu.id === 'darkShop' ? 'dark'
           : selectedMenu.id === 'sell' ? 'sell'
             : selectedMenu.id === 'combine' ? 'combine' : null;
-    return (
+    const detail = (
       <TownDetailShell menu={selectedMenu} onBack={closeDetail}>
         {fishingMode && townApi ? (
           <FishingPanel
@@ -111,9 +111,10 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
         )}
       </TownDetailShell>
     );
+    return renderContent?.(detail, shopMode != null) ?? detail;
   }
 
-  return (
+  const list = (
     <View style={styles.container}>
       <View style={styles.intro}>
         <Text style={styles.title}>마을</Text>
@@ -172,6 +173,7 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
       />
     </View>
   );
+  return renderContent?.(list, false) ?? list;
 }
 
 const styles = StyleSheet.create({
@@ -245,5 +247,3 @@ const styles = StyleSheet.create({
   },
   detailTitle: { color: theme.colors.text, fontSize: 17, fontWeight: '900' },
 });
-
-const VIRTUALIZED_SHOP_MENUS = new Set<TownMenuId>(['generalShop', 'sundriesShop', 'darkShop', 'sell', 'combine']);

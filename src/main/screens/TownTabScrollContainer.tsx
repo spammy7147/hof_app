@@ -23,35 +23,36 @@ export function TownTabScrollContainer({ townApi, resolveCaptcha, onOpenFishingB
     currentOffset.current = event.nativeEvent.contentOffset.y;
   }
 
-  const screen = <TownTabScreen
-    townApi={townApi}
-    resolveCaptcha={resolveCaptcha}
-    onOpenFishingBattle={onOpenFishingBattle}
-    controlledMenuId={menuId}
-    controlledDetailOpen={detailOpen}
-    onDetailStateChange={(nextMenuId, open) => { setMenuId(nextMenuId); setDetailOpen(open); }}
-    onCaptureListScroll={() => { capturedListOffset.current = currentOffset.current; }}
-    onRestoreListScroll={() => {
-      scrollRef.current?.scrollTo({ animated: false, y: capturedListOffset.current });
-    }}
-  />;
-
-  if (detailOpen && menuId != null && VIRTUALIZED_SHOP_MENUS.has(menuId)) {
-    return <View accessibilityLabel="마을 가상 목록 화면" style={[styles.scroller, styles.container]}>{screen}</View>;
-  }
-
   return (
-    <ScrollView
-      accessibilityLabel="마을 화면 스크롤"
-      contentContainerStyle={styles.container}
-      contentInsetAdjustmentBehavior="automatic"
-      onScroll={handleScroll}
-      ref={scrollRef}
-      scrollEventThrottle={16}
-      style={styles.scroller}
-    >
-      {screen}
-    </ScrollView>
+    <View accessibilityLabel="마을 탭 컨테이너" style={styles.scroller}>
+      <TownTabScreen
+        townApi={townApi}
+        resolveCaptcha={resolveCaptcha}
+        onOpenFishingBattle={onOpenFishingBattle}
+        controlledMenuId={menuId}
+        controlledDetailOpen={detailOpen}
+        onDetailStateChange={(nextMenuId, open) => { setMenuId(nextMenuId); setDetailOpen(open); }}
+        onCaptureListScroll={() => { capturedListOffset.current = currentOffset.current; }}
+        onRestoreListScroll={() => {
+          scrollRef.current?.scrollTo({ animated: false, y: capturedListOffset.current });
+        }}
+        renderContent={(content, virtualized) => virtualized ? (
+          <View accessibilityLabel="마을 가상 목록 화면" style={[styles.scroller, styles.container]}>{content}</View>
+        ) : (
+          <ScrollView
+            accessibilityLabel="마을 화면 스크롤"
+            contentContainerStyle={styles.container}
+            contentInsetAdjustmentBehavior="automatic"
+            onScroll={handleScroll}
+            ref={scrollRef}
+            scrollEventThrottle={16}
+            style={styles.scroller}
+          >
+            {content}
+          </ScrollView>
+        )}
+      />
+    </View>
   );
 }
 
@@ -65,5 +66,3 @@ const styles = {
     flex: 1,
   },
 } as const;
-
-const VIRTUALIZED_SHOP_MENUS = new Set<TownMenuId>(['generalShop', 'sundriesShop', 'darkShop', 'sell', 'combine']);

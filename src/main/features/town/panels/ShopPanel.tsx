@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { theme } from '../../../styles/theme';
 import type {
   CombineRequest,
+  CombineOptionResponse,
   CombineResponse,
   PurchaseRequest,
   SellRequest,
@@ -107,20 +108,20 @@ function CombinePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
   const data = response ?? town.data;
   if (!data) return <LoadState loading={town.status === 'loading'} error={town.error} retry={town.reload} />;
   const groups = [{ id: 'primary', label: '주재료', items: data.primary }, ...data.secondarySlots.map((items, index) => ({ id: `secondary-${index}`, label: `부재료 ${index + 1}`, items }))];
-  const rows: TownRowResponse[] = groups.flatMap((group) => group.items.map((item) => ({ ...item, selectable: true, detail: group.label, imageUrl: null, price: null })));
+  const rows: TownRowResponse[] = groups.flatMap((group) => group.items.map((item) => ({ ...item, id: `${group.id}:${item.id}`, selectable: true, detail: group.label, imageUrl: null, price: null })));
   const selectedIds = [...primary, ...secondary.flat()];
-  const groupById = new Map(groups.flatMap((group) => group.items.map((item) => [item.id, group.id] as const)));
+  const groupById = new Map<string, string>(rows.map((row) => [row.id, row.detail!]));
+  const candidateById = new Map<string, CombineOptionResponse>(groups.flatMap((group) => group.items.map((item) => [`${group.id}:${item.id}`, item])));
   const ready = primary.length === 1 && secondary.every((slot) => slot.length === 1);
-  const allOptions = groups.flatMap((group) => group.items);
-  const selectedOptions = selectedIds.map((id) => allOptions.find((item) => item.id === id)).filter((item): item is (typeof allOptions)[number] => item != null);
+  const selectedOptions = selectedIds.map((id) => candidateById.get(id)).filter((item): item is CombineOptionResponse => item != null);
   const maxQuantity = selectedOptions.reduce((limit, item) => item.quantity == null ? limit : Math.min(limit, item.quantity), MAX_QUANTITY);
   const quantityWithinLimit = Number.isSafeInteger(quantity) && quantity > 0 && quantity <= maxQuantity;
   return <View style={styles.container}>
-    <TownItemList rows={rows} selectionMode="grouped-single" selectionGroup={(row) => groupById.get(row.id) ?? row.id} selectedIds={selectedIds} onSelectionChange={(ids) => { setPrimary(ids.filter((id) => groupById.get(id) === 'primary')); setSecondary([0, 1, 2].map((index) => ids.filter((id) => groupById.get(id) === `secondary-${index}`)) as [string[], string[], string[]]); }}
+    <TownItemList rows={rows} selectionMode="grouped-single" selectionGroup={(row) => groupById.get(row.id) ?? row.id} selectedIds={selectedIds} onSelectionChange={(ids) => { setPrimary(ids.filter((id) => groupById.get(id) === '주재료')); setSecondary([0, 1, 2].map((index) => ids.filter((id) => groupById.get(id) === `부재료 ${index + 1}`)) as [string[], string[], string[]]); }}
       header={<Text style={styles.muted}>주재료 1개와 부재료 슬롯별 1개를 선택하세요.</Text>}
       footer={<View style={styles.section}><QuantityInput label="조합 결과 수량" value={quantity} max={maxQuantity} onChange={setQuantity} onValidityChange={setQuantityValid} /><ActionButton disabled={!ready || !quantityValid || !quantityWithinLimit || town.status === 'submitting'} label="조합" onPress={() => setConfirming(true)} />{data.result ? <TownActionResult result={data.result} /> : null}</View>} />
-    <TownConfirmSheet visible={confirming} title="조합 확인" message="주재료와 부재료 3개를 사용합니다." confirmLabel="Combine" submitting={town.status === 'submitting'} details={[...groups.map((group) => { const id = selectedIds.find((selectedId) => groupById.get(selectedId) === group.id); return { label: group.label, value: `${group.items.find((item) => item.id === id)?.label ?? '미선택'} · ${quantity}개 사용` }; }), { label: '조합 결과 수량', value: `${quantity}개` }]}
-      onCancel={() => setConfirming(false)} onConfirm={() => ready && void town.submit({ primaryCandidateId: primary[0], secondaryCandidateIds: secondary.map((slot) => slot[0]) as [string, string, string], quantity }).catch(() => undefined)} />
+    <TownConfirmSheet visible={confirming} title="조합 확인" message="주재료와 부재료 3개를 사용합니다." confirmLabel="Combine" submitting={town.status === 'submitting'} details={[...groups.map((group) => { const id = selectedIds.find((selectedId) => groupById.get(selectedId) === group.label); return { label: group.label, value: `${id == null ? '미선택' : candidateById.get(id)?.label ?? '미선택'} · ${quantity}개 사용` }; }), { label: '조합 결과 수량', value: `${quantity}개` }]}
+      onCancel={() => setConfirming(false)} onConfirm={() => ready && void town.submit({ primaryCandidateId: candidateById.get(primary[0])!.id, secondaryCandidateIds: secondary.map((slot) => candidateById.get(slot[0])!.id) as [string, string, string], quantity }).catch(() => undefined)} />
   </View>;
 }
 

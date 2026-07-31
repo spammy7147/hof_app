@@ -74,11 +74,23 @@ describe('ShopPanel', () => {
     const combine = { primary: [{ id: 'm', label: 'Milk', quantity: 3 }], secondarySlots: [[{ id: 'a', label: 'A', quantity: 3 }], [{ id: 'b', label: 'B', quantity: 3 }], [{ id: 'c', label: 'C', quantity: 3 }]], result: null };
     await render(React.createElement(ShopPanel, { api: api(async () => combine, async (_path, request) => { submissions.push(request); return { ...combine, result: result('SUCCESS') }; }), mode: 'combine' }));
     assert.equal(button('조합').props.disabled, true);
-    for (const label of ['Milk 선택', 'A 선택', 'B 선택', 'C 선택']) await press(label);
+    for (const label of ['주재료 Milk 선택', '부재료 1 A 선택', '부재료 2 B 선택', '부재료 3 C 선택']) await press(label);
     await change('조합 결과 수량', '2'); await press('조합');
     for (const expected of ['주재료', 'Milk · 2개 사용', '부재료 1', 'A · 2개 사용', '부재료 2', 'B · 2개 사용', '부재료 3', 'C · 2개 사용', '조합 결과 수량', '2개']) assert.equal(text().includes(expected), true);
     await pressLast('Combine');
     assert.deepEqual(submissions, [{ primaryCandidateId: 'm', secondaryCandidateIds: ['a', 'b', 'c'], quantity: 2 }]);
+  });
+
+  it('같은 소재가 여러 조합 슬롯에 있어도 슬롯별 radio 이름과 선택을 구분한다', async () => {
+    const submissions: unknown[] = [];
+    const shared = { id: 'same', label: 'Shared', quantity: 2 };
+    const combine = { primary: [shared], secondarySlots: [[shared], [shared], [shared]], result: null };
+    await render(React.createElement(ShopPanel, { api: api(async () => combine, async (_path, request) => { submissions.push(request); return { ...combine, result: result('SUCCESS') }; }), mode: 'combine' }));
+
+    for (const label of ['주재료 Shared 선택', '부재료 1 Shared 선택', '부재료 2 Shared 선택', '부재료 3 Shared 선택']) await press(label);
+    await press('조합'); await pressLast('Combine');
+
+    assert.deepEqual(submissions, [{ primaryCandidateId: 'same', secondaryCandidateIds: ['same', 'same', 'same'], quantity: 1 }]);
   });
 
   it('보유량과 safe integer를 넘는 수량은 제출을 차단한다', async () => {

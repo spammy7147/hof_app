@@ -204,6 +204,34 @@ describe('TownTabScreen', () => {
     assert.equal(findHosts(renderer.root, 'FlatList').filter((node) => node.props.nestedScrollEnabled === true).length, 1);
   });
 
+  it('상점 왕복에도 TownTabScreen 인스턴스와 검색 분류 스크롤 포커스를 보존한다', async () => {
+    const townApi = {
+      load: async () => ({ shopId: 'general', stale: false, lastVerifiedAt: null, result: null, items: [] }),
+      submit: async () => { throw new Error('unexpected submit'); },
+    } as never;
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(TownTabScrollContainer, { townApi } as never)); });
+    mountedRenderer = renderer;
+    const screenBefore = renderer.root.findByType(TownTabScreen);
+
+    await press(renderer.root, '시장 분류');
+    await act(async () => findHost(renderer.root, 'TextInput').props.onChangeText('일반'));
+    const scroller = renderer.root.find((node) => node.props.accessibilityLabel === '마을 화면 스크롤');
+    await act(async () => scroller.props.onScroll({ nativeEvent: { contentOffset: { y: 384 } } }));
+    await press(renderer.root, '일반상점 열기');
+    await act(async () => { await Promise.resolve(); });
+
+    assert.strictEqual(renderer.root.findByType(TownTabScreen), screenBefore);
+    assert.equal(renderer.root.findAll((node) => node.props.accessibilityLabel === '마을 화면 스크롤').length, 0);
+    await press(renderer.root, '마을 메뉴 목록으로');
+
+    assert.strictEqual(renderer.root.findByType(TownTabScreen), screenBefore);
+    assert.equal(findHost(renderer.root, 'TextInput').props.value, '일반');
+    assert.equal(selectedCategoryLabel(renderer.root), '시장');
+    assert.deepEqual(scrollToCalls, [{ animated: false, y: 384 }]);
+    assert.equal(focusCalls.at(-1)?.accessibilityLabel, '일반상점 열기');
+  });
+
   it('shows a friendly empty state and allows clearing the search', async () => {
     const renderer = await renderTown();
     const input = findHost(renderer.root, 'TextInput');
