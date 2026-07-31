@@ -397,6 +397,28 @@ export type RestStatusResponse = { currentTime: number | null; maxTime: number |
 export type HomeResponse = { mode: HomeMode; quests: HomeQuestResponse[]; actions: HomeActionResponse[]; restStatus: RestStatusResponse | null; result: TownActionResultResponse | null };
 export type HomeActionRequest = { actionId: string };
 
+export type ExchangeMode = 'emblem' | 'event' | 'legacy' | 'ann';
+export type AnnAction = 'MODIFY_ITEM' | 'GIVE_GIFT';
+export type ExchangeRowResponse = {
+  id: string; label: string; selectable: boolean; detail: string | null; cost: number | null;
+  owned: number | null; minQuantity: number; maxQuantity: number | null;
+};
+export type ExchangeResponse = {
+  mode: 'EMBLEM' | 'EVENT' | 'LEGACY' | 'ANN';
+  categories: Array<{ id: string; label: string; current: boolean }>;
+  currentCategoryId: string | null;
+  rows: ExchangeRowResponse[];
+  ownedCurrencies: Array<{ label: string; quantity: number | null }>;
+  gradeActions: Array<{ id: string; label: string; consumedItemsPerPress: 1; allowsTargetSelection: false }>;
+  annActions: Array<{ type: AnnAction; label: string; rows: ExchangeRowResponse[] }>;
+  warning: string | null;
+  history: string[];
+  result: TownActionResultResponse | null;
+};
+export type ExchangeTradeRequest = { candidateId: string; categoryCandidateId: string | null; quantity: number };
+export type LegacyGradeExchangeRequest = { gradeActionId: string };
+export type AnnActionRequest = { action: AnnAction; candidateId: string | null; quantity: number };
+
 /** 저장 가능한 자동화는 백엔드가 소유하는 세 가지 singleton 유형으로 제한된다. */
 export type AutomationType = 'QUEST' | 'BATTLE_MAP' | 'ADVENTURE_MAP';
 
