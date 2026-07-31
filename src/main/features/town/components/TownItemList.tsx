@@ -7,10 +7,11 @@ import type { TownRowResponse } from '../../../types/api';
 
 type TownItemListProps = {
   rows: TownRowResponse[];
-  selectionMode?: 'none' | 'single' | 'multiple' | 'grouped-single';
+  selectionMode?: 'none' | 'single' | 'multiple' | 'grouped-single' | 'mixed';
   selectedIds?: readonly string[];
   onSelectionChange?: (selectedIds: string[]) => void;
   selectionGroup?: (row: TownRowResponse) => string;
+  selectionRole?: (row: TownRowResponse) => 'radio' | 'checkbox';
   /** 한 가상 목록 안에서 기록/안내 행만 선택 control이 아닌 텍스트로 표시한다. */
   displayOnlyRow?: (row: TownRowResponse) => boolean;
   emptyMessage?: string;
@@ -25,6 +26,7 @@ export function TownItemList({
   selectedIds = [],
   onSelectionChange,
   selectionGroup,
+  selectionRole,
   displayOnlyRow,
   emptyMessage = '표시할 항목이 없습니다.',
   header,
@@ -49,9 +51,9 @@ export function TownItemList({
         const disabled = !item.selectable || displayOnly || !onSelectionChange;
         const accessibilityRole = displayOnly
           ? 'text'
-          : selectionMode === 'single' || selectionMode === 'grouped-single'
+          : selectionRole?.(item) ?? (selectionMode === 'single' || selectionMode === 'grouped-single'
             ? 'radio'
-            : selectionMode === 'multiple' ? 'checkbox' : 'text';
+            : selectionMode === 'multiple' ? 'checkbox' : 'text');
         const accessibilityState = displayOnly
           ? undefined
           : { disabled, checked: isSelected };
@@ -69,7 +71,7 @@ export function TownItemList({
                 onSelectionChange([item.id]);
                 return;
               }
-              if (selectionMode === 'grouped-single') {
+              if (selectionMode === 'grouped-single' || selectionMode === 'mixed') {
                 const group = selectionGroup?.(item);
                 const withoutGroup = selectedIds.filter((id) => {
                   const selectedRow = rows.find((row) => row.id === id);

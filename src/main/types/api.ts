@@ -419,6 +419,27 @@ export type ExchangeTradeRequest = { candidateId: string; categoryCandidateId: s
 export type LegacyGradeExchangeRequest = { gradeActionId: string };
 export type AnnActionRequest = { action: AnnAction; candidateId: string | null; quantity: number };
 
+export type ColosseumFighterResponse = { id: string; label: string; detail: string | null; imageUrl: string | null; selected: boolean };
+export type ColosseumOpponentResponse = { id: string; label: string; detail: string | null };
+export type ColosseumTurnLineResponse = { turn: number | null; text: string };
+export type ColosseumBattleResultResponse = {
+  turns: number | null; winner: string | null; summary: string; playerHp: string | null; opponentHp: string | null;
+  playerStatus: string | null; opponentStatus: string | null; totalDamage: number | null; reward: string | null;
+  detail: ColosseumTurnLineResponse[];
+};
+export type ColosseumBattleResponse = {
+  fighters: ColosseumFighterResponse[]; selectedTeam: string[]; minTeamSize: number; maxTeamSize: number;
+  opponents: ColosseumOpponentResponse[]; battleResult: ColosseumBattleResultResponse | null; result: TownActionResultResponse | null;
+};
+export type SaveColosseumTeamRequest = { fighterCandidateIds: string[] };
+export type ChallengeColosseumRequest = { opponentCandidateId: string };
+export type ColosseumShopResponse = {
+  categories: Array<{ id: string; label: string; current: boolean }>; currentCategoryId: string | null;
+  items: Array<{ id: string; label: string; selectable: boolean; detail: string | null; cost: number | null; owned: number | null }>;
+  currencies: Array<{ label: string; quantity: number | null }>; result: TownActionResultResponse | null;
+};
+export type ColosseumTradeRequest = { candidateId: string; categoryCandidateId: string | null; quantity: number };
+
 /** 저장 가능한 자동화는 백엔드가 소유하는 세 가지 singleton 유형으로 제한된다. */
 export type AutomationType = 'QUEST' | 'BATTLE_MAP' | 'ADVENTURE_MAP';
 
