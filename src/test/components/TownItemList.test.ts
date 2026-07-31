@@ -76,9 +76,10 @@ describe('TownItemList', () => {
       }));
     });
 
-    const row = renderer.root.find((node) => node.props.accessibilityLabel === '안내 행 선택 불가');
+    const row = renderer.root.find((node) => node.props.accessibilityLabel === '안내 행');
     assert.equal(row.props.accessibilityRole, 'text');
-    assert.deepEqual(row.props.accessibilityState, { disabled: true });
+    assert.equal(row.props.accessibilityState, undefined);
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'Text' && node.children.join('') === '선택 불가').length, 0);
     await act(async () => { renderer.unmount(); });
   });
 });

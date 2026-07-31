@@ -57,13 +57,47 @@ describe('RewardPanel', () => {
     assert.equal(text().includes('계산값입니다'), false);
     assert.equal(text().includes('9,000개'), true);
   });
+
+  it('빠른 중복 확인은 POST를 한 번만 보내고 첫 응답이 올 때까지 확인창을 유지한다', async () => {
+    const pending = deferred<unknown>();
+    let calls = 0;
+    const data = stashData();
+    await render(React.createElement(RewardPanel, {
+      api: api(async () => data, async () => { calls += 1; return pending.promise; }),
+      mode: 'stash',
+    }));
+    await press('Treasure Box 선택');
+    await press('1개 열기');
+    const confirm = pressableWithText('열기');
+    await act(async () => { confirm.props.onPress(); confirm.props.onPress(); await Promise.resolve(); });
+
+    assert.equal(calls, 1);
+    assert.equal(confirmModal().props.visible, true);
+    await act(async () => { pending.resolve({ ...data, result: result() }); await pending.promise; });
+    await act(async () => { await Promise.resolve(); });
+    assert.equal(confirmModal().props.visible, false);
+  });
+
+  it('오브 보상은 선택·보유 항목이 아닌 남은 수량 정보로만 표시한다', async () => {
+    await render(React.createElement(RewardPanel, { api: api(async () => orbData({ red: 1, blue: 1, green: 1 }, false)), mode: 'orbs' }));
+
+    assert.equal(button('Event Box').props.accessibilityRole, 'text');
+    assert.equal(text().includes('선택 불가'), false);
+    assert.equal(text().includes('보유 2'), false);
+    assert.equal(text().includes('현재 남은 수량: 2개'), true);
+    assert.equal(text().includes('현재 남은 수량: 무제한'), true);
+  });
 });
 
 function orbData(counts: { red: number; blue: number; green: number }, estimated: boolean) { return { displayedOrbs: counts, orbCountsEstimated: estimated, remainingRewards: 2, rewardMonth: '2026년 7월', rewards: [{ key: 'event', label: 'Event Box', remaining: 2, unlimited: false }, { key: 'funds', label: 'Funds Bag($ 1,000)', remaining: null, unlimited: true }], actions: [{ action: 'ONE', label: '오브를 기부한다', repetitions: 1 }, { action: 'FIVE', label: '오브를 5회 기부한다', repetitions: 5 }], outcomes: [], lastAction: null, result: null } as const; }
+function stashData() { return { boxes: [{ id: 'box', label: 'Treasure Box', selectable: true, owned: 76, cost: 0, detail: null }], actions: [{ action: 'ONE' as const, label: '1개 열기' }], result: null }; }
 function result() { return { status: 'SUCCESS' as const, messages: ['완료'], items: [], refreshRequired: true }; }
 function api(load: (path: string) => Promise<unknown>, submit: (path: string, request: unknown) => Promise<unknown> = async () => { throw new Error('unexpected'); }) { return { load, submit } as never; }
 async function render(node: React.ReactElement) { await act(async () => { mounted = create(node); }); await act(async () => { await Promise.resolve(); }); }
 function button(label: string): ReactTestInstance { return mounted!.root.find((node) => node.props.accessibilityLabel === label); }
+function confirmModal(): ReactTestInstance { return mounted!.root.find((node) => String(node.type) === 'Modal'); }
+function pressableWithText(label: string): ReactTestInstance { return mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0).at(-1)!; }
 async function press(label: string) { await act(async () => button(label).props.onPress()); await act(async () => { await Promise.resolve(); }); }
 async function pressLast(label: string) { const nodes = mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0); await act(async () => nodes.at(-1)!.props.onPress()); await act(async () => { await Promise.resolve(); }); }
 function text() { return mounted!.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join('')).join(' '); }
+function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((next) => { resolve = next; }); return { promise, resolve }; }

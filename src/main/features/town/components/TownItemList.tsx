@@ -41,16 +41,19 @@ export function TownItemList({
       ListEmptyComponent={<Text style={styles.empty}>{emptyMessage}</Text>}
       renderItem={({ item }) => {
         const isSelected = selected.has(item.id);
+        const displayOnly = selectionMode === 'none';
         const disabled = !item.selectable || selectionMode === 'none' || !onSelectionChange;
         const accessibilityRole = selectionMode === 'single' || selectionMode === 'grouped-single'
           ? 'radio'
           : selectionMode === 'multiple' ? 'checkbox' : 'text';
-        const accessibilityState = selectionMode === 'none'
-          ? { disabled: true }
+        const accessibilityState = displayOnly
+          ? undefined
           : { disabled, checked: isSelected };
         return (
           <Pressable
-            accessibilityLabel={item.accessibilityLabel ?? `${selectionMode === 'grouped-single' && item.detail ? `${item.detail} ` : ''}${item.label}${disabled ? ' 선택 불가' : ' 선택'}`}
+            accessibilityLabel={item.accessibilityLabel ?? (displayOnly
+              ? item.label
+              : `${selectionMode === 'grouped-single' && item.detail ? `${item.detail} ` : ''}${item.label}${disabled ? ' 선택 불가' : ' 선택'}`)}
             accessibilityRole={accessibilityRole}
             accessibilityState={accessibilityState}
             disabled={disabled}
@@ -76,7 +79,7 @@ export function TownItemList({
             style={({ pressed }) => [
               styles.row,
               isSelected && styles.selectedRow,
-              disabled && styles.disabledRow,
+              disabled && !displayOnly && styles.disabledRow,
               pressed && !disabled && styles.pressedRow,
             ]}
           >
@@ -87,7 +90,7 @@ export function TownItemList({
               <View style={styles.metadata}>
                 {item.price !== null ? <Text style={styles.meta}>${item.price.toLocaleString()}</Text> : null}
                 {item.quantity !== null ? <Text style={styles.meta}>보유 {item.quantity.toLocaleString()}</Text> : null}
-                {!item.selectable ? <Text style={styles.unavailable}>선택 불가</Text> : null}
+                {!displayOnly && !item.selectable ? <Text style={styles.unavailable}>선택 불가</Text> : null}
               </View>
             </View>
           </Pressable>

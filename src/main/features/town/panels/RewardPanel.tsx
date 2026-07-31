@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { theme } from '../../../styles/theme';
@@ -16,7 +16,7 @@ import type { TownApi } from '../api/townApi';
 import { TownActionResult } from '../components/TownActionResult';
 import { TownConfirmSheet } from '../components/TownConfirmSheet';
 import { TownItemList } from '../components/TownItemList';
-import { useTownFeature } from '../hooks/useTownFeature';
+import { TownMutationBusyError, useTownFeature } from '../hooks/useTownFeature';
 
 type Props = { api: TownApi; mode: 'stash' | 'orbs'; resolveCaptcha?: () => Promise<void> };
 
@@ -28,11 +28,11 @@ function StashPanel({ api, resolveCaptcha }: Props) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [pendingAction, setPendingAction] = useState<{ action: StashOpenAction; label: string } | null>(null);
   const [response, setResponse] = useState<StashResponse | null>(null);
+  const stagedResponse = useRef<StashResponse | null>(null);
   const load = useCallback(() => api.load<StashResponse>('/api/town/rewards/stash'), [api]);
   const submitAction = useCallback(async (request: StashOpenRequest) => {
     const next = await api.submit<StashOpenRequest, StashResponse>('/api/town/rewards/stash/open', request);
-    setResponse(next);
-    setPendingAction(null);
+    stagedResponse.current = next;
     return next.result ?? information('상자 목록을 갱신했습니다.');
   }, [api]);
   const town = useTownFeature({ load, submitAction, resolveCaptcha, featureKey: 'reward-stash' });
@@ -83,7 +83,18 @@ function StashPanel({ api, resolveCaptcha }: Props) {
         submitting={town.status === 'submitting'}
         details={[{ label: '상자', value: selected?.label ?? '미선택' }, { label: '개봉 방식', value: pendingAction?.label ?? '미선택' }]}
         onCancel={() => setPendingAction(null)}
-        onConfirm={() => selected && pendingAction && void town.submit({ boxCandidateId: selected.id, action: pendingAction.action }).catch(() => setPendingAction(null))}
+        onConfirm={() => {
+          if (!selected || !pendingAction) return;
+          void town.submit({ boxCandidateId: selected.id, action: pendingAction.action })
+            .then(() => {
+              if (stagedResponse.current) setResponse(stagedResponse.current);
+              stagedResponse.current = null;
+              setPendingAction(null);
+            })
+            .catch((error: unknown) => {
+              if (!(error instanceof TownMutationBusyError)) setPendingAction(null);
+            });
+        }}
       />
     </View>
   );
@@ -92,11 +103,11 @@ function StashPanel({ api, resolveCaptcha }: Props) {
 function OrbPanel({ api, resolveCaptcha }: Props) {
   const [pendingAction, setPendingAction] = useState<{ action: OrbExchangeAction; label: string; repetitions: 1 | 5 } | null>(null);
   const [response, setResponse] = useState<OrbExchangeResponse | null>(null);
+  const stagedResponse = useRef<OrbExchangeResponse | null>(null);
   const load = useCallback(() => api.load<OrbExchangeResponse>('/api/town/rewards/orbs'), [api]);
   const submitAction = useCallback(async (request: OrbExchangeRequest) => {
     const next = await api.submit<OrbExchangeRequest, OrbExchangeResponse>('/api/town/rewards/orbs/exchange', request);
-    setResponse(next);
-    setPendingAction(null);
+    stagedResponse.current = next;
     return next.result ?? information('오브 교환 결과를 갱신했습니다.');
   }, [api]);
   const town = useTownFeature({ load, submitAction, resolveCaptcha, featureKey: 'reward-orbs' });
@@ -106,10 +117,12 @@ function OrbPanel({ api, resolveCaptcha }: Props) {
     id: reward.key,
     label: reward.label,
     selectable: false,
-    detail: reward.unlimited ? '남은 수량 무제한' : `현재 남은 수량 ${reward.remaining?.toLocaleString() ?? '확인 불가'}개`,
+    detail: reward.unlimited
+      ? '현재 남은 수량: 무제한'
+      : reward.remaining == null ? '현재 남은 수량: 확인 불가' : `현재 남은 수량: ${reward.remaining.toLocaleString()}개`,
     imageUrl: null,
     price: null,
-    quantity: reward.remaining,
+    quantity: null,
   }));
   const refresh = async () => { await town.reload(); setResponse(null); };
   return (
@@ -129,6 +142,7 @@ function OrbPanel({ api, resolveCaptcha }: Props) {
           <View style={styles.actionGrid}>
             {data.actions.map((action) => <ActionButton key={action.action} label={action.label} disabled={town.status === 'submitting'} onPress={() => setPendingAction(action)} />)}
           </View>
+          {data.actions.length === 0 ? <Text accessibilityRole="alert" style={styles.error}>현재 HOF 오브 교환 버튼을 안전하게 확인하지 못했습니다.</Text> : null}
           <Text style={styles.hint}>보유 오브가 부족해 보여도 HOF 응답을 확인하기 위해 교환 버튼은 사용할 수 있습니다.</Text>
           {data.outcomes.length ? <View accessibilityLiveRegion="polite" style={styles.outcomes}><Text style={styles.label}>최근 교환 결과</Text>{data.outcomes.map((outcome, index) => <Text key={`${outcome.text}-${index}`} style={outcome.success ? styles.success : styles.error}>{outcome.success ? '획득' : '실패'} · {outcome.text}{outcome.quantity > 1 ? ` ×${outcome.quantity}` : ''}{outcome.inferred ? ' (수량 변화로 추론)' : ''}</Text>)}</View> : null}
           {data.result ?? town.result ? <TownActionResult result={(data.result ?? town.result)!} onRefresh={() => void refresh().catch(() => undefined)} /> : null}
@@ -144,7 +158,18 @@ function OrbPanel({ api, resolveCaptcha }: Props) {
         submitting={town.status === 'submitting'}
         details={[{ label: '교환 횟수', value: `${pendingAction?.repetitions ?? 0}회` }, { label: '필요 오브', value: `색상별 ${((pendingAction?.repetitions ?? 0) * 1_000).toLocaleString()}개` }]}
         onCancel={() => setPendingAction(null)}
-        onConfirm={() => pendingAction && void town.submit({ action: pendingAction.action }).catch(() => setPendingAction(null))}
+        onConfirm={() => {
+          if (!pendingAction) return;
+          void town.submit({ action: pendingAction.action })
+            .then(() => {
+              if (stagedResponse.current) setResponse(stagedResponse.current);
+              stagedResponse.current = null;
+              setPendingAction(null);
+            })
+            .catch((error: unknown) => {
+              if (!(error instanceof TownMutationBusyError)) setPendingAction(null);
+            });
+        }}
       />
     </View>
   );
