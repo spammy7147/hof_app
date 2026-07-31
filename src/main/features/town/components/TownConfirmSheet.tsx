@@ -1,4 +1,4 @@
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PrimaryButton } from '../../../components/PrimaryButton';
@@ -42,17 +42,26 @@ export function TownConfirmSheet({
         <Pressable accessibilityLabel="확인창 닫기" onPress={onCancel} style={styles.backdrop} />
         <View
           accessibilityViewIsModal
-          style={[styles.sheet, { paddingBottom: theme.spacing.xl + insets.bottom }]}
+          style={[styles.sheet, { paddingBottom: theme.spacing.lg + insets.bottom }]}
+          testID="town-confirm-sheet"
         >
           <Text accessibilityRole="header" style={styles.title}>{title}</Text>
-          {message ? <Text style={styles.message}>{message}</Text> : null}
-          {details.map((detail, index) => (
-            <View key={`${detail.label}-${index}`} style={styles.detailRow}>
-              <Text style={styles.detailLabel}>{detail.label}</Text>
-              <Text style={[styles.detailValue, detail.warning && styles.warning]}>{detail.value}</Text>
-            </View>
-          ))}
-          <View style={styles.actions}>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            nestedScrollEnabled
+            showsVerticalScrollIndicator
+            style={styles.scroll}
+            testID="town-confirm-scroll"
+          >
+            {message ? <Text style={styles.message}>{message}</Text> : null}
+            {details.map((detail, index) => (
+              <View key={`${detail.label}-${index}`} style={styles.detailRow}>
+                <Text style={styles.detailLabel}>{detail.label}</Text>
+                <Text style={[styles.detailValue, detail.warning && styles.warning]}>{detail.value}</Text>
+              </View>
+            ))}
+          </ScrollView>
+          <View style={styles.actions} testID="town-confirm-actions">
             <PrimaryButton label="취소" onPress={onCancel} disabled={submitting} variant="secondary" style={styles.action} />
             <PrimaryButton
               label={confirmLabel}
@@ -78,6 +87,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 18,
     borderWidth: 1,
     gap: theme.spacing.md,
+    maxHeight: '85%',
     padding: theme.spacing.xl,
   },
   title: { color: theme.colors.text, fontSize: 20, fontWeight: '800' },
@@ -86,6 +96,8 @@ const styles = StyleSheet.create({
   detailLabel: { color: theme.colors.textMuted, flex: 1 },
   detailValue: { color: theme.colors.text, flex: 2, fontWeight: '700', textAlign: 'right' },
   warning: { color: theme.colors.danger },
+  scroll: { flexShrink: 1 },
+  scrollContent: { gap: theme.spacing.md },
   actions: { flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.sm },
   action: { flex: 1 },
 });

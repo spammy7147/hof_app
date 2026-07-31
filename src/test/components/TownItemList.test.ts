@@ -61,7 +61,24 @@ describe('TownItemList', () => {
 
     assert.equal(list.props.data.length, 2);
     assert.equal(disabledRow.props.disabled, true);
-    assert.deepEqual(disabledRow.props.accessibilityState, { disabled: true, selected: false });
+    assert.equal(disabledRow.props.accessibilityRole, 'radio');
+    assert.deepEqual(disabledRow.props.accessibilityState, { disabled: true, checked: false });
+    await act(async () => { renderer.unmount(); });
+  });
+
+  it('uses text semantics instead of checkbox semantics in display-only mode', async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(React.createElement(TownItemList, {
+        rows: [
+          { id: 'info', label: '안내 행', selectable: false, detail: null, imageUrl: null, price: null, quantity: null },
+        ],
+      }));
+    });
+
+    const row = renderer.root.find((node) => node.props.accessibilityLabel === '안내 행 선택 불가');
+    assert.equal(row.props.accessibilityRole, 'text');
+    assert.deepEqual(row.props.accessibilityState, { disabled: true });
     await act(async () => { renderer.unmount(); });
   });
 });

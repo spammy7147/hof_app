@@ -52,6 +52,32 @@ describe('useTownFeature CAPTCHA retry contract', () => {
     assert.equal(calls, 1);
   });
 
+  it('uses the global CAPTCHA resolution flow for reload and retries the GET once', async () => {
+    let calls = 0;
+    let resolutions = 0;
+    let feature!: ReturnType<typeof useTownFeature<{ value: string }>>;
+    const Harness = () => {
+      feature = useTownFeature({
+        autoLoad: false,
+        load: async () => {
+          calls += 1;
+          if (calls === 1) throw new BackendApiError(409, 'CAPTCHA_REQUIRED', '인증 필요');
+          return { value: '갱신' };
+        },
+        resolveCaptcha: async () => { resolutions += 1; },
+      });
+      return null;
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(Harness)); });
+    await act(async () => { await feature.reload(); });
+
+    assert.equal(calls, 2);
+    assert.equal(resolutions, 1);
+    assert.deepEqual(feature.data, { value: '갱신' });
+    await act(async () => { renderer.unmount(); });
+  });
+
   it('exposes idle, loading, ready, submitting, and error states', async () => {
     const loadRequest = deferred<{ value: string }>();
     const submitRequest = deferred<unknown>();
@@ -88,6 +114,172 @@ describe('useTownFeature CAPTCHA retry contract', () => {
     });
     assert.equal(feature.status, 'error');
     assert.equal(feature.error, '표시 오류');
+    await act(async () => { renderer.unmount(); });
+  });
+
+  it('blocks a double submit synchronously and sends only one mutation POST', async () => {
+    const request = deferred<unknown>();
+    let calls = 0;
+    let feature!: ReturnType<typeof useTownFeature<null, { id: string }>>;
+    const Harness = () => {
+      feature = useTownFeature({
+        autoLoad: false,
+        load: async () => null,
+        submitAction: () => {
+          calls += 1;
+          return request.promise;
+        },
+      });
+      return null;
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(Harness)); });
+
+    let first!: Promise<unknown>;
+    await act(async () => { first = feature.submit({ id: 'first' }); });
+    const second = feature.submit({ id: 'second' });
+    await assert.rejects(second, /이미 처리 중/);
+    assert.equal(calls, 1);
+    await act(async () => {
+      request.resolve({ status: 'SUCCESS', messages: ['완료'] });
+      await first;
+    });
+    assert.deepEqual(feature.result?.messages, ['완료']);
+    await act(async () => { renderer.unmount(); });
+  });
+
+  it('keeps a successful action result when an overlapping reload completes in reverse order', async () => {
+    const loadRequest = deferred<{ value: string }>();
+    const submitRequest = deferred<unknown>();
+    let feature!: ReturnType<typeof useTownFeature<{ value: string }, { id: string }>>;
+    const Harness = () => {
+      feature = useTownFeature({
+        autoLoad: false,
+        load: () => loadRequest.promise,
+        submitAction: () => submitRequest.promise,
+      });
+      return null;
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(Harness)); });
+    let submit!: Promise<unknown>;
+    let reload!: Promise<{ value: string }>;
+    await act(async () => {
+      submit = feature.submit({ id: 'row-1' });
+      reload = feature.reload();
+    });
+
+    await act(async () => {
+      submitRequest.resolve({ status: 'SUCCESS', messages: ['제작 성공'] });
+      await submit;
+    });
+    assert.deepEqual(feature.result?.messages, ['제작 성공']);
+    assert.equal(feature.status, 'loading');
+
+    await act(async () => {
+      loadRequest.resolve({ value: '최신 목록' });
+      await reload;
+    });
+    assert.deepEqual(feature.result?.messages, ['제작 성공']);
+    assert.deepEqual(feature.data, { value: '최신 목록' });
+    assert.equal(feature.status, 'ready');
+    await act(async () => { renderer.unmount(); });
+  });
+
+  it('keeps one destructive mutation while CAPTCHA resolution is shared', async () => {
+    const captchaResolution = deferred<void>();
+    let calls = 0;
+    let resolutions = 0;
+    let feature!: ReturnType<typeof useTownFeature<null, { id: string }>>;
+    const Harness = () => {
+      feature = useTownFeature({
+        autoLoad: false,
+        load: async () => null,
+        submitAction: async () => {
+          calls += 1;
+          if (calls === 1) throw new BackendApiError(409, 'CAPTCHA_REQUIRED', '인증 필요');
+          return { status: 'SUCCESS', messages: ['완료'] };
+        },
+        resolveCaptcha: () => {
+          resolutions += 1;
+          return captchaResolution.promise;
+        },
+      });
+      return null;
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(Harness)); });
+    let first!: Promise<unknown>;
+    await act(async () => { first = feature.submit({ id: 'one' }); });
+    await act(async () => { await Promise.resolve(); });
+    await assert.rejects(feature.submit({ id: 'two' }), /이미 처리 중/);
+    assert.equal(calls, 1);
+    assert.equal(resolutions, 1);
+
+    await act(async () => {
+      captchaResolution.resolve();
+      await first;
+    });
+    assert.equal(calls, 2);
+    await act(async () => { renderer.unmount(); });
+  });
+
+  it('never retries a destructive mutation after the feature unmounts during CAPTCHA', async () => {
+    const captchaResolution = deferred<void>();
+    let calls = 0;
+    let feature!: ReturnType<typeof useTownFeature<null, { id: string }>>;
+    const Harness = () => {
+      feature = useTownFeature({
+        autoLoad: false,
+        featureKey: 'stash',
+        load: async () => null,
+        submitAction: async () => {
+          calls += 1;
+          throw new BackendApiError(409, 'CAPTCHA_REQUIRED', '인증 필요');
+        },
+        resolveCaptcha: () => captchaResolution.promise,
+      });
+      return null;
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(Harness)); });
+    let submit!: Promise<unknown>;
+    await act(async () => { submit = feature.submit({ id: 'box-1' }); });
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { renderer.unmount(); });
+    captchaResolution.resolve();
+
+    await assert.rejects(submit, /취소/);
+    assert.equal(calls, 1);
+  });
+
+  it('never retries a destructive mutation after the mounted panel changes feature', async () => {
+    const captchaResolution = deferred<void>();
+    let calls = 0;
+    let feature!: ReturnType<typeof useTownFeature<null, { id: string }>>;
+    const Harness = ({ featureKey }: { featureKey: string }) => {
+      feature = useTownFeature({
+        autoLoad: false,
+        featureKey,
+        load: async () => null,
+        submitAction: async () => {
+          calls += 1;
+          throw new BackendApiError(409, 'CAPTCHA_REQUIRED', '인증 필요');
+        },
+        resolveCaptcha: () => captchaResolution.promise,
+      });
+      return null;
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(Harness, { featureKey: 'stash' })); });
+    let submit!: Promise<unknown>;
+    await act(async () => { submit = feature.submit({ id: 'box-1' }); });
+    await act(async () => { await Promise.resolve(); });
+    await act(async () => { renderer.update(React.createElement(Harness, { featureKey: 'orb' })); });
+
+    captchaResolution.resolve();
+    await assert.rejects(submit, /취소/);
+    assert.equal(calls, 1);
     await act(async () => { renderer.unmount(); });
   });
 });

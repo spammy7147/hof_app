@@ -33,11 +33,17 @@ export function TownItemList({
       renderItem={({ item }) => {
         const isSelected = selected.has(item.id);
         const disabled = !item.selectable || selectionMode === 'none' || !onSelectionChange;
+        const accessibilityRole = selectionMode === 'single'
+          ? 'radio'
+          : selectionMode === 'multiple' ? 'checkbox' : 'text';
+        const accessibilityState = selectionMode === 'none'
+          ? { disabled: true }
+          : { disabled, checked: isSelected };
         return (
           <Pressable
             accessibilityLabel={`${item.label}${disabled ? ' 선택 불가' : ' 선택'}`}
-            accessibilityRole={selectionMode === 'single' ? 'radio' : 'checkbox'}
-            accessibilityState={{ disabled, selected: isSelected }}
+            accessibilityRole={accessibilityRole}
+            accessibilityState={accessibilityState}
             disabled={disabled}
             onPress={() => {
               if (!onSelectionChange) return;
