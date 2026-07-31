@@ -20,6 +20,7 @@ describe('ColosseumPanel', () => {
   it('저장된 팀을 checkbox로 표시하고 Set Team 요청을 보낸다', async () => {
     const calls: unknown[] = []; const value = battle();
     await render(React.createElement(ColosseumPanel, { api: api(async () => value, async (path, request) => { calls.push({ path, request }); return value; }), mode: 'battle' }));
+    assert.equal(button('카즈 선택').props.accessibilityRole, 'checkbox');
     await press('카즈 선택'); await press('팀 저장'); await pressLast('팀 저장');
     assert.deepEqual(calls, [{ path: '/api/town/pvp/colosseum/team', request: { fighterCandidateIds: ['f1', 'f2'] } }]);
   });
@@ -27,9 +28,10 @@ describe('ColosseumPanel', () => {
   it('Challenge는 팀 payload 없이 상대 id만 보내고 결과를 같은 화면에 표시한다', async () => {
     const calls: unknown[] = []; const value = battle(); const next = { ...battle(), battleResult: result() };
     await render(React.createElement(ColosseumPanel, { api: api(async () => value, async (path, request) => { calls.push({ path, request }); return next; }), mode: 'battle' }));
+    assert.equal(button('라이벌 선택').props.accessibilityRole, 'radio');
     await press('라이벌 선택'); await press('Challenge'); await pressLast('Challenge');
     assert.deepEqual(calls, [{ path: '/api/town/pvp/colosseum/challenge', request: { opponentCandidateId: 'o1' } }]);
-    assert.equal(text().includes('공민이는 승리했다'), true); assert.equal(text().includes('전투 상세 펼치기'), true);
+    assert.equal(text().includes('공민이는 승리했다'), true); assert.equal(text().includes('내 상태 5/5 · 상대 상태 0/5'), true); assert.equal(text().includes('전투 상세 펼치기'), true);
   });
 
   it('교환소 radio 없는 행은 표시하되 선택할 수 없다', async () => {
