@@ -24,6 +24,7 @@ import { TownMenuGrid } from '../features/town/components/TownMenuGrid';
 import { FishingPanel } from '../features/town/panels/FishingPanel';
 import { ShopPanel } from '../features/town/panels/ShopPanel';
 import { AuctionPanel } from '../features/town/panels/AuctionPanel';
+import { CardPanel } from '../features/town/panels/CardPanel';
 import type { TownApi } from '../features/town/api/townApi';
 import type { FishingBattleTarget } from '../types/api';
 import { theme } from '../styles/theme';
@@ -97,6 +98,11 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
             : selectedMenu.id === 'combine' ? 'combine' : null;
     const auctionMode = selectedMenu.id === 'auction' ? 'auction'
       : selectedMenu.id === 'auctionMarket' ? 'market' : null;
+    const cardMode = selectedMenu.id === 'cardIdentify' ? 'identify'
+      : selectedMenu.id === 'cardUpgrade' ? 'upgrade'
+        : selectedMenu.id === 'cardChange' ? 'change'
+          : selectedMenu.id === 'cardSell' ? 'sell'
+            : selectedMenu.id === 'soulEcho' ? 'soul-echo' : null;
     const detail = (
       <TownDetailShell menu={selectedMenu} onBack={closeDetail}>
         {fishingMode && townApi ? (
@@ -111,12 +117,14 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
           <ShopPanel api={townApi} mode={shopMode} resolveCaptcha={resolveCaptcha} />
         ) : auctionMode && townApi ? (
           <AuctionPanel api={townApi} mode={auctionMode} resolveCaptcha={resolveCaptcha} />
+        ) : cardMode && townApi ? (
+          <CardPanel api={townApi} mode={cardMode} resolveCaptcha={resolveCaptcha} />
         ) : (
           <><Text style={styles.detailTitle}>{selectedMenu.label}</Text><Text style={styles.hint}>기능 연결을 준비하고 있습니다.</Text></>
         )}
       </TownDetailShell>
     );
-    return renderContent?.(detail, shopMode != null || auctionMode != null) ?? detail;
+    return renderContent?.(detail, shopMode != null || auctionMode != null || cardMode != null) ?? detail;
   }
 
   const list = (

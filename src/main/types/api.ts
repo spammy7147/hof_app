@@ -297,6 +297,31 @@ export type AuctionMarketItem = {
 };
 export type AuctionMarketResponse = { items: AuctionMarketItem[]; generatedAt: string };
 
+export type CardMode = 'identify' | 'upgrade' | 'change' | 'sell' | 'soul-echo';
+export type CardItemResponse = {
+  id: string; label: string; selectable: boolean; owned: number | null; rarity: string | null;
+  restrictions: string[]; detail: string | null; cost: number | null; blankCardValue?: number | null; maxQuantity?: number | null;
+};
+export type CardIdentifyResponse = { selectionSlots: 1; cards: CardItemResponse[]; result: TownActionResultResponse | null };
+export type CardIdentifyRequest = { candidateId: string };
+export type CardPairResponse = {
+  selectionSlots: Array<{ id: 'base' | 'material'; label: string }>;
+  baseCards: CardItemResponse[]; materialCards: CardItemResponse[]; minQuantity: number; maxQuantity: number;
+  history: string[]; result: TownActionResultResponse | null;
+};
+export type CardUpgradeRequest = { baseCandidateId: string; materialCandidateId: string; quantity: number };
+export type CardChangeRequest = CardUpgradeRequest;
+export type CardSellResponse = { cards: CardItemResponse[]; multiSelect: true; rewardKind: 'BLANK_CARD'; blankCardsOwned: number | null; result: TownActionResultResponse | null };
+export type CardSellRequest = { cards: Array<{ candidateId: string; quantity: number }> };
+export type SoulEchoResponse = {
+  categories: Array<{ id: string; label: string }>;
+  recipes: Array<{ id: string; label: string; selectable: boolean; category: string | null; requiredEchoes: string[]; cost: number | null; successBonus: number | null }>;
+  ownedEchoes: Array<{ name: string; region: string | null; quantity: number }>;
+  history: Array<{ text: string; success: boolean }>;
+  result: TownActionResultResponse | null;
+};
+export type SoulEchoFuseRequest = { recipeCandidateId: string; categoryCandidateId: string };
+
 /** 저장 가능한 자동화는 백엔드가 소유하는 세 가지 singleton 유형으로 제한된다. */
 export type AutomationType = 'QUEST' | 'BATTLE_MAP' | 'ADVENTURE_MAP';
 
