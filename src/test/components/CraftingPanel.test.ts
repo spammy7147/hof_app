@@ -62,6 +62,89 @@ describe('CraftingPanel', () => {
     await press('제작품 선택'); await press('제련 3회 선택'); await press('제련'); await pressLast('제련');
     assert.deepEqual(calls, [{ candidateId: 'item', categoryCandidateId: 'category', refineCount: 3 }]);
   });
+
+  it('분류 GET을 URL encoding하고 늦게 끝난 이전 분류 응답은 표시하지 않는다', async () => {
+    const calls: string[] = [];
+    const second = deferred<unknown>();
+    const third = deferred<unknown>();
+    const first = data('CREATE', { categories: [
+      { id: 'category', label: '무기', current: true },
+      { id: 'type:armor & rare', label: '방어구', current: false },
+      { id: 'type:cloak', label: '외투', current: false },
+    ] });
+    await render(React.createElement(CraftingPanel, { api: api(async (path) => {
+      calls.push(path);
+      if (path.includes('armor')) return second.promise;
+      if (path.includes('cloak')) return third.promise;
+      return first;
+    }), mode: 'create' }));
+
+    const armor = button('방어구 분류');
+    const cloak = button('외투 분류');
+    await act(async () => armor.props.onPress());
+    await act(async () => cloak.props.onPress());
+    assert.equal(button('제작').props.disabled, true);
+    assert.equal(calls.includes('/api/town/crafting/create?categoryCandidateId=type%3Aarmor%20%26%20rare'), true);
+    assert.equal(calls.includes('/api/town/crafting/create?categoryCandidateId=type%3Acloak'), true);
+
+    await act(async () => second.resolve(data('CREATE', { rows: [{ ...first.rows[0], label: '늦은 방어구' }], currentCategoryId: 'type:armor & rare' })));
+    assert.equal(text().includes('늦은 방어구'), false);
+    await act(async () => third.resolve(data('CREATE', { rows: [{ ...first.rows[0], label: '외투 제작품' }], currentCategoryId: 'type:cloak' })));
+    assert.equal(text().includes('외투 제작품'), true);
+  });
+
+  it('추가 소재와 긴 기록도 바깥 품목과 동일한 FlatList 하나에서 가상화한다', async () => {
+    const createData = data('CREATE', {
+      additionalMaterials: [{ id: 'material', label: 'Power Sphere', selectable: true, owned: 3, detail: '성공률 증가' }],
+      history: Array.from({ length: 200 }, (_, index) => `제작 기록 ${index + 1}`),
+    });
+    await render(React.createElement(CraftingPanel, { api: api(async () => createData), mode: 'create' }));
+
+    assert.equal(mounted!.root.findAll((node) => String(node.type) === 'FlatList').length, 1);
+    await press('Hall of Pain 기록 펼치기');
+    const list = mounted!.root.find((node) => String(node.type) === 'FlatList');
+    assert.equal(list.props.data.length, 203);
+    assert.equal(mounted!.root.findAll((node) => String(node.type) === 'FlatList').length, 1);
+    assert.equal(button('제작 기록 200').props.accessibilityRole, 'text');
+  });
+
+  it('계정 API가 바뀌면 이전 계정의 늦은 응답과 선택 상태를 폐기한다', async () => {
+    const oldLoad = deferred<unknown>();
+    const oldApi = api(async () => oldLoad.promise);
+    const newApi = api(async () => data('WORKBASE', { rows: [{ ...data('WORKBASE').rows[0], label: '새 계정 품목' }] }));
+    await render(React.createElement(CraftingPanel, { api: oldApi, mode: 'workbase' }));
+    await act(async () => mounted!.update(React.createElement(CraftingPanel, { api: newApi, mode: 'workbase' })));
+    await act(async () => { await Promise.resolve(); });
+    assert.equal(text().includes('새 계정 품목'), true);
+    await act(async () => oldLoad.resolve(data('WORKBASE', { rows: [{ ...data('WORKBASE').rows[0], label: '이전 계정 품목' }] })));
+    assert.equal(text().includes('이전 계정 품목'), false);
+  });
+
+  it('카운트다운 종료 시 자동 요청하지 않고 사용자의 상태 확인만 GET한다', async () => {
+    const paths: string[] = [];
+    const work = data('WORKBASE', { activeJob: { label: '현재 장비를 제작 중입니다.', remainingSeconds: 0, completionAvailable: false } });
+    await render(React.createElement(CraftingPanel, { api: api(async (path) => { paths.push(path); return work; }), mode: 'workbase' }));
+    assert.deepEqual(paths, ['/api/town/crafting/workbase']);
+    await press('제작 상태 확인');
+    assert.deepEqual(paths, ['/api/town/crafting/workbase', '/api/town/crafting/workbase']);
+  });
+
+  it('실패하면 선택과 입력을 보존하고 확인 연타도 POST 한 번만 보낸다', async () => {
+    const calls: unknown[] = [];
+    const pending = deferred<unknown>();
+    const work = data('WORKBASE', { maxQuantity: 10 });
+    await render(React.createElement(CraftingPanel, { api: api(async () => work, async (_path, request) => { calls.push(request); return pending.promise; }), mode: 'workbase' }));
+    await press('제작품 선택');
+    await change('제작 수량', '7');
+    await press('작업 시작');
+    const confirm = mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '작업 시작').length > 0).at(-1)!;
+    await act(async () => { const first = confirm.props.onPress(); const second = confirm.props.onPress(); await Promise.resolve(); assert.equal(second, undefined); void first; });
+    assert.equal(calls.length, 1);
+    await act(async () => pending.resolve(Promise.reject(new Error('제작 요청 실패'))));
+    assert.equal(button('제작 수량').props.value, '7');
+    assert.equal(button('제작품 선택').props.accessibilityState.checked, true);
+    assert.equal(text().includes('제작 요청 실패'), true);
+  });
 });
 
 function data(mode: 'WORKBASE' | 'CLARIS' | 'REFINE' | 'CREATE' | 'VETERAN', patch: Record<string, unknown> = {}) { return { mode, categories: [{ id: 'category', label: '무기', current: true }], currentCategoryId: 'category', rows: [{ id: 'item', label: '제작품', selectable: true, detail: '재료', cost: 100, owned: 1, workSeconds: 600 }, { id: 'display', label: '재료 부족', selectable: false, detail: null, cost: 0, owned: null, workSeconds: null }], minQuantity: 1, maxQuantity: 1, activeJob: null, allowedRefineCounts: [] as number[], additionalMaterials: [] as Array<{ id: string; label: string; selectable: boolean; owned: number | null; detail: string | null }>, additionalMaterialsOptional: mode === 'CREATE', warningCode: null as null | 'NO_ADDITIONAL_MATERIAL', history: [] as string[], result: null as null | ReturnType<typeof result>, ...patch }; }
@@ -73,3 +156,4 @@ async function press(label: string) { await act(async () => button(label).props.
 async function pressLast(label: string) { const nodes = mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0); await act(async () => nodes.at(-1)!.props.onPress()); await act(async () => { await Promise.resolve(); }); }
 async function change(label: string, value: string) { await act(async () => button(label).props.onChangeText(value)); }
 function text() { return mounted!.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join('')).join(' '); }
+function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; }

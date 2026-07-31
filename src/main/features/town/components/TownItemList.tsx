@@ -11,6 +11,8 @@ type TownItemListProps = {
   selectedIds?: readonly string[];
   onSelectionChange?: (selectedIds: string[]) => void;
   selectionGroup?: (row: TownRowResponse) => string;
+  /** 한 가상 목록 안에서 기록/안내 행만 선택 control이 아닌 텍스트로 표시한다. */
+  displayOnlyRow?: (row: TownRowResponse) => boolean;
   emptyMessage?: string;
   header?: ReactElement | null;
   footer?: ReactElement | null;
@@ -23,6 +25,7 @@ export function TownItemList({
   selectedIds = [],
   onSelectionChange,
   selectionGroup,
+  displayOnlyRow,
   emptyMessage = '표시할 항목이 없습니다.',
   header,
   footer,
@@ -41,11 +44,13 @@ export function TownItemList({
       ListEmptyComponent={<Text style={styles.empty}>{emptyMessage}</Text>}
       renderItem={({ item }) => {
         const isSelected = selected.has(item.id);
-        const displayOnly = selectionMode === 'none';
-        const disabled = !item.selectable || selectionMode === 'none' || !onSelectionChange;
-        const accessibilityRole = selectionMode === 'single' || selectionMode === 'grouped-single'
-          ? 'radio'
-          : selectionMode === 'multiple' ? 'checkbox' : 'text';
+        const displayOnly = selectionMode === 'none' || displayOnlyRow?.(item) === true;
+        const disabled = !item.selectable || displayOnly || !onSelectionChange;
+        const accessibilityRole = displayOnly
+          ? 'text'
+          : selectionMode === 'single' || selectionMode === 'grouped-single'
+            ? 'radio'
+            : selectionMode === 'multiple' ? 'checkbox' : 'text';
         const accessibilityState = displayOnly
           ? undefined
           : { disabled, checked: isSelected };

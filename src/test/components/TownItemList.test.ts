@@ -82,4 +82,26 @@ describe('TownItemList', () => {
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'Text' && node.children.join('') === '선택 불가').length, 0);
     await act(async () => { renderer.unmount(); });
   });
+
+  it('supports virtualized informational rows beside selectable rows without announcing a false control', async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(React.createElement(TownItemList, {
+        rows: [
+          { id: 'choice', label: '제작품', selectable: true, detail: null, imageUrl: null, price: null, quantity: null },
+          { id: 'history:1', label: '제작 기록', selectable: false, detail: null, imageUrl: null, price: null, quantity: null },
+        ],
+        selectionMode: 'grouped-single',
+        selectedIds: [],
+        onSelectionChange: () => undefined,
+        displayOnlyRow: (row: { id: string }) => row.id.startsWith('history:'),
+      }));
+    });
+
+    const history = renderer.root.find((node) => node.props.accessibilityLabel === '제작 기록');
+    assert.equal(history.props.accessibilityRole, 'text');
+    assert.equal(history.props.accessibilityState, undefined);
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'Text' && node.children.join('') === '선택 불가').length, 0);
+    await act(async () => { renderer.unmount(); });
+  });
 });

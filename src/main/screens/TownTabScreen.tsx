@@ -26,6 +26,7 @@ import { ShopPanel } from '../features/town/panels/ShopPanel';
 import { AuctionPanel } from '../features/town/panels/AuctionPanel';
 import { CardPanel } from '../features/town/panels/CardPanel';
 import { RewardPanel } from '../features/town/panels/RewardPanel';
+import { CraftingPanel } from '../features/town/panels/CraftingPanel';
 import type { TownApi } from '../features/town/api/townApi';
 import type { FishingBattleTarget } from '../types/api';
 import { theme } from '../styles/theme';
@@ -106,6 +107,11 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
             : selectedMenu.id === 'soulEcho' ? 'soul-echo' : null;
     const rewardMode = selectedMenu.id === 'stash' ? 'stash'
       : selectedMenu.id === 'orbExchange' ? 'orbs' : null;
+    const craftingMode = selectedMenu.id === 'workbase' ? 'workbase'
+      : selectedMenu.id === 'sewingShop' ? 'claris'
+        : selectedMenu.id === 'refineWorkshop' ? 'refine'
+          : selectedMenu.id === 'createWorkshop' ? 'create'
+            : selectedMenu.id === 'veteranSmithy' ? 'veteran' : null;
     const detail = (
       <TownDetailShell menu={selectedMenu} onBack={closeDetail}>
         {fishingMode && townApi ? (
@@ -124,12 +130,14 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
           <CardPanel api={townApi} mode={cardMode} resolveCaptcha={resolveCaptcha} />
         ) : rewardMode && townApi ? (
           <RewardPanel api={townApi} mode={rewardMode} resolveCaptcha={resolveCaptcha} />
+        ) : craftingMode && townApi ? (
+          <CraftingPanel api={townApi} mode={craftingMode} resolveCaptcha={resolveCaptcha} />
         ) : (
           <><Text style={styles.detailTitle}>{selectedMenu.label}</Text><Text style={styles.hint}>기능 연결을 준비하고 있습니다.</Text></>
         )}
       </TownDetailShell>
     );
-    return renderContent?.(detail, shopMode != null || auctionMode != null || cardMode != null || rewardMode != null) ?? detail;
+    return renderContent?.(detail, shopMode != null || auctionMode != null || cardMode != null || rewardMode != null || craftingMode != null) ?? detail;
   }
 
   const list = (
