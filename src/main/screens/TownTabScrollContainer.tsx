@@ -3,9 +3,14 @@ import { ScrollView, type NativeScrollEvent, type NativeSyntheticEvent } from 'r
 
 import { theme } from '../styles/theme';
 import { TownTabScreen } from './TownTabScreen';
+import type { TownApi } from '../features/town/api/townApi';
 
 /** 마을 목록의 외부 ScrollView 위치를 상세 전환 동안 보존한다. */
-export function TownTabScrollContainer() {
+export function TownTabScrollContainer({ townApi, resolveCaptcha, onOpenFishingBattle }: {
+  townApi?: TownApi;
+  resolveCaptcha?: () => Promise<void>;
+  onOpenFishingBattle?: (battleLink: string) => void;
+} = {}) {
   const scrollRef = useRef<ScrollView>(null);
   const currentOffset = useRef(0);
   const capturedListOffset = useRef(0);
@@ -25,6 +30,9 @@ export function TownTabScrollContainer() {
       style={styles.scroller}
     >
       <TownTabScreen
+        townApi={townApi}
+        resolveCaptcha={resolveCaptcha}
+        onOpenFishingBattle={onOpenFishingBattle}
         onCaptureListScroll={() => { capturedListOffset.current = currentOffset.current; }}
         onRestoreListScroll={() => {
           scrollRef.current?.scrollTo({ animated: false, y: capturedListOffset.current });

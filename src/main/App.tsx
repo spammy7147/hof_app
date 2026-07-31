@@ -36,6 +36,7 @@ import type {
   UpdatePartyPresetRequest,
 } from './types/api';
 import { theme } from './styles/theme';
+import { createTownApi } from './features/town/api/townApi';
 
 type ScreenMode = 'boot' | 'login' | 'main';
 
@@ -51,6 +52,7 @@ type AppSession = {
  */
 export default function App() {
   const api = useMemo(() => new BackendApiClient(), []);
+  const townApi = useMemo(() => createTownApi(api), [api]);
   const automationController = useMemo(() => new UnifiedAutomationController({
     fetch: () => api.fetchUnifiedAutomation(),
     create: (request) => api.createAutomationEntry(request),
@@ -381,6 +383,8 @@ export default function App() {
         onLoadPattern={loadCharacterPattern}
         onLogout={handleLogout}
         onOpenLogin={() => setMode('login')}
+        townApi={townApi}
+        resolveCaptcha={waitForCaptchaResolution}
       />
     );
   }

@@ -209,6 +209,34 @@ export type TownActionResultResponse = {
 /** 앱이 호출할 수 있는 backend 마을 namespace만 표현하며 HOF URL은 받을 수 없다. */
 export type TownApiPath = `/api/town/${string}`;
 
+export type FishingAction = 'START' | 'CATCH' | 'STATUS' | 'FILTER';
+export type FishingPrimaryAction = 'START' | 'CATCH' | 'NONE';
+export type FishingOutcome = 'STARTED' | 'CAUGHT' | 'ESCAPED' | 'INFORMATIONAL';
+
+export type FishingResponse = {
+  notice: string | null;
+  remainingCasts: number | null;
+  waterStatus: string | null;
+  baitCount: number | null;
+  shiningBaitCount: number | null;
+  escapeSeconds: number | null;
+  combo: number | null;
+  locationName: string;
+  primaryAction: FishingPrimaryAction;
+  availableActions: FishingAction[];
+  lastOutcome: FishingOutcome | null;
+  blockedByBattle: boolean;
+  battleLink: string | null;
+  result: TownActionResultResponse | null;
+};
+
+export type FishingExchangeResponse = {
+  items: TownRowResponse[];
+  result: TownActionResultResponse | null;
+};
+
+export type FishingExchangeRequest = { candidateId: string; quantity: number };
+
 /** 저장 가능한 자동화는 백엔드가 소유하는 세 가지 singleton 유형으로 제한된다. */
 export type AutomationType = 'QUEST' | 'BATTLE_MAP' | 'ADVENTURE_MAP';
 

@@ -21,15 +21,20 @@ import {
 import { TownCategoryChips } from '../features/town/components/TownCategoryChips';
 import { TownDetailShell } from '../features/town/components/TownDetailShell';
 import { TownMenuGrid } from '../features/town/components/TownMenuGrid';
+import { FishingPanel } from '../features/town/panels/FishingPanel';
+import type { TownApi } from '../features/town/api/townApi';
 import { theme } from '../styles/theme';
 
 export type TownTabScreenProps = {
   onCaptureListScroll?: () => void;
   onRestoreListScroll?: () => void;
+  townApi?: TownApi;
+  resolveCaptcha?: () => Promise<void>;
+  onOpenFishingBattle?: (battleLink: string) => void;
 };
 
 /** 승인된 모든 마을 기능을 한 화면에서 검색하고 상세로 여는 단일 shell이다. */
-export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll }: TownTabScreenProps) {
+export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townApi, resolveCaptcha, onOpenFishingBattle }: TownTabScreenProps) {
   const [categoryId, setCategoryId] = useState<TownCategoryFilterId>(DEFAULT_TOWN_CATEGORY_ID);
   const [query, setQuery] = useState('');
   const [menuId, setMenuId] = useState<TownMenuId | null>(null);
@@ -64,7 +69,23 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll }: Town
   }, [detailOpen, onRestoreListScroll]);
 
   if (detailOpen && selectedMenu != null) {
-    return <TownDetailShell menu={selectedMenu} onBack={closeDetail} />;
+    const fishingMode = selectedMenu.id === 'fishing'
+      ? 'fishing'
+      : selectedMenu.id === 'fishingExchange' ? 'exchange' : null;
+    return (
+      <TownDetailShell menu={selectedMenu} onBack={closeDetail}>
+        {fishingMode && townApi ? (
+          <FishingPanel
+            api={townApi}
+            mode={fishingMode}
+            onOpenBattle={onOpenFishingBattle}
+            resolveCaptcha={resolveCaptcha}
+          />
+        ) : (
+          <><Text style={styles.detailTitle}>{selectedMenu.label}</Text><Text style={styles.hint}>기능 연결을 준비하고 있습니다.</Text></>
+        )}
+      </TownDetailShell>
+    );
   }
 
   return (
@@ -199,4 +220,5 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.75,
   },
+  detailTitle: { color: theme.colors.text, fontSize: 17, fontWeight: '900' },
 });

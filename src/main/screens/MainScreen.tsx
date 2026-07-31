@@ -41,6 +41,7 @@ import { DataTabScreen } from './DataTabScreen';
 import { HomeTabScreen } from './HomeTabScreen';
 import { SettingsTabScreen } from './SettingsTabScreen';
 import { TownTabScrollContainer } from './TownTabScrollContainer';
+import type { TownApi } from '../features/town/api/townApi';
 
 type MainSession = {
   loggedIn: boolean;
@@ -86,6 +87,8 @@ type MainScreenProps = {
   onLoadPattern: (hofCharacterId: string, slot: number) => Promise<LoadPatternResponse>;
   onLogout: () => void;
   onOpenLogin: () => void;
+  townApi?: TownApi;
+  resolveCaptcha?: () => Promise<void>;
 };
 
 /**
@@ -126,6 +129,8 @@ export function MainScreen({
   onLoadPattern,
   onLogout,
   onOpenLogin,
+  townApi,
+  resolveCaptcha,
 }: MainScreenProps) {
   const catalogCoordinatorRef = useRef(new PartyPresetCatalogLoadCoordinator());
   const [partyPresetCatalog, setPartyPresetCatalog] = useState<PartyPresetCatalogResponse>({ folders: [], presets: [] });
@@ -408,6 +413,9 @@ export function MainScreen({
           characterSubTabId,
           setCharacterSubTabId,
           setSelectedCharacter,
+          townApi,
+          resolveCaptcha,
+          onOpenFishingBattle: () => setActiveTabId('battle'),
           onAutomationEditorModeChange: setAutomationEditorOpen,
         })}
       </View>
@@ -522,6 +530,9 @@ type RenderActiveTabArgs = {
   setCharacterSubTabId: (tabId: CharacterSubTabId) => void;
   setSelectedCharacter: (character: HofCharacter | null) => void;
   onAutomationEditorModeChange: (active: boolean) => void;
+  townApi?: TownApi;
+  resolveCaptcha?: () => Promise<void>;
+  onOpenFishingBattle: (battleLink: string) => void;
 };
 
 /**
@@ -567,6 +578,9 @@ function renderActiveTab({
   setCharacterSubTabId,
   setSelectedCharacter,
   onAutomationEditorModeChange,
+  townApi,
+  resolveCaptcha,
+  onOpenFishingBattle,
 }: RenderActiveTabArgs) {
   switch (activeTabId) {
     case 'home':
@@ -665,7 +679,7 @@ function renderActiveTab({
         </View>
       );
     case 'town':
-      return <TownTabScrollContainer />;
+      return <TownTabScrollContainer townApi={townApi} resolveCaptcha={resolveCaptcha} onOpenFishingBattle={onOpenFishingBattle} />;
     case 'data':
       return (
         <DataTabScreen
