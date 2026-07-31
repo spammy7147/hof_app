@@ -307,14 +307,16 @@ export type CardIdentifyRequest = { candidateId: string };
 export type CardPairResponse = {
   selectionSlots: Array<{ id: 'base' | 'material'; label: string }>;
   baseCards: CardItemResponse[]; materialCards: CardItemResponse[]; minQuantity: number; maxQuantity: number;
-  history: string[]; result: TownActionResultResponse | null;
+  selectedBaseCandidateId: string | null; history: string[]; result: TownActionResultResponse | null;
 };
+export type CardPairOptionsRequest = { baseCandidateId: string };
 export type CardUpgradeRequest = { baseCandidateId: string; materialCandidateId: string; quantity: number };
 export type CardChangeRequest = CardUpgradeRequest;
 export type CardSellResponse = { cards: CardItemResponse[]; multiSelect: true; rewardKind: 'BLANK_CARD'; blankCardsOwned: number | null; result: TownActionResultResponse | null };
 export type CardSellRequest = { cards: Array<{ candidateId: string; quantity: number }> };
 export type SoulEchoResponse = {
   categories: Array<{ id: string; label: string }>;
+  currentCategoryId: string | null;
   recipes: Array<{ id: string; label: string; selectable: boolean; category: string | null; requiredEchoes: string[]; cost: number | null; successBonus: number | null }>;
   ownedEchoes: Array<{ name: string; region: string | null; quantity: number }>;
   history: Array<{ text: string; success: boolean }>;
