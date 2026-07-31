@@ -23,6 +23,7 @@ import { TownDetailShell } from '../features/town/components/TownDetailShell';
 import { TownMenuGrid } from '../features/town/components/TownMenuGrid';
 import { FishingPanel } from '../features/town/panels/FishingPanel';
 import { ShopPanel } from '../features/town/panels/ShopPanel';
+import { AuctionPanel } from '../features/town/panels/AuctionPanel';
 import type { TownApi } from '../features/town/api/townApi';
 import type { FishingBattleTarget } from '../types/api';
 import { theme } from '../styles/theme';
@@ -94,6 +95,8 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
         : selectedMenu.id === 'darkShop' ? 'dark'
           : selectedMenu.id === 'sell' ? 'sell'
             : selectedMenu.id === 'combine' ? 'combine' : null;
+    const auctionMode = selectedMenu.id === 'auction' ? 'auction'
+      : selectedMenu.id === 'auctionMarket' ? 'market' : null;
     const detail = (
       <TownDetailShell menu={selectedMenu} onBack={closeDetail}>
         {fishingMode && townApi ? (
@@ -106,12 +109,14 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
           />
         ) : shopMode && townApi ? (
           <ShopPanel api={townApi} mode={shopMode} resolveCaptcha={resolveCaptcha} />
+        ) : auctionMode && townApi ? (
+          <AuctionPanel api={townApi} mode={auctionMode} resolveCaptcha={resolveCaptcha} />
         ) : (
           <><Text style={styles.detailTitle}>{selectedMenu.label}</Text><Text style={styles.hint}>기능 연결을 준비하고 있습니다.</Text></>
         )}
       </TownDetailShell>
     );
-    return renderContent?.(detail, shopMode != null) ?? detail;
+    return renderContent?.(detail, shopMode != null || auctionMode != null) ?? detail;
   }
 
   const list = (

@@ -261,6 +261,35 @@ export type CombineResponse = {
 };
 export type CombineRequest = { primaryCandidateId: string; secondaryCandidateIds: [string, string, string]; quantity: number };
 
+export type AuctionAction = 'BROWSE' | 'BID' | 'EXHIBIT' | 'CLAIM';
+export type AuctionObservationKind = 'CURRENT' | 'SOLD';
+export type AuctionListingResponse = {
+  candidateId: string;
+  actionId: string;
+  listingId: string | null;
+  name: string;
+  type: string | null;
+  quantity: number;
+  totalPrice: number;
+  unitPrice: number;
+  action: AuctionAction;
+  kind: AuctionObservationKind;
+};
+export type AuctionResponse = {
+  listings: AuctionListingResponse[];
+  actions: AuctionAction[];
+  result: TownActionResultResponse | null;
+};
+export type AuctionActionRequest = { actionId: string; candidateId: string | null; quantity: number };
+export type AuctionMarketPoint = {
+  totalPrice: number; unitPrice: number; quantity: number; observedAt: string; kind: AuctionObservationKind;
+};
+export type AuctionMarketItem = {
+  itemKey: string; name: string; type: string | null; latestUnitPrice: number; averageUnitPrice: number;
+  minimumUnitPrice: number; maximumUnitPrice: number; tradeCount: number; volume: number; points: AuctionMarketPoint[];
+};
+export type AuctionMarketResponse = { items: AuctionMarketItem[]; generatedAt: string };
+
 /** 저장 가능한 자동화는 백엔드가 소유하는 세 가지 singleton 유형으로 제한된다. */
 export type AutomationType = 'QUEST' | 'BATTLE_MAP' | 'ADVENTURE_MAP';
 
