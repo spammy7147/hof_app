@@ -207,6 +207,28 @@ export type TownActionResultResponse = {
   refreshRequired: boolean;
 };
 
+export type RecruitmentJobResponse = {
+  id: string;
+  name: string;
+  price: number;
+  imageUrl: string | null;
+};
+
+export type RecruitmentGenderResponse = { id: string; label: string };
+
+export type RecruitmentResponse = {
+  currentCharacters: number | null;
+  capacity: number | null;
+  jobs: RecruitmentJobResponse[];
+  genders: RecruitmentGenderResponse[];
+  nameMinLength: number;
+  nameMaxLength: number;
+  recruitmentAvailable: boolean;
+  result: TownActionResultResponse | null;
+};
+
+export type RecruitCharacterRequest = { jobId: string; name: string; genderId: string };
+
 /** 앱이 호출할 수 있는 backend 마을 namespace만 표현하며 HOF URL은 받을 수 없다. */
 export type TownApiPath = `/api/town/${string}`;
 

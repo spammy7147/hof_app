@@ -136,8 +136,8 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
           <RewardPanel api={townApi} mode={rewardMode} resolveCaptcha={resolveCaptcha} />
         ) : craftingMode && townApi ? (
           <CraftingPanel api={townApi} mode={craftingMode} resolveCaptcha={resolveCaptcha} />
-        ) : selectedMenu.id === 'adventureAgency' && townApi ? (
-          <AgencyPanel key={selectedMenu.id} api={townApi} resolveCaptcha={resolveCaptcha} />
+        ) : (selectedMenu.id === 'adventureAgency' || selectedMenu.id === 'talentAgency') && townApi ? (
+          <AgencyPanel key={selectedMenu.id} api={townApi} mode={selectedMenu.id === 'talentAgency' ? 'recruitment' : 'adventure'} resolveCaptcha={resolveCaptcha} />
         ) : homeMode && townApi ? (
           <HomePanel key={`${selectedMenu.id}-${homeMode}`} api={townApi} mode={homeMode} resolveCaptcha={resolveCaptcha} />
         ) : (
@@ -145,7 +145,7 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
         )}
       </TownDetailShell>
     );
-    return renderContent?.(detail, shopMode != null || auctionMode != null || cardMode != null || rewardMode != null || craftingMode != null || homeMode != null || selectedMenu.id === 'adventureAgency') ?? detail;
+    return renderContent?.(detail, shopMode != null || auctionMode != null || cardMode != null || rewardMode != null || craftingMode != null || homeMode != null || selectedMenu.id === 'adventureAgency' || selectedMenu.id === 'talentAgency') ?? detail;
   }
 
   const list = (
