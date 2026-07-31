@@ -282,6 +282,38 @@ describe('useTownFeature CAPTCHA retry contract', () => {
     assert.equal(calls, 1);
     await act(async () => { renderer.unmount(); });
   });
+
+  it('does not let a retained reset callback clear a newer feature outcome', async () => {
+    let feature!: ReturnType<typeof useTownFeature<null, { id: string }>>;
+    const Harness = ({ featureKey }: { featureKey: string }) => {
+      feature = useTownFeature({
+        autoLoad: false,
+        featureKey,
+        load: async () => null,
+        submitAction: async () => {
+          if (featureKey === 'new-error') throw new Error('새 화면 오류');
+          return { status: 'SUCCESS', messages: ['새 화면 결과'] };
+        },
+      });
+      return null;
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(Harness, { featureKey: 'old' })); });
+    const retainedReset = feature.resetOutcome;
+
+    await act(async () => { renderer.update(React.createElement(Harness, { featureKey: 'new-error' })); });
+    await act(async () => { await feature.submit({ id: 'failure' }).catch(() => undefined); });
+    assert.equal(feature.error, '새 화면 오류');
+    await act(async () => retainedReset());
+    assert.equal(feature.error, '새 화면 오류');
+
+    await act(async () => { renderer.update(React.createElement(Harness, { featureKey: 'new-result' })); });
+    await act(async () => { await feature.submit({ id: 'success' }); });
+    assert.deepEqual(feature.result?.messages, ['새 화면 결과']);
+    await act(async () => retainedReset());
+    assert.deepEqual(feature.result?.messages, ['새 화면 결과']);
+    await act(async () => { renderer.unmount(); });
+  });
 });
 
 function deferred<T>() {

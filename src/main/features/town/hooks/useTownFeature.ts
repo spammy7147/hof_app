@@ -146,9 +146,10 @@ export function useTownFeature<TData, TRequest = never>({
   }, [featureKey]);
 
   const resetOutcome = useCallback(() => {
+    if (featureKeyRef.current !== featureKey) return;
     setResult(null);
     setError(null);
-  }, []);
+  }, [featureKey]);
 
   useEffect(() => {
     const lifecycle = ++lifecycleRef.current;
