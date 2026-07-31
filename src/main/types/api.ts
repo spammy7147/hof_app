@@ -199,6 +199,45 @@ export type TownResultItemResponse = {
   detail: string | null;
 };
 
+export type ShrineAction = 'CHECK_DOCTRINE' | 'BUY_PRIEST_ITEM' | 'DONATE_FIXED' | 'DONATE_PERCENT' | 'DONATE_ITEM';
+
+export type PantheonShrineResponse = {
+  id: string;
+  name: string;
+  alias: string | null;
+  color: string | null;
+  imageUrl: string | null;
+};
+
+export type PantheonStreetResponse = { shrines: PantheonShrineResponse[] };
+
+export type PantheonActionResponse = {
+  id: string;
+  type: ShrineAction;
+  label: string;
+  costFunds: number | null;
+  fundsPercent: number | null;
+  itemName: string | null;
+  itemQuantity: number | null;
+};
+
+export type PantheonDetailResponse = {
+  shrineId: string;
+  name: string;
+  alias: string | null;
+  description: string | null;
+  imageUrl: string | null;
+  deity: string | null;
+  alignment: string | null;
+  domains: string[];
+  relation: string | null;
+  currentJob: string | null;
+  actions: PantheonActionResponse[];
+  result: TownActionResultResponse | null;
+};
+
+export type PantheonActionRequest = { actionId: string };
+
 /** HOF 문서나 form 필드를 포함하지 않는 마을 action 공통 표시 결과다. */
 export type TownActionResultResponse = {
   status: TownResultStatus;

@@ -358,6 +358,28 @@ describe('TownTabScreen', () => {
     assert.equal(findHosts(renderer.root, 'FlatList').length, 1);
   });
 
+  it('신전 거리 메뉴를 pantheon endpoint와 가상 목록 패널로 연결한다', async () => {
+    const paths: string[] = [];
+    const townApi = {
+      load: async (path: string) => { paths.push(path); return { shrines: [] }; },
+      submit: async () => { throw new Error('unexpected submit'); },
+    } as never;
+    let virtualized = false;
+    const renderer = await renderTown({
+      townApi,
+      controlledMenuId: 'pantheon',
+      controlledDetailOpen: true,
+      renderContent: (content, isVirtualized) => { virtualized = isVirtualized; return content; },
+    });
+    await act(async () => { await Promise.resolve(); });
+
+    assert.deepEqual(paths, ['/api/town/pantheon']);
+    assert.equal(allText(renderer.root).includes('신전 거리'), true);
+    assert.equal(allText(renderer.root).includes('기능 연결을 준비하고 있습니다.'), false);
+    assert.equal(findHosts(renderer.root, 'FlatList').length, 1);
+    assert.equal(virtualized, true);
+  });
+
   it('shows a friendly empty state and allows clearing the search', async () => {
     const renderer = await renderTown();
     const input = findHost(renderer.root, 'TextInput');

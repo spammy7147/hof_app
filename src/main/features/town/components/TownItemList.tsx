@@ -14,7 +14,7 @@ type TownItemListProps = {
   selectionRole?: (row: TownRowResponse) => 'radio' | 'checkbox';
   /** 한 가상 목록 안에서 기록/안내 행만 선택 control이 아닌 텍스트로 표시한다. */
   displayOnlyRow?: (row: TownRowResponse) => boolean;
-  emptyMessage?: string;
+  emptyMessage?: string | null;
   header?: ReactElement | null;
   footer?: ReactElement | null;
 };
@@ -44,7 +44,7 @@ export function TownItemList({
       windowSize={7}
       ListHeaderComponent={header}
       ListFooterComponent={footer}
-      ListEmptyComponent={<Text style={styles.empty}>{emptyMessage}</Text>}
+      ListEmptyComponent={emptyMessage == null ? null : <Text style={styles.empty}>{emptyMessage}</Text>}
       renderItem={({ item }) => {
         const isSelected = selected.has(item.id);
         const displayOnly = selectionMode === 'none' || displayOnlyRow?.(item) === true;
