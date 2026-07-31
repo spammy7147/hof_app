@@ -8,7 +8,7 @@ import { theme } from '../../../styles/theme';
 type TownDetailShellProps = {
   menu: TownMenu;
   onBack: () => void;
-  children?: ReactNode;
+  children: ReactNode;
 };
 
 /** 하단 마을 탭을 유지하면서 기능별 panel을 담는 공통 상세 화면이다. */
@@ -41,14 +41,7 @@ export function TownDetailShell({ menu, onBack, children }: TownDetailShellProps
         </View>
       </View>
 
-      <View style={styles.body}>
-        {children ?? (
-          <>
-            <Text style={styles.placeholderTitle}>{menu.label}</Text>
-            <Text style={styles.placeholderText}>기능 연결을 준비하고 있습니다.</Text>
-          </>
-        )}
-      </View>
+      <View style={styles.body}>{children}</View>
     </View>
   );
 }
@@ -125,16 +118,6 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md,
     backgroundColor: theme.colors.surface,
     padding: theme.spacing.lg,
-  },
-  placeholderTitle: {
-    color: theme.colors.text,
-    fontSize: 17,
-    fontWeight: '900',
-  },
-  placeholderText: {
-    color: theme.colors.textMuted,
-    fontSize: 13,
-    lineHeight: 19,
   },
   pressed: {
     opacity: 0.75,

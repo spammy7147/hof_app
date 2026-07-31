@@ -315,6 +315,66 @@ describe('TownTabScreen', () => {
     assert.equal(findHosts(renderer.root, 'FlatList').length, 1);
   });
 
+  it('같은 메뉴에서 계정 API가 바뀌면 panel을 remount해 이전 계정 품목을 지우고 새 계정을 조회한다', async () => {
+    const firstPaths: string[] = [];
+    const secondPaths: string[] = [];
+    const firstApi = {
+      load: async (path: string) => { firstPaths.push(path); return shopSnapshot('이전 계정 품목'); },
+      submit: async () => { throw new Error('unexpected submit'); },
+    } as never;
+    const secondApi = {
+      load: async (path: string) => { secondPaths.push(path); return shopSnapshot('새 계정 품목'); },
+      submit: async () => { throw new Error('unexpected submit'); },
+    } as never;
+    const renderer = await renderTown({ townApi: firstApi, controlledMenuId: 'generalShop', controlledDetailOpen: true });
+    await act(async () => { await Promise.resolve(); });
+    assert.equal(allText(renderer.root).includes('이전 계정 품목'), true);
+
+    await act(async () => renderer.update(React.createElement(TownTabScreen, {
+      townApi: secondApi, controlledMenuId: 'generalShop', controlledDetailOpen: true,
+    })));
+    await act(async () => { await Promise.resolve(); });
+
+    assert.deepEqual(firstPaths, ['/api/town/shops/general']);
+    assert.deepEqual(secondPaths, ['/api/town/shops/general']);
+    assert.equal(allText(renderer.root).includes('이전 계정 품목'), false);
+    assert.equal(allText(renderer.root).includes('새 계정 품목'), true);
+  });
+
+  it('제작 분류를 고른 뒤 다른 제작 메뉴로 이동해도 새 메뉴 최초 API만 한 번 조회한다', async () => {
+    const paths: string[] = [];
+    const townApi = {
+      load: async (path: string) => {
+        paths.push(path);
+        return {
+          ...craftingSnapshot(),
+          categories: [
+            { id: 'weapon', label: '무기', current: !path.includes('categoryCandidateId=armor') },
+            { id: 'armor', label: '방어구', current: path.includes('categoryCandidateId=armor') },
+          ],
+          currentCategoryId: path.includes('categoryCandidateId=armor') ? 'armor' : 'weapon',
+        };
+      },
+      submit: async () => { throw new Error('unexpected submit'); },
+    } as never;
+    const renderer = await renderTown({ townApi, controlledMenuId: 'workbase', controlledDetailOpen: true });
+    await act(async () => { await Promise.resolve(); });
+    const header = findHost(renderer.root, 'FlatList').props.ListHeaderComponent as React.ReactElement<{ children?: React.ReactNode }>;
+    const categoryList = React.Children.toArray(header.props.children).find((child) => (
+      React.isValidElement(child) && typeof child.props === 'object' && child.props != null && 'onSelect' in child.props
+    )) as React.ReactElement<{ onSelect: (id: string) => void }>;
+    await act(async () => categoryList.props.onSelect('armor'));
+    await act(async () => { await Promise.resolve(); });
+
+    paths.length = 0;
+    await act(async () => renderer.update(React.createElement(TownTabScreen, {
+      townApi, controlledMenuId: 'createWorkshop', controlledDetailOpen: true,
+    })));
+    await act(async () => { await Promise.resolve(); });
+
+    assert.deepEqual(paths, ['/api/town/crafting/create']);
+  });
+
   it('교환 시설 네 메뉴를 서로 다른 typed endpoint와 가상 목록으로 연결한다', async () => {
     const paths: string[] = [];
     const townApi = {
@@ -474,6 +534,13 @@ function craftingSnapshot() {
     mode: 'WORKBASE', categories: [{ id: 'category', label: '무기', current: true }], currentCategoryId: 'category',
     rows: [], minQuantity: 1, maxQuantity: 10, activeJob: null, allowedRefineCounts: [], additionalMaterials: [],
     additionalMaterialsOptional: false, warningCode: null, history: [], result: null,
+  };
+}
+
+function shopSnapshot(label: string) {
+  return {
+    shopId: 'general', stale: false, lastVerifiedAt: null, result: null,
+    items: [{ id: label, label, selectable: true, detail: null, imageUrl: null, price: 100, quantity: 1, type: 'item' }],
   };
 }
 

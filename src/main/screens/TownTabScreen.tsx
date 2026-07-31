@@ -34,6 +34,7 @@ import { ColosseumPanel } from '../features/town/panels/ColosseumPanel';
 import { RaidPanel } from '../features/town/panels/RaidPanel';
 import { PantheonPanel } from '../features/town/panels/PantheonPanel';
 import type { TownApi } from '../features/town/api/townApi';
+import { TOWN_PANEL_REGISTRY } from '../features/town/townPanelRegistry';
 import type { FishingBattleTarget } from '../types/api';
 import { theme } from '../styles/theme';
 
@@ -49,6 +50,22 @@ export type TownTabScreenProps = {
   renderContent?: (content: ReactElement, virtualized: boolean) => ReactElement;
 };
 
+const townApiIdentities = new WeakMap<object, number>();
+let nextTownApiIdentity = 1;
+
+function getTownApiIdentity(api: TownApi | undefined): string {
+  if (api == null) return 'missing';
+  const existing = townApiIdentities.get(api);
+  if (existing !== undefined) return String(existing);
+  const identity = nextTownApiIdentity++;
+  townApiIdentities.set(api, identity);
+  return String(identity);
+}
+
+function assertNever(value: never): never {
+  throw new Error(`지원하지 않는 마을 panel입니다: ${JSON.stringify(value)}`);
+}
+
 /** 승인된 모든 마을 기능을 한 화면에서 검색하고 상세로 여는 단일 shell이다. */
 export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townApi, resolveCaptcha, onOpenFishingBattle, controlledMenuId, controlledDetailOpen, onDetailStateChange, renderContent }: TownTabScreenProps) {
   const [categoryId, setCategoryId] = useState<TownCategoryFilterId>(DEFAULT_TOWN_CATEGORY_ID);
@@ -62,6 +79,7 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
 
   const visibleMenus = useMemo(() => searchTownMenus(query, categoryId), [categoryId, query]);
   const selectedMenu = menuId == null ? null : getTownMenuById(menuId) ?? null;
+  const townApiIdentity = getTownApiIdentity(townApi);
 
   const closeDetail = useCallback(() => {
     pendingFocusRestore.current = menuId;
@@ -96,74 +114,50 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
   }, [detailOpen, onRestoreListScroll]);
 
   if (detailOpen && selectedMenu != null) {
-    const fishingMode = selectedMenu.id === 'fishing'
-      ? 'fishing'
-      : selectedMenu.id === 'fishingExchange' ? 'exchange' : null;
-    const shopMode = selectedMenu.id === 'generalShop' ? 'general'
-      : selectedMenu.id === 'sundriesShop' ? 'sundries'
-        : selectedMenu.id === 'darkShop' ? 'dark'
-          : selectedMenu.id === 'sell' ? 'sell'
-            : selectedMenu.id === 'combine' ? 'combine' : null;
-    const auctionMode = selectedMenu.id === 'auction' ? 'auction'
-      : selectedMenu.id === 'auctionMarket' ? 'market' : null;
-    const cardMode = selectedMenu.id === 'cardIdentify' ? 'identify'
-      : selectedMenu.id === 'cardUpgrade' ? 'upgrade'
-        : selectedMenu.id === 'cardChange' ? 'change'
-          : selectedMenu.id === 'cardSell' ? 'sell'
-            : selectedMenu.id === 'soulEcho' ? 'soul-echo' : null;
-    const rewardMode = selectedMenu.id === 'stash' ? 'stash'
-      : selectedMenu.id === 'orbExchange' ? 'orbs' : null;
-    const craftingMode = selectedMenu.id === 'workbase' ? 'workbase'
-      : selectedMenu.id === 'sewingShop' ? 'claris'
-        : selectedMenu.id === 'refineWorkshop' ? 'refine'
-          : selectedMenu.id === 'createWorkshop' ? 'create'
-            : selectedMenu.id === 'veteranSmithy' ? 'veteran' : null;
-    const homeMode = selectedMenu.id === 'homeManagement' ? 'home'
-      : selectedMenu.id === 'restRoom' ? 'rest' : null;
-    const exchangeMode = selectedMenu.id === 'emblemShop' ? 'emblem'
-      : selectedMenu.id === 'eventShop' ? 'event'
-        : selectedMenu.id === 'legacyShop' ? 'legacy'
-          : selectedMenu.id === 'annShop' ? 'ann' : null;
-    const colosseumMode = selectedMenu.id === 'colosseumBattle' ? 'battle'
-      : selectedMenu.id === 'colosseumExchange' ? 'shop' : null;
-    const detail = (
-      <TownDetailShell menu={selectedMenu} onBack={closeDetail}>
-        {fishingMode && townApi ? (
-          <FishingPanel
-            api={townApi}
-            mode={fishingMode}
-            onOpenBattle={onOpenFishingBattle}
-            onNavigateMode={(nextMode) => changeDetail(nextMode === 'fishing' ? 'fishing' : 'fishingExchange', true)}
-            resolveCaptcha={resolveCaptcha}
-          />
-        ) : shopMode && townApi ? (
-          <ShopPanel api={townApi} mode={shopMode} resolveCaptcha={resolveCaptcha} />
-        ) : auctionMode && townApi ? (
-          <AuctionPanel api={townApi} mode={auctionMode} resolveCaptcha={resolveCaptcha} />
-        ) : cardMode && townApi ? (
-          <CardPanel api={townApi} mode={cardMode} resolveCaptcha={resolveCaptcha} />
-        ) : rewardMode && townApi ? (
-          <RewardPanel api={townApi} mode={rewardMode} resolveCaptcha={resolveCaptcha} />
-        ) : craftingMode && townApi ? (
-          <CraftingPanel api={townApi} mode={craftingMode} resolveCaptcha={resolveCaptcha} />
-        ) : (selectedMenu.id === 'adventureAgency' || selectedMenu.id === 'talentAgency') && townApi ? (
-          <AgencyPanel key={selectedMenu.id} api={townApi} mode={selectedMenu.id === 'talentAgency' ? 'recruitment' : 'adventure'} resolveCaptcha={resolveCaptcha} />
-        ) : homeMode && townApi ? (
-          <HomePanel key={`${selectedMenu.id}-${homeMode}`} api={townApi} mode={homeMode} resolveCaptcha={resolveCaptcha} />
-        ) : exchangeMode && townApi ? (
-          <ExchangePanel key={`${selectedMenu.id}-${exchangeMode}`} api={townApi} mode={exchangeMode} resolveCaptcha={resolveCaptcha} />
-        ) : colosseumMode && townApi ? (
-          <ColosseumPanel key={`${selectedMenu.id}-${colosseumMode}`} api={townApi} mode={colosseumMode} resolveCaptcha={resolveCaptcha} />
-        ) : selectedMenu.id === 'raidInfo' && townApi ? (
-          <RaidPanel key={selectedMenu.id} api={townApi} resolveCaptcha={resolveCaptcha} onOpenBattle={onOpenFishingBattle} />
-        ) : selectedMenu.id === 'pantheon' && townApi ? (
-          <PantheonPanel key={selectedMenu.id} api={townApi} resolveCaptcha={resolveCaptcha} />
-        ) : (
-          <><Text style={styles.detailTitle}>{selectedMenu.label}</Text><Text style={styles.hint}>기능 연결을 준비하고 있습니다.</Text></>
-        )}
-      </TownDetailShell>
+    const route = TOWN_PANEL_REGISTRY[selectedMenu.id];
+    const panel = townApi == null ? (
+      <View accessibilityRole="alert" style={styles.apiUnavailable}>
+        <Text style={styles.detailTitle}>마을 API를 사용할 수 없습니다.</Text>
+        <Text style={styles.hint}>로그인 상태와 서버 연결을 확인한 뒤 다시 시도해 주세요.</Text>
+      </View>
+    ) : route.panel === 'fishing' ? (
+      <FishingPanel
+        api={townApi}
+        mode={route.mode}
+        onOpenBattle={onOpenFishingBattle}
+        onNavigateMode={(nextMode) => changeDetail(nextMode === 'fishing' ? 'fishing' : 'fishingExchange', true)}
+        resolveCaptcha={resolveCaptcha}
+      />
+    ) : route.panel === 'shop' ? (
+      <ShopPanel api={townApi} mode={route.mode} resolveCaptcha={resolveCaptcha} />
+    ) : route.panel === 'auction' ? (
+      <AuctionPanel api={townApi} mode={route.mode} resolveCaptcha={resolveCaptcha} />
+    ) : route.panel === 'card' ? (
+      <CardPanel api={townApi} mode={route.mode} resolveCaptcha={resolveCaptcha} />
+    ) : route.panel === 'reward' ? (
+      <RewardPanel api={townApi} mode={route.mode} resolveCaptcha={resolveCaptcha} />
+    ) : route.panel === 'crafting' ? (
+      <CraftingPanel api={townApi} mode={route.mode} resolveCaptcha={resolveCaptcha} />
+    ) : route.panel === 'agency' ? (
+      <AgencyPanel key={selectedMenu.id} api={townApi} mode={route.mode} resolveCaptcha={resolveCaptcha} />
+    ) : route.panel === 'home' ? (
+      <HomePanel key={`${selectedMenu.id}-${route.mode}`} api={townApi} mode={route.mode} resolveCaptcha={resolveCaptcha} />
+    ) : route.panel === 'exchange' ? (
+      <ExchangePanel key={`${selectedMenu.id}-${route.mode}`} api={townApi} mode={route.mode} resolveCaptcha={resolveCaptcha} />
+    ) : route.panel === 'colosseum' ? (
+      <ColosseumPanel key={`${selectedMenu.id}-${route.mode}`} api={townApi} mode={route.mode} resolveCaptcha={resolveCaptcha} />
+    ) : route.panel === 'raid' ? (
+      <RaidPanel key={selectedMenu.id} api={townApi} resolveCaptcha={resolveCaptcha} onOpenBattle={onOpenFishingBattle} />
+    ) : route.panel === 'pantheon' ? (
+      <PantheonPanel key={selectedMenu.id} api={townApi} resolveCaptcha={resolveCaptcha} />
+    ) : (
+      assertNever(route)
     );
-    return renderContent?.(detail, shopMode != null || auctionMode != null || cardMode != null || rewardMode != null || craftingMode != null || homeMode != null || exchangeMode != null || colosseumMode != null || selectedMenu.id === 'raidInfo' || selectedMenu.id === 'pantheon' || selectedMenu.id === 'adventureAgency' || selectedMenu.id === 'talentAgency') ?? detail;
+    const panelKey = `${selectedMenu.id}:${townApiIdentity}`;
+    const detail = (
+      <TownDetailShell key={panelKey} menu={selectedMenu} onBack={closeDetail}>{panel}</TownDetailShell>
+    );
+    return renderContent?.(detail, route.virtualized) ?? detail;
   }
 
   const list = (
@@ -233,6 +227,9 @@ const styles = StyleSheet.create({
     gap: theme.spacing.md,
   },
   intro: {
+    gap: theme.spacing.xs,
+  },
+  apiUnavailable: {
     gap: theme.spacing.xs,
   },
   title: {

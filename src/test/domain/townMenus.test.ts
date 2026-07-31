@@ -94,6 +94,7 @@ describe('town menu catalog', () => {
     assert.equal(labels.includes('마을 신문'), false);
     assert.equal(labels.includes('스토리 아이템'), false);
     assert.equal(labels.includes('자경단 검문소'), false);
+    assert.equal(labels.some((label) => label.includes('초코')), false);
   });
 
   it('searches menu labels across categories without changing catalog order', () => {
