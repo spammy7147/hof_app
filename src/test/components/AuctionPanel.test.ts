@@ -35,13 +35,45 @@ describe('AuctionPanel', () => {
     assert.equal(text().includes('판매자·입찰자 정보 없이'), true);
   });
 
-  it('입찰 대상·수량·총액·단가 확인 뒤 typed action만 제출한다', async () => {
+  it('입찰 번호와 사용자가 입력한 입찰가만 typed endpoint로 제출한다', async () => {
     const submissions: Array<{ path: string; request: unknown }> = [];
     await render(React.createElement(AuctionPanel, { api: api(async () => auction(), async (path, request) => { submissions.push({ path, request }); return { ...auction(), result: result() }; }), mode: 'auction' }));
-    await press('Potion 선택'); await press('입찰');
-    for (const expected of ['Potion', '2개', '$2,000', '$1,000']) assert.equal(text().includes(expected), true);
+    await press('Potion 선택'); await change('입찰가', '2500'); await press('입찰 확인');
+    for (const expected of ['Potion', '$2,500']) assert.equal(text().includes(expected), true);
     await pressLast('입찰');
-    assert.deepEqual(submissions, [{ path: '/api/town/auction/bid', request: { actionId: 'action-a', candidateId: 'candidate-a', quantity: 2 } }]);
+    assert.deepEqual(submissions, [{ path: '/api/town/auction/bid', request: { actionId: 'action-a', listingId: '10', bidPrice: 2500 } }]);
+  });
+
+  it('출품 준비와 출품, 아이템과 Funds 수령을 서로 다른 계약으로 보낸다', async () => {
+    const submissions: Array<{ path: string; request: unknown }> = [];
+    const exhibit = { actionId: 'put-a', durations: [{ value: '24', label: '24시간' }], result: null, items: [{ ...auction().listings[0], rowKey: 'item:item-7', action: 'EXHIBIT', listingId: null, actionId: 'put-a', candidateId: 'item-7', name: 'Elixir' }] };
+    await render(React.createElement(AuctionPanel, { api: api(async () => auction(), async (path, request) => { submissions.push({ path, request }); return path.includes('/exhibit') ? { ...exhibit, result: result() } : { ...auction(), result: result() }; }), mode: 'auction' }));
+    await press('출품 준비'); await press('Elixir 선택'); await change('출품 수량', '2'); await change('개시가', '9000'); await press('출품 확인'); await pressLast('출품');
+    assert.deepEqual(submissions.slice(0, 2), [
+      { path: '/api/town/auction/exhibit/open', request: { actionId: 'exhibit-entry' } },
+      { path: '/api/town/auction/exhibit', request: { actionId: 'put-a', candidateId: 'item-7', amount: 2, exhibitTime: '24', startPrice: 9000, comment: '' } },
+    ]);
+  });
+
+  it('아이템 수령과 Funds 수령은 서로 다른 typed endpoint를 사용한다', async () => {
+    const submissions: Array<{ path: string; request: unknown }> = [];
+    await render(React.createElement(AuctionPanel, { api: api(async () => auction(), async (path, request) => { submissions.push({ path, request }); return { ...auction(), result: result() }; }), mode: 'auction' }));
+    await press('낙찰 아이템 수령'); await pressLast('아이템 수령');
+    await press('Funds 수령'); await pressLast('Funds 수령');
+    assert.deepEqual(submissions, [
+      { path: '/api/town/auction/claim-item', request: { actionId: 'claim-item' } },
+      { path: '/api/town/auction/claim-funds', request: { actionId: 'claim-funds' } },
+    ]);
+  });
+
+  it('잘못된 입찰가는 제출을 막고 실패해도 선택과 입력을 보존한다', async () => {
+    let calls = 0;
+    await render(React.createElement(AuctionPanel, { api: api(async () => auction(), async () => { calls += 1; throw new Error('입찰 실패'); }), mode: 'auction' }));
+    await press('Potion 선택'); await change('입찰가', '-1');
+    assert.equal(button('입찰 확인').props.accessibilityState.disabled, true);
+    await change('입찰가', '2500'); await press('입찰 확인'); await pressLast('입찰');
+    assert.equal(calls, 1); assert.equal(text().includes('입찰 실패'), true); assert.equal(button('입찰가').props.value, '2500');
+    assert.equal(button('Potion 선택').props.accessibilityState.checked, true);
   });
 
   it('검색은 URL encoding하고 시세 가격 차트와 통계를 표시한다', async () => {
@@ -49,12 +81,12 @@ describe('AuctionPanel', () => {
     await render(React.createElement(AuctionPanel, { api: api(async (path) => { paths.push(path); return path.includes('auction-market') ? market() : auction(); }), mode: 'market' }));
     await change('낙찰 시세 검색어', 'Magic Sword'); await press('낙찰 시세 검색');
     assert.equal(paths.at(-1), '/api/town/auction-market?query=Magic%20Sword');
-    assert.ok(button('Potion 가격 차트'));
+    assert.ok(mounted!.root.find((node) => String(node.props.accessibilityLabel ?? '').startsWith('Potion 가격 차트')));
     assert.equal(text().includes('평균 $900'), true);
   });
 });
 
-function auction() { return { actions: ['BID'], result: null, listings: [{ candidateId: 'candidate-a', actionId: 'action-a', listingId: '10', name: 'Potion', type: 'item', quantity: 2, totalPrice: 2000, unitPrice: 1000, action: 'BID', kind: 'CURRENT' }] }; }
+function auction() { return { actions: ['BID', 'EXHIBIT', 'CLAIM'], capabilities: { bidActionId: 'action-a', exhibitEntryActionId: 'exhibit-entry', claimItemActionId: 'claim-item', claimFundsActionId: 'claim-funds' }, result: null, listings: [{ rowKey: 'lot:10', candidateId: null, actionId: 'action-a', listingId: '10', name: 'Potion', type: 'item', quantity: 2, totalPrice: 2000, unitPrice: 1000, action: 'BID', kind: 'CURRENT' }] }; }
 function market() { return { generatedAt: '2026-07-31T00:00:00Z', items: [{ itemKey: 'potion', name: 'Potion', type: 'item', latestUnitPrice: 1000, averageUnitPrice: 900, minimumUnitPrice: 800, maximumUnitPrice: 1000, tradeCount: 2, volume: 3, points: [{ totalPrice: 1600, unitPrice: 800, quantity: 2, observedAt: '2026-07-30T23:00:00Z', kind: 'SOLD' }, { totalPrice: 1000, unitPrice: 1000, quantity: 1, observedAt: '2026-07-31T00:00:00Z', kind: 'SOLD' }] }] }; }
 function result() { return { status: 'SUCCESS', messages: ['입찰 완료'], items: [], refreshRequired: true }; }
 function api(load: (path: string) => Promise<unknown>, submit: (path: string, request: unknown) => Promise<unknown> = async () => { throw new Error('unexpected'); }) { return { load, submit } as never; }
