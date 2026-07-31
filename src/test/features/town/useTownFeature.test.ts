@@ -352,6 +352,32 @@ describe('useTownFeature CAPTCHA retry contract', () => {
     assert.deepEqual(feature.result?.messages, ['새 화면 결과']);
     await act(async () => { renderer.unmount(); });
   });
+
+  it('fences callbacks retained before leaving and returning to the same feature key', async () => {
+    let feature!: ReturnType<typeof useTownFeature<null, { id: string }>>;
+    const Harness = ({ featureKey }: { featureKey: string }) => {
+      feature = useTownFeature({
+        autoLoad: false,
+        featureKey,
+        load: async () => null,
+        submitAction: async () => ({ status: 'SUCCESS', messages: [`${featureKey} 결과`] }),
+      });
+      return null;
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(Harness, { featureKey: 'home' })); });
+    const retainedSubmit = feature.submit;
+    const retainedReset = feature.resetOutcome;
+    await act(async () => { renderer.update(React.createElement(Harness, { featureKey: 'rest' })); });
+    await act(async () => { renderer.update(React.createElement(Harness, { featureKey: 'home' })); });
+    await act(async () => { await feature.submit({ id: 'current' }); });
+    assert.deepEqual(feature.result?.messages, ['home 결과']);
+
+    await act(async () => retainedReset());
+    assert.deepEqual(feature.result?.messages, ['home 결과']);
+    await assert.rejects(retainedSubmit({ id: 'stale' }), /취소/);
+    await act(async () => { renderer.unmount(); });
+  });
 });
 
 function deferred<T>() {

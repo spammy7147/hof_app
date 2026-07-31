@@ -73,7 +73,7 @@ export function useTownFeature<TData, TRequest = never>({
   describeErrorRef.current = describeError;
 
   const reload = useCallback((): Promise<TData> => {
-    if (featureKeyRef.current !== featureKey) {
+    if (featureKeyRef.current !== featureKey || featureGenerationRef.current !== featureGeneration) {
       return Promise.reject(new TownRequestCancelledError());
     }
     const lifecycle = lifecycleRef.current;
@@ -86,6 +86,7 @@ export function useTownFeature<TData, TRequest = never>({
     const isCancelled = () => (
       lifecycle !== lifecycleRef.current
       || featureKey !== featureKeyRef.current
+      || featureGeneration !== featureGenerationRef.current
       || loadSequence !== loadSequenceRef.current
     );
     return executeWithCaptchaRetry(
@@ -112,7 +113,7 @@ export function useTownFeature<TData, TRequest = never>({
 
   /** busy ref를 Promise 생성 전에 선점해 같은 event turn의 double tap도 두 번째 POST를 만들지 않는다. */
   const submit = useCallback((request: TRequest): Promise<TownActionResultResponse> => {
-    if (featureKeyRef.current !== featureKey) {
+    if (featureKeyRef.current !== featureKey || featureGenerationRef.current !== featureGeneration) {
       return Promise.reject(new TownRequestCancelledError());
     }
     if (mutationBusyRef.current) return Promise.reject(new TownMutationBusyError());
@@ -127,6 +128,7 @@ export function useTownFeature<TData, TRequest = never>({
     const isCancelled = () => (
       lifecycle !== lifecycleRef.current
       || featureKey !== featureKeyRef.current
+      || featureGeneration !== featureGenerationRef.current
       || mutationSequence !== mutationSequenceRef.current
     );
     const operation = () => {
@@ -162,7 +164,7 @@ export function useTownFeature<TData, TRequest = never>({
   }, [featureGeneration, featureKey]);
 
   const resetOutcome = useCallback(() => {
-    if (featureKeyRef.current !== featureKey) return;
+    if (featureKeyRef.current !== featureKey || featureGenerationRef.current !== featureGeneration) return;
     resultOwnerRef.current = featureGeneration;
     errorOwnerRef.current = featureGeneration;
     setResult(null);
