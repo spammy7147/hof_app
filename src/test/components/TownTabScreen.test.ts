@@ -187,6 +187,23 @@ describe('TownTabScreen', () => {
     assert.deepEqual(scrollToCalls, [{ animated: false, y: 384 }]);
   });
 
+  it('상점 상세의 긴 가상 목록은 같은 방향의 외부 ScrollView와 분리한다', async () => {
+    const townApi = {
+      load: async () => ({ shopId: 'general', stale: false, lastVerifiedAt: null, result: null, items: [] }),
+      submit: async () => { throw new Error('unexpected submit'); },
+    } as never;
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(TownTabScrollContainer, { townApi } as never)); });
+    mountedRenderer = renderer;
+
+    await press(renderer.root, '일반상점 열기');
+    await act(async () => { await Promise.resolve(); });
+
+    assert.equal(renderer.root.findAll((node) => node.props.accessibilityLabel === '마을 화면 스크롤').length, 0);
+    assert.equal(findHosts(renderer.root, 'View').filter((node) => node.props.accessibilityLabel === '마을 가상 목록 화면').length, 1);
+    assert.equal(findHosts(renderer.root, 'FlatList').filter((node) => node.props.nestedScrollEnabled === true).length, 1);
+  });
+
   it('shows a friendly empty state and allows clearing the search', async () => {
     const renderer = await renderTown();
     const input = findHost(renderer.root, 'TextInput');

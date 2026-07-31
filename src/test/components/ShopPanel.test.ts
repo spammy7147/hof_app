@@ -7,7 +7,7 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'rea
 const host = (name: string) => (props: Record<string, unknown>) => React.createElement(name, props, props.children as React.ReactNode);
 const reactNativeMock = {
   ActivityIndicator: host('ActivityIndicator'),
-  FlatList: (props: Record<string, unknown>) => React.createElement('FlatList', props, (props.data as Array<{ id: string }>).map((item) => React.createElement(React.Fragment, { key: item.id }, (props.renderItem as Function)({ item })))),
+  FlatList: (props: Record<string, unknown>) => React.createElement('FlatList', props, props.ListHeaderComponent as React.ReactNode, (props.data as Array<{ id: string }>).map((item) => React.createElement(React.Fragment, { key: item.id }, (props.renderItem as Function)({ item }))), props.ListFooterComponent as React.ReactNode),
   Modal: host('Modal'), Pressable: host('Pressable'), ScrollView: host('ScrollView'), StyleSheet: { create: <T,>(styles: T) => styles }, Text: host('Text'), TextInput: host('TextInput'), View: host('View'),
 };
 type Loader = (request: string, parent: NodeModule | undefined, isMain: boolean) => unknown;
@@ -35,6 +35,14 @@ describe('ShopPanel', () => {
     });
   }
 
+  it('가격 검색 안내와 실제 가격 문자열 필터를 제공한다', async () => {
+    await render(React.createElement(ShopPanel, { api: api(async () => shop('general')), mode: 'general' }));
+    assert.equal(button('상점 품목 검색').props.placeholder, '이름·유형·설명·가격 검색');
+    await change('상점 품목 검색', '200');
+    assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === 'Potion 선택').length, 0);
+    assert.ok(button('Bread 선택'));
+  });
+
   it('다중 상품 수량과 예상 비용을 확인한 뒤 한 번만 구매한다', async () => {
     const submissions: unknown[] = [];
     await render(React.createElement(ShopPanel, { api: api(async () => shop('general'), async (_path, request) => { submissions.push(request); return { ...shop('general'), result: result('SUCCESS') }; }), mode: 'general' }));
@@ -42,6 +50,8 @@ describe('ShopPanel', () => {
     await change('Potion 구매 수량', '2');
     assert.equal(text().includes('예상 총액 $400'), true);
     await press('장바구니 구매'); assert.deepEqual(submissions, []);
+    assert.equal(text().includes('Potion 2개 · $200'), true);
+    assert.equal(text().includes('Bread 1개 · $200'), true);
     await pressLast('구매');
     assert.deepEqual(submissions, [{ items: [{ itemId: 'a', quantity: 2 }, { itemId: 'b', quantity: 1 }] }]);
     assert.equal(button('장바구니 구매').props.disabled, true, '성공 시 장바구니를 비운다');
@@ -53,18 +63,35 @@ describe('ShopPanel', () => {
     await render(React.createElement(ShopPanel, { api: api(async () => sell, async (_path, request) => { submissions.push(request); return { ...sell, result: result('SUCCESS') }; }), mode: 'sell' }));
     await press('Funds Bag 선택');
     assert.equal(text().includes('$0 판매 품목 1개'), true);
-    await press('선택 품목 판매'); await pressLast('판매');
+    await press('선택 품목 판매');
+    assert.equal(text().includes('Funds Bag 1개 · $0'), true);
+    await pressLast('판매');
     assert.deepEqual(submissions, [{ items: [{ candidateId: 'free', quantity: 1 }] }]);
   });
 
   it('주재료 한 개와 부재료 세 슬롯을 선택해야 Combine을 제출한다', async () => {
     const submissions: unknown[] = [];
-    const combine = { primary: [{ id: 'm', label: 'Milk', quantity: 3 }], secondarySlots: [[{ id: 'a', label: 'A', quantity: 1 }], [{ id: 'b', label: 'B', quantity: 1 }], [{ id: 'c', label: 'C', quantity: 1 }]], result: null };
+    const combine = { primary: [{ id: 'm', label: 'Milk', quantity: 3 }], secondarySlots: [[{ id: 'a', label: 'A', quantity: 3 }], [{ id: 'b', label: 'B', quantity: 3 }], [{ id: 'c', label: 'C', quantity: 3 }]], result: null };
     await render(React.createElement(ShopPanel, { api: api(async () => combine, async (_path, request) => { submissions.push(request); return { ...combine, result: result('SUCCESS') }; }), mode: 'combine' }));
     assert.equal(button('조합').props.disabled, true);
     for (const label of ['Milk 선택', 'A 선택', 'B 선택', 'C 선택']) await press(label);
-    await change('조합 수량', '2'); await press('조합'); await pressLast('Combine');
+    await change('조합 결과 수량', '2'); await press('조합');
+    for (const expected of ['주재료', 'Milk · 2개 사용', '부재료 1', 'A · 2개 사용', '부재료 2', 'B · 2개 사용', '부재료 3', 'C · 2개 사용', '조합 결과 수량', '2개']) assert.equal(text().includes(expected), true);
+    await pressLast('Combine');
     assert.deepEqual(submissions, [{ primaryCandidateId: 'm', secondaryCandidateIds: ['a', 'b', 'c'], quantity: 2 }]);
+  });
+
+  it('보유량과 safe integer를 넘는 수량은 제출을 차단한다', async () => {
+    const sell = { items: [{ id: 'owned', label: 'Owned', selectable: true, detail: null, imageUrl: null, price: 10, quantity: 5, type: 'item' }], result: null };
+    await render(React.createElement(ShopPanel, { api: api(async () => sell), mode: 'sell' }));
+    await press('Owned 선택'); await change('Owned 판매 수량', '6');
+    assert.equal(button('선택 품목 판매').props.disabled, true);
+    assert.equal(text().includes('1~5 사이의 정수를 입력하세요.'), true);
+
+    await act(async () => mounted?.unmount()); mounted = null;
+    await render(React.createElement(ShopPanel, { api: api(async () => shop('general')), mode: 'general' }));
+    await press('Potion 선택'); await change('Potion 구매 수량', '9007199254740992');
+    assert.equal(button('장바구니 구매').props.disabled, true);
   });
 });
 

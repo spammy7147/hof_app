@@ -33,14 +33,19 @@ export type TownTabScreenProps = {
   townApi?: TownApi;
   resolveCaptcha?: () => Promise<void>;
   onOpenFishingBattle?: (target: FishingBattleTarget) => void;
+  controlledMenuId?: TownMenuId | null;
+  controlledDetailOpen?: boolean;
+  onDetailStateChange?: (menuId: TownMenuId | null, open: boolean) => void;
 };
 
 /** 승인된 모든 마을 기능을 한 화면에서 검색하고 상세로 여는 단일 shell이다. */
-export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townApi, resolveCaptcha, onOpenFishingBattle }: TownTabScreenProps) {
+export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townApi, resolveCaptcha, onOpenFishingBattle, controlledMenuId, controlledDetailOpen, onDetailStateChange }: TownTabScreenProps) {
   const [categoryId, setCategoryId] = useState<TownCategoryFilterId>(DEFAULT_TOWN_CATEGORY_ID);
   const [query, setQuery] = useState('');
-  const [menuId, setMenuId] = useState<TownMenuId | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
+  const [internalMenuId, setInternalMenuId] = useState<TownMenuId | null>(null);
+  const [internalDetailOpen, setInternalDetailOpen] = useState(false);
+  const menuId = controlledMenuId === undefined ? internalMenuId : controlledMenuId;
+  const detailOpen = controlledDetailOpen === undefined ? internalDetailOpen : controlledDetailOpen;
   const menuTriggerRefs = useRef(new Map<TownMenuId, NativeView>());
   const pendingFocusRestore = useRef<TownMenuId | null>(null);
 
@@ -49,8 +54,18 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
 
   const closeDetail = useCallback(() => {
     pendingFocusRestore.current = menuId;
-    setDetailOpen(false);
-  }, [menuId]);
+    if (onDetailStateChange) {
+      if (menuId != null && VIRTUALIZED_SHOP_MENUS.has(menuId)) onRestoreListScroll?.();
+      onDetailStateChange(menuId, false);
+    } else {
+      setInternalDetailOpen(false);
+    }
+  }, [menuId, onDetailStateChange, onRestoreListScroll]);
+
+  const changeDetail = useCallback((nextMenuId: TownMenuId | null, open: boolean) => {
+    if (onDetailStateChange) onDetailStateChange(nextMenuId, open);
+    else { setInternalMenuId(nextMenuId); setInternalDetailOpen(open); }
+  }, [onDetailStateChange]);
 
   useEffect(() => {
     if (!detailOpen) return;
@@ -86,7 +101,7 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
             api={townApi}
             mode={fishingMode}
             onOpenBattle={onOpenFishingBattle}
-            onNavigateMode={(nextMode) => setMenuId(nextMode === 'fishing' ? 'fishing' : 'fishingExchange')}
+            onNavigateMode={(nextMode) => changeDetail(nextMode === 'fishing' ? 'fishing' : 'fishingExchange', true)}
             resolveCaptcha={resolveCaptcha}
           />
         ) : shopMode && townApi ? (
@@ -133,8 +148,7 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
       <TownCategoryChips
         onSelectCategory={(nextCategoryId) => {
           setCategoryId(nextCategoryId);
-          setMenuId(null);
-          setDetailOpen(false);
+          changeDetail(null, false);
         }}
         selectedCategoryId={categoryId}
       />
@@ -148,8 +162,7 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
         menus={visibleMenus}
         onSelectMenu={(nextMenuId) => {
           onCaptureListScroll?.();
-          setMenuId(nextMenuId);
-          setDetailOpen(true);
+          changeDetail(nextMenuId, true);
         }}
         onMenuTriggerRef={(nextMenuId, node) => {
           if (node == null) menuTriggerRefs.current.delete(nextMenuId);
@@ -232,3 +245,5 @@ const styles = StyleSheet.create({
   },
   detailTitle: { color: theme.colors.text, fontSize: 17, fontWeight: '900' },
 });
+
+const VIRTUALIZED_SHOP_MENUS = new Set<TownMenuId>(['generalShop', 'sundriesShop', 'darkShop', 'sell', 'combine']);

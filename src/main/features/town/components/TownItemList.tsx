@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import type { ReactElement } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { theme } from '../../../styles/theme';
@@ -6,10 +7,13 @@ import type { TownRowResponse } from '../../../types/api';
 
 type TownItemListProps = {
   rows: TownRowResponse[];
-  selectionMode?: 'none' | 'single' | 'multiple';
+  selectionMode?: 'none' | 'single' | 'multiple' | 'grouped-single';
   selectedIds?: readonly string[];
   onSelectionChange?: (selectedIds: string[]) => void;
+  selectionGroup?: (row: TownRowResponse) => string;
   emptyMessage?: string;
+  header?: ReactElement | null;
+  footer?: ReactElement | null;
 };
 
 /** 긴 HOF 후보 목록을 가상화하고 서버가 허용한 행만 선택하게 한다. */
@@ -18,7 +22,10 @@ export function TownItemList({
   selectionMode = 'none',
   selectedIds = [],
   onSelectionChange,
+  selectionGroup,
   emptyMessage = '표시할 항목이 없습니다.',
+  header,
+  footer,
 }: TownItemListProps) {
   const selected = new Set(selectedIds);
 
@@ -29,11 +36,13 @@ export function TownItemList({
       nestedScrollEnabled
       initialNumToRender={12}
       windowSize={7}
+      ListHeaderComponent={header}
+      ListFooterComponent={footer}
       ListEmptyComponent={<Text style={styles.empty}>{emptyMessage}</Text>}
       renderItem={({ item }) => {
         const isSelected = selected.has(item.id);
         const disabled = !item.selectable || selectionMode === 'none' || !onSelectionChange;
-        const accessibilityRole = selectionMode === 'single'
+        const accessibilityRole = selectionMode === 'single' || selectionMode === 'grouped-single'
           ? 'radio'
           : selectionMode === 'multiple' ? 'checkbox' : 'text';
         const accessibilityState = selectionMode === 'none'
@@ -49,6 +58,15 @@ export function TownItemList({
               if (!onSelectionChange) return;
               if (selectionMode === 'single') {
                 onSelectionChange([item.id]);
+                return;
+              }
+              if (selectionMode === 'grouped-single') {
+                const group = selectionGroup?.(item);
+                const withoutGroup = selectedIds.filter((id) => {
+                  const selectedRow = rows.find((row) => row.id === id);
+                  return selectedRow == null || selectionGroup?.(selectedRow) !== group;
+                });
+                onSelectionChange(isSelected ? withoutGroup : [...withoutGroup, item.id]);
                 return;
               }
               onSelectionChange(isSelected

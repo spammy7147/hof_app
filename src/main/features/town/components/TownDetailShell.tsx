@@ -70,6 +70,7 @@ function categoryLabel(categoryId: TownMenu['categoryId']): string {
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
     gap: theme.spacing.md,
   },
   header: {
@@ -115,6 +116,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   body: {
+    flex: 1,
     minHeight: 160,
     justifyContent: 'center',
     gap: theme.spacing.xs,
