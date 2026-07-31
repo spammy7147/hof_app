@@ -30,6 +30,7 @@ function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
   const [confirm, setConfirm] = useState<TradeRequest | null>(null); const [response, setResponse] = useState<AuctionResponse | null>(null);
   const [exhibit, setExhibit] = useState<AuctionExhibitResponse | null>(null); const [exhibitSelected, setExhibitSelected] = useState<string[]>([]);
   const [amount, setAmount] = useState('1'); const [startPrice, setStartPrice] = useState(''); const [duration, setDuration] = useState(''); const [comment, setComment] = useState('');
+  const resetExhibitDraft = useCallback(() => { setExhibitSelected([]); setAmount('1'); setStartPrice(''); setDuration(''); setComment(''); setConfirm(null); }, []);
   useEffect(() => {
     setDuration((current) => exhibit?.durations.some((option) => option.value === current)
       ? current
@@ -44,19 +45,18 @@ function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
     const next = await api.submit<TradeRequest['body'], AuctionResponse | AuctionExhibitResponse>(path, request.body);
     if (generation === liveRef.current) {
       if (request.kind === 'OPEN_EXHIBIT' || request.kind === 'EXHIBIT') {
-        const nextExhibit = next as AuctionExhibitResponse; setExhibit(nextExhibit);
-        if (request.kind === 'EXHIBIT') setExhibitSelected([]);
+        const nextExhibit = next as AuctionExhibitResponse; resetExhibitDraft(); setExhibit(nextExhibit);
       } else { setResponse(next as AuctionResponse); setSelected([]); setBidPrice(''); }
       setConfirm(null);
     }
     return next.result ?? info('옥션 결과를 갱신했습니다.');
-  }, [api]);
+  }, [api, resetExhibitDraft]);
   const town = useTownFeature<AuctionResponse, TradeRequest>({ load, submitAction, resolveCaptcha, featureKey: `auction-${appliedQuery}` });
   const data = response ?? town.data; const busy = town.status === 'submitting';
   const chosen = data?.listings.find((item) => key(item) === selected[0]) ?? null;
   const exhibitItem = exhibit?.items.find((item) => key(item) === exhibitSelected[0]) ?? null;
-  const rows = useMemo<TownRowResponse[]>(() => data?.listings.map(listingRow) ?? [], [data]);
-  const exhibitRows = useMemo<TownRowResponse[]>(() => exhibit?.items.map((item) => ({ ...listingRow(item), price: null })) ?? [], [exhibit]);
+  const rows = useMemo<TownRowResponse[]>(() => data?.listings.map(bidListingRow) ?? [], [data]);
+  const exhibitRows = useMemo<TownRowResponse[]>(() => exhibit?.items.map(exhibitInventoryRow) ?? [], [exhibit]);
   if (!data) return <LoadState loading={town.status === 'loading'} error={town.error} retry={town.reload} />;
   const bid = chosen && validWhole(bidPrice, 1) ? { kind: 'BID', body: { actionId: chosen.actionId, listingId: chosen.listingId!, bidPrice: Number(bidPrice) } } as const : null;
   const durationAllowed = exhibit?.durations.some((option) => option.value === duration) === true;
@@ -69,10 +69,10 @@ function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
       header={<View style={styles.section}>
         <TextInput accessibilityLabel="옥션 검색어" editable={!busy && !exhibit} value={query} onChangeText={setQuery} placeholder="품목명 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} />
         <ActionButton label="옥션 검색" disabled={busy || town.status === 'loading' || exhibit != null} onPress={() => { setResponse(null); setSelected([]); setAppliedQuery(query.trim()); }} />
-        {!exhibit && data.capabilities.exhibitEntryActionId ? <ActionButton label="출품 준비" disabled={busy} onPress={() => void town.submit({ kind: 'OPEN_EXHIBIT', body: { actionId: data.capabilities.exhibitEntryActionId! } }).catch(() => undefined)} /> : null}
+        {!exhibit && data.capabilities.exhibitEntryActionId ? <ActionButton label="출품 준비" disabled={busy} onPress={() => { resetExhibitDraft(); town.resetOutcome(); void town.submit({ kind: 'OPEN_EXHIBIT', body: { actionId: data.capabilities.exhibitEntryActionId! } }).then(() => town.resetOutcome()).catch(() => undefined); }} /> : null}
         {!exhibit && data.capabilities.claimItemActionId ? <ActionButton label="낙찰 아이템 수령" disabled={busy} onPress={() => setConfirm({ kind: 'CLAIM_ITEM', body: { actionId: data.capabilities.claimItemActionId! } })} /> : null}
         {!exhibit && data.capabilities.claimFundsActionId ? <ActionButton label="Funds 수령" disabled={busy} onPress={() => setConfirm({ kind: 'CLAIM_FUNDS', body: { actionId: data.capabilities.claimFundsActionId! } })} /> : null}
-        {exhibit ? <ActionButton label="옥션 목록으로" disabled={busy} onPress={() => setExhibit(null)} /> : null}
+        {exhibit ? <ActionButton label="옥션 목록으로" disabled={busy} onPress={() => { setExhibit(null); resetExhibitDraft(); town.resetOutcome(); }} /> : null}
       </View>}
       footer={<View style={styles.section}>
         {!exhibit && chosen ? <><Field label="입찰가" value={bidPrice} setValue={setBidPrice} disabled={busy} numeric /><ActionButton label="입찰 확인" disabled={busy || !bid} onPress={() => bid && setConfirm(bid)} /></> : null}
@@ -109,7 +109,13 @@ function PriceChart({ item }: { item: AuctionMarketItem }) {
   return <View accessibilityLabel={`${item.name} 가격 차트 ${points.length}개 관측`} style={styles.chart}><Text style={styles.chartTitle}>{item.name} 단가 추이</Text><View style={styles.bars}>{points.map((point, index) => <View accessibilityLabel={`${new Date(point.observedAt).toLocaleString()} 단가 ${point.unitPrice} 총액 ${point.totalPrice} 수량 ${point.quantity}`} accessible key={`${point.observedAt}-${index}`} style={[styles.bar, { height: Math.max(3, Math.round(48 * point.unitPrice / max)) }]} />)}</View></View>;
 }
 
-function listingRow(item: AuctionListingResponse): TownRowResponse { return { id: key(item), label: item.name, selectable: true, imageUrl: null, detail: `총액 $${item.totalPrice.toLocaleString()} · 단가 $${item.unitPrice.toLocaleString()} · 수량 ${item.quantity.toLocaleString()}개`, price: item.totalPrice, quantity: item.quantity }; }
+function bidListingRow(item: AuctionListingResponse): TownRowResponse {
+  const detail = `총액 $${item.totalPrice.toLocaleString()} · 단가 $${item.unitPrice.toLocaleString()} · 로트 수량 ${item.quantity.toLocaleString()}개`;
+  return { id: key(item), label: item.name, accessibilityLabel: `${item.name} 입찰 로트 선택. ${detail}`, selectable: true, imageUrl: null, detail, price: null, quantity: null };
+}
+function exhibitInventoryRow(item: AuctionListingResponse): TownRowResponse {
+  return { id: key(item), label: item.name, accessibilityLabel: `${item.name} 출품 재고 선택. 보유 ${item.quantity.toLocaleString()}개`, selectable: true, imageUrl: null, detail: null, price: null, quantity: item.quantity };
+}
 function marketRow(item: AuctionMarketItem): TownRowResponse {
   const latestTotal = item.points.at(-1)?.totalPrice;
   const detail = `최근 총액 ${latestTotal == null ? '-' : `$${latestTotal.toLocaleString()}`} · 최근 단가 $${item.latestUnitPrice.toLocaleString()} · 평균 $${item.averageUnitPrice.toLocaleString()} · 최저 $${item.minimumUnitPrice.toLocaleString()} · 최고 $${item.maximumUnitPrice.toLocaleString()} · 총 거래량 ${item.volume.toLocaleString()}개 · ${item.tradeCount.toLocaleString()}건`;

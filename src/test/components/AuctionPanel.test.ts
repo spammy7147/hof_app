@@ -22,6 +22,8 @@ const { AuctionPanel } = require('../../main/features/town/panels/AuctionPanel')
 moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let mounted: ReactTestRenderer | null = null;
+const BID_LABEL = 'Potion 입찰 로트 선택. 총액 $2,000 · 단가 $1,000 · 로트 수량 2개';
+const EXHIBIT_LABEL = 'Elixir 출품 재고 선택. 보유 2개';
 afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; });
 
 describe('AuctionPanel', () => {
@@ -38,7 +40,8 @@ describe('AuctionPanel', () => {
   it('입찰 번호와 사용자가 입력한 입찰가만 typed endpoint로 제출한다', async () => {
     const submissions: Array<{ path: string; request: unknown }> = [];
     await render(React.createElement(AuctionPanel, { api: api(async () => auction(), async (path, request) => { submissions.push({ path, request }); return { ...auction(), result: result() }; }), mode: 'auction' }));
-    await press('Potion 선택'); await change('입찰가', '2500'); await press('입찰 확인');
+    assert.equal(text().includes('보유 2'), false);
+    await press(BID_LABEL); await change('입찰가', '2500'); await press('입찰 확인');
     for (const expected of ['Potion', '$2,500']) assert.equal(text().includes(expected), true);
     await pressLast('입찰');
     assert.deepEqual(submissions, [{ path: '/api/town/auction/bid', request: { actionId: 'action-a', listingId: '10', bidPrice: 2500 } }]);
@@ -48,7 +51,9 @@ describe('AuctionPanel', () => {
     const submissions: Array<{ path: string; request: unknown }> = [];
     const exhibit = { entryActionId: 'exhibit-entry', actionId: 'put-a', durations: [{ value: '24', label: '24시간' }], result: null, items: [{ ...auction().listings[0], rowKey: 'item:item-7', action: 'EXHIBIT', listingId: null, actionId: 'put-a', candidateId: 'item-7', name: 'Elixir' }] };
     await render(React.createElement(AuctionPanel, { api: api(async () => auction(), async (path, request) => { submissions.push({ path, request }); return path.includes('/exhibit') ? { ...exhibit, result: result() } : { ...auction(), result: result() }; }), mode: 'auction' }));
-    await press('출품 준비'); await press('Elixir 선택'); await change('출품 수량', '2'); await change('개시가', '9000'); await press('출품 확인'); await pressLast('출품');
+    await press('출품 준비');
+    assert.equal(text().includes('보유 2'), true);
+    await press(EXHIBIT_LABEL); await change('출품 수량', '2'); await change('개시가', '9000'); await press('출품 확인'); await pressLast('출품');
     assert.deepEqual(submissions.slice(0, 2), [
       { path: '/api/town/auction/exhibit/open', request: { actionId: 'exhibit-entry' } },
       { path: '/api/town/auction/exhibit', request: { entryActionId: 'exhibit-entry', actionId: 'put-a', candidateId: 'item-7', amount: 2, exhibitTime: '24', startPrice: 9000, comment: '' } },
@@ -69,18 +74,18 @@ describe('AuctionPanel', () => {
   it('잘못된 입찰가는 제출을 막고 실패해도 선택과 입력을 보존한다', async () => {
     let calls = 0;
     await render(React.createElement(AuctionPanel, { api: api(async () => auction(), async () => { calls += 1; throw new Error('입찰 실패'); }), mode: 'auction' }));
-    await press('Potion 선택'); await change('입찰가', '-1');
+    await press(BID_LABEL); await change('입찰가', '-1');
     assert.equal(button('입찰 확인').props.accessibilityState.disabled, true);
     await change('입찰가', '2500'); await press('입찰 확인'); await pressLast('입찰');
     assert.equal(calls, 1); assert.equal(text().includes('입찰 실패'), true); assert.equal(button('입찰가').props.value, '2500');
-    assert.equal(button('Potion 선택').props.accessibilityState.checked, true);
+    assert.equal(button(BID_LABEL).props.accessibilityState.checked, true);
   });
 
   it('확인을 연속으로 눌러도 POST는 한 번만 보내고 HTML 원문은 표시하지 않는다', async () => {
     let calls = 0; let release!: () => void;
     const pending = new Promise<unknown>((resolve) => { release = () => resolve({ ...auction(), result: { ...result(), messages: ['<html><body>raw</body></html>'] } }); });
     await render(React.createElement(AuctionPanel, { api: api(async () => auction(), async () => { calls += 1; return pending; }), mode: 'auction' }));
-    await press('Potion 선택'); await change('입찰가', '2500'); await press('입찰 확인');
+    await press(BID_LABEL); await change('입찰가', '2500'); await press('입찰 확인');
     const confirmButton = mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '입찰').length > 0).at(-1)!;
     await act(async () => { confirmButton.props.onPress(); confirmButton.props.onPress(); });
     assert.equal(calls, 1);
@@ -102,7 +107,7 @@ describe('AuctionPanel', () => {
   it('출품은 서버 기간만 선택하고 수량, 개시가, 설명의 경계를 검증한다', async () => {
     const exhibit = { entryActionId: 'exhibit-entry', actionId: 'put-a', durations: [{ value: '24', label: '24시간' }, { value: '72', label: '3일' }], result: null, items: [{ ...auction().listings[0], rowKey: 'item:item-7', action: 'EXHIBIT', listingId: null, actionId: 'put-a', candidateId: 'item-7', name: 'Elixir' }] };
     await render(React.createElement(AuctionPanel, { api: api(async () => auction(), async () => exhibit), mode: 'auction' }));
-    await press('출품 준비'); await press('Elixir 선택');
+    await press('출품 준비'); await press(EXHIBIT_LABEL);
     assert.equal(button('출품 기간 24시간').props.accessibilityState.checked, true);
     assert.equal(button('옥션 검색').props.accessibilityState.disabled, true);
     await change('개시가', '0'); await change('출품 수량', '100001');
@@ -111,6 +116,26 @@ describe('AuctionPanel', () => {
     assert.equal(button('출품 확인').props.accessibilityState.disabled, true);
     await change('출품 설명', '설명'); await press('출품 기간 3일');
     assert.equal(button('출품 확인').props.accessibilityState.disabled, false);
+  });
+
+  it('출품 화면을 나갔다 다시 열면 파괴적 draft와 이전 오류를 모두 초기화한다', async () => {
+    const exhibit = { entryActionId: 'exhibit-entry', actionId: 'put-a', durations: [{ value: '24', label: '24시간' }, { value: '72', label: '3일' }], result: null, items: [{ ...auction().listings[0], rowKey: 'item:item-7', action: 'EXHIBIT', listingId: null, actionId: 'put-a', candidateId: 'item-7', name: 'Elixir' }] };
+    await render(React.createElement(AuctionPanel, { api: api(async () => auction(), async (path) => { if (path.endsWith('/bid')) throw new Error('이전 입찰 오류'); return exhibit; }), mode: 'auction' }));
+    await press(BID_LABEL); await change('입찰가', '2500'); await press('입찰 확인'); await pressLast('입찰');
+    assert.equal(text().includes('이전 입찰 오류'), true);
+    await press('확인창 닫기'); await press('출품 준비');
+    assert.equal(text().includes('이전 입찰 오류'), false);
+    await press(EXHIBIT_LABEL); await change('출품 수량', '17'); await change('개시가', '9000'); await change('출품 설명', '지워질 설명'); await press('출품 기간 3일'); await press('출품 확인');
+    await act(async () => button('옥션 목록으로').props.onPress());
+    await press('출품 준비');
+    assert.equal(button(EXHIBIT_LABEL).props.accessibilityState.checked, false);
+    await press(EXHIBIT_LABEL);
+    assert.equal(button('출품 기간 24시간').props.accessibilityState.checked, true);
+    assert.equal(button('출품 수량').props.value, '1');
+    assert.equal(button('개시가').props.value, '');
+    assert.equal(button('출품 설명').props.value, '');
+    assert.equal(text().includes('지워질 설명'), false);
+    assert.equal(mounted!.root.find((node) => String(node.type) === 'Modal').props.visible, false);
   });
 
   it('긴 시세 목록의 마지막 품목도 선택해 이력을 열 수 있다', async () => {

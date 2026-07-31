@@ -145,6 +145,11 @@ export function useTownFeature<TData, TRequest = never>({
       });
   }, [featureKey]);
 
+  const resetOutcome = useCallback(() => {
+    setResult(null);
+    setError(null);
+  }, []);
+
   useEffect(() => {
     const lifecycle = ++lifecycleRef.current;
     latestLoadPendingRef.current = false;
@@ -160,7 +165,7 @@ export function useTownFeature<TData, TRequest = never>({
     };
   }, [autoLoad, featureKey, reload]);
 
-  return { status, data, result, error, reload, submit };
+  return { status, data, result, error, reload, submit, resetOutcome };
 }
 
 type CaptchaRetryOptions = { isCancelled?: () => boolean };
