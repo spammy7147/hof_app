@@ -22,6 +22,7 @@ import { TownCategoryChips } from '../features/town/components/TownCategoryChips
 import { TownDetailShell } from '../features/town/components/TownDetailShell';
 import { TownMenuGrid } from '../features/town/components/TownMenuGrid';
 import { FishingPanel } from '../features/town/panels/FishingPanel';
+import { ShopPanel } from '../features/town/panels/ShopPanel';
 import type { TownApi } from '../features/town/api/townApi';
 import type { FishingBattleTarget } from '../types/api';
 import { theme } from '../styles/theme';
@@ -73,6 +74,11 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
     const fishingMode = selectedMenu.id === 'fishing'
       ? 'fishing'
       : selectedMenu.id === 'fishingExchange' ? 'exchange' : null;
+    const shopMode = selectedMenu.id === 'generalShop' ? 'general'
+      : selectedMenu.id === 'sundriesShop' ? 'sundries'
+        : selectedMenu.id === 'darkShop' ? 'dark'
+          : selectedMenu.id === 'sell' ? 'sell'
+            : selectedMenu.id === 'combine' ? 'combine' : null;
     return (
       <TownDetailShell menu={selectedMenu} onBack={closeDetail}>
         {fishingMode && townApi ? (
@@ -83,6 +89,8 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
             onNavigateMode={(nextMode) => setMenuId(nextMode === 'fishing' ? 'fishing' : 'fishingExchange')}
             resolveCaptcha={resolveCaptcha}
           />
+        ) : shopMode && townApi ? (
+          <ShopPanel api={townApi} mode={shopMode} resolveCaptcha={resolveCaptcha} />
         ) : (
           <><Text style={styles.detailTitle}>{selectedMenu.label}</Text><Text style={styles.hint}>기능 연결을 준비하고 있습니다.</Text></>
         )}

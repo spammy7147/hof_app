@@ -240,6 +240,27 @@ export type FishingExchangeResponse = {
 
 export type FishingExchangeRequest = { candidateId: string; quantity: number };
 
+export type ShopMode = 'general' | 'sundries' | 'dark';
+export type ShopItemResponse = TownRowResponse & { type: string | null };
+export type ShopResponse = {
+  shopId: ShopMode;
+  items: ShopItemResponse[];
+  stale: boolean;
+  lastVerifiedAt: string | null;
+  result: TownActionResultResponse | null;
+};
+export type PurchaseRequest = { items: Array<{ itemId: string; quantity: number }> };
+export type SellItemResponse = TownRowResponse & { type: string | null };
+export type SellResponse = { items: SellItemResponse[]; result: TownActionResultResponse | null };
+export type SellRequest = { items: Array<{ candidateId: string; quantity: number }> };
+export type CombineOptionResponse = { id: string; label: string; quantity: number | null };
+export type CombineResponse = {
+  primary: CombineOptionResponse[];
+  secondarySlots: [CombineOptionResponse[], CombineOptionResponse[], CombineOptionResponse[]];
+  result: TownActionResultResponse | null;
+};
+export type CombineRequest = { primaryCandidateId: string; secondaryCandidateIds: [string, string, string]; quantity: number };
+
 /** 저장 가능한 자동화는 백엔드가 소유하는 세 가지 singleton 유형으로 제한된다. */
 export type AutomationType = 'QUEST' | 'BATTLE_MAP' | 'ADVENTURE_MAP';
 
