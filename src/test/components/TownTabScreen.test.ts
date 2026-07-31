@@ -315,6 +315,28 @@ describe('TownTabScreen', () => {
     assert.equal(findHosts(renderer.root, 'FlatList').length, 1);
   });
 
+  it('교환 시설 네 메뉴를 서로 다른 typed endpoint와 가상 목록으로 연결한다', async () => {
+    const paths: string[] = [];
+    const townApi = {
+      load: async (path: string) => { paths.push(path); return exchangeSnapshot(); },
+      submit: async () => { throw new Error('unexpected submit'); },
+    } as never;
+    const menuIds = ['emblemShop', 'eventShop', 'legacyShop', 'annShop'] as const;
+    let renderer = await renderTown({ townApi, controlledMenuId: menuIds[0], controlledDetailOpen: true });
+    await act(async () => { await Promise.resolve(); });
+    for (const menuId of menuIds.slice(1)) {
+      await act(async () => renderer.update(React.createElement(TownTabScreen, { townApi, controlledMenuId: menuId, controlledDetailOpen: true })));
+      await act(async () => { await Promise.resolve(); });
+    }
+
+    assert.deepEqual(paths, [
+      '/api/town/exchanges/emblem', '/api/town/exchanges/event',
+      '/api/town/exchanges/legacy', '/api/town/exchanges/ann',
+    ]);
+    assert.equal(allText(renderer.root).includes('기능 연결을 준비하고 있습니다.'), false);
+    assert.equal(findHosts(renderer.root, 'FlatList').length, 1);
+  });
+
   it('shows a friendly empty state and allows clearing the search', async () => {
     const renderer = await renderTown();
     const input = findHost(renderer.root, 'TextInput');
@@ -409,5 +431,12 @@ function craftingSnapshot() {
     mode: 'WORKBASE', categories: [{ id: 'category', label: '무기', current: true }], currentCategoryId: 'category',
     rows: [], minQuantity: 1, maxQuantity: 10, activeJob: null, allowedRefineCounts: [], additionalMaterials: [],
     additionalMaterialsOptional: false, warningCode: null, history: [], result: null,
+  };
+}
+
+function exchangeSnapshot() {
+  return {
+    mode: 'EMBLEM', categories: [], currentCategoryId: null, rows: [], ownedCurrencies: [],
+    gradeActions: [], annActions: [], warning: null, history: [], result: null,
   };
 }

@@ -35,6 +35,22 @@ describe('ExchangePanel', () => {
     await act(async () => pending.resolve({ ...value, currentCategoryId: 'type:event & rare' }));
   });
 
+  it('분류를 불러오는 동안 이전 화면의 모든 선택과 비용 action을 잠근다', async () => {
+    const pending = deferred<unknown>();
+    const legacy = data('LEGACY', {
+      categories: [{ id: 'all', label: '전부', current: true }, { id: 'weapon', label: '무기', current: false }],
+      gradeActions: [{ id: 'junk', label: 'Junk 등급 교환', consumedItemsPerPress: 1, allowsTargetSelection: false }],
+    });
+    await render(React.createElement(ExchangePanel, { api: api(async (path) => path.includes('?') ? pending.promise : legacy), mode: 'legacy' }));
+    await press('무기 분류');
+
+    assert.equal(button('전부 분류').props.disabled, true);
+    assert.equal(button('교환품 선택 불가').props.disabled, true);
+    assert.equal(button('Junk 등급 교환').props.disabled, true);
+    assert.equal(text().includes('선택한 교환 정보를 불러오는 중...'), true);
+    await act(async () => pending.resolve({ ...legacy, currentCategoryId: 'weapon' }));
+  });
+
   it('유물 등급 교환은 대상 선택 없이 경고 후 action id만 전송한다', async () => {
     const calls: Array<{ path: string; request: unknown }> = [];
     const legacy = data('LEGACY', { rows: [], warning: 'HOF가 +10 레거시 장비 중 1개를 자동 선택합니다. 앱에서는 대상을 지정할 수 없습니다.', gradeActions: [{ id: 'junk', label: 'Junk 등급 교환', consumedItemsPerPress: 1, allowsTargetSelection: false }] });
@@ -53,7 +69,91 @@ describe('ExchangePanel', () => {
     ] });
     await render(React.createElement(ExchangePanel, { api: api(async () => ann, async (_path, request) => { calls.push(request); return { ...ann, result: result() }; }), mode: 'ann' }));
     await press('+10 Legacy Arm 선택'); await press('앤에게 아이템을 맡긴다'); await pressLast('앤에게 아이템을 맡긴다');
-    assert.deepEqual(calls, [{ action: 'MODIFY_ITEM', candidateId: 'modify', quantity: 1 }]);
+    await press('Flower 선택'); await press('앤에게 선물');
+    assert.equal(text().includes('Flower'), true);
+    await pressLast('앤에게 선물');
+    assert.deepEqual(calls, [
+      { action: 'MODIFY_ITEM', candidateId: 'modify', quantity: 1 },
+      { action: 'GIVE_GIFT', candidateId: 'flower', quantity: 1 },
+    ]);
+  });
+
+  it('확인창은 선택 당시의 비용과 소모 설명을 고정해 보여주고 중복 POST를 막는다', async () => {
+    const pending = deferred<unknown>();
+    const calls: unknown[] = [];
+    const value = data('EMBLEM', { rows: [{ ...row('trade', '빛나는 검'), detail: 'Order of Gladiator(Green) ×15', cost: 100_000 }] });
+    await render(React.createElement(ExchangePanel, { api: api(async () => value, async (_path, request) => { calls.push(request); return pending.promise; }), mode: 'emblem' }));
+    await press('빛나는 검 선택');
+    await changeInput('교환 수량', '2');
+    await press('교환');
+    assert.equal(text().includes('$100,000'), true);
+    assert.equal(text().includes('Order of Gladiator(Green) ×15'), true);
+
+    const confirm = lastPressableWithText('교환').props.onPress;
+    await act(async () => { confirm(); confirm(); await Promise.resolve(); });
+    assert.deepEqual(calls, [{ candidateId: 'trade', categoryCandidateId: 'all', quantity: 2 }]);
+    await act(async () => pending.resolve({ ...value, result: result() }));
+  });
+
+  it('새 교환이 실패하면 직전 성공 결과를 현재 결과처럼 남기지 않는다', async () => {
+    const value = data('EMBLEM');
+    let submits = 0;
+    const submit = async () => {
+      submits += 1;
+      if (submits === 1) return { ...value, result: { ...result(), messages: ['첫 교환 성공'] } };
+      throw new Error('두 번째 교환 실패');
+    };
+    await render(React.createElement(ExchangePanel, { api: api(async () => value, submit), mode: 'emblem' }));
+    await press('교환품 선택'); await press('교환'); await pressLast('교환');
+    assert.equal(text().includes('첫 교환 성공'), true);
+    await press('교환'); await pressLast('교환');
+    assert.equal(text().includes('두 번째 교환 실패'), true);
+    assert.equal(text().includes('첫 교환 성공'), false);
+  });
+
+  it('백엔드 Int 범위를 넘는 무제한 수량은 클라이언트에서 제출하지 않는다', async () => {
+    const value = data('EMBLEM', { rows: [{ ...row('trade', '무제한 교환품'), maxQuantity: null }] });
+    await render(React.createElement(ExchangePanel, { api: api(async () => value), mode: 'emblem' }));
+    await press('무제한 교환품 선택');
+    await changeInput('교환 수량', '2147483648');
+    assert.equal(button('교환').props.disabled, true);
+    assert.equal(text().includes('1~2,147,483,647 사이의 정수를 입력하세요.'), true);
+  });
+
+  it('API 계정이 바뀌면 이전 계정의 action 응답을 즉시 숨긴다', async () => {
+    const oldValue = data('EMBLEM', { result: { ...result(), messages: ['이전 계정 결과'] } });
+    const newLoad = deferred<unknown>();
+    const oldApi = api(async () => oldValue);
+    await render(React.createElement(ExchangePanel, { api: oldApi, mode: 'emblem' }));
+    assert.equal(text().includes('이전 계정 결과'), true);
+
+    await act(async () => mounted!.update(React.createElement(ExchangePanel, { api: api(async () => newLoad.promise), mode: 'emblem' })));
+    assert.equal(text().includes('이전 계정 결과'), false);
+    assert.equal(text().includes('교환 시설 정보를 불러오는 중...'), true);
+    await act(async () => newLoad.resolve(data('EMBLEM')));
+  });
+
+  it('이전 API의 늦은 실패가 새 계정의 확인창을 닫지 않는다', async () => {
+    const oldSubmit = deferred<unknown>();
+    const value = data('EMBLEM');
+    await render(React.createElement(ExchangePanel, { api: api(async () => value, async () => oldSubmit.promise), mode: 'emblem' }));
+    await press('교환품 선택'); await press('교환');
+    const oldConfirm = lastPressableWithText('교환').props.onPress;
+    await act(async () => { oldConfirm(); await Promise.resolve(); });
+
+    const newApi = api(async () => value, async () => value);
+    await act(async () => mounted!.update(React.createElement(ExchangePanel, { api: newApi, mode: 'emblem' })));
+    await act(async () => { await Promise.resolve(); });
+    await press('교환품 선택'); await press('교환');
+    assert.equal(confirmModal().props.visible, true);
+    await act(async () => oldSubmit.reject(new Error('old account failure')));
+    assert.equal(confirmModal().props.visible, true);
+  });
+
+  it('네트워크 원문 오류는 사용자용 연결 실패 문구로 바꾼다', async () => {
+    await render(React.createElement(ExchangePanel, { api: api(async () => { throw new Error('fetch failed ECONNREFUSED 10.0.2.2:8080'); }), mode: 'event' }));
+    assert.equal(text().includes('서비스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.'), true);
+    assert.equal(text().includes('ECONNREFUSED'), false);
   });
 
   it('보유재화와 긴 기록은 같은 가상 목록에서 표시한다', async () => {
@@ -74,5 +174,8 @@ async function render(node: React.ReactElement) { await act(async () => { mounte
 function button(label: string): ReactTestInstance { return mounted!.root.find((node) => node.props.accessibilityLabel === label); }
 async function press(label: string) { await act(async () => button(label).props.onPress()); await act(async () => { await Promise.resolve(); }); }
 async function pressLast(label: string) { const nodes = mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0); await act(async () => nodes.at(-1)!.props.onPress()); await act(async () => { await Promise.resolve(); }); }
+function lastPressableWithText(label: string) { return mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0).at(-1)!; }
+function confirmModal() { return mounted!.root.find((node) => String(node.type) === 'Modal'); }
+async function changeInput(label: string, value: string) { await act(async () => button(label).props.onChangeText(value)); }
 function text() { return mounted!.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join('')).join(' '); }
-function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; }
+function deferred<T>() { let resolve!: (value: T) => void; let reject!: (reason?: unknown) => void; const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; }); return { promise, resolve, reject }; }
