@@ -54,10 +54,11 @@ function FishingLoopPanel({ api, resolveCaptcha, onOpenBattle, onNavigateMode }:
     <View style={styles.container}>
       {state.notice ? <Text accessibilityLiveRegion="polite" style={styles.notice}>{state.notice}</Text> : null}
       <View style={styles.summary}>
-        <Text style={styles.heading}>{state.locationName}</Text>
-        <Text style={styles.info}>남은 낚시 횟수 {value(state.remainingCasts, '회')}</Text>
-        <Text style={styles.info}>{state.waterStatus ?? '물의 상태를 확인할 수 없습니다.'}</Text>
-        <Text style={styles.info}>미끼 경단 {value(state.baitCount, '개')} · 빛나는 미끼 {value(state.shiningBaitCount, '개')}</Text>
+        <Text style={styles.summaryLabel}>남은 낚시 횟수</Text>
+        <Text style={styles.remainingCasts}>{value(state.remainingCasts, '회')}</Text>
+        <Text style={styles.summaryLabel}>현재 물고기 상태</Text>
+        <Text style={styles.waterStatus}>{state.waterStatus ?? '물고기 움직임을 확인할 수 없습니다.'}</Text>
+        <Text style={styles.baitStatus}>미끼 경단 {value(state.baitCount, '개')} · 빛나는 미끼 {value(state.shiningBaitCount, '개')}</Text>
         {state.escapeSeconds !== null ? <Text style={styles.warning}>도망까지 {state.escapeSeconds}초</Text> : null}
         {state.combo !== null ? <Text style={styles.notice}>현재 {state.combo} 콤보</Text> : null}
       </View>
@@ -110,11 +111,15 @@ function FishingLoopPanel({ api, resolveCaptcha, onOpenBattle, onNavigateMode }:
 }
 
 function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<FishingPanelProps, 'api' | 'resolveCaptcha' | 'onNavigateMode'>) {
+  const [categoryId, setCategoryId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [quantity, setQuantity] = useState('1');
   const [confirming, setConfirming] = useState(false);
   const [actionResponse, setActionResponse] = useState<FishingExchangeResponse | null>(null);
-  const load = useCallback(() => api.load<FishingExchangeResponse>('/api/town/fishing-exchange'), [api]);
+  const path = categoryId == null
+    ? '/api/town/fishing-exchange' as const
+    : `/api/town/fishing-exchange?categoryCandidateId=${encodeURIComponent(categoryId)}` as const;
+  const load = useCallback(() => api.load<FishingExchangeResponse>(path), [api, path]);
   const submitAction = useCallback(async (request: FishingExchangeRequest): Promise<TownActionResultResponse> => {
     const response = await api.submit<FishingExchangeRequest, FishingExchangeResponse>('/api/town/fishing-exchange', request);
     setActionResponse(response);
@@ -122,13 +127,18 @@ function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<Fish
     setConfirming(false);
     return response.result ?? informational('교환 결과를 갱신했습니다.');
   }, [api]);
-  const town = useTownFeature({ load, submitAction, resolveCaptcha, featureKey: 'fishing-exchange' });
+  const town = useTownFeature({ load, submitAction, resolveCaptcha, featureKey: `fishing-exchange-${categoryId ?? 'default'}` });
   const data = actionResponse ?? town.data;
   useEffect(() => {
     if (!data) return;
     setSelectedIds((current) => current.filter((id) => data.items.some((item) => item.id === id && item.selectable)).slice(0, 1));
     setConfirming(false);
   }, [data]);
+  useEffect(() => {
+    setSelectedIds([]);
+    setActionResponse(null);
+    setConfirming(false);
+  }, [api, categoryId]);
   if (!data && town.status === 'loading') return <Text style={styles.muted}>낚시 교환소를 불러오는 중...</Text>;
   if (!data) return <ErrorState message={town.error} onRetry={town.reload} />;
   const selected = selectedIds[0];
@@ -136,17 +146,31 @@ function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<Fish
   const quantityValid = /^[1-9]\d*$/.test(quantity) && Number.isSafeInteger(Number(quantity));
   const parsedQuantity = quantityValid ? Number(quantity) : null;
   const quantityError = quantityValid ? null : '수량은 1 이상의 10진 정수로 입력하세요.';
+  const canExchange = Boolean(selected && data.currentCategoryId && quantityValid && town.status !== 'submitting');
   return (
     <View style={styles.container}>
+      <View accessibilityRole="radiogroup" style={styles.categoryList}>
+        {data.categories.map((category) => (
+          <Pressable
+            key={category.id}
+            accessibilityLabel={`${category.label} 분류`}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: category.current, disabled: town.status === 'submitting' }}
+            disabled={town.status === 'submitting'}
+            onPress={() => { if (!category.current) setCategoryId(category.id); }}
+            style={[styles.categoryChip, category.current && styles.categoryChipSelected]}
+          ><Text style={styles.categoryText}>{category.label}</Text></Pressable>
+        ))}
+      </View>
       <TownItemList rows={data.items} selectedIds={selectedIds} selectionMode="single" onSelectionChange={setSelectedIds} />
       <TextInput accessibilityLabel="교환 수량" keyboardType="number-pad" onChangeText={setQuantity} style={styles.quantityInput} value={quantity} />
       {quantityError ? <Text accessibilityLiveRegion="polite" style={styles.error}>{quantityError}</Text> : null}
       <Pressable
         accessibilityLabel="선택한 낚시 품목 교환"
         accessibilityRole="button"
-        disabled={!selected || !quantityValid || town.status === 'submitting'}
-        onPress={() => selected && quantityValid && setConfirming(true)}
-        style={[styles.primaryButton, (!selected || !quantityValid) && styles.disabled]}
+        disabled={!canExchange}
+        onPress={() => canExchange && setConfirming(true)}
+        style={[styles.primaryButton, !canExchange && styles.disabled]}
       ><Text style={styles.primaryText}>교환</Text></Pressable>
       {data.result ? <TownActionResult result={data.result} /> : null}
       {town.error ? <Text style={styles.error}>{town.error}</Text> : null}
@@ -163,7 +187,8 @@ function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<Fish
         onCancel={() => setConfirming(false)}
         onConfirm={() => {
           if (!selected || parsedQuantity === null) return;
-          void town.submit({ candidateId: selected, quantity: parsedQuantity }).catch(() => undefined);
+          if (!data.currentCategoryId) return;
+          void town.submit({ candidateId: selected, categoryCandidateId: data.currentCategoryId, quantity: parsedQuantity }).catch(() => undefined);
         }}
         submitting={town.status === 'submitting'}
         title="교환 확인"
@@ -200,6 +225,10 @@ const styles = StyleSheet.create({
   summary: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md, gap: theme.spacing.xs, padding: theme.spacing.md },
   heading: { color: theme.colors.text, fontSize: 17, fontWeight: '900' },
   info: { color: theme.colors.textMuted, fontSize: 13, lineHeight: 19 },
+  summaryLabel: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '700' },
+  remainingCasts: { color: theme.colors.text, fontSize: 24, fontWeight: '900' },
+  waterStatus: { color: theme.colors.text, fontSize: 15, fontWeight: '700', lineHeight: 22 },
+  baitStatus: { color: theme.colors.textMuted, fontSize: 13, lineHeight: 19, marginTop: theme.spacing.xs },
   notice: { color: theme.colors.accentGreen, fontSize: 14, fontWeight: '800' },
   warning: { color: theme.colors.accentAmber, fontSize: 14, fontWeight: '800' },
   muted: { color: theme.colors.textMuted, fontSize: 13 },
@@ -215,5 +244,9 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.8 },
   catchList: { gap: theme.spacing.sm },
   catchCard: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.md },
+  categoryList: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
+  categoryChip: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
+  categoryChipSelected: { borderColor: theme.colors.accentGreen, borderWidth: 2 },
+  categoryText: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
   quantityInput: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md },
 });

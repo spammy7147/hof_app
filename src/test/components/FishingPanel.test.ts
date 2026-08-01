@@ -40,6 +40,19 @@ afterEach(async () => {
 });
 
 describe('FishingPanel', () => {
+  it('낚시 요약에는 남은 횟수와 현재 상태 및 미끼 수량을 표시한다', async () => {
+    await render(React.createElement(FishingPanel, { api: fakeApi({ load: async () => fishing('START', ['START']) }) }));
+
+    const text = allText();
+    assert.equal(text.includes('남은 낚시 횟수'), true);
+    assert.equal(text.includes('17회'), true);
+    assert.equal(text.includes('현재 물고기 상태'), true);
+    assert.equal(text.includes('수면이 빛난다.'), true);
+    assert.equal(text.includes('일반 낚시터'), false);
+    assert.equal(text.includes('미끼 경단 0개'), true);
+    assert.equal(text.includes('빛나는 미끼 0개'), true);
+  });
+
   it('START에서 CATCH로 한 번씩만 수동 전환하고 보조 action은 자동 실행하지 않는다', async () => {
     const calls: string[] = [];
     const api = fakeApi({
@@ -97,6 +110,8 @@ describe('FishingPanel', () => {
   it('교환소에서 radio 없는 행을 보이되 선택할 수 없게 한다', async () => {
     const api = fakeApi({
       load: async () => ({
+        categories: [{ id: 'type:all', label: '전부', current: true }],
+        currentCategoryId: 'type:all',
         items: [
           { id: 'rank', label: 'Rank Fish', selectable: true, detail: null, imageUrl: null, price: null, quantity: null, materials: [] },
           { id: 'display', label: '교환 불가', selectable: false, detail: null, imageUrl: null, price: null, quantity: null, materials: [] },
@@ -111,9 +126,37 @@ describe('FishingPanel', () => {
     assert.equal(allText().includes('교환 불가'), true);
   });
 
+  it('교환 품목 분류는 아이템 행이 아니라 상단 선택지로 전환한다', async () => {
+    const paths: string[] = [];
+    const api = fakeApi({
+      load: async (path: string) => {
+        paths.push(path);
+        const armor = path.includes('categoryCandidateId=type%3Aarmor');
+        return {
+          categories: [
+            { id: 'type:weapon', label: '무기(weapon)', current: !armor },
+            { id: 'type:armor', label: '방어구(armor)', current: armor },
+          ],
+          currentCategoryId: armor ? 'type:armor' : 'type:weapon',
+          items: [{ id: armor ? 'armor-item' : 'weapon-item', label: armor ? '갑옷 물고기' : '무기 물고기', selectable: true, detail: null, imageUrl: null, price: 10, quantity: null, materials: [] }],
+          result: null,
+        };
+      },
+    });
+    await render(React.createElement(FishingPanel, { api, mode: 'exchange' }));
+
+    assert.equal(findButton('무기(weapon) 선택'), null);
+    assert.ok(button('방어구(armor) 분류'));
+    await press('방어구(armor) 분류');
+    assert.equal(paths.at(-1), '/api/town/fishing-exchange?categoryCandidateId=type%3Aarmor');
+    assert.equal(allText().includes('갑옷 물고기'), true);
+  });
+
   it('교환 수량과 비용을 확인한 뒤에만 정확한 수량을 제출한다', async () => {
     const calls: unknown[] = [];
     const response = {
+      categories: [{ id: 'type:weapon', label: '무기', current: true }],
+      currentCategoryId: 'type:weapon',
       items: [{ id: 'rank', label: 'Rank Fish', selectable: true, detail: '재료', imageUrl: null, price: 100, quantity: 4, materials: ['Fish Token x2'] }],
       result: null,
     };
@@ -129,13 +172,13 @@ describe('FishingPanel', () => {
     assert.equal(allText().includes('$300'), true);
     await act(async () => pressableWithText('교환').props.onPress());
     await act(async () => { await Promise.resolve(); });
-    assert.deepEqual(calls, [{ candidateId: 'rank', quantity: 3 }]);
+    assert.deepEqual(calls, [{ candidateId: 'rank', categoryCandidateId: 'type:weapon', quantity: 3 }]);
   });
 
   for (const invalid of ['', '0', '-1', '1.5', 'abc']) {
     it(`잘못된 교환 수량 ${JSON.stringify(invalid)}은 확인과 제출을 차단한다`, async () => {
       const calls: unknown[] = [];
-      const response = { items: [{ id: 'rank', label: 'Rank Fish', selectable: true, detail: null, imageUrl: null, price: 100, quantity: 4, materials: [] }], result: null };
+      const response = { categories: [{ id: 'type:weapon', label: '무기', current: true }], currentCategoryId: 'type:weapon', items: [{ id: 'rank', label: 'Rank Fish', selectable: true, detail: null, imageUrl: null, price: 100, quantity: 4, materials: [] }], result: null };
       await render(React.createElement(FishingPanel, { api: fakeApi({ load: async () => response, submit: async (_path, request) => { calls.push(request); return response; } }), mode: 'exchange' }));
       await press('Rank Fish 선택');
       await act(async () => button('교환 수량').props.onChangeText(invalid));

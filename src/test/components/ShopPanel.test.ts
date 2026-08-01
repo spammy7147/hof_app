@@ -20,6 +20,7 @@ moduleWithLoader._load = (request, parent, isMain) => {
   return originalLoad(request, parent, isMain);
 };
 const { ShopPanel } = require('../../main/features/town/panels/ShopPanel') as typeof import('../../main/features/town/panels/ShopPanel');
+const { BackendApiError } = require('../../main/services/backendApi') as typeof import('../../main/services/backendApi');
 moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let mounted: ReactTestRenderer | null = null;
@@ -35,12 +36,67 @@ describe('ShopPanel', () => {
     });
   }
 
+  it('암흑상점 조회는 CAPTCHA 대기에 들어가지 않고 오류 상태로 종료한다', async () => {
+    let captchaRequests = 0;
+    await render(React.createElement(ShopPanel, {
+      api: api(async () => { throw new BackendApiError(409, 'CAPTCHA_REQUIRED', 'HOF 인증이 필요합니다.'); }),
+      mode: 'dark',
+      resolveCaptcha: async () => { captchaRequests += 1; },
+    }));
+
+    assert.equal(captchaRequests, 0);
+    assert.equal(text().includes('HOF 인증이 필요합니다.'), true);
+    assert.equal(text().includes('목록을 불러오는 중...'), false);
+  });
+
   it('가격 검색 안내와 실제 가격 문자열 필터를 제공한다', async () => {
     await render(React.createElement(ShopPanel, { api: api(async () => shop('general')), mode: 'general' }));
     assert.equal(button('상점 품목 검색').props.placeholder, '이름·유형·설명·가격 검색');
     await change('상점 품목 검색', '200');
     assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === 'Potion 선택').length, 0);
     assert.ok(button('Bread 선택'));
+  });
+
+  it('상점 원문의 이름 유형 상세 가격을 중복 없이 나누고 선택 카드 옆에 수량을 둔다', async () => {
+    const woodShield = {
+      ...shop('general'),
+      items: [{
+        id: 'shield', label: 'WoodShield', selectable: true,
+        detail: '$ 1,000 WoodShield (Shield) / Def:7+9 / Mdef:3+5 / h:1 / M:Metal / S.Shield / 완전 방어(+6%)',
+        imageUrl: null, price: 1_000, quantity: null, type: null,
+      }],
+    };
+    await render(React.createElement(ShopPanel, { api: api(async () => woodShield), mode: 'general' }));
+
+    const initialText = text();
+    assert.equal(initialText.includes('WoodShield (Shield)'), true);
+    assert.equal(initialText.includes('Def:7+9 / Mdef:3+5 / h:1 / M:Metal / S.Shield / 완전 방어(+6%)'), true);
+    assert.equal(initialText.includes('$ 1,000 WoodShield'), false);
+    assert.equal(initialText.includes('$1,000'), true);
+
+    await press('WoodShield 선택');
+    assert.ok(button('WoodShield 구매 수량'));
+    assert.equal(text().includes('WoodShield 구매 수량'), false, '하단의 큰 품목별 수량 필드는 만들지 않는다');
+    assert.equal(text().includes('수량'), true);
+  });
+
+  it('잡화점은 사용 가능 횟수를 상세에 남기고 useitem 유형만 제목으로 분리한다', async () => {
+    const wheatFlour = {
+      ...shop('sundries'),
+      items: [{
+        id: 'flour', label: 'Wheat flour', selectable: true,
+        detail: '$ 100 Wheat flour( 1회 사용가능 ) (useitem) / h:0 / (재료1)밀가루. 이걸 그냥 먹으려고요? (사용 효과 : 입이 텁텁해집니다. TP-2%)',
+        imageUrl: null, price: 100, quantity: null, type: 'useitem',
+      }],
+    };
+    await render(React.createElement(ShopPanel, { api: api(async () => wheatFlour), mode: 'sundries' }));
+
+    const rendered = text();
+    assert.equal(rendered.includes('Wheat flour (useitem)'), true);
+    assert.equal(rendered.includes('( 1회 사용가능 ) / h:0 / (재료1)밀가루.'), true);
+    assert.equal(rendered.includes('$ 100 Wheat flour'), false);
+    await press('Wheat flour 선택');
+    assert.ok(button('Wheat flour 구매 수량'));
   });
 
   it('다중 상품 수량과 예상 비용을 확인한 뒤 한 번만 구매한다', async () => {
