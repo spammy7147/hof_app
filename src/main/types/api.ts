@@ -296,11 +296,13 @@ export type FishingResponse = {
 };
 
 export type FishingExchangeResponse = {
+  categories: Array<{ id: string; label: string; current: boolean }>;
+  currentCategoryId: string | null;
   items: Array<TownRowResponse & { materials: string[] }>;
   result: TownActionResultResponse | null;
 };
 
-export type FishingExchangeRequest = { candidateId: string; quantity: number };
+export type FishingExchangeRequest = { candidateId: string; categoryCandidateId: string; quantity: number };
 
 export type ShopMode = 'general' | 'sundries' | 'dark';
 export type ShopItemResponse = TownRowResponse & { type: string | null };

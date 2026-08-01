@@ -34,7 +34,8 @@ describe('AuctionPanel', () => {
     await act(async () => mounted?.unmount()); mounted = null;
     await render(React.createElement(AuctionPanel, { api: api(async (path) => { paths.push(path); return market(); }), mode: 'market' }));
     assert.deepEqual(paths, ['/api/town/auction', '/api/town/auction-market']);
-    assert.equal(text().includes('판매자·입찰자 정보 없이'), true);
+    assert.equal(text().includes('판매자·입찰자 정보 없이'), false);
+    assert.equal(mounted!.root.find((node) => String(node.type) === 'FlatList').props.ListEmptyComponent, null);
   });
 
   it('입찰 번호와 사용자가 입력한 입찰가만 typed endpoint로 제출한다', async () => {

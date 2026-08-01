@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import type { ReactElement } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { theme } from '../../../styles/theme';
@@ -17,6 +17,7 @@ type TownItemListProps = {
   emptyMessage?: string | null;
   header?: ReactElement | null;
   footer?: ReactElement | null;
+  renderTrailing?: (row: TownRowResponse) => ReactNode;
 };
 
 /** 긴 HOF 후보 목록을 가상화하고 서버가 허용한 행만 선택하게 한다. */
@@ -31,6 +32,7 @@ export function TownItemList({
   emptyMessage = '표시할 항목이 없습니다.',
   header,
   footer,
+  renderTrailing,
 }: TownItemListProps) {
   const selected = new Set(selectedIds);
 
@@ -57,7 +59,8 @@ export function TownItemList({
         const accessibilityState = displayOnly
           ? undefined
           : { disabled, checked: isSelected };
-        return (
+        const trailing = renderTrailing?.(item);
+        const card = (
           <Pressable
             accessibilityLabel={item.accessibilityLabel ?? (displayOnly
               ? item.label
@@ -86,6 +89,7 @@ export function TownItemList({
             }}
             style={({ pressed }) => [
               styles.row,
+              trailing != null && styles.inlineRow,
               isSelected && styles.selectedRow,
               disabled && !displayOnly && styles.disabledRow,
               pressed && !disabled && styles.pressedRow,
@@ -103,6 +107,7 @@ export function TownItemList({
             </View>
           </Pressable>
         );
+        return trailing == null ? card : <View style={styles.rowLayout}>{card}{trailing}</View>;
       }}
     />
   );
@@ -121,6 +126,8 @@ const styles = StyleSheet.create({
     minHeight: 64,
     padding: theme.spacing.md,
   },
+  rowLayout: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, marginBottom: theme.spacing.sm },
+  inlineRow: { flex: 1, marginBottom: 0 },
   selectedRow: { borderColor: theme.colors.accentGreen, borderWidth: 2 },
   disabledRow: { opacity: 0.68 },
   pressedRow: { opacity: 0.82 },

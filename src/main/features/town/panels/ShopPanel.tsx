@@ -10,6 +10,7 @@ import type {
   SellRequest,
   SellResponse,
   ShopMode,
+  ShopItemResponse,
   ShopResponse,
   TownActionResultResponse,
   TownRowResponse,
@@ -29,7 +30,7 @@ export function ShopPanel({ api, mode, resolveCaptcha }: Props) {
   return <PurchasePanel api={api} mode={mode} resolveCaptcha={resolveCaptcha} />;
 }
 
-function PurchasePanel({ api, mode, resolveCaptcha }: Props & { mode: ShopMode }) {
+function PurchasePanel({ api, mode }: Props & { mode: ShopMode }) {
   const [query, setQuery] = useState('');
   const [cart, setCart] = useState<Record<string, number>>({});
   const [confirming, setConfirming] = useState(false);
@@ -43,9 +44,12 @@ function PurchasePanel({ api, mode, resolveCaptcha }: Props & { mode: ShopMode }
     setConfirming(false);
     return next.result ?? info('구매 결과를 갱신했습니다.');
   }, [api, mode]);
-  const town = useTownFeature({ load, submitAction, resolveCaptcha, featureKey: `shop-${mode}` });
+  // 공용 상점 목록 조회/구매는 화면을 CAPTCHA 대기 상태로 묶지 않는다.
+  const town = useTownFeature({ load, submitAction, featureKey: `shop-${mode}` });
   const data = response ?? town.data;
-  const rows = useMemo(() => data?.items.filter((item) => `${item.label} ${item.type ?? ''} ${item.detail ?? ''} ${item.price}`.toLowerCase().includes(query.trim().toLowerCase())) ?? [], [data, query]);
+  const rows = useMemo(() => data?.items
+    .filter((item) => `${item.label} ${item.type ?? ''} ${item.detail ?? ''} ${item.price}`.toLowerCase().includes(query.trim().toLowerCase()))
+    .map(presentShopItem) ?? [], [data, query]);
   const selected = Object.keys(cart);
   const total = data?.items.reduce((sum, item) => sum + item.price! * (cart[item.id] ?? 0), 0) ?? 0;
   if (!data) return <LoadState loading={town.status === 'loading'} error={town.error} retry={town.reload} />;
@@ -57,7 +61,8 @@ function PurchasePanel({ api, mode, resolveCaptcha }: Props & { mode: ShopMode }
   return <View style={styles.container}>
     <TownItemList rows={rows} selectedIds={selected} selectionMode="multiple" onSelectionChange={(ids) => { setCart(Object.fromEntries(ids.map((id) => [id, cart[id] ?? 1]))); setInvalidQuantities((current) => Object.fromEntries(ids.map((id) => [id, current[id] ?? false]))); }}
       header={<View style={styles.section}>{data.stale ? <Text style={styles.warning}>상점 검증이 지연되어 마지막 확인 목록을 표시합니다.</Text> : null}<TextInput accessibilityLabel="상점 품목 검색" onChangeText={setQuery} placeholder="이름·유형·설명·가격 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} value={query} /></View>}
-      footer={<View style={styles.section}>{selected.map((id) => { const item = data.items.find((entry) => entry.id === id); return <QuantityInput key={id} label={`${item?.label ?? id} 구매 수량`} value={cart[id]} max={maxForPrice(item?.price ?? 0)} onChange={(quantity) => setCart((current) => ({ ...current, [id]: quantity }))} onValidityChange={(valid) => setInvalidQuantities((current) => ({ ...current, [id]: !valid }))} />; })}<Text style={styles.total}>예상 총액 ${total.toLocaleString()}</Text>{totalInvalid ? <Text style={styles.error}>총액이 안전하게 계산할 수 있는 범위를 넘었습니다.</Text> : null}<ActionButton disabled={selected.length === 0 || quantityInvalid || totalInvalid || town.status === 'submitting'} label="장바구니 구매" onPress={() => setConfirming(true)} />{data.result ? <TownActionResult result={data.result} /> : null}{town.error ? <Text style={styles.error}>{town.error}</Text> : null}</View>} />
+      renderTrailing={(row) => { const item = data.items.find((entry) => entry.id === row.id); return selected.includes(row.id) && item ? <InlineQuantityInput label={`${item.label} 구매 수량`} value={cart[row.id]} max={maxForPrice(item.price ?? 0)} onChange={(quantity) => setCart((current) => ({ ...current, [row.id]: quantity }))} onValidityChange={(valid) => setInvalidQuantities((current) => ({ ...current, [row.id]: !valid }))} /> : null; }}
+      footer={<View style={styles.section}><Text style={styles.total}>예상 총액 ${total.toLocaleString()}</Text>{quantityInvalid ? <Text style={styles.error}>선택한 품목의 수량을 확인하세요.</Text> : null}{totalInvalid ? <Text style={styles.error}>총액이 안전하게 계산할 수 있는 범위를 넘었습니다.</Text> : null}<ActionButton disabled={selected.length === 0 || quantityInvalid || totalInvalid || town.status === 'submitting'} label="장바구니 구매" onPress={() => setConfirming(true)} />{data.result ? <TownActionResult result={data.result} /> : null}{town.error ? <Text style={styles.error}>{town.error}</Text> : null}</View>} />
     <TownConfirmSheet visible={confirming} title="구매 확인" message="선택한 상품을 한 번에 구매합니다." confirmLabel="구매" submitting={town.status === 'submitting'}
       details={[...selected.map((id) => { const item = data.items.find((entry) => entry.id === id)!; return { label: item.label, value: `${cart[id]}개 · $${((item.price ?? 0) * cart[id]).toLocaleString()}` }; }), { label: '예상 총액', value: `$${total.toLocaleString()}` }]}
       onCancel={() => setConfirming(false)} onConfirm={() => void town.submit({ items: selected.map((id) => ({ itemId: id, quantity: cart[id] })) }).catch(() => undefined)} />
@@ -132,6 +137,13 @@ function QuantityInput({ label, value, max, onChange, onValidityChange }: { labe
   const valid = /^[1-9]\d*$/.test(text) && Number.isSafeInteger(parsed) && parsed <= max;
   return <View style={styles.quantityField}><Text style={styles.inputLabel}>{label}</Text><TextInput accessibilityLabel={label} keyboardType="number-pad" onChangeText={(next) => { setText(next); const number = Number(next); const nextValid = /^[1-9]\d*$/.test(next) && Number.isSafeInteger(number) && number <= max; onValidityChange(nextValid); if (nextValid) onChange(number); }} style={[styles.input, !valid && styles.invalidInput]} value={text} />{!valid ? <Text style={styles.error}>1~{max.toLocaleString()} 사이의 정수를 입력하세요.</Text> : null}</View>;
 }
+function InlineQuantityInput({ label, value, max, onChange, onValidityChange }: Parameters<typeof QuantityInput>[0]) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+  const parsed = Number(text);
+  const valid = /^[1-9]\d*$/.test(text) && Number.isSafeInteger(parsed) && parsed <= max;
+  return <View style={styles.inlineQuantity}><Text style={styles.inlineQuantityLabel}>수량</Text><TextInput accessibilityLabel={label} keyboardType="number-pad" onChangeText={(next) => { setText(next); const number = Number(next); const nextValid = /^[1-9]\d*$/.test(next) && Number.isSafeInteger(number) && number <= max; onValidityChange(nextValid); if (nextValid) onChange(number); }} selectTextOnFocus style={[styles.inlineQuantityInput, !valid && styles.invalidInput]} value={text} /></View>;
+}
 function ActionButton({ label, disabled, onPress }: { label: string; disabled: boolean; onPress: () => void }) { return <Pressable accessibilityLabel={label} accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}><Text style={styles.buttonText}>{label}</Text></Pressable>; }
 function LoadState({ loading, error, retry }: { loading: boolean; error: string | null; retry: () => Promise<unknown> }) { return <View style={styles.container}><Text style={error ? styles.error : styles.muted}>{loading ? '목록을 불러오는 중...' : error ?? '목록이 없습니다.'}</Text>{!loading ? <ActionButton label="다시 시도" disabled={false} onPress={() => void retry().catch(() => undefined)} /> : null}</View>; }
 function info(message: string): TownActionResultResponse { return { status: 'INFORMATIONAL', messages: [message], items: [], refreshRequired: true }; }
@@ -140,9 +152,44 @@ const styles = StyleSheet.create({
   container: { flex: 1, gap: theme.spacing.md }, section: { gap: theme.spacing.md, paddingVertical: theme.spacing.md }, quantityField: { gap: theme.spacing.xs }, inputLabel: { color: theme.colors.text, fontSize: 13, fontWeight: '800' }, muted: { color: theme.colors.textMuted }, warning: { color: theme.colors.accentAmber, fontWeight: '800' }, error: { color: theme.colors.danger }, total: { color: theme.colors.accentGreen, fontSize: 16, fontWeight: '900' },
   input: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md },
   invalidInput: { borderColor: theme.colors.danger },
+  inlineQuantity: { alignItems: 'stretch', gap: theme.spacing.xs, width: 76 },
+  inlineQuantityLabel: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '700', textAlign: 'center' },
+  inlineQuantityInput: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.sm, textAlign: 'center' },
   button: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, justifyContent: 'center', minHeight: 52, padding: theme.spacing.md }, buttonText: { color: theme.colors.background, fontWeight: '900' }, disabled: { opacity: 0.45 },
 });
 
 const MAX_QUANTITY = 2_147_483_647;
 function maxForPrice(price: number): number { return price > 0 ? Math.min(MAX_QUANTITY, Math.floor(Number.MAX_SAFE_INTEGER / price)) : MAX_QUANTITY; }
 function isValidQuantity(quantity: number, max: number): boolean { return Number.isSafeInteger(quantity) && quantity > 0 && quantity <= max; }
+
+function presentShopItem(item: ShopItemResponse): ShopItemResponse {
+  const raw = item.detail?.trim() ?? '';
+  const withoutPrice = raw.replace(/^[$￦]\s*[0-9][0-9,]*\s*/, '').trim();
+  let inferredType = item.type?.trim() || null;
+  let detail = withoutPrice;
+  if (withoutPrice.startsWith(item.label)) {
+    detail = withoutPrice.slice(item.label.length).trim();
+    const prefix = detail.match(/^((?:\s*\([^)]*\))+)(?:\s*\/\s*)?/);
+    if (prefix) {
+      const tokens = [...prefix[1].matchAll(/\(([^)]*)\)/g)];
+      const typeToken = inferredType
+        ? tokens.find((token) => token[1].trim().toLowerCase() === inferredType?.toLowerCase())
+        : [...tokens].reverse().find((token) => /^[A-Za-z][A-Za-z &-]*$/.test(token[1].trim()));
+      if (typeToken) {
+        inferredType ??= typeToken[1].trim();
+        const remainingPrefix = prefix[1].replace(typeToken[0], '').replace(/\s+/g, ' ').trim();
+        const remainder = detail.slice(prefix[0].length).trim();
+        detail = [remainingPrefix, remainder].filter(Boolean).join(' / ');
+      }
+    }
+    detail = detail.replace(/^\/\s*/, '').trim();
+  }
+  const labelHasType = /\([^)]+\)\s*$/.test(item.label);
+  return {
+    ...item,
+    accessibilityLabel: `${item.label} 선택`,
+    label: inferredType && !labelHasType ? `${item.label} (${inferredType})` : item.label,
+    detail: detail || null,
+    type: inferredType,
+  };
+}

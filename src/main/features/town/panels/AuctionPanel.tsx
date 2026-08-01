@@ -98,8 +98,8 @@ function AuctionMarketPanel({ api }: Pick<Props, 'api'>) {
   const rows = town.data?.items.map(marketRow) ?? [];
   if (!town.data) return <LoadState loading={town.status === 'loading'} error={town.error} retry={town.reload} />;
   const selectedItem = town.data.items.find((item) => item.itemKey === selected[0]) ?? null;
-  return <View style={styles.container}><TownItemList rows={rows} selectionMode="single" selectedIds={selected} onSelectionChange={setSelected} emptyMessage="최근 30일 익명 시세가 없습니다."
-    header={<View style={styles.section}><Text style={styles.notice}>판매자·입찰자 정보 없이 서버에 저장된 관측치만 표시합니다.</Text><TextInput accessibilityLabel="낙찰 시세 검색어" value={query} onChangeText={setQuery} placeholder="품목명 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} /><ActionButton label="낙찰 시세 검색" disabled={town.status === 'loading'} onPress={() => { setSelected([]); setAppliedQuery(query.trim()); }} /></View>}
+  return <View style={styles.container}><TownItemList rows={rows} selectionMode="single" selectedIds={selected} onSelectionChange={setSelected} emptyMessage={null}
+    header={<View style={styles.section}><TextInput accessibilityLabel="낙찰 시세 검색어" value={query} onChangeText={setQuery} placeholder="품목명 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} /><ActionButton label="낙찰 시세 검색" disabled={town.status === 'loading'} onPress={() => { setSelected([]); setAppliedQuery(query.trim()); }} /></View>}
     footer={selectedItem ? <PriceChart item={selectedItem} /> : null} />
   </View>;
 }
@@ -131,7 +131,7 @@ function LoadState({ loading, error, retry }: { loading: boolean; error: string 
 function info(message: string): TownActionResultResponse { return { status: 'INFORMATIONAL', messages: [message], items: [], refreshRequired: true }; }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, gap: theme.spacing.md }, section: { gap: theme.spacing.md, paddingVertical: theme.spacing.md }, muted: { color: theme.colors.textMuted }, error: { color: theme.colors.danger }, notice: { color: theme.colors.accentBlue, fontSize: 12 },
+  container: { flex: 1, gap: theme.spacing.md }, section: { gap: theme.spacing.md, paddingVertical: theme.spacing.md }, muted: { color: theme.colors.textMuted }, error: { color: theme.colors.danger },
   input: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md },
   button: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, justifyContent: 'center', minHeight: 48, padding: theme.spacing.md }, buttonText: { color: theme.colors.background, fontWeight: '900' }, disabled: { opacity: 0.45 },
   fieldLabel: { color: theme.colors.text, fontWeight: '800' }, durationOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }, durationOption: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, minHeight: 44, paddingHorizontal: theme.spacing.md, justifyContent: 'center' }, durationSelected: { borderColor: theme.colors.accentGreen, borderWidth: 2 }, durationText: { color: theme.colors.text, fontWeight: '700' },

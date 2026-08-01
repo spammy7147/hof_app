@@ -157,7 +157,7 @@ describe('TownTabScreen', () => {
   it('낚시터와 교환소 내부 이동 때 상세 제목과 접근성 포커스를 갱신한다', async () => {
     const townApi = {
       load: async (path: string) => path.endsWith('fishing-exchange')
-        ? { items: [], result: null }
+        ? { categories: [], currentCategoryId: null, items: [], result: null }
         : { ...fishingSnapshot(), catches: [] },
       submit: async () => { throw new Error('unexpected submit'); },
     } as never;
@@ -328,7 +328,7 @@ describe('TownTabScreen', () => {
     } as never;
     const renderer = await renderTown({ townApi: firstApi, controlledMenuId: 'generalShop', controlledDetailOpen: true });
     await act(async () => { await Promise.resolve(); });
-    assert.equal(allText(renderer.root).includes('이전 계정 품목'), true);
+    assert.equal(allText(renderer.root).some((value) => value.includes('이전 계정 품목')), true);
 
     await act(async () => renderer.update(React.createElement(TownTabScreen, {
       townApi: secondApi, controlledMenuId: 'generalShop', controlledDetailOpen: true,
@@ -337,8 +337,8 @@ describe('TownTabScreen', () => {
 
     assert.deepEqual(firstPaths, ['/api/town/shops/general']);
     assert.deepEqual(secondPaths, ['/api/town/shops/general']);
-    assert.equal(allText(renderer.root).includes('이전 계정 품목'), false);
-    assert.equal(allText(renderer.root).includes('새 계정 품목'), true);
+    assert.equal(allText(renderer.root).some((value) => value.includes('이전 계정 품목')), false);
+    assert.equal(allText(renderer.root).some((value) => value.includes('새 계정 품목')), true);
   });
 
   it('제작 분류를 고른 뒤 다른 제작 메뉴로 이동해도 새 메뉴 최초 API만 한 번 조회한다', async () => {

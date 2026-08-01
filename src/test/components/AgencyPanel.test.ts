@@ -51,7 +51,7 @@ afterEach(async () => {
 });
 
 describe('AgencyPanel', () => {
-  it('상태 탭과 검색을 제공하고 확인 뒤 수동 완료를 한 번 요청한다', async () => {
+  it('완료 가능 탭과 카드별 버튼을 제공하고 확인 뒤 완료를 한 번 요청한다', async () => {
     const calls: unknown[] = [];
     const data = [
       quest('a', '진행 퀘스트', 'ACTIVE', 'ACTIVE', null),
@@ -65,14 +65,19 @@ describe('AgencyPanel', () => {
       claimQuest: async (actionNo: string) => { calls.push({ actionNo, action: 'claim' }); return data; },
     } as never }));
 
-    assert.match(text(), /진행 중 2/);
-    await press('완료 퀘스트 완료 가능');
-    await press('수동 완료');
+    assert.match(text(), /진행 중 1/);
+    assert.match(text(), /완료 가능 1/);
+    await pressText('완료 가능 1');
+    assert.doesNotMatch(text(), /진행 퀘스트/);
+    await press('완료 퀘스트 완료');
     assert.equal(calls.length, 0);
     await pressLast('완료');
     assert.deepEqual(calls, [{ actionNo: 'R610', action: 'claim' }]);
     await pressText('수락 가능 1');
     assert.match(text(), /받을 퀘스트/);
+    await press('받을 퀘스트 수락');
+    await pressLast('수락');
+    assert.deepEqual(calls, [{ actionNo: 'R610', action: 'claim' }, { actionNo: '351', action: 'accept' }]);
   });
 
   it('확인창을 연 뒤 선택 callback이 바뀌어도 퀘스트 확인 대상과 POST 대상을 고정한다', async () => {
@@ -87,9 +92,9 @@ describe('AgencyPanel', () => {
       claimQuest: async (actionNo: string) => { calls.push(actionNo); return data; },
     } as never }));
 
-    await press('첫 퀘스트 완료 가능');
-    await press('수동 완료');
-    await press('둘째 퀘스트 완료 가능');
+    await pressText('완료 가능 2');
+    await press('첫 퀘스트 완료');
+    await press('둘째 퀘스트 완료');
     assert.match(confirmText(), /첫 퀘스트/);
     assert.doesNotMatch(confirmText(), /둘째 퀘스트/);
     await pressLast('완료');
