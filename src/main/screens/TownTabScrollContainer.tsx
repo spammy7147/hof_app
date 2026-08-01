@@ -5,13 +5,18 @@ import { theme } from '../styles/theme';
 import { TownTabScreen } from './TownTabScreen';
 import type { TownApi } from '../features/town/api/townApi';
 import type { FishingBattleTarget } from '../types/api';
+import type { BattleResultResponse, HofCharacter, RunBattleRequest } from '../types/api';
+import type { PartyPresetCatalogResource } from '../domain/partyPresetCatalogLoader';
 import type { TownMenuId } from '../domain/townMenus';
 
 /** 마을 목록의 외부 ScrollView 위치를 상세 전환 동안 보존한다. */
-export function TownTabScrollContainer({ townApi, resolveCaptcha, onOpenFishingBattle }: {
+export function TownTabScrollContainer({ townApi, resolveCaptcha, onOpenFishingBattle, characters, partyPresetCatalog, onRunBattle }: {
   townApi?: TownApi;
   resolveCaptcha?: () => Promise<void>;
   onOpenFishingBattle?: (target: FishingBattleTarget) => void;
+  characters?: HofCharacter[];
+  partyPresetCatalog?: PartyPresetCatalogResource;
+  onRunBattle?: (request: RunBattleRequest) => Promise<BattleResultResponse>;
 } = {}) {
   const scrollRef = useRef<ScrollView>(null);
   const currentOffset = useRef(0);
@@ -29,6 +34,9 @@ export function TownTabScrollContainer({ townApi, resolveCaptcha, onOpenFishingB
         townApi={townApi}
         resolveCaptcha={resolveCaptcha}
         onOpenFishingBattle={onOpenFishingBattle}
+        characters={characters}
+        partyPresetCatalog={partyPresetCatalog}
+        onRunBattle={onRunBattle}
         controlledMenuId={menuId}
         controlledDetailOpen={detailOpen}
         onDetailStateChange={(nextMenuId, open) => { setMenuId(nextMenuId); setDetailOpen(open); }}

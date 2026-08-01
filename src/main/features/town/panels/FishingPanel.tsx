@@ -2,12 +2,18 @@ import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { theme } from '../../../styles/theme';
+import { toRunBattleRequest, type BattlePartyMember } from '../../../domain/battleParty';
+import type { PartyPresetCatalogResource } from '../../../domain/partyPresetCatalogLoader';
+import { BattleRunPanel } from '../../battle/components/BattleRunPanel';
 import type {
+  BattleResultResponse,
   FishingAction,
   FishingBattleTarget,
   FishingExchangeRequest,
   FishingExchangeResponse,
   FishingResponse,
+  HofCharacter,
+  RunBattleRequest,
   TownActionResultResponse,
 } from '../../../types/api';
 import { normalizeTownRow, type TownApi } from '../api/townApi';
@@ -20,17 +26,19 @@ type FishingPanelProps = {
   api: TownApi;
   mode?: 'fishing' | 'exchange';
   resolveCaptcha?: () => Promise<void>;
-  onOpenBattle?: (target: FishingBattleTarget) => void;
+  characters?: HofCharacter[];
+  partyPresetCatalog?: PartyPresetCatalogResource;
+  onRunBattle?: (request: RunBattleRequest) => Promise<BattleResultResponse>;
   onNavigateMode?: (mode: 'fishing' | 'exchange') => void;
 };
 
-export function FishingPanel({ api, mode = 'fishing', resolveCaptcha, onOpenBattle, onNavigateMode }: FishingPanelProps) {
+export function FishingPanel({ api, mode = 'fishing', resolveCaptcha, characters, partyPresetCatalog, onRunBattle, onNavigateMode }: FishingPanelProps) {
   return mode === 'exchange'
     ? <FishingExchangePanel api={api} onNavigateMode={onNavigateMode} resolveCaptcha={resolveCaptcha} />
-    : <FishingLoopPanel api={api} onNavigateMode={onNavigateMode} onOpenBattle={onOpenBattle} resolveCaptcha={resolveCaptcha} />;
+    : <FishingLoopPanel api={api} characters={characters} partyPresetCatalog={partyPresetCatalog} onNavigateMode={onNavigateMode} onRunBattle={onRunBattle} resolveCaptcha={resolveCaptcha} />;
 }
 
-function FishingLoopPanel({ api, resolveCaptcha, onOpenBattle, onNavigateMode }: Omit<FishingPanelProps, 'mode'>) {
+function FishingLoopPanel({ api, resolveCaptcha, characters, partyPresetCatalog, onRunBattle, onNavigateMode }: Omit<FishingPanelProps, 'mode'>) {
   const [actionState, setActionState] = useState<FishingResponse | null>(null);
   const load = useCallback(() => api.load<FishingResponse>('/api/town/fishing'), [api]);
   const submitAction = useCallback(async (action: FishingAction): Promise<TownActionResultResponse> => {
@@ -64,16 +72,13 @@ function FishingLoopPanel({ api, resolveCaptcha, onOpenBattle, onNavigateMode }:
       </View>
 
       {state.blockedByBattle ? (
-        <View style={styles.battleCard}>
-          <Text style={styles.warning}>낚시 전투를 끝내기 전에는 낚시할 수 없습니다.</Text>
-          <Pressable
-            accessibilityLabel="낚시 전투로 이동"
-            accessibilityRole="button"
-            disabled={!state.battleTarget}
-            onPress={() => state.battleTarget && onOpenBattle?.(state.battleTarget)}
-            style={styles.battleButton}
-          ><Text style={styles.buttonText}>전투로 이동</Text></Pressable>
-        </View>
+        <FishingBattlePanel
+          characters={characters}
+          partyPresetCatalog={partyPresetCatalog}
+          target={state.battleTarget}
+          onRefresh={() => { setActionState(null); void town.reload(); }}
+          onRunBattle={onRunBattle}
+        />
       ) : primary ? (
         <Pressable
           accessibilityLabel={primary === 'START' ? '낚시를 시작한다' : '낚는다'}
@@ -106,6 +111,65 @@ function FishingLoopPanel({ api, resolveCaptcha, onOpenBattle, onNavigateMode }:
       {state.result ? <TownActionResult onRefresh={() => { setActionState(null); void town.reload(); }} result={state.result} /> : null}
       {town.error ? <Text style={styles.error}>{town.error}</Text> : null}
       <NavigateButton label="낚시 교환소로 이동" onPress={() => onNavigateMode?.('exchange')} />
+    </View>
+  );
+}
+
+function FishingBattlePanel({ characters, partyPresetCatalog, target, onRefresh, onRunBattle }: {
+  characters?: HofCharacter[];
+  partyPresetCatalog?: PartyPresetCatalogResource;
+  target: FishingBattleTarget | null;
+  onRefresh: () => void;
+  onRunBattle?: (request: RunBattleRequest) => Promise<BattleResultResponse>;
+}) {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<BattleResultResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setResult(null);
+    setError(null);
+  }, [target?.categoryId, target?.mapCode]);
+
+  const run = useCallback(async (party: BattlePartyMember[], battleCount: 1 | 3) => {
+    if (!target || !characters || !onRunBattle) return;
+    setRunning(true);
+    setError(null);
+    try {
+      setResult(await onRunBattle(toRunBattleRequest({
+        categoryId: target.categoryId,
+        mapCode: target.mapCode,
+        party,
+        characters,
+        battleCount,
+      })));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '낚시 전투를 진행하지 못했습니다.');
+    } finally {
+      setRunning(false);
+    }
+  }, [characters, onRunBattle, target]);
+
+  return (
+    <View style={styles.battleCard}>
+      <Text style={styles.warning}>낚시터에 나타난 몬스터를 처치해야 낚시를 계속할 수 있습니다.</Text>
+      {target ? <Text style={styles.battleMapName}>{target.name ?? '낚시 전투'}</Text> : null}
+      {target && characters && partyPresetCatalog && onRunBattle ? (
+        <BattleRunPanel
+          allowedBattleCounts={[1]}
+          characters={characters}
+          partyPresetCatalog={partyPresetCatalog}
+          isRunning={running}
+          result={result}
+          errorMessage={error}
+          onRunBattle={(party, battleCount) => { void run(party, battleCount); }}
+        />
+      ) : (
+        <Text style={styles.muted}>현재 출현한 낚시 전투 맵을 확인하는 중입니다.</Text>
+      )}
+      <Pressable accessibilityLabel="낚시 상태 새로고침" accessibilityRole="button" onPress={onRefresh} style={styles.battleButton}>
+        <Text style={styles.buttonText}>낚시 상태 새로고침</Text>
+      </Pressable>
     </View>
   );
 }
@@ -272,7 +336,8 @@ const styles = StyleSheet.create({
   primaryText: { color: theme.colors.background, fontSize: 16, fontWeight: '900' },
   secondaryActions: { flexDirection: 'row', gap: theme.spacing.sm },
   secondaryButton: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, flex: 1, minHeight: 44, justifyContent: 'center', padding: theme.spacing.sm },
-  battleCard: { borderColor: theme.colors.accentAmber, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md },
+  battleCard: { borderColor: theme.colors.danger, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md },
+  battleMapName: { color: theme.colors.text, fontSize: 18, fontWeight: '900' },
   battleButton: { alignItems: 'center', backgroundColor: theme.colors.accentAmber, borderRadius: theme.radius.sm, minHeight: 44, justifyContent: 'center' },
   buttonText: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
   disabled: { opacity: 0.45 },

@@ -27,6 +27,7 @@ moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') return reactNativeMock;
   if (request === 'react-native-safe-area-context') return { useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
   if (request === 'expo-image') return { Image: host('Image') };
+  if (request.endsWith('/BattleRunPanel')) return { BattleRunPanel: host('BattleRunPanel') };
   return originalLoad(request, parent, isMain);
 };
 const { FishingPanel } = require('../../main/features/town/panels/FishingPanel') as typeof import('../../main/features/town/panels/FishingPanel');
@@ -108,15 +109,22 @@ describe('FishingPanel', () => {
     assert.equal(text.includes('효과 HP+3000, HP Regen+2%'), true);
   });
 
-  it('전투 중에는 낚시 버튼을 숨기고 전투 CTA만 연결한다', async () => {
-    const opened: Array<{ categoryId: string; mapCode: string }> = [];
-    const battle = { ...fishing('NONE', []), blockedByBattle: true, battleTarget: { categoryId: 'battle_map', mapCode: 'fishing_12' } };
-    await render(React.createElement(FishingPanel, { api: fakeApi({ load: async () => battle }), onOpenBattle: (target) => { opened.push(target); } }));
+  it('전투 중에는 이동 버튼 대신 현재 낚시 맵의 프리셋 전투 패널을 표시한다', async () => {
+    const battle = { ...fishing('NONE', []), blockedByBattle: true, battleTarget: { categoryId: 'battle_map', mapCode: 'fishing_12', name: 'Fishing- 전기 뱀장어' } };
+    await render(React.createElement(FishingPanel, {
+      api: fakeApi({ load: async () => battle }),
+      characters: [],
+      partyPresetCatalog: { catalog: { folders: [], presets: [] }, loading: false, error: null, retry: () => undefined },
+      onRunBattle: async () => { throw new Error('unexpected'); },
+    }));
 
     assert.equal(findButton('낚시를 시작한다'), null);
     assert.equal(findButton('낚는다'), null);
-    await press('낚시 전투로 이동');
-    assert.deepEqual(opened, [battle.battleTarget]);
+    assert.equal(findButton('낚시 전투로 이동'), null);
+    assert.equal(allText().includes('Fishing- 전기 뱀장어'), true);
+    const runPanel = mounted?.root.findAll((node) => String(node.type) === 'BattleRunPanel')[0];
+    assert.ok(runPanel);
+    assert.deepEqual(runPanel.props.allowedBattleCounts, [1]);
   });
 
   it('교환소에서 radio 없는 행을 보이되 선택할 수 없게 한다', async () => {

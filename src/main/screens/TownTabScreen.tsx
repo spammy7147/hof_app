@@ -35,7 +35,8 @@ import { RaidPanel } from '../features/town/panels/RaidPanel';
 import { PantheonPanel } from '../features/town/panels/PantheonPanel';
 import type { TownApi } from '../features/town/api/townApi';
 import { TOWN_PANEL_REGISTRY } from '../features/town/townPanelRegistry';
-import type { FishingBattleTarget } from '../types/api';
+import type { PartyPresetCatalogResource } from '../domain/partyPresetCatalogLoader';
+import type { BattleResultResponse, FishingBattleTarget, HofCharacter, RunBattleRequest } from '../types/api';
 import { theme } from '../styles/theme';
 
 export type TownTabScreenProps = {
@@ -44,6 +45,9 @@ export type TownTabScreenProps = {
   townApi?: TownApi;
   resolveCaptcha?: () => Promise<void>;
   onOpenFishingBattle?: (target: FishingBattleTarget) => void;
+  characters?: HofCharacter[];
+  partyPresetCatalog?: PartyPresetCatalogResource;
+  onRunBattle?: (request: RunBattleRequest) => Promise<BattleResultResponse>;
   controlledMenuId?: TownMenuId | null;
   controlledDetailOpen?: boolean;
   onDetailStateChange?: (menuId: TownMenuId | null, open: boolean) => void;
@@ -67,7 +71,7 @@ function assertNever(value: never): never {
 }
 
 /** 승인된 모든 마을 기능을 한 화면에서 검색하고 상세로 여는 단일 shell이다. */
-export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townApi, resolveCaptcha, onOpenFishingBattle, controlledMenuId, controlledDetailOpen, onDetailStateChange, renderContent }: TownTabScreenProps) {
+export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townApi, resolveCaptcha, onOpenFishingBattle, characters, partyPresetCatalog, onRunBattle, controlledMenuId, controlledDetailOpen, onDetailStateChange, renderContent }: TownTabScreenProps) {
   const [categoryId, setCategoryId] = useState<TownCategoryFilterId>(DEFAULT_TOWN_CATEGORY_ID);
   const [query, setQuery] = useState('');
   const [internalMenuId, setInternalMenuId] = useState<TownMenuId | null>(null);
@@ -124,7 +128,9 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
       <FishingPanel
         api={townApi}
         mode={route.mode}
-        onOpenBattle={onOpenFishingBattle}
+        characters={characters}
+        partyPresetCatalog={partyPresetCatalog}
+        onRunBattle={onRunBattle}
         onNavigateMode={(nextMode) => changeDetail(nextMode === 'fishing' ? 'fishing' : 'fishingExchange', true)}
         resolveCaptcha={resolveCaptcha}
       />

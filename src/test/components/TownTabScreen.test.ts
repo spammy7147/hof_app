@@ -65,6 +65,7 @@ moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') return reactNativeMock;
   if (request === 'react-native-safe-area-context') return { useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
   if (request === 'expo-image') return { Image: host('Image') };
+  if (request.endsWith('/BattleRunPanel')) return { BattleRunPanel: host('BattleRunPanel') };
   if (request.endsWith('/townAssets')) {
     return {
       TOWN_ICON_SOURCES: {

@@ -274,7 +274,7 @@ export type TownApiPath = `/api/town/${string}`;
 export type FishingAction = 'START' | 'CATCH' | 'STATUS' | 'FILTER';
 export type FishingPrimaryAction = 'START' | 'CATCH' | 'NONE';
 export type FishingOutcome = 'STARTED' | 'CAUGHT' | 'ESCAPED' | 'INFORMATIONAL';
-export type FishingBattleTarget = { categoryId: string; mapCode: string };
+export type FishingBattleTarget = { categoryId: string; mapCode: string; name?: string | null };
 export type FishingCatchItem = { name: string; quantity: number; remainingUses: number | null; effect: string | null };
 
 export type FishingResponse = {

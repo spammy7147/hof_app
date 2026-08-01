@@ -40,6 +40,7 @@ type BattleRunPanelProps = {
   isRunning: boolean;
   result: BattleResultResponse | null;
   errorMessage: string | null;
+  allowedBattleCounts?: readonly (1 | 3)[];
   onRunBattle: (party: BattlePartyMember[], battleCount: 1 | 3) => void;
 };
 
@@ -55,6 +56,7 @@ export function BattleRunPanel({
   isRunning,
   result,
   errorMessage,
+  allowedBattleCounts = [1, 3],
   onRunBattle,
 }: BattleRunPanelProps) {
   const [selectedMode, setSelectedMode] = useState<PartySelectionMode>(null);
@@ -139,21 +141,25 @@ export function BattleRunPanel({
               />
               <Text style={styles.sortieCountText}>{sortieCount}명 출정 예정</Text>
               <View style={styles.actionRow}>
-                <PrimaryButton
-                  label="1회 전투"
-                  loading={isRunning}
-                  disabled={isRunning || !ready}
-                  onPress={() => onRunBattle(party, 1)}
-                  style={styles.actionButton}
-                />
-                <PrimaryButton
-                  label="3회 전투"
-                  variant="secondary"
-                  loading={isRunning}
-                  disabled={isRunning || !ready}
-                  onPress={() => onRunBattle(party, 3)}
-                  style={styles.actionButton}
-                />
+                {allowedBattleCounts.includes(1) ? (
+                  <PrimaryButton
+                    label="1회 전투"
+                    loading={isRunning}
+                    disabled={isRunning || !ready}
+                    onPress={() => onRunBattle(party, 1)}
+                    style={styles.actionButton}
+                  />
+                ) : null}
+                {allowedBattleCounts.includes(3) ? (
+                  <PrimaryButton
+                    label="3회 전투"
+                    variant="secondary"
+                    loading={isRunning}
+                    disabled={isRunning || !ready}
+                    onPress={() => onRunBattle(party, 3)}
+                    style={styles.actionButton}
+                  />
+                ) : null}
               </View>
             </>
           ) : null}

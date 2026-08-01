@@ -693,7 +693,16 @@ function renderActiveTab({
         </View>
       );
     case 'town':
-      return <TownTabScrollContainer townApi={townApi} resolveCaptcha={resolveCaptcha} onOpenFishingBattle={onOpenFishingBattle} />;
+      return (
+        <TownTabScrollContainer
+          townApi={townApi}
+          resolveCaptcha={resolveCaptcha}
+          onOpenFishingBattle={onOpenFishingBattle}
+          characters={characters}
+          partyPresetCatalog={partyPresetCatalog}
+          onRunBattle={onRunBattle}
+        />
+      );
     case 'data':
       return (
         <DataTabScreen

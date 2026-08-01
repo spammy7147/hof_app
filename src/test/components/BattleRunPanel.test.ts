@@ -3,6 +3,7 @@ import Module from 'node:module';
 import { describe, it } from 'node:test';
 import React from 'react';
 import { act, create } from 'react-test-renderer';
+import { makeHofCharacter } from '../fixtures/api';
 
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => React.createElement(name, { ...props, ref }, props.children as React.ReactNode));
 const flatList = (props: Record<string, unknown>) => React.createElement(
@@ -36,6 +37,28 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('BattleRunPanel party preset catalog', () => {
+  it('allowedBattleCounts가 1이면 낚시용 1회 전투만 표시한다', async () => {
+    const characters = Array.from({ length: 5 }, (_, index) => makeHofCharacter(index + 1));
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(BattleRunPanel, {
+        characters,
+        partyPresetCatalog: { catalog: { folders: [], presets: [] }, loading: false, error: null, retry: () => undefined },
+        isRunning: false,
+        result: null,
+        errorMessage: null,
+        allowedBattleCounts: [1],
+        onRunBattle: () => undefined,
+      }));
+    });
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 파티 프리셋 선택' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '캐릭터 직접 선택 선택' }).props.onPress());
+
+    const actionButtons = renderer.root.findAll((node) => String(node.type) === 'PrimaryButton');
+    assert.equal(actionButtons.filter((node) => node.props.label === '1회 전투').length, 1);
+    assert.equal(actionButtons.filter((node) => node.props.label === '3회 전투').length, 0);
+  });
+
   it('opens the actual shared folder tree/search modal with direct-selection semantics', async () => {
     const catalog = {
       folders: [{ id: 1, name: '전투', parentFolderId: null, displayOrder: 0, createdAt: '', updatedAt: '' }],
