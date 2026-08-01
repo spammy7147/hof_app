@@ -10,7 +10,7 @@ import type {
   FishingResponse,
   TownActionResultResponse,
 } from '../../../types/api';
-import type { TownApi } from '../api/townApi';
+import { normalizeTownRow, type TownApi } from '../api/townApi';
 import { TownActionResult } from '../components/TownActionResult';
 import { TownConfirmSheet } from '../components/TownConfirmSheet';
 import { TownItemList } from '../components/TownItemList';
@@ -57,7 +57,7 @@ function FishingLoopPanel({ api, resolveCaptcha, onOpenBattle, onNavigateMode }:
         <Text style={styles.summaryLabel}>남은 낚시 횟수</Text>
         <Text style={styles.remainingCasts}>{value(state.remainingCasts, '회')}</Text>
         <Text style={styles.summaryLabel}>현재 물고기 상태</Text>
-        <Text style={styles.waterStatus}>{state.waterStatus ?? '물고기 움직임을 확인할 수 없습니다.'}</Text>
+        <Text style={styles.waterStatus}>{fishingStatus(state.waterStatus)}</Text>
         <Text style={styles.baitStatus}>미끼 경단 {value(state.baitCount, '개')} · 빛나는 미끼 {value(state.shiningBaitCount, '개')}</Text>
         {state.escapeSeconds !== null ? <Text style={styles.warning}>도망까지 {state.escapeSeconds}초</Text> : null}
         {state.combo !== null ? <Text style={styles.notice}>현재 {state.combo} 콤보</Text> : null}
@@ -119,9 +119,11 @@ function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<Fish
   const path = categoryId == null
     ? '/api/town/fishing-exchange' as const
     : `/api/town/fishing-exchange?categoryCandidateId=${encodeURIComponent(categoryId)}` as const;
-  const load = useCallback(() => api.load<FishingExchangeResponse>(path), [api, path]);
+  const load = useCallback(async () => normalizeFishingExchangeResponse(await api.load<unknown>(path)), [api, path]);
   const submitAction = useCallback(async (request: FishingExchangeRequest): Promise<TownActionResultResponse> => {
-    const response = await api.submit<FishingExchangeRequest, FishingExchangeResponse>('/api/town/fishing-exchange', request);
+    const response = normalizeFishingExchangeResponse(
+      await api.submit<FishingExchangeRequest, unknown>('/api/town/fishing-exchange', request),
+    );
     setActionResponse(response);
     setSelectedIds((current) => current.filter((id) => response.items.some((item) => item.id === id && item.selectable)).slice(0, 1));
     setConfirming(false);
@@ -217,6 +219,39 @@ function ErrorState({ message, onRetry }: { message: string | null; onRetry: () 
 
 function informational(message: string): TownActionResultResponse {
   return { status: 'INFORMATIONAL', messages: [message], items: [], refreshRequired: true };
+}
+
+function fishingStatus(status: string | null): string {
+  if (!status) return '물고기 움직임을 확인할 수 없습니다.';
+  const cleaned = status.replace(/^\s*[（(]?\s*오늘의 남은 낚시 횟수\s*[:：]?\s*\d+회\s*[）)]?\s*/, '').trim();
+  return cleaned || '물고기 움직임을 확인할 수 없습니다.';
+}
+
+function normalizeFishingExchangeResponse(value: unknown): FishingExchangeResponse {
+  if (!isRecord(value) || !Array.isArray(value.categories) || !Array.isArray(value.items)) {
+    throw new Error('낚시 교환소 응답 형식을 확인할 수 없습니다.');
+  }
+  const categories = value.categories.filter(isRecord).map((category) => ({
+    id: typeof category.id === 'string' ? category.id.trim() : '',
+    label: typeof category.label === 'string' ? category.label.trim() : '',
+    current: category.current === true,
+  })).filter((category) => category.id.length > 0 && category.label.length > 0);
+  const items = value.items.filter(isRecord).map((item) => ({
+    ...normalizeTownRow(item),
+    materials: Array.isArray(item.materials)
+      ? item.materials.filter((material): material is string => typeof material === 'string').map((material) => material.trim()).filter(Boolean)
+      : [],
+  })).filter((item) => item.id.length > 0);
+  return {
+    categories,
+    currentCategoryId: typeof value.currentCategoryId === 'string' ? value.currentCategoryId : null,
+    items,
+    result: isRecord(value.result) ? value.result as TownActionResultResponse : null,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 function value(input: number | null, suffix: string) { return input === null ? '확인 불가' : `${input}${suffix}`; }
 

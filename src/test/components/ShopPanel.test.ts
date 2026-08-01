@@ -57,7 +57,7 @@ describe('ShopPanel', () => {
     assert.ok(button('Bread 선택'));
   });
 
-  it('상점 원문의 이름 유형 상세 가격을 중복 없이 나누고 선택 카드 옆에 수량을 둔다', async () => {
+  it('상점 원문의 이름 유형 상세 가격을 중복 없이 나누고 선택 수량을 목록 아래에 둔다', async () => {
     const woodShield = {
       ...shop('general'),
       items: [{
@@ -76,8 +76,7 @@ describe('ShopPanel', () => {
 
     await press('WoodShield 선택');
     assert.ok(button('WoodShield 구매 수량'));
-    assert.equal(text().includes('WoodShield 구매 수량'), false, '하단의 큰 품목별 수량 필드는 만들지 않는다');
-    assert.equal(text().includes('수량'), true);
+    assert.equal(text().includes('WoodShield 구매 수량'), true);
   });
 
   it('잡화점은 사용 가능 횟수를 상세에 남기고 useitem 유형만 제목으로 분리한다', async () => {

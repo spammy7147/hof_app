@@ -53,6 +53,18 @@ describe('FishingPanel', () => {
     assert.equal(text.includes('빛나는 미끼 0개'), true);
   });
 
+  it('물고기 상태에서 중복되는 남은 낚시 횟수 문구를 제거한다', async () => {
+    const response = {
+      ...fishing('START', ['START']),
+      waterStatus: '(오늘의 남은 낚시 횟수 : 17회) 수면이 빛난다.',
+    };
+    await render(React.createElement(FishingPanel, { api: fakeApi({ load: async () => response }) }));
+
+    const text = allText();
+    assert.equal(text.includes('(오늘의 남은 낚시 횟수'), false);
+    assert.equal(text.includes('수면이 빛난다.'), true);
+  });
+
   it('START에서 CATCH로 한 번씩만 수동 전환하고 보조 action은 자동 실행하지 않는다', async () => {
     const calls: string[] = [];
     const api = fakeApi({
@@ -124,6 +136,30 @@ describe('FishingPanel', () => {
     const unavailable = button('교환 불가 선택 불가');
     assert.equal(unavailable.props.disabled, true);
     assert.equal(allText().includes('교환 불가'), true);
+  });
+
+  it('교환소 응답 배열이 누락돼도 화면 예외 대신 오류 상태를 표시한다', async () => {
+    await render(React.createElement(FishingPanel, {
+      api: fakeApi({ load: async () => ({ message: 'unexpected response' }) }),
+      mode: 'exchange',
+    }));
+
+    assert.equal(allText().includes('낚시 교환소 응답 형식을 확인할 수 없습니다.'), true);
+    assert.ok(button('낚시 정보 다시 불러오기'));
+  });
+
+  it('교환 품목의 materials가 누락돼도 안전하게 목록을 표시한다', async () => {
+    await render(React.createElement(FishingPanel, {
+      api: fakeApi({ load: async () => ({
+        categories: [{ id: 'type:all', label: '전부', current: true }],
+        currentCategoryId: 'type:all',
+        items: [{ id: 'rank', label: 'Rank Fish', selectable: true, detail: null, imageUrl: null, price: null, quantity: null }],
+        result: null,
+      }) }),
+      mode: 'exchange',
+    }));
+
+    assert.equal(allText().includes('Rank Fish'), true);
   });
 
   it('교환 품목 분류는 아이템 행이 아니라 상단 선택지로 전환한다', async () => {
