@@ -17,11 +17,15 @@ const { ColosseumPanel } = require('../../main/features/town/panels/ColosseumPan
 let mounted: ReactTestRenderer | null = null; afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; });
 
 describe('ColosseumPanel', () => {
-  it('저장된 팀을 checkbox로 표시하고 Set Team 요청을 보낸다', async () => {
+  it('저장된 팀을 5개 검색형 슬롯으로 표시하고 Set Team 요청을 보낸다', async () => {
     const calls: unknown[] = []; const value = battle();
     await render(React.createElement(ColosseumPanel, { api: api(async () => value, async (path, request) => { calls.push({ path, request }); return value; }), mode: 'battle' }));
-    assert.equal(button('카즈 선택').props.accessibilityRole, 'checkbox');
-    await press('카즈 선택'); await press('팀 저장'); await pressLast('팀 저장');
+    assert.equal(buttons('1번 팀원 선택').length, 1); assert.equal(buttons('5번 팀원 선택').length, 1);
+    await press('2번 팀원 선택');
+    const search = mounted!.root.find((n) => n.props.accessibilityLabel === '2번 팀원 검색');
+    await act(async () => search.props.onChangeText('카즈'));
+    assert.equal(button('카즈 팀원 선택').props.accessibilityState.selected, false);
+    await press('카즈 팀원 선택'); await press('팀 저장'); await pressLast('팀 저장');
     assert.deepEqual(calls, [{ path: '/api/town/pvp/colosseum/team', request: { fighterCandidateIds: ['f1', 'f2'] } }]);
   });
 
@@ -29,6 +33,7 @@ describe('ColosseumPanel', () => {
     const calls: unknown[] = []; const value = battle(); const next = { ...battle(), battleResult: result() };
     await render(React.createElement(ColosseumPanel, { api: api(async () => value, async (path, request) => { calls.push({ path, request }); return next; }), mode: 'battle' }));
     assert.equal(button('라이벌 선택').props.accessibilityRole, 'radio');
+    assert.ok(text().indexOf('Challenge') < text().indexOf('콜로세움 팀'));
     await press('라이벌 선택'); await press('Challenge'); await pressLast('Challenge');
     assert.deepEqual(calls, [{ path: '/api/town/pvp/colosseum/challenge', request: { opponentCandidateId: 'o1' } }]);
     assert.equal(text().includes('공민이는 승리했다'), true); assert.equal(text().includes('내 상태 5/5 · 상대 상태 0/5'), true); assert.equal(text().includes('전투 상세 펼치기'), true);

@@ -47,13 +47,23 @@ export function HomePanel({ api, mode, resolveCaptcha }: { api: TownApi; mode: M
   } : null;
   const finish = (result: TownActionResultResponse) => { if (staged.current) setResponse(staged.current); staged.current = null; setSelectedId(null); setConfirmation(null); return result; };
   const submit = () => { if (!confirmation) return; void town.submit(confirmation).then(finish).catch((error: unknown) => { if (!(error instanceof TownMutationBusyError)) setConfirmation(null); }); };
+  const submitRest = () => {
+    if (!mutation) return;
+    void town.submit(mutation).then(finish).catch(() => undefined);
+  };
+  const result = data.result ?? town.result;
   return <View style={styles.container}>
     <Text style={styles.title}>{mode === 'home' ? '자택 관리' : '휴식처'}</Text>
     {mode === 'home' ? <Text style={styles.hint}>자택 퀘스트는 수락 → 조건 달성 → 완료 순서로 표시됩니다.</Text> : null}
     <TownItemList rows={mode === 'home' ? rowsOf(data) : []} selectionMode={mode === 'home' ? 'single' : 'none'} selectedIds={selectedId ? [selectedId] : []} onSelectionChange={mode === 'home' ? (ids) => setSelectedId(ids[0] ?? null) : undefined} emptyMessage={mode === 'home' ? '표시할 자택 퀘스트가 없습니다.' : null}
       header={mode === 'rest' && data.restStatus ? <RestStatusCard status={data.restStatus} expanded={facilitiesExpanded} onToggle={() => setFacilitiesExpanded((value) => !value)} /> : null}
-      footer={<View style={styles.footer}>{mutation ? <ActionButton label={mutation.actionLabel} disabled={town.status === 'submitting'} onPress={() => setConfirmation(mutation)} /> : <Text style={styles.hint}>{mode === 'home' ? '수락 또는 완료 가능한 퀘스트를 선택하세요.' : '현재 휴식을 이용할 수 없습니다.'}</Text>}{data.result || town.result ? <TownActionResult result={data.result ?? town.result!} onRefresh={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}</View>} />
-    <TownConfirmSheet visible={confirmation != null} title={`${confirmation?.actionLabel ?? 'action'} 확인`} message="HOF에 이 action을 한 번 요청합니다. 자동 반복하지 않습니다." confirmLabel={confirmation?.actionLabel ?? '실행'} submitting={town.status === 'submitting'} details={[{ label: mode === 'home' ? '퀘스트' : '복구', value: confirmation?.itemLabel ?? '선택 없음' }, ...(mode === 'rest' ? [{ label: '예상 회복', value: confirmation?.expectedRecovery ?? '확인 불가' }, { label: '최대치 초과분', value: confirmation?.overflow ?? '확인 불가', warning: confirmation?.overflow !== '0 Time' && confirmation?.overflow !== '확인 불가' }] : [])]} onCancel={() => setConfirmation(null)} onConfirm={submit} />
+      footer={<View style={styles.footer}>
+        {mode === 'rest' && result ? <TownActionResult result={result} showStatusLabel={false} /> : null}
+        {mutation ? <ActionButton label={mutation.actionLabel} disabled={town.status === 'submitting'} onPress={mode === 'rest' ? submitRest : () => setConfirmation(mutation)} /> : <Text style={styles.hint}>{mode === 'home' ? '수락 또는 완료 가능한 퀘스트를 선택하세요.' : '현재 휴식을 이용할 수 없습니다.'}</Text>}
+        {mode === 'home' && result ? <TownActionResult result={result} onRefresh={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}
+        {town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}
+      </View>} />
+    {mode === 'home' ? <TownConfirmSheet visible={confirmation != null} title={`${confirmation?.actionLabel ?? 'action'} 확인`} message="HOF에 이 action을 한 번 요청합니다. 자동 반복하지 않습니다." confirmLabel={confirmation?.actionLabel ?? '실행'} submitting={town.status === 'submitting'} details={[{ label: '퀘스트', value: confirmation?.itemLabel ?? '선택 없음' }]} onCancel={() => setConfirmation(null)} onConfirm={submit} /> : null}
   </View>;
 }
 

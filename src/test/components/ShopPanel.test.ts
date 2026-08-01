@@ -125,16 +125,55 @@ describe('ShopPanel', () => {
     assert.deepEqual(submissions, [{ items: [{ candidateId: 'free', quantity: 1 }] }]);
   });
 
+  it('판매 품목의 중복 정보를 정리하고 카드 안에서 수량을 입력하며 작업 영역을 목록 밖에 둔다', async () => {
+    const sell = { items: [{
+      id: 'axe', label: "High Lord's Rule Over", selectable: true,
+      detail: "$ 0 High Lord's Rule Over (Axe) x1 / Atk:299 / Summon+10% / h:10 / M:Elementium",
+      imageUrl: null, price: 0, quantity: 1, type: null,
+    }], result: null };
+    await render(React.createElement(ShopPanel, { api: api(async () => sell), mode: 'sell' }));
+
+    const rendered = text();
+    assert.equal(rendered.includes("High Lord's Rule Over (Axe) x 1"), true);
+    assert.equal(rendered.includes('Atk:299 / Summon+10% / h:10 / M:Elementium'), true);
+    assert.equal(rendered.includes('$ 0 High Lord'), false);
+    assert.equal(rendered.includes('보유 1'), false);
+
+    await press("High Lord's Rule Over 선택");
+    const selectedCard = button("High Lord's Rule Over 선택").parent!;
+    assert.equal(selectedCard.findAll((node) => String(node.type) === 'TextInput' && node.props.accessibilityLabel === "High Lord's Rule Over 판매 수량").length, 1);
+    const actionBar = mounted!.root.findByProps({ testID: 'sell-action-bar' });
+    assert.notEqual(String(actionBar.parent?.type), 'FlatList');
+    assert.ok(actionBar.findAll((node) => node.props.accessibilityLabel === '선택 품목 판매').length >= 1);
+  });
+
   it('주재료 한 개와 부재료 세 슬롯을 선택해야 Combine을 제출한다', async () => {
     const submissions: unknown[] = [];
     const combine = { primary: [{ id: 'm', label: 'Milk', quantity: 3 }], secondarySlots: [[{ id: 'a', label: 'A', quantity: 3 }], [{ id: 'b', label: 'B', quantity: 3 }], [{ id: 'c', label: 'C', quantity: 3 }]], result: null };
     await render(React.createElement(ShopPanel, { api: api(async () => combine, async (_path, request) => { submissions.push(request); return { ...combine, result: result('SUCCESS') }; }), mode: 'combine' }));
     assert.equal(button('조합').props.disabled, true);
-    for (const label of ['주재료 Milk 선택', '부재료 1 A 선택', '부재료 2 B 선택', '부재료 3 C 선택']) await press(label);
+    for (const [slot, option] of [['주재료', 'Milk'], ['부재료(대)', 'A'], ['부재료(중)', 'B'], ['부재료(소)', 'C']]) { await press(`${slot} 선택`); await press(`${option} 선택`); }
     await change('조합 결과 수량', '2'); await press('조합');
-    for (const expected of ['주재료', 'Milk · 2개 사용', '부재료 1', 'A · 2개 사용', '부재료 2', 'B · 2개 사용', '부재료 3', 'C · 2개 사용', '조합 결과 수량', '2개']) assert.equal(text().includes(expected), true);
+    for (const expected of ['주재료', 'Milk · 2개 사용', '부재료(대)', 'A · 2개 사용', '부재료(중)', 'B · 2개 사용', '부재료(소)', 'C · 2개 사용', '조합 결과 수량', '2개']) assert.equal(text().includes(expected), true);
     await pressLast('Combine');
     assert.deepEqual(submissions, [{ primaryCandidateId: 'm', secondaryCandidateIds: ['a', 'b', 'c'], quantity: 2 }]);
+  });
+
+  it('조합 슬롯마다 검색 가능한 드롭다운을 열고 선택 해제로 슬롯을 비운다', async () => {
+    const combine = { primary: [{ id: 'milk', label: 'Milk', quantity: 3 }, { id: 'dragon', label: 'Dragon Meat', quantity: 50 }], secondarySlots: [[], [], []], result: null };
+    await render(React.createElement(ShopPanel, { api: api(async () => combine), mode: 'combine' }));
+
+    for (const slot of ['주재료', '부재료(대)', '부재료(중)', '부재료(소)']) assert.ok(button(`${slot} 선택`));
+    await press('주재료 선택');
+    await change('주재료 소재 검색', 'dragon');
+    assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === 'Milk 선택').length, 0);
+    await press('Dragon Meat 선택');
+    assert.equal(text().includes('Dragon Meat x 50'), true);
+
+    await press('주재료 선택');
+    await press('선택 해제 선택');
+    assert.equal(text().includes('Dragon Meat x 50'), false);
+    assert.equal(button('조합').props.disabled, true);
   });
 
   it('같은 소재가 여러 조합 슬롯에 있어도 슬롯별 radio 이름과 선택을 구분한다', async () => {
@@ -143,7 +182,7 @@ describe('ShopPanel', () => {
     const combine = { primary: [shared], secondarySlots: [[shared], [shared], [shared]], result: null };
     await render(React.createElement(ShopPanel, { api: api(async () => combine, async (_path, request) => { submissions.push(request); return { ...combine, result: result('SUCCESS') }; }), mode: 'combine' }));
 
-    for (const label of ['주재료 Shared 선택', '부재료 1 Shared 선택', '부재료 2 Shared 선택', '부재료 3 Shared 선택']) await press(label);
+    for (const slot of ['주재료', '부재료(대)', '부재료(중)', '부재료(소)']) { await press(`${slot} 선택`); await press('Shared 선택'); }
     await press('조합'); await pressLast('Combine');
 
     assert.deepEqual(submissions, [{ primaryCandidateId: 'same', secondaryCandidateIds: ['same', 'same', 'same'], quantity: 1 }]);

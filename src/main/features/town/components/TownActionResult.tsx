@@ -8,10 +8,11 @@ import { normalizeTownResult } from '../api/townApi';
 type TownActionResultProps = {
   result: TownActionResultResponse;
   onRefresh?: () => void;
+  showStatusLabel?: boolean;
 };
 
 /** backend가 추출한 문구와 item만 표시하며 HOF HTML을 받을 prop 자체를 제공하지 않는다. */
-export function TownActionResult({ result, onRefresh }: TownActionResultProps) {
+export function TownActionResult({ result, onRefresh, showStatusLabel = true }: TownActionResultProps) {
   const displayResult = normalizeTownResult(result);
   const emptyUnknown = displayResult.status === 'UNKNOWN'
     && displayResult.messages.length === 0
@@ -19,7 +20,7 @@ export function TownActionResult({ result, onRefresh }: TownActionResultProps) {
 
   return (
     <View accessibilityLiveRegion="polite" style={[styles.card, statusStyle(displayResult.status)]}>
-      <Text style={styles.title}>{statusLabel(displayResult.status)}</Text>
+      {showStatusLabel ? <Text style={styles.title}>{statusLabel(displayResult.status)}</Text> : null}
       {displayResult.messages.map((message, index) => (
         <Text key={`${message}-${index}`} style={styles.message}>{message}</Text>
       ))}

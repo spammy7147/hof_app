@@ -96,19 +96,6 @@ function FishingLoopPanel({ api, resolveCaptcha, characters, partyPresetCatalog,
         </View>
       ) : null}
       {state.lastOutcome === 'ESCAPED' ? <Text style={styles.muted}>물고기가 도망쳤습니다. 다음 낚시를 시작할 수 있습니다.</Text> : null}
-      {state.catches.length > 0 ? (
-        <View accessibilityLabel="낚시 획득 결과" style={styles.catchList}>
-          <Text style={styles.heading}>획득한 물고기</Text>
-          {state.catches.map((caught, index) => (
-            <View key={`${caught.name}-${index}`} style={styles.catchCard}>
-              <Text style={styles.heading}>{caught.name} × {caught.quantity}</Text>
-              <Text style={styles.info}>남은 사용 횟수 {caught.remainingUses === null ? '확인 불가' : `${caught.remainingUses}회`}</Text>
-              <Text style={styles.info}>효과 {caught.effect ?? '확인 불가'}</Text>
-            </View>
-          ))}
-        </View>
-      ) : null}
-      {state.result ? <TownActionResult onRefresh={() => { setActionState(null); void town.reload(); }} result={state.result} /> : null}
       {town.error ? <Text style={styles.error}>{town.error}</Text> : null}
       <NavigateButton label="낚시 교환소로 이동" onPress={() => onNavigateMode?.('exchange')} />
     </View>

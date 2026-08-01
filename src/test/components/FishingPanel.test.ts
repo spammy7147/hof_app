@@ -96,17 +96,20 @@ describe('FishingPanel', () => {
     assert.equal(allText().includes('물고기가 도망쳤습니다.'), true);
   });
 
-  it('획득 물고기의 이름 수량 사용횟수 효과를 결과에 표시한다', async () => {
+  it('낚시 결과를 현재 물고기 상태에 표시하고 별도 완료 카드는 만들지 않는다', async () => {
     const caught = {
       ...fishing('START', ['START']),
+      waterStatus: '낚는다!\nRank Fish (100회 사용가능) / 사용 효과: HP+3000 x2 을(를) 획득했다!',
       catches: [{ name: 'Rank Fish', quantity: 2, remainingUses: 100, effect: 'HP+3000, HP Regen+2%' }],
+      result: { status: 'SUCCESS' as const, messages: ['낚는다!'], items: [{ name: 'Rank Fish', quantity: null, imageUrl: null, detail: null }], refreshRequired: true },
     };
     await render(React.createElement(FishingPanel, { api: fakeApi({ load: async () => caught }) }));
 
     const text = allText();
-    assert.equal(text.includes('Rank Fish × 2'), true);
-    assert.equal(text.includes('남은 사용 횟수 100회'), true);
-    assert.equal(text.includes('효과 HP+3000, HP Regen+2%'), true);
+    assert.equal(text.includes('낚는다!'), true);
+    assert.equal(text.includes('Rank Fish (100회 사용가능)'), true);
+    assert.equal(text.includes('완료'), false);
+    assert.equal(findButton('마을 정보 새로고침'), null);
   });
 
   it('전투 중에는 이동 버튼 대신 현재 낚시 맵의 프리셋 전투 패널을 표시한다', async () => {

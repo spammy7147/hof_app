@@ -65,7 +65,7 @@ describe('HomePanel', () => {
     assert.deepEqual(calls, [{ path: '/api/town/home/quests', body: { actionId: 'claim' } }]);
   });
 
-  it('휴식 action 카드를 만들지 않고 휴식을 취한다 버튼 하나로 확인을 연다', async () => {
+  it('휴식 결과를 버튼 위에 제목 없이 표시하고 확인 없이 즉시 요청한다', async () => {
     const rest = {
       mode: 'REST',
       quests: [],
@@ -73,9 +73,13 @@ describe('HomePanel', () => {
       restStatus: { currentTime: 5700, maxTime: 6000, baseRecovery: 3000, facilityRecovery: 200, usedToday: false, facilities: ['안락한 침대'] },
       result: null,
     };
+    const completed = {
+      ...rest,
+      result: { status: 'SUCCESS', messages: ['파티원들은 충분한 휴식을 취했다.', 'Time이 300 회복되었습니다.'], items: [], refreshRequired: true },
+    };
     const calls: unknown[] = [];
     await render(React.createElement(HomePanel, {
-      api: { load: async () => rest, submit: async (path: string, body: unknown) => { calls.push({ path, body }); return rest; } } as never,
+      api: { load: async () => rest, submit: async (path: string, body: unknown) => { calls.push({ path, body }); return completed; } } as never,
       mode: 'rest',
     }));
 
@@ -86,13 +90,14 @@ describe('HomePanel', () => {
     await press('보유 시설 펼치기');
     assert.match(text(), /안락한 침대/);
     await press('휴식을 취한다');
-    assert.equal(calls.length, 0);
-    const sheet = mounted!.root.findByProps({ testID: 'town-confirm-sheet' });
-    const sheetText = sheet.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join('')).join(' ');
-    assert.match(sheetText, /예상 회복 300 Time/);
-    assert.match(sheetText, /최대치 초과분 2,900 Time/);
-    await pressLast('휴식을 취한다');
     assert.deepEqual(calls, [{ path: '/api/town/rest/restore', body: { actionId: 'restore' } }]);
+    assert.match(text(), /파티원들은 충분한 휴식을 취했다/);
+    assert.match(text(), /Time이 300 회복되었습니다/);
+    assert.doesNotMatch(text(), /완료/);
+    assert.equal(mounted!.root.findAllByProps({ testID: 'town-confirm-sheet' }).length, 0);
+    assert.equal(mounted!.root.findAllByProps({ accessibilityLabel: '마을 정보 새로고침' }).length, 0);
+    const allText = mounted!.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join(''));
+    assert.ok(allText.indexOf('Time이 300 회복되었습니다.') < allText.indexOf('휴식을 취한다'));
   });
 });
 
