@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import type { ReactElement, ReactNode } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle } from 'react-native';
 
 import { theme } from '../../../styles/theme';
 import type { TownRowResponse } from '../../../types/api';
@@ -17,6 +17,7 @@ type TownItemListProps = {
   emptyMessage?: string | null;
   header?: ReactElement | null;
   footer?: ReactElement | null;
+  labelTextStyle?: StyleProp<TextStyle> | ((row: TownRowResponse) => StyleProp<TextStyle>);
   renderTrailing?: (row: TownRowResponse) => ReactNode;
   renderSelectedFooter?: (row: TownRowResponse) => ReactNode;
 };
@@ -33,6 +34,7 @@ export function TownItemList({
   emptyMessage = '표시할 항목이 없습니다.',
   header,
   footer,
+  labelTextStyle,
   renderTrailing,
   renderSelectedFooter,
 }: TownItemListProps) {
@@ -85,10 +87,11 @@ export function TownItemList({
         };
         const trailing = renderTrailing?.(item);
         const selectedFooter = isSelected ? renderSelectedFooter?.(item) : null;
+        const resolvedLabelTextStyle = typeof labelTextStyle === 'function' ? labelTextStyle(item) : labelTextStyle;
         const content = <>
           {item.imageUrl ? <Image accessible={false} source={{ uri: item.imageUrl }} style={styles.image} /> : null}
           <View style={styles.content}>
-            <Text style={styles.label}>{item.label}</Text>
+            <Text style={[styles.label, resolvedLabelTextStyle]}>{item.label}</Text>
             {item.detail ? <Text style={styles.detail}>{item.detail}</Text> : null}
             <View style={styles.metadata}>
               {item.price !== null ? <Text style={styles.meta}>${item.price.toLocaleString()}</Text> : null}

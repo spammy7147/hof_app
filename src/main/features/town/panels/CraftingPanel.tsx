@@ -117,6 +117,7 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
 
   return <View style={styles.container}>
     <TownItemList rows={listRows} selectionMode="grouped-single" selectedIds={[...selectedIds.map((id) => `recipe:${id}`), ...additionalIds.map((id) => `additional:${id}`)]}
+      labelTextStyle={(row) => row.id.startsWith('recipe:') ? styles.itemHeadline : undefined}
       selectionGroup={(row) => row.id.startsWith('additional:') ? 'additional' : row.id.startsWith('recipe:') ? 'recipe' : 'display'}
       displayOnlyRow={(row) => row.id.startsWith('history:')}
       onSelectionChange={(ids) => {
@@ -140,7 +141,38 @@ function buildRequest(mode: CraftingMode, candidateId: string | undefined, categ
   if (mode === 'create') return { recipeCandidateId: candidateId, categoryCandidateId, quantity, additionalMaterialCandidateId: materialId ?? null } satisfies CreateCraftRequest;
   return { candidateId, categoryCandidateId, quantity } satisfies WorkbaseStartRequest;
 }
-function toRow(item: CraftingResponse['rows'][number], group: 'recipe'): TownRowResponse { return { id: `${group}:${item.id}`, accessibilityLabel: `${item.label}${item.selectable ? ' 선택' : ' 선택 불가'}`, label: item.label, selectable: item.selectable, detail: [item.detail, item.workSeconds != null ? `개당 제작 시간 ${item.workSeconds.toLocaleString()}초` : null].filter(Boolean).join(' · ') || null, imageUrl: null, price: item.cost, quantity: item.owned }; }
+function toRow(item: CraftingResponse['rows'][number], group: 'recipe'): TownRowResponse {
+  const presentation = presentCraftingItem(item.label, item.detail, item.owned);
+  return {
+    id: `${group}:${item.id}`,
+    accessibilityLabel: `${item.label}${item.selectable ? ' 선택' : ' 선택 불가'}`,
+    label: presentation.label,
+    selectable: item.selectable,
+    detail: [presentation.detail, item.workSeconds != null ? `개당 제작 시간 ${item.workSeconds.toLocaleString()}초` : null].filter(Boolean).join(' · ') || null,
+    imageUrl: null,
+    price: item.cost,
+    quantity: null,
+  };
+}
+
+function presentCraftingItem(label: string, detail: string | null, owned: number | null): { label: string; detail: string | null } {
+  const normalizedLabel = cleanDisplayText(label);
+  const quantityMatch = normalizedLabel.match(/^(.*?)\s+([x×]\s*[\d,]+)\s*(?:\/\s*(.*))?$/i);
+  const titleWithType = quantityMatch?.[1]?.trim() || normalizedLabel;
+  const quantity = quantityMatch?.[2]?.replace(/\s+/g, '') ?? (owned == null ? null : `x${owned.toLocaleString()}`);
+  const typeMatch = titleWithType.match(/^(.*?)\s+(\([^()]+\))$/);
+  const itemName = typeMatch?.[1]?.trim() || titleWithType;
+  const type = typeMatch?.[2]?.trim() ?? null;
+  const labelRemainder = quantityMatch?.[3]?.trim().replace(/\s*\/\s*/g, ' · ') || null;
+  const normalizedDetail = cleanDisplayText(detail ?? '').replace(/^[$￦]\s*[\d,]+\s*/, '').trim();
+  const distinctDetail = normalizedDetail && normalizedDetail !== normalizedLabel ? normalizedDetail : null;
+  return {
+    label: [itemName, quantity].filter(Boolean).join(' '),
+    detail: [type, labelRemainder, distinctDetail].filter(Boolean).join(' · ') || null,
+  };
+}
+
+function cleanDisplayText(value: string): string { return value.replace(/\s+/g, ' ').trim(); }
 function CategoryList({ data, disabled, onSelect }: { data: CraftingResponse; disabled: boolean; onSelect: (id: string) => void }) { return <View accessibilityRole="radiogroup" style={styles.chips}>{data.categories.map((category) => <Pressable key={category.id} accessibilityLabel={`${category.label} 분류`} accessibilityRole="radio" accessibilityState={{ checked: category.current, disabled }} disabled={disabled} onPress={() => { if (!category.current) onSelect(category.id); }} style={[styles.chip, category.current && styles.chipSelected, disabled && styles.disabled]}><Text style={styles.chipText}>{category.label}</Text></Pressable>)}</View>; }
 function QuantityInput({ value, onChange, min, max, valid }: { value: string; onChange: (value: string) => void; min: number; max: number; valid: boolean }) { return <View style={styles.section}><Text style={styles.label}>수량</Text><TextInput accessibilityLabel="제작 수량" keyboardType="number-pad" value={value} onChangeText={onChange} style={[styles.input, !valid && styles.invalid]} />{!valid ? <Text accessibilityRole="alert" style={styles.error}>{min}~{max.toLocaleString()} 사이의 정수를 입력하세요.</Text> : null}</View>; }
 function History({ count, open, onToggle }: { count: number; open: boolean; onToggle: () => void }) { return <Pressable accessibilityLabel={`Hall of Pain 기록 ${open ? '접기' : '펼치기'}`} accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={onToggle}><Text style={styles.history}>Hall of Pain {count.toLocaleString()}건 {open ? '접기' : '펼치기'}</Text></Pressable>; }
@@ -150,4 +182,4 @@ function titleFor(mode: CraftingMode) { return ({ workbase: '작업장-재봉틀
 function information(message: string): TownActionResultResponse { return { status: 'INFORMATIONAL', messages: [message], items: [], refreshRequired: true }; }
 function identifyApi(api: TownApi): number { const object = api as object; const known = apiKeys.get(object); if (known != null) return known; const next = nextApiKey++; apiKeys.set(object, next); return next; }
 
-const styles = StyleSheet.create({ container: { flex: 1, gap: theme.spacing.md }, section: { gap: theme.spacing.sm, paddingVertical: theme.spacing.sm }, title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' }, label: { color: theme.colors.text, fontWeight: '900' }, hint: { color: theme.colors.textMuted, lineHeight: 20 }, warning: { color: theme.colors.accentAmber, lineHeight: 20 }, error: { color: theme.colors.danger, lineHeight: 20 }, chips: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs }, chip: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, minHeight: 40, justifyContent: 'center', paddingHorizontal: theme.spacing.md }, chipSelected: { borderColor: theme.colors.accentGreen }, chipText: { color: theme.colors.text, fontWeight: '700' }, job: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md, gap: theme.spacing.sm, padding: theme.spacing.md }, input: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md }, invalid: { borderColor: theme.colors.danger }, button: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, justifyContent: 'center', minHeight: 48, paddingHorizontal: theme.spacing.md }, buttonText: { color: theme.colors.background, fontWeight: '900' }, disabled: { opacity: 0.45 }, history: { color: theme.colors.accentBlue, fontWeight: '800', paddingVertical: theme.spacing.sm } });
+const styles = StyleSheet.create({ container: { flex: 1, gap: theme.spacing.md }, section: { gap: theme.spacing.sm, paddingVertical: theme.spacing.sm }, title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' }, itemHeadline: { color: theme.colors.text, fontSize: 17, fontWeight: '900' }, label: { color: theme.colors.text, fontWeight: '900' }, hint: { color: theme.colors.textMuted, lineHeight: 20 }, warning: { color: theme.colors.accentAmber, lineHeight: 20 }, error: { color: theme.colors.danger, lineHeight: 20 }, chips: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs }, chip: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, minHeight: 40, justifyContent: 'center', paddingHorizontal: theme.spacing.md }, chipSelected: { borderColor: theme.colors.accentGreen }, chipText: { color: theme.colors.text, fontWeight: '700' }, job: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md, gap: theme.spacing.sm, padding: theme.spacing.md }, input: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md }, invalid: { borderColor: theme.colors.danger }, button: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, justifyContent: 'center', minHeight: 48, paddingHorizontal: theme.spacing.md }, buttonText: { color: theme.colors.background, fontWeight: '900' }, disabled: { opacity: 0.45 }, history: { color: theme.colors.accentBlue, fontWeight: '800', paddingVertical: theme.spacing.sm } });

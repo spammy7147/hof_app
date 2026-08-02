@@ -18,6 +18,21 @@ const { CraftingPanel } = require('../../main/features/town/panels/CraftingPanel
 let mounted: ReactTestRenderer | null = null; afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; });
 
 describe('CraftingPanel', () => {
+  it('강화수치·아이템명·수량만 제목에 두고 타입과 능력치는 상세로 분리한다', async () => {
+    const raw = '+9 Shattered Elementium Destroyer (TwoHandSword) x1 / Atk:137 / Matk:59 / Def:15+120';
+    const refine = data('REFINE', {
+      rows: [{ id: 'item', label: raw, selectable: true, detail: `$ 113,500 ${raw}`, cost: 113_500, owned: 1, workSeconds: null }],
+      allowedRefineCounts: [1],
+    });
+    await render(React.createElement(CraftingPanel, { api: api(async () => refine), mode: 'refine' }));
+
+    const row = (mounted!.root.find((node) => String(node.type) === 'FlatList').props.data as Array<Record<string, unknown>>)[0];
+    assert.equal(row.label, '+9 Shattered Elementium Destroyer x1');
+    assert.equal(row.detail, '(TwoHandSword) · Atk:137 · Matk:59 · Def:15+120');
+    assert.equal(row.quantity, null);
+    assert.equal(text().includes('$ 113,500 +9 Shattered'), false);
+  });
+
   it('radio 없는 품목은 표시하되 선택할 수 없고 작업장은 수량 10을 제한한다', async () => {
     await render(React.createElement(CraftingPanel, { api: api(async () => data('WORKBASE', { maxQuantity: 10 })), mode: 'workbase' }));
 
