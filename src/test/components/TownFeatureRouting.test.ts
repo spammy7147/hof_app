@@ -78,7 +78,7 @@ describe('마을 33개 기능 route 통합', () => {
     );
     assert.deepEqual(
       TOWN_MENUS.filter(({ id }) => !TOWN_PANEL_REGISTRY[id].virtualized).map(({ id }) => id),
-      ['fishing'],
+      ['fishing', 'combine'],
     );
   });
 

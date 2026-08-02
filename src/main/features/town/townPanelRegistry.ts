@@ -42,7 +42,7 @@ export const TOWN_PANEL_REGISTRY = {
   sundriesShop: route('shop', 'sundries', '/api/town/shops/sundries', true),
   darkShop: route('shop', 'dark', '/api/town/shops/dark', true),
   sell: route('shop', 'sell', '/api/town/sell', true),
-  combine: route('shop', 'combine', '/api/town/combine', true),
+  combine: route('shop', 'combine', '/api/town/combine', false),
   auction: route('auction', 'auction', '/api/town/auction', true),
   auctionMarket: route('auction', 'market', '/api/town/auction-market', true),
 

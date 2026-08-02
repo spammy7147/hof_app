@@ -151,7 +151,14 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
     ) : route.panel === 'exchange' ? (
       <ExchangePanel key={`${selectedMenu.id}-${route.mode}`} api={townApi} mode={route.mode} resolveCaptcha={resolveCaptcha} />
     ) : route.panel === 'colosseum' ? (
-      <ColosseumPanel key={`${selectedMenu.id}-${route.mode}`} api={townApi} mode={route.mode} resolveCaptcha={resolveCaptcha} />
+      <ColosseumPanel
+        key={`${selectedMenu.id}-${route.mode}`}
+        api={townApi}
+        mode={route.mode}
+        characters={characters}
+        partyPresetCatalog={partyPresetCatalog}
+        resolveCaptcha={resolveCaptcha}
+      />
     ) : route.panel === 'raid' ? (
       <RaidPanel key={selectedMenu.id} api={townApi} resolveCaptcha={resolveCaptcha} onOpenBattle={onOpenFishingBattle} />
     ) : route.panel === 'pantheon' ? (

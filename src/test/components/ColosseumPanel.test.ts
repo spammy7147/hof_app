@@ -11,7 +11,7 @@ const reactNativeMock = {
 };
 type Loader = (request: string, parent: NodeModule | undefined, isMain: boolean) => unknown;
 const loader = Module as unknown as { _load: Loader }; const original = loader._load;
-loader._load = (request, parent, isMain) => { if (request === 'react-native') return reactNativeMock; if (request === 'react-native-safe-area-context') return { useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) }; if (request === 'expo-image') return { Image: host('Image') }; return original(request, parent, isMain); };
+loader._load = (request, parent, isMain) => { if (request === 'react-native') return reactNativeMock; if (request === 'react-native-safe-area-context') return { useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) }; if (request === 'expo-image') return { Image: host('Image') }; if (request.endsWith('/BattlePartyPresetPicker')) return { BattlePartyPresetPicker: host('BattlePartyPresetPicker') }; return original(request, parent, isMain); };
 const { ColosseumPanel } = require('../../main/features/town/panels/ColosseumPanel') as typeof import('../../main/features/town/panels/ColosseumPanel'); loader._load = original;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let mounted: ReactTestRenderer | null = null; afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; });
@@ -20,8 +20,11 @@ describe('ColosseumPanel', () => {
   it('저장된 팀을 5개 검색형 슬롯으로 표시하고 Set Team 요청을 보낸다', async () => {
     const calls: unknown[] = []; const value = battle();
     await render(React.createElement(ColosseumPanel, { api: api(async () => value, async (path, request) => { calls.push({ path, request }); return value; }), mode: 'battle' }));
+    assert.equal(mounted!.root.findAll((node) => String(node.type) === 'BattlePartyPresetPicker').length, 0);
+    await press('라이벌 선택');
+    await act(async () => presetPicker().props.onSelectDirect());
     assert.equal(buttons('1번 팀원 선택').length, 1); assert.equal(buttons('5번 팀원 선택').length, 1);
-    await press('2번 팀원 선택');
+    await press('1번 팀원 선택'); await press('공민이 팀원 선택'); await press('2번 팀원 선택');
     const search = mounted!.root.find((n) => n.props.accessibilityLabel === '2번 팀원 검색');
     await act(async () => search.props.onChangeText('카즈'));
     assert.equal(button('카즈 팀원 선택').props.accessibilityState.selected, false);
@@ -29,12 +32,27 @@ describe('ColosseumPanel', () => {
     assert.deepEqual(calls, [{ path: '/api/town/pvp/colosseum/team', request: { fighterCandidateIds: ['f1', 'f2'] } }]);
   });
 
+  it('상대를 선택한 뒤 프리셋 멤버를 콜로세움 팀 후보에 맞춰 채운다', async () => {
+    const calls: unknown[] = []; const value = battle();
+    const preset = { id: 7, accountId: 1, name: '콜로세움', folderId: null, displayOrder: 0, isPrimary: false, members: [{ slotIndex: 0, characterId: 'f2', patternSlot: 1 }, { slotIndex: 1, characterId: 'missing', patternSlot: 1 }, { slotIndex: 2, characterId: 'f1', patternSlot: 1 }], createdAt: '', updatedAt: '' };
+    const partyPresetCatalog = { catalog: { folders: [], presets: [preset] }, loading: false, error: null, retry: () => undefined };
+    await render(React.createElement(ColosseumPanel, { api: api(async () => value, async (path, request) => { calls.push({ path, request }); return value; }), mode: 'battle', partyPresetCatalog }));
+    await press('라이벌 선택');
+    await act(async () => presetPicker().props.onSelectPreset(preset));
+    assert.equal(text().includes('카즈'), true);
+    assert.equal(text().includes('팀원 2/5명'), true);
+    await press('팀 저장'); await pressLast('팀 저장');
+    assert.deepEqual(calls, [{ path: '/api/town/pvp/colosseum/team', request: { fighterCandidateIds: ['f2', 'f1'] } }]);
+  });
+
   it('Challenge는 팀 payload 없이 상대 id만 보내고 결과를 같은 화면에 표시한다', async () => {
     const calls: unknown[] = []; const value = battle(); const next = { ...battle(), battleResult: result() };
     await render(React.createElement(ColosseumPanel, { api: api(async () => value, async (path, request) => { calls.push({ path, request }); return next; }), mode: 'battle' }));
     assert.equal(button('라이벌 선택').props.accessibilityRole, 'radio');
+    await press('라이벌 선택');
+    await act(async () => presetPicker().props.onSelectDirect());
     assert.ok(text().indexOf('Challenge') < text().indexOf('콜로세움 팀'));
-    await press('라이벌 선택'); await press('Challenge'); await pressLast('Challenge');
+    await press('Challenge'); await pressLast('Challenge');
     assert.deepEqual(calls, [{ path: '/api/town/pvp/colosseum/challenge', request: { opponentCandidateId: 'o1' } }]);
     assert.equal(text().includes('공민이는 승리했다'), true); assert.equal(text().includes('내 상태 5/5 · 상대 상태 0/5'), true); assert.equal(text().includes('전투 상세 펼치기'), true);
   });
@@ -59,6 +77,7 @@ function api(load: (path: string) => Promise<unknown>, submit: (path: string, re
 async function render(element: React.ReactElement) { await act(async () => { mounted = create(element); await Promise.resolve(); await Promise.resolve(); }); }
 function buttons(label: string) { return mounted!.root.findAll((n) => String(n.type) === 'Pressable' && n.props.accessibilityLabel === label); }
 function button(label: string) { const found = buttons(label); assert.ok(found.length); return found[0]; }
+function presetPicker() { return mounted!.root.find((node) => String(node.type) === 'BattlePartyPresetPicker'); }
 async function press(label: string) { await act(async () => { button(label).props.onPress(); await Promise.resolve(); await Promise.resolve(); }); }
 async function pressLast(label: string) { await act(async () => { const found = mounted!.root.findAll((n) => String(n.type) === 'Pressable' && (n.props.accessibilityLabel === label || nodeText(n) === label)); assert.ok(found.length); found[found.length - 1].props.onPress(); await Promise.resolve(); await Promise.resolve(); }); }
 function text() { return mounted!.root.findAll((n) => String(n.type) === 'Text').map((n: ReactTestInstance) => n.children.join('')).join('\n'); }

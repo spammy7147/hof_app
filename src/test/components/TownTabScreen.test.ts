@@ -66,6 +66,7 @@ moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native-safe-area-context') return { useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) };
   if (request === 'expo-image') return { Image: host('Image') };
   if (request.endsWith('/BattleRunPanel')) return { BattleRunPanel: host('BattleRunPanel') };
+  if (request.endsWith('/BattlePartyPresetPicker')) return { BattlePartyPresetPicker: host('BattlePartyPresetPicker') };
   if (request.endsWith('/townAssets')) {
     return {
       TOWN_ICON_SOURCES: {
@@ -203,6 +204,23 @@ describe('TownTabScreen', () => {
     assert.equal(renderer.root.findAll((node) => node.props.accessibilityLabel === '마을 화면 스크롤').length, 0);
     assert.equal(findHosts(renderer.root, 'View').filter((node) => node.props.accessibilityLabel === '마을 가상 목록 화면').length, 1);
     assert.equal(findHosts(renderer.root, 'FlatList').filter((node) => node.props.nestedScrollEnabled === true).length, 1);
+  });
+
+  it('조합소 폼은 화면보다 길어질 때 외부 ScrollView로 스크롤한다', async () => {
+    const townApi = {
+      load: async () => ({ primary: [], secondarySlots: [[], [], []], result: null }),
+      submit: async () => { throw new Error('unexpected submit'); },
+    } as never;
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(TownTabScrollContainer, { townApi } as never)); });
+    mountedRenderer = renderer;
+
+    await press(renderer.root, '조합소 열기');
+    await act(async () => { await Promise.resolve(); });
+
+    assert.equal(findHosts(renderer.root, 'ScrollView').filter((node) => node.props.accessibilityLabel === '마을 화면 스크롤').length, 1);
+    assert.equal(findHosts(renderer.root, 'View').filter((node) => node.props.accessibilityLabel === '마을 가상 목록 화면').length, 0);
+    assert.equal(allText(renderer.root).includes('조합 결과 수량'), true);
   });
 
   it('상점 왕복에도 TownTabScreen 인스턴스와 검색 분류 스크롤 포커스를 보존한다', async () => {
