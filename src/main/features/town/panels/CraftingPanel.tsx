@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { theme } from '../../../styles/theme';
 import type {
@@ -23,6 +23,8 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [additionalIds, setAdditionalIds] = useState<string[]>([]);
   const [quantityText, setQuantityText] = useState('1');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
   const [refineCount, setRefineCount] = useState<number | null>(null);
   const [requestedCategoryId, setRequestedCategoryId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -56,11 +58,11 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
 
   useEffect(() => {
     stagedResponse.current = null;
-    setResponse(null); setActionResult(null); setSelectedIds([]); setAdditionalIds([]); setQuantityText('1'); setRefineCount(null); setRequestedCategoryId(null); setHistoryOpen(false); setConfirmation(null);
+    setResponse(null); setActionResult(null); setSelectedIds([]); setAdditionalIds([]); setQuantityText('1'); setSearchQuery(''); setMaterialPickerOpen(false); setRefineCount(null); setRequestedCategoryId(null); setHistoryOpen(false); setConfirmation(null);
   }, [apiKey, mode]);
   useEffect(() => {
     stagedResponse.current = null;
-    setResponse(null); setActionResult(null); setSelectedIds([]); setAdditionalIds([]); setConfirmation(null);
+    setResponse(null); setActionResult(null); setSelectedIds([]); setAdditionalIds([]); setMaterialPickerOpen(false); setConfirmation(null);
   }, [requestedCategoryId]);
   useEffect(() => {
     if (!data) return;
@@ -78,10 +80,13 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
   }, [mode, remaining == null || remaining <= 0]);
 
   if (!data) return <LoadState loading={town.status === 'loading'} error={town.error} reload={town.reload} />;
-  const rows = data.rows.map((item) => toRow(item, 'recipe'));
-  const addRows = mode === 'create' ? data.additionalMaterials.map((item): TownRowResponse => ({ id: `additional:${item.id}`, accessibilityLabel: `${item.label}${item.selectable ? ' 추가 소재 선택' : ' 추가 소재 선택 불가'}`, label: item.label, selectable: item.selectable, detail: ['추가 소재', item.detail].filter(Boolean).join(' · '), imageUrl: null, price: null, quantity: item.owned })) : [];
+  const normalizedQuery = cleanDisplayText(searchQuery).toLocaleLowerCase();
+  const visibleItems = normalizedQuery
+    ? data.rows.filter((item) => `${item.label} ${item.detail ?? ''}`.toLocaleLowerCase().includes(normalizedQuery))
+    : data.rows;
+  const rows = visibleItems.map((item) => toRow(item, 'recipe'));
   const historyRows = historyOpen ? data.history.map((line, index): TownRowResponse => ({ id: `history:${index}`, accessibilityLabel: line, label: line, selectable: false, detail: null, imageUrl: null, price: null, quantity: null })) : [];
-  const listRows = [...rows, ...addRows, ...historyRows];
+  const listRows = [...rows, ...historyRows];
   const selected = data.rows.find((row) => row.id === selectedIds[0]);
   const material = data.additionalMaterials.find((row) => row.id === additionalIds[0]);
   const categoryId = data.currentCategoryId;
@@ -104,28 +109,41 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
       if (!(error instanceof TownMutationBusyError)) setConfirmation(null);
     });
   };
-  const footer = <View style={styles.section}>
-    {needsQuantity ? <QuantityInput value={quantityText} onChange={setQuantityText} min={data.minQuantity} max={data.maxQuantity} valid={quantityValid} /> : null}
-    {mode === 'refine' || mode === 'veteran' ? <View style={styles.section}><Text style={styles.label}>제련 횟수</Text><View style={styles.chips}>{data.allowedRefineCounts.map((count) => <Pressable key={count} accessibilityLabel={`제련 ${count}회 선택`} accessibilityRole="radio" accessibilityState={{ checked: refineCount === count }} onPress={() => setRefineCount(count)} style={[styles.chip, refineCount === count && styles.chipSelected]}><Text style={styles.chipText}>{count}회</Text></Pressable>)}</View></View> : null}
-    {mode === 'create' ? <Text style={styles.hint}>{addRows.length ? '추가 소재는 품목 목록 아래에서 선택할 수 있습니다.' : '보유 추가 소재가 없습니다.'}</Text> : null}
-    <ActionButton label={mode === 'refine' || mode === 'veteran' ? '제련' : mode === 'workbase' ? '작업 시작' : mode === 'claris' ? '교환' : '제작'} disabled={!canSubmit || town.status === 'submitting'} onPress={() => setConfirmation('item')} />
+  const resultFooter = <View style={styles.section}>
     {data.warningCode === 'NO_ADDITIONAL_MATERIAL' ? <Text accessibilityRole="alert" style={styles.warning}>추가 소재 없이 제작했습니다.</Text> : null}
     {data.history.length ? <History count={data.history.length} open={historyOpen} onToggle={() => setHistoryOpen((value) => !value)} /> : null}
     {displayedResult ? <TownActionResult result={displayedResult} onRefresh={() => { setResponse(null); setActionResult(null); void town.reload().catch(() => undefined); }} /> : null}
     {town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}
   </View>;
+  const footer = <View style={styles.section}>
+    {needsQuantity ? <QuantityInput value={quantityText} onChange={setQuantityText} min={data.minQuantity} max={data.maxQuantity} valid={quantityValid} /> : null}
+    {mode === 'refine' || mode === 'veteran' ? <View style={styles.section}><Text style={styles.label}>제련 횟수</Text><View style={styles.chips}>{data.allowedRefineCounts.map((count) => <Pressable key={count} accessibilityLabel={`제련 ${count}회 선택`} accessibilityRole="radio" accessibilityState={{ checked: refineCount === count }} onPress={() => setRefineCount(count)} style={[styles.chip, refineCount === count && styles.chipSelected]}><Text style={styles.chipText}>{count}회</Text></Pressable>)}</View></View> : null}
+    <ActionButton label={mode === 'refine' || mode === 'veteran' ? '제련' : mode === 'workbase' ? '작업 시작' : mode === 'claris' ? '교환' : '제작'} disabled={!canSubmit || town.status === 'submitting'} onPress={() => setConfirmation('item')} />
+    {resultFooter}
+  </View>;
+  const createControls = mode === 'create' ? <View accessibilityLabel="제작 설정 고정 영역" style={styles.fixedControls}>
+    <QuantityInput value={quantityText} onChange={setQuantityText} min={data.minQuantity} max={data.maxQuantity} valid={quantityValid} compact />
+    <MaterialDropdown
+      materials={data.additionalMaterials}
+      open={materialPickerOpen}
+      selectedId={additionalIds[0] ?? null}
+      onOpen={() => setMaterialPickerOpen(true)}
+      onClose={() => setMaterialPickerOpen(false)}
+      onSelect={(id) => { setAdditionalIds(id == null ? [] : [id]); setMaterialPickerOpen(false); }}
+    />
+    <ActionButton label="제작" disabled={!canSubmit || town.status === 'submitting'} onPress={() => setConfirmation('item')} />
+  </View> : null;
 
   return <View style={styles.container}>
-    <TownItemList rows={listRows} selectionMode="grouped-single" selectedIds={[...selectedIds.map((id) => `recipe:${id}`), ...additionalIds.map((id) => `additional:${id}`)]}
+    <TownItemList rows={listRows} selectionMode="single" selectedIds={selectedIds.map((id) => `recipe:${id}`)}
       labelTextStyle={(row) => row.id.startsWith('recipe:') ? styles.itemHeadline : undefined}
-      selectionGroup={(row) => row.id.startsWith('additional:') ? 'additional' : row.id.startsWith('recipe:') ? 'recipe' : 'display'}
       displayOnlyRow={(row) => row.id.startsWith('history:')}
       onSelectionChange={(ids) => {
         setSelectedIds(ids.filter((id) => id.startsWith('recipe:')).map((id) => id.slice('recipe:'.length)).slice(0, 1));
-        setAdditionalIds(ids.filter((id) => id.startsWith('additional:')).map((id) => id.slice('additional:'.length)).slice(0, 1));
       }}
-      header={<View style={styles.section}><Text style={styles.title}>{title}</Text><CategoryList data={data} disabled={town.status === 'submitting'} onSelect={setRequestedCategoryId} />{town.status === 'loading' ? <Text accessibilityLiveRegion="polite" style={styles.hint}>선택한 분류를 불러오는 중...</Text> : null}{data.activeJob ? <View accessibilityLiveRegion="polite" style={styles.job}><Text style={styles.label}>{data.activeJob.label}</Text><Text style={styles.warning}>{remaining == null ? '남은 시간 확인 불가' : remaining > 0 ? `${remaining.toLocaleString()}초 후 확인 가능` : '제작 결과를 확인할 수 있습니다.'}</Text>{data.activeJob.completionAvailable ? <ActionButton label="제작 완료" disabled={town.status === 'submitting'} onPress={() => setConfirmation('complete')} /> : remaining === 0 ? <ActionButton label="제작 상태 확인" disabled={town.status === 'loading' || town.status === 'submitting'} onPress={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}</View> : null}</View>}
-      footer={footer} emptyMessage="현재 분류에 표시할 품목이 없습니다." />
+      header={<View style={styles.section}><Text style={styles.title}>{title}</Text><CategoryList data={data} disabled={town.status === 'submitting'} onSelect={setRequestedCategoryId} />{mode === 'create' ? <CraftingSearch value={searchQuery} onChange={setSearchQuery} resultCount={visibleItems.length} /> : null}{town.status === 'loading' ? <Text accessibilityLiveRegion="polite" style={styles.hint}>선택한 분류를 불러오는 중...</Text> : null}{data.activeJob ? <View accessibilityLiveRegion="polite" style={styles.job}><Text style={styles.label}>{data.activeJob.label}</Text><Text style={styles.warning}>{remaining == null ? '남은 시간 확인 불가' : remaining > 0 ? `${remaining.toLocaleString()}초 후 확인 가능` : '제작 결과를 확인할 수 있습니다.'}</Text>{data.activeJob.completionAvailable ? <ActionButton label="제작 완료" disabled={town.status === 'submitting'} onPress={() => setConfirmation('complete')} /> : remaining === 0 ? <ActionButton label="제작 상태 확인" disabled={town.status === 'loading' || town.status === 'submitting'} onPress={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}</View> : null}</View>}
+      footer={mode === 'create' ? resultFooter : footer} emptyMessage={normalizedQuery ? '검색 결과가 없습니다.' : '현재 분류에 표시할 품목이 없습니다.'} />
+    {createControls}
     <TownConfirmSheet visible={confirmation === 'item'} title={`${title} 확인`}
       message={mode === 'create' && !material ? '추가 소재 없이 제작합니다. 계속할까요?' : '실행 결과는 되돌릴 수 없습니다.'}
       confirmLabel={mode === 'refine' || mode === 'veteran' ? '제련' : mode === 'workbase' ? '작업 시작' : mode === 'claris' ? '교환' : '제작'} destructive submitting={town.status === 'submitting'}
@@ -174,7 +192,59 @@ function presentCraftingItem(label: string, detail: string | null, owned: number
 
 function cleanDisplayText(value: string): string { return value.replace(/\s+/g, ' ').trim(); }
 function CategoryList({ data, disabled, onSelect }: { data: CraftingResponse; disabled: boolean; onSelect: (id: string) => void }) { return <View accessibilityRole="radiogroup" style={styles.chips}>{data.categories.map((category) => <Pressable key={category.id} accessibilityLabel={`${category.label} 분류`} accessibilityRole="radio" accessibilityState={{ checked: category.current, disabled }} disabled={disabled} onPress={() => { if (!category.current) onSelect(category.id); }} style={[styles.chip, category.current && styles.chipSelected, disabled && styles.disabled]}><Text style={styles.chipText}>{category.label}</Text></Pressable>)}</View>; }
-function QuantityInput({ value, onChange, min, max, valid }: { value: string; onChange: (value: string) => void; min: number; max: number; valid: boolean }) { return <View style={styles.section}><Text style={styles.label}>수량</Text><TextInput accessibilityLabel="제작 수량" keyboardType="number-pad" value={value} onChangeText={onChange} style={[styles.input, !valid && styles.invalid]} />{!valid ? <Text accessibilityRole="alert" style={styles.error}>{min}~{max.toLocaleString()} 사이의 정수를 입력하세요.</Text> : null}</View>; }
+function CraftingSearch({ value, onChange, resultCount }: { value: string; onChange: (value: string) => void; resultCount: number }) {
+  return <View>
+    <View style={styles.searchField}>
+      <Text accessibilityElementsHidden importantForAccessibility="no" style={styles.searchIcon}>⌕</Text>
+      <TextInput accessibilityLabel="제작물품 검색" autoCapitalize="none" autoCorrect={false} onChangeText={onChange} placeholder="제작물품 검색" placeholderTextColor={theme.colors.textMuted} returnKeyType="search" style={styles.searchInput} value={value} />
+      {value ? <Pressable accessibilityLabel="제작물품 검색어 지우기" accessibilityRole="button" onPress={() => onChange('')} style={styles.clearButton}><Text style={styles.clearText}>×</Text></Pressable> : null}
+    </View>
+    {value ? <Text accessibilityLiveRegion="polite" style={styles.searchResult}>{resultCount.toLocaleString()}개 검색됨</Text> : null}
+  </View>;
+}
+function MaterialDropdown({ materials, open, selectedId, onOpen, onClose, onSelect }: {
+  materials: CraftingResponse['additionalMaterials'];
+  open: boolean;
+  selectedId: string | null;
+  onOpen: () => void;
+  onClose: () => void;
+  onSelect: (id: string | null) => void;
+}) {
+  const selected = materials.find((item) => item.id === selectedId);
+  return <View style={styles.materialField}>
+    <Text style={styles.label}>추가 소재</Text>
+    <Pressable accessibilityLabel="추가 소재 선택" accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={onOpen} style={({ pressed }) => [styles.dropdown, pressed && styles.pressed]}>
+      <View style={styles.dropdownContent}>
+        <Text numberOfLines={1} style={[styles.dropdownText, !selected && styles.dropdownPlaceholder]}>{selected?.label ?? '사용 안 함'}</Text>
+        {selected?.owned != null ? <Text style={styles.materialOwned}>보유 {selected.owned.toLocaleString()}</Text> : null}
+      </View>
+      <Text style={styles.chevron}>⌄</Text>
+    </Pressable>
+    {!materials.some((item) => item.selectable) ? <Text style={styles.hint}>선택 가능한 추가 소재가 없습니다.</Text> : null}
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible={open}>
+      <View accessibilityViewIsModal style={styles.modalRoot}>
+        <Pressable accessibilityLabel="추가 소재 선택 닫기" accessibilityRole="button" onPress={onClose} style={styles.modalBackdrop} />
+        <View style={styles.dropdownSheet}>
+          <View style={styles.dropdownHeader}>
+            <Text style={styles.dropdownTitle}>추가 소재 선택</Text>
+            <Pressable accessibilityLabel="추가 소재 선택 닫기" accessibilityRole="button" onPress={onClose} style={styles.closeButton}><Text style={styles.closeText}>×</Text></Pressable>
+          </View>
+          <ScrollView keyboardShouldPersistTaps="handled" style={styles.materialOptions}>
+            <MaterialOption checked={selectedId == null} label="사용 안 함" detail="추가 소재 없이 제작" onPress={() => onSelect(null)} />
+            {materials.map((item) => <MaterialOption key={item.id} checked={selectedId === item.id} disabled={!item.selectable} label={item.label} detail={[item.detail, item.owned != null ? `보유 ${item.owned.toLocaleString()}` : null].filter(Boolean).join(' · ')} onPress={() => onSelect(item.id)} />)}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  </View>;
+}
+function MaterialOption({ checked, disabled = false, label, detail, onPress }: { checked: boolean; disabled?: boolean; label: string; detail: string; onPress: () => void }) {
+  return <Pressable accessibilityLabel={`${label} 추가 소재 선택`} accessibilityRole="radio" accessibilityState={{ checked, disabled }} disabled={disabled} onPress={onPress} style={[styles.materialOption, checked && styles.materialOptionSelected, disabled && styles.disabled]}>
+    <View style={[styles.radio, checked && styles.radioSelected]}>{checked ? <View style={styles.radioDot} /> : null}</View>
+    <View style={styles.materialOptionText}><Text style={styles.optionLabel}>{label}</Text>{detail ? <Text style={styles.optionDetail}>{detail}</Text> : null}</View>
+  </Pressable>;
+}
+function QuantityInput({ value, onChange, min, max, valid, compact = false }: { value: string; onChange: (value: string) => void; min: number; max: number; valid: boolean; compact?: boolean }) { return <View style={compact ? styles.compactSection : styles.section}><Text style={styles.label}>수량</Text><TextInput accessibilityLabel="제작 수량" keyboardType="number-pad" value={value} onChangeText={onChange} style={[styles.input, !valid && styles.invalid]} />{!valid ? <Text accessibilityRole="alert" style={styles.error}>{min}~{max.toLocaleString()} 사이의 정수를 입력하세요.</Text> : null}</View>; }
 function History({ count, open, onToggle }: { count: number; open: boolean; onToggle: () => void }) { return <Pressable accessibilityLabel={`Hall of Pain 기록 ${open ? '접기' : '펼치기'}`} accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={onToggle}><Text style={styles.history}>Hall of Pain {count.toLocaleString()}건 {open ? '접기' : '펼치기'}</Text></Pressable>; }
 function ActionButton({ label, disabled, onPress }: { label: string; disabled: boolean; onPress: () => void }) { return <Pressable accessibilityLabel={label} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}><Text style={styles.buttonText}>{label}</Text></Pressable>; }
 function LoadState({ loading, error, reload }: { loading: boolean; error: string | null; reload: () => Promise<unknown> }) { return <View style={styles.container}><Text accessibilityRole={error ? 'alert' : undefined} style={error ? styles.error : styles.hint}>{loading ? '제작 시설 정보를 불러오는 중...' : error ?? '제작 시설 정보가 없습니다.'}</Text>{!loading ? <ActionButton label="다시 시도" disabled={false} onPress={() => void reload().catch(() => undefined)} /> : null}</View>; }
@@ -182,4 +252,56 @@ function titleFor(mode: CraftingMode) { return ({ workbase: '작업장-재봉틀
 function information(message: string): TownActionResultResponse { return { status: 'INFORMATIONAL', messages: [message], items: [], refreshRequired: true }; }
 function identifyApi(api: TownApi): number { const object = api as object; const known = apiKeys.get(object); if (known != null) return known; const next = nextApiKey++; apiKeys.set(object, next); return next; }
 
-const styles = StyleSheet.create({ container: { flex: 1, gap: theme.spacing.md }, section: { gap: theme.spacing.sm, paddingVertical: theme.spacing.sm }, title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' }, itemHeadline: { color: theme.colors.text, fontSize: 17, fontWeight: '900' }, label: { color: theme.colors.text, fontWeight: '900' }, hint: { color: theme.colors.textMuted, lineHeight: 20 }, warning: { color: theme.colors.accentAmber, lineHeight: 20 }, error: { color: theme.colors.danger, lineHeight: 20 }, chips: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs }, chip: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, minHeight: 40, justifyContent: 'center', paddingHorizontal: theme.spacing.md }, chipSelected: { borderColor: theme.colors.accentGreen }, chipText: { color: theme.colors.text, fontWeight: '700' }, job: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md, gap: theme.spacing.sm, padding: theme.spacing.md }, input: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md }, invalid: { borderColor: theme.colors.danger }, button: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, justifyContent: 'center', minHeight: 48, paddingHorizontal: theme.spacing.md }, buttonText: { color: theme.colors.background, fontWeight: '900' }, disabled: { opacity: 0.45 }, history: { color: theme.colors.accentBlue, fontWeight: '800', paddingVertical: theme.spacing.sm } });
+const styles = StyleSheet.create({
+  container: { flex: 1, gap: theme.spacing.sm },
+  section: { gap: theme.spacing.sm, paddingVertical: theme.spacing.sm },
+  compactSection: { gap: theme.spacing.xs },
+  title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' },
+  itemHeadline: { color: theme.colors.text, fontSize: 17, fontWeight: '900' },
+  label: { color: theme.colors.text, fontWeight: '900' },
+  hint: { color: theme.colors.textMuted, fontSize: 13, lineHeight: 18 },
+  warning: { color: theme.colors.accentAmber, lineHeight: 20 },
+  error: { color: theme.colors.danger, lineHeight: 20 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs },
+  chip: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, minHeight: 40, justifyContent: 'center', paddingHorizontal: theme.spacing.md },
+  chipSelected: { borderColor: theme.colors.accentGreen },
+  chipText: { color: theme.colors.text, fontWeight: '700' },
+  job: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md, gap: theme.spacing.sm, padding: theme.spacing.md },
+  input: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md },
+  invalid: { borderColor: theme.colors.danger },
+  button: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, justifyContent: 'center', minHeight: 48, paddingHorizontal: theme.spacing.md },
+  buttonText: { color: theme.colors.background, fontWeight: '900' },
+  disabled: { opacity: 0.45 },
+  pressed: { opacity: 0.8 },
+  history: { color: theme.colors.accentBlue, fontWeight: '800', paddingVertical: theme.spacing.sm },
+  fixedControls: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md },
+  searchField: { alignItems: 'center', backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', minHeight: 46, paddingHorizontal: theme.spacing.md },
+  searchIcon: { color: theme.colors.textMuted, fontSize: 20 },
+  searchInput: { color: theme.colors.text, flex: 1, fontSize: 14, paddingHorizontal: theme.spacing.sm, paddingVertical: theme.spacing.sm },
+  clearButton: { alignItems: 'center', height: 36, justifyContent: 'center', width: 36 },
+  clearText: { color: theme.colors.textMuted, fontSize: 24 },
+  searchResult: { color: theme.colors.textMuted, fontSize: 12, paddingTop: theme.spacing.xs, textAlign: 'right' },
+  materialField: { gap: theme.spacing.xs },
+  dropdown: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, flexDirection: 'row', minHeight: 46, paddingHorizontal: theme.spacing.md },
+  dropdownContent: { flex: 1 },
+  dropdownText: { color: theme.colors.text, fontWeight: '700' },
+  dropdownPlaceholder: { color: theme.colors.textMuted },
+  materialOwned: { color: theme.colors.accentAmber, fontSize: 11, paddingTop: 2 },
+  chevron: { color: theme.colors.textMuted, fontSize: 22, marginLeft: theme.spacing.sm },
+  modalRoot: { flex: 1, justifyContent: 'flex-end' },
+  modalBackdrop: { backgroundColor: theme.colors.overlay, bottom: 0, left: 0, position: 'absolute', right: 0, top: 0 },
+  dropdownSheet: { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderStrong, borderTopLeftRadius: theme.radius.md, borderTopRightRadius: theme.radius.md, borderWidth: 1, maxHeight: '70%', padding: theme.spacing.lg },
+  dropdownHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: theme.spacing.md },
+  dropdownTitle: { color: theme.colors.text, fontSize: 18, fontWeight: '900' },
+  closeButton: { alignItems: 'center', height: 40, justifyContent: 'center', width: 40 },
+  closeText: { color: theme.colors.textMuted, fontSize: 26 },
+  materialOptions: { flexGrow: 0 },
+  materialOption: { alignItems: 'center', borderBottomColor: theme.colors.border, borderBottomWidth: 1, flexDirection: 'row', gap: theme.spacing.md, minHeight: 62, paddingHorizontal: theme.spacing.sm, paddingVertical: theme.spacing.sm },
+  materialOptionSelected: { backgroundColor: theme.colors.surfaceAlt },
+  materialOptionText: { flex: 1, gap: 2 },
+  optionLabel: { color: theme.colors.text, fontWeight: '800' },
+  optionDetail: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 17 },
+  radio: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: 10, borderWidth: 2, height: 20, justifyContent: 'center', width: 20 },
+  radioSelected: { borderColor: theme.colors.accentGreen },
+  radioDot: { backgroundColor: theme.colors.accentGreen, borderRadius: 5, height: 10, width: 10 },
+});

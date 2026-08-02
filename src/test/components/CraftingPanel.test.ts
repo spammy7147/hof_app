@@ -108,7 +108,7 @@ describe('CraftingPanel', () => {
     assert.equal(text().includes('외투 제작품'), true);
   });
 
-  it('추가 소재와 긴 기록도 바깥 품목과 동일한 FlatList 하나에서 가상화한다', async () => {
+  it('추가 소재를 목록에서 분리하고 긴 제작 기록만 제작품 FlatList에서 가상화한다', async () => {
     const createData = data('CREATE', {
       additionalMaterials: [{ id: 'material', label: 'Power Sphere', selectable: true, owned: 3, detail: '성공률 증가' }],
       history: Array.from({ length: 200 }, (_, index) => `제작 기록 ${index + 1}`),
@@ -116,11 +116,41 @@ describe('CraftingPanel', () => {
     await render(React.createElement(CraftingPanel, { api: api(async () => createData), mode: 'create' }));
 
     assert.equal(mounted!.root.findAll((node) => String(node.type) === 'FlatList').length, 1);
+    assert.equal(button('제작 설정 고정 영역').props.accessibilityLabel, '제작 설정 고정 영역');
     await press('Hall of Pain 기록 펼치기');
     const list = mounted!.root.find((node) => String(node.type) === 'FlatList');
-    assert.equal(list.props.data.length, 203);
+    assert.equal(list.props.data.length, 202);
+    assert.equal((list.props.data as Array<{ id: string }>).some((row) => row.id.startsWith('additional:')), false);
     assert.equal(mounted!.root.findAll((node) => String(node.type) === 'FlatList').length, 1);
     assert.equal(button('제작 기록 200').props.accessibilityRole, 'text');
+  });
+
+  it('제작물품을 검색하고 추가 소재 드롭다운에서는 하나만 선택해 제출한다', async () => {
+    const calls: unknown[] = [];
+    const createData = data('CREATE', {
+      rows: [
+        { id: 'sword', label: 'Soul Sword', selectable: true, detail: '검 재료', cost: 100, owned: 1, workSeconds: 600 },
+        { id: 'cloak', label: 'Moon Cloak', selectable: true, detail: '달빛 천', cost: 200, owned: 1, workSeconds: 600 },
+      ],
+      additionalMaterials: [
+        { id: 'power', label: 'Power Sphere', selectable: true, owned: 3, detail: '성공률 증가' },
+        { id: 'luck', label: 'Luck Sphere', selectable: true, owned: 1, detail: '행운 증가' },
+      ],
+    });
+    await render(React.createElement(CraftingPanel, { api: api(async () => createData, async (_path, request) => { calls.push(request); return { ...createData, result: result() }; }), mode: 'create' }));
+
+    await change('제작물품 검색', '달빛');
+    const list = mounted!.root.find((node) => String(node.type) === 'FlatList');
+    assert.deepEqual((list.props.data as Array<{ id: string }>).map((row) => row.id), ['recipe:cloak']);
+    await press('Moon Cloak 선택');
+    await press('추가 소재 선택');
+    await press('Power Sphere 추가 소재 선택');
+    await press('추가 소재 선택');
+    await press('Luck Sphere 추가 소재 선택');
+    await press('제작');
+    await pressLast('제작');
+
+    assert.deepEqual(calls, [{ recipeCandidateId: 'cloak', categoryCandidateId: 'category', quantity: 1, additionalMaterialCandidateId: 'luck' }]);
   });
 
   it('계정 API가 바뀌면 이전 계정의 늦은 응답과 선택 상태를 폐기한다', async () => {
