@@ -10,13 +10,14 @@ import type { PartyPresetCatalogResource } from '../domain/partyPresetCatalogLoa
 import type { TownMenuId } from '../domain/townMenus';
 
 /** 마을 목록의 외부 ScrollView 위치를 상세 전환 동안 보존한다. */
-export function TownTabScrollContainer({ townApi, resolveCaptcha, onOpenFishingBattle, characters, partyPresetCatalog, onRunBattle }: {
+export function TownTabScrollContainer({ townApi, resolveCaptcha, onOpenFishingBattle, characters, partyPresetCatalog, onRunBattle, onDetailOpenChange }: {
   townApi?: TownApi;
   resolveCaptcha?: () => Promise<void>;
   onOpenFishingBattle?: (target: FishingBattleTarget) => void;
   characters?: HofCharacter[];
   partyPresetCatalog?: PartyPresetCatalogResource;
   onRunBattle?: (request: RunBattleRequest) => Promise<BattleResultResponse>;
+  onDetailOpenChange?: (open: boolean) => void;
 } = {}) {
   const scrollRef = useRef<ScrollView>(null);
   const currentOffset = useRef(0);
@@ -39,7 +40,11 @@ export function TownTabScrollContainer({ townApi, resolveCaptcha, onOpenFishingB
         onRunBattle={onRunBattle}
         controlledMenuId={menuId}
         controlledDetailOpen={detailOpen}
-        onDetailStateChange={(nextMenuId, open) => { setMenuId(nextMenuId); setDetailOpen(open); }}
+        onDetailStateChange={(nextMenuId, open) => {
+          setMenuId(nextMenuId);
+          setDetailOpen(open);
+          onDetailOpenChange?.(open);
+        }}
         onCaptureListScroll={() => { capturedListOffset.current = currentOffset.current; }}
         onRestoreListScroll={() => {
           scrollRef.current?.scrollTo({ animated: false, y: capturedListOffset.current });

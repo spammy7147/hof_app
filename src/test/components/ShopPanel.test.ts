@@ -33,6 +33,9 @@ describe('ShopPanel', () => {
       await render(React.createElement(ShopPanel, { api: api(async (path) => { paths.push(path); return shop(mode); }), mode }));
       assert.deepEqual(paths, [`/api/town/shops/${mode}`]);
       assert.ok(button('Potion 선택'));
+      assert.equal(mounted!.root.findAllByProps({ testID: 'purchase-action-bar' }).length > 0, true);
+      const list = mounted!.root.find((node) => String(node.type) === 'FlatList');
+      assert.equal(list.findAllByProps({ testID: 'purchase-action-bar' }).length, 0);
     });
   }
 

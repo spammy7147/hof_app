@@ -94,9 +94,16 @@ describe('CraftingPanel', () => {
       return first;
     }), mode: 'create' }));
 
+    assert.equal(text().includes('무기'), true);
+    await press('제작품 선택');
+    assert.equal(button('제작 수량').props.value, '1');
+    await press('제작 종류 선택');
     const armor = button('방어구 분류');
     const cloak = button('외투 분류');
     await act(async () => armor.props.onPress());
+    assert.equal(mounted!.root.findAll((node) => String(node.type) === 'TextInput' && node.props.accessibilityLabel === '제작 수량').length, 0, '종류를 바꾸면 이전 카드 선택을 해제한다');
+    assert.equal((mounted!.root.find((node) => String(node.type) === 'FlatList').props.data as unknown[]).length, 0, '새 종류를 불러오는 동안 이전 목록을 숨긴다');
+    await press('제작 종류 선택');
     await act(async () => cloak.props.onPress());
     assert.equal(button('제작').props.disabled, true);
     assert.equal(calls.includes('/api/town/crafting/create?categoryCandidateId=type%3Aarmor%20%26%20rare'), true);
@@ -151,6 +158,30 @@ describe('CraftingPanel', () => {
     await pressLast('제작');
 
     assert.deepEqual(calls, [{ recipeCandidateId: 'cloak', categoryCandidateId: 'category', quantity: 1, additionalMaterialCandidateId: 'luck' }]);
+  });
+
+  it('제작공방 수량은 선택 카드 아래에 표시하고 새 카드를 선택하면 이전 카드를 해제한다', async () => {
+    const createData = data('CREATE', {
+      maxQuantity: 100,
+      rows: [
+        { id: 'sword', label: 'Soul Sword', selectable: true, detail: '검 재료', cost: 100, owned: 1, workSeconds: 600 },
+        { id: 'cloak', label: 'Moon Cloak', selectable: true, detail: '달빛 천', cost: 200, owned: 1, workSeconds: 600 },
+      ],
+    });
+    await render(React.createElement(CraftingPanel, { api: api(async () => createData), mode: 'create' }));
+
+    const quantityInputs = (root: ReactTestInstance) => root.findAll((node) => String(node.type) === 'TextInput' && node.props.accessibilityLabel === '제작 수량');
+    assert.equal(quantityInputs(mounted!.root).length, 0);
+    await press('Soul Sword 선택');
+    const sword = button('Soul Sword 선택');
+    const swordCard = sword.parent!;
+    assert.equal(sword.props.accessibilityState.checked, true);
+    assert.equal(quantityInputs(swordCard).length, 1);
+
+    await press('Moon Cloak 선택');
+    assert.equal(button('Soul Sword 선택').props.accessibilityState.checked, false);
+    assert.equal(button('Moon Cloak 선택').props.accessibilityState.checked, true);
+    assert.equal(quantityInputs(mounted!.root).length, 1);
   });
 
   it('계정 API가 바뀌면 이전 계정의 늦은 응답과 선택 상태를 폐기한다', async () => {

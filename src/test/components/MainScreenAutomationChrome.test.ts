@@ -45,6 +45,26 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('MainScreen automation editor chrome', () => {
+  it('covers the mounted status header and bottom tabs with a full-screen town detail', async () => {
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => { renderer = create(React.createElement(MainScreen, mainProps({}))); });
+
+    const tabs = renderer.root.find((node) => String(node.type) === 'BottomTabBar');
+    await act(async () => tabs.props.onChangeTab('town'));
+    const town = renderer.root.find((node) => String(node.type) === 'TownTabScreen');
+    await act(async () => town.props.onDetailStateChange('fishing', true));
+
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'GameStatusBar').length, 1);
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 1);
+    assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '마을 상세 전체 화면' }).length > 0);
+
+    await act(async () => renderer.root.find((node) => String(node.type) === 'TownTabScreen')
+      .props.onDetailStateChange('fishing', false));
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'GameStatusBar').length, 1);
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 1);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '마을 상세 전체 화면' }).length, 0);
+  });
+
   it('passes the exact fishing battle target from town into the battle screen', async () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => { renderer = create(React.createElement(MainScreen, mainProps({}))); });

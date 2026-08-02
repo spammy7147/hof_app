@@ -309,7 +309,9 @@ export function MainScreen({
   const [isCharacterDetailLoading, setIsCharacterDetailLoading] = useState(false);
   const [characterDetailError, setCharacterDetailError] = useState<string | null>(null);
   const [automationEditorOpen, setAutomationEditorOpen] = useState(false);
+  const [townDetailOpen, setTownDetailOpen] = useState(false);
   const isCharacterDetailOpen = activeTabId === 'characters' && selectedCharacter != null;
+  const townDetailFullScreen = activeTabId === 'town' && townDetailOpen;
   const showGlobalChrome = !automationEditorOpen;
 
   /**
@@ -377,7 +379,10 @@ export function MainScreen({
     <SafeAreaView edges={['top', 'bottom']} style={styles.safeArea}>
       {showGlobalChrome ? <GameStatusBar status={status} /> : null}
 
-      <View style={styles.content}>
+      <View
+        accessibilityLabel={townDetailFullScreen ? '마을 상세 전체 화면' : undefined}
+        style={[styles.content, townDetailFullScreen && styles.fullScreenContent]}
+      >
         {renderSystemMessage(session, notice, onOpenLogin)}
         {renderActiveTab({
           activeTabId,
@@ -425,6 +430,7 @@ export function MainScreen({
             setActiveTabId('battle');
           },
           onAutomationEditorModeChange: setAutomationEditorOpen,
+          onTownDetailOpenChange: setTownDetailOpen,
         })}
       </View>
 
@@ -538,6 +544,7 @@ type RenderActiveTabArgs = {
   setCharacterSubTabId: (tabId: CharacterSubTabId) => void;
   setSelectedCharacter: (character: HofCharacter | null) => void;
   onAutomationEditorModeChange: (active: boolean) => void;
+  onTownDetailOpenChange: (open: boolean) => void;
   townApi?: TownApi;
   resolveCaptcha?: () => Promise<void>;
   onOpenFishingBattle: (target: FishingBattleTarget) => void;
@@ -588,6 +595,7 @@ function renderActiveTab({
   setCharacterSubTabId,
   setSelectedCharacter,
   onAutomationEditorModeChange,
+  onTownDetailOpenChange,
   townApi,
   resolveCaptcha,
   onOpenFishingBattle,
@@ -701,6 +709,7 @@ function renderActiveTab({
           characters={characters}
           partyPresetCatalog={partyPresetCatalog}
           onRunBattle={onRunBattle}
+          onDetailOpenChange={onTownDetailOpenChange}
         />
       );
     case 'data':
@@ -804,6 +813,11 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  fullScreenContent: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: theme.colors.background,
+    zIndex: 10,
   },
   tabScroller: {
     flex: 1,
