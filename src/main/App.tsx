@@ -74,7 +74,10 @@ export default function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [manualActionPending, setManualActionPending] = useState(false);
   const describeError = useCallback((error: unknown): string => toUserFacingErrorMessage(error), []);
+
+  useEffect(() => api.subscribeManualActionState(setManualActionPending), [api]);
 
   /** 전역 안내가 화면을 영구 점유하지 않도록 잠시 보여준 뒤 자동으로 닫는다. */
   useEffect(() => {
@@ -393,6 +396,19 @@ export default function App() {
     <AppProviders style={styles.container}>
       <View style={styles.container}>
         {content}
+        {manualActionPending ? (
+          <View
+            accessibilityLabel="요청 처리 중"
+            accessibilityLiveRegion="polite"
+            accessibilityRole="progressbar"
+            style={styles.manualActionOverlay}
+          >
+            <View style={styles.manualActionCard}>
+              <ActivityIndicator color={theme.colors.accentGreen} />
+              <Text style={styles.manualActionText}>요청 처리 중</Text>
+            </View>
+          </View>
+        ) : null}
         <CaptchaChallengeModal
           visible={captchaModalVisible}
           captcha={currentCaptcha}
@@ -430,5 +446,27 @@ const styles = StyleSheet.create({
   bootText: {
     color: theme.colors.textMuted,
     fontSize: 15,
+  },
+  manualActionOverlay: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    backgroundColor: theme.colors.overlay,
+    justifyContent: 'center',
+  },
+  manualActionCard: {
+    alignItems: 'center',
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.borderStrong,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: theme.spacing.lg,
+  },
+  manualActionText: {
+    color: theme.colors.text,
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

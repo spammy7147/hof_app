@@ -699,6 +699,32 @@ describe('BackendApiClient', () => {
     assert.equal(requests[1]?.init.method, 'POST');
     assert.equal(requests[1]?.init.body, '{"candidateId":"fish-1"}');
   });
+
+  it('blocks duplicate manual actions and publishes loading until the response settles', async () => {
+    const { BackendApiClient, ManualActionBusyError } = await loadBackendApi();
+    const pending = deferred<Response>();
+    let fetchCalls = 0;
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      return pending.promise;
+    }) as unknown as typeof fetch;
+    const client = new BackendApiClient('http://backend.test');
+    const states: boolean[] = [];
+    const unsubscribe = client.subscribeManualActionState((state) => states.push(state));
+
+    const first = client.submitTownAction('/api/town/fishing/catch', { candidateId: 'fish-1' });
+    await assert.rejects(
+      client.submitTownAction('/api/town/fishing/catch', { candidateId: 'fish-1' }),
+      ManualActionBusyError,
+    );
+    assert.equal(fetchCalls, 1);
+    assert.deepEqual(states, [false, true]);
+
+    pending.resolve(mockResponse({ status: 'SUCCESS', messages: [] }));
+    await first;
+    assert.deepEqual(states, [false, true, false]);
+    unsubscribe();
+  });
 });
 
 function loadBackendApi(): Promise<BackendApiModule> {
@@ -776,6 +802,12 @@ function memoryTokenStorage(initialValue: string | null = null) {
 function readHeader(headers: HeadersInit | undefined, name: string): string | null {
   if (!headers) return null;
   return new Headers(headers).get(name);
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
 }
 
 /** 테스트 프로세스 안에서 브라우저 탭 사이의 BroadcastChannel 전달을 재현한다. */

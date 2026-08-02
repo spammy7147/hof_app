@@ -16,6 +16,7 @@ const waitForCaptcha = async () => undefined;
 class BackendApiClientMock {
   async restoreSession() {}
   async fetchStatus() { return { characterSyncRequired: false }; }
+  subscribeManualActionState(listener: (pending: boolean) => void) { listener(false); return () => undefined; }
 }
 
 class UnifiedAutomationControllerMock {

@@ -62,6 +62,13 @@ export class BackendApiError extends Error {
   }
 }
 
+export class ManualActionBusyError extends Error {
+  constructor() {
+    super('다른 요청을 처리 중입니다. 완료 후 다시 시도해 주세요.');
+    this.name = 'ManualActionBusyError';
+  }
+}
+
 function normalizeQuestSnapshot(
   snapshot: Omit<QuestSnapshot, 'rewards'> & { rewards?: unknown },
 ): QuestSnapshot {
@@ -87,6 +94,8 @@ export class BackendApiClient {
   private refreshPromise: Promise<void> | null = null;
   private readonly sessionChannel: BroadcastChannel | null;
   private readonly tokenBroadcastListeners = new Set<(token: string | null) => void>();
+  private readonly manualActionListeners = new Set<(pending: boolean) => void>();
+  private manualActionPending = false;
 
   constructor(
     baseUrl = resolveBackendBaseUrl(),
@@ -136,6 +145,13 @@ export class BackendApiClient {
     return this.accessToken;
   }
 
+  /** HOF에 보내는 수동 action의 단일 실행 상태를 앱 전역 로딩 UI에 전달한다. */
+  subscribeManualActionState(listener: (pending: boolean) => void): () => void {
+    this.manualActionListeners.add(listener);
+    listener(this.manualActionPending);
+    return () => this.manualActionListeners.delete(listener);
+  }
+
   /** 인증이 필요한 백엔드 이미지를 expo-image가 읽을 수 있는 source로 만든다. */
   getAuthenticatedImageSource(imageUrl: string): {
     uri: string;
@@ -166,10 +182,10 @@ export class BackendApiClient {
     path: TownApiPath,
     request: TRequest,
   ): Promise<TResponse> {
-    return this.request(path, {
+    return this.runManualAction(() => this.request(path, {
       method: 'POST',
       body: JSON.stringify(request),
-    });
+    }));
   }
 
   /**
@@ -190,10 +206,10 @@ export class BackendApiClient {
    * 선택한 맵, 파티, 패턴 로드 정보로 전투를 실행한다.
    */
   runBattle(request: RunBattleRequest): Promise<BattleResultResponse> {
-    return this.request('/api/battles/run', {
+    return this.runManualAction(() => this.request('/api/battles/run', {
       method: 'POST',
       body: JSON.stringify(request),
-    });
+    }));
   }
 
   /**
@@ -302,16 +318,16 @@ export class BackendApiClient {
   }
 
   async acceptQuest(actionNo: string): Promise<QuestSnapshot[]> {
-    const snapshots = await this.request<Array<Omit<QuestSnapshot, 'rewards'> & { rewards?: unknown }>>(
+    const snapshots = await this.runManualAction(() => this.request<Array<Omit<QuestSnapshot, 'rewards'> & { rewards?: unknown }>>(
       `/api/quests/${encodeURIComponent(actionNo)}/accept`, { method: 'POST' },
-    );
+    ));
     return snapshots.map(normalizeQuestSnapshot);
   }
 
   async claimQuest(actionNo: string): Promise<QuestSnapshot[]> {
-    const snapshots = await this.request<Array<Omit<QuestSnapshot, 'rewards'> & { rewards?: unknown }>>(
+    const snapshots = await this.runManualAction(() => this.request<Array<Omit<QuestSnapshot, 'rewards'> & { rewards?: unknown }>>(
       `/api/quests/${encodeURIComponent(actionNo)}/claim`, { method: 'POST' },
-    );
+    ));
     return snapshots.map(normalizeQuestSnapshot);
   }
 
@@ -516,10 +532,10 @@ export class BackendApiClient {
     hofCharacterId: string,
     slot: number,
   ): Promise<LoadPatternResponse> {
-    const response = await this.request<LoadPatternResponse>(
+    const response = await this.runManualAction(() => this.request<LoadPatternResponse>(
       `/api/characters/${encodeURIComponent(hofCharacterId)}/patterns/${slot}/load`,
       { method: 'POST' },
-    );
+    ));
     return {
       ...response,
       character: response.character ? normalizeCharacter(response.character) : null,
@@ -538,6 +554,23 @@ export class BackendApiClient {
       return this.request(path, init, false);
     }
     return this.readResponse<T>(response);
+  }
+
+  /** 수동 HOF action은 연타로 중복 전송되지 않게 앱 전체에서 한 번에 하나만 허용한다. */
+  private async runManualAction<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.manualActionPending) throw new ManualActionBusyError();
+    this.manualActionPending = true;
+    this.notifyManualActionState();
+    try {
+      return await operation();
+    } finally {
+      this.manualActionPending = false;
+      this.notifyManualActionState();
+    }
+  }
+
+  private notifyManualActionState(): void {
+    for (const listener of this.manualActionListeners) listener(this.manualActionPending);
   }
 
   /** 로그인·갱신·로그아웃처럼 401 자동 갱신 대상이 아닌 공개 인증 요청을 실행한다. */
