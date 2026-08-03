@@ -27,6 +27,8 @@ pipeline {
         SSH_KNOWN_HOSTS_FILE = "${WORKSPACE}/.jenkins/known_hosts"
         RELEASE_HOST_DIR = '/home/spammy/hof/releases'
         BACKEND_RELEASE_PUBLISH_URL = 'http://192.168.50.202:8080/internal/app-releases/android'
+        NPM_CONFIG_CACHE = '/home/jenkins/workspace/.npm-cache'
+        GRADLE_USER_HOME = '/home/jenkins/workspace/.gradle-cache'
         CI = 'true'
     }
 
@@ -140,7 +142,7 @@ NODE
 
         stage('Install Dependencies') {
             steps {
-                sh 'npm ci --no-audit --no-fund'
+                sh 'npm ci --no-audit --no-fund --prefer-offline'
             }
         }
 
@@ -181,7 +183,12 @@ NODE
                         install -m 600 "$HOF_GOOGLE_SERVICES_FILE" "$WORKSPACE/google-services.json"
 
                         npx expo prebuild --platform android --no-install
-                        ./android/gradlew -p android app:assembleRelease --build-cache --console=plain
+                        ./android/gradlew -p android \
+                          app:assembleRelease \
+                          --build-cache \
+                          --console=plain \
+                          --no-parallel \
+                          --max-workers=2
 
                         apk_source="$WORKSPACE/android/app/build/outputs/apk/release/app-release.apk"
                         test -s "$apk_source"
