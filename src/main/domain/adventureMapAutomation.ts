@@ -273,11 +273,12 @@ export function formatAdventureDailyRefresh(refresh?: AdventureDailyRefreshRespo
   if (refresh?.status !== 'COMPLETE' || refresh.refreshedAt == null) return '오늘 초기화 대기';
   const date = new Date(refresh.refreshedAt);
   if (Number.isNaN(date.getTime())) return `오늘 초기화 완료 · ${refresh.refreshedAt}`;
-  return `오늘 초기화 완료 · ${date.toLocaleTimeString('ko-KR', {
+  const formattedTime = date.toLocaleTimeString('ko-KR', {
     timeZone: 'Asia/Seoul',
     hour: '2-digit',
     minute: '2-digit',
-  })}`;
+  }).replace(/\bAM\b/, '오전').replace(/\bPM\b/, '오후');
+  return `오늘 초기화 완료 · ${formattedTime}`;
 }
 
 function reindex(maps: AdventureMapDraftSetting[]): AdventureMapDraftSetting[] {
