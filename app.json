@@ -16,6 +16,7 @@
     },
     "android": {
       "package": "app.spammy.hof",
+      "versionCode": 1,
       "softwareKeyboardLayoutMode": "resize",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
@@ -41,6 +42,7 @@
           }
         }
       ],
+      "./plugins/withAndroidReleaseSigning",
       "expo-splash-screen"
     ]
   }
