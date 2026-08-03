@@ -111,13 +111,7 @@ const styles = StyleSheet.create({
   body: {
     flex: 1,
     minHeight: 160,
-    justifyContent: 'center',
     gap: theme.spacing.xs,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.colors.surface,
-    padding: theme.spacing.lg,
   },
   pressed: {
     opacity: 0.75,

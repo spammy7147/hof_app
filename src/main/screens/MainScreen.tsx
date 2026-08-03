@@ -314,7 +314,7 @@ export function MainScreen({
   const [townDetailOpen, setTownDetailOpen] = useState(false);
   const isCharacterDetailOpen = activeTabId === 'characters' && selectedCharacter != null;
   const townDetailFullScreen = activeTabId === 'town' && townDetailOpen;
-  const showGlobalChrome = !automationEditorOpen && !dataLogOpen;
+  const showGlobalChrome = !automationEditorOpen && !dataLogOpen && !townDetailFullScreen;
 
   /**
    * SSE 동기화로 characters 배열이 갱신되면 현재 선택된 캐릭터 객체도 최신 값으로 교체한다.
@@ -821,9 +821,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   fullScreenContent: {
-    ...StyleSheet.absoluteFill,
     backgroundColor: theme.colors.background,
-    zIndex: 10,
   },
   tabScroller: {
     flex: 1,

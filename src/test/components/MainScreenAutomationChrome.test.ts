@@ -45,7 +45,7 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('MainScreen automation editor chrome', () => {
-  it('covers the mounted status header and bottom tabs with a full-screen town detail', async () => {
+  it('hides the status header and bottom tabs while a town detail uses the safe-area layout', async () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => { renderer = create(React.createElement(MainScreen, mainProps({}))); });
 
@@ -54,8 +54,8 @@ describe('MainScreen automation editor chrome', () => {
     const town = renderer.root.find((node) => String(node.type) === 'TownTabScreen');
     await act(async () => town.props.onDetailStateChange('fishing', true));
 
-    assert.equal(renderer.root.findAll((node) => String(node.type) === 'GameStatusBar').length, 1);
-    assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 1);
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'GameStatusBar').length, 0);
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 0);
     assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '마을 상세 전체 화면' }).length > 0);
 
     await act(async () => renderer.root.find((node) => String(node.type) === 'TownTabScreen')
