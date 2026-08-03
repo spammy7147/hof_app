@@ -1,4 +1,4 @@
-import type { BattleLogResponse, BattleStatsResponse } from '../types/api';
+import type { BattleLogResponse } from '../types/api';
 
 const KOREA_LOG_TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
   timeZone: 'Asia/Seoul',
@@ -8,13 +8,6 @@ const KOREA_LOG_TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
   minute: '2-digit',
   hourCycle: 'h23',
 });
-
-/**
- * 서버가 0~1 사이 실수로 내려주는 승률을 화면용 퍼센트 문자열로 바꾼다.
- */
-export function formatWinRate(stats: Pick<BattleStatsResponse, 'winRate'>): string {
-  return `${Math.round(stats.winRate * 100)}%`;
-}
 
 /**
  * ISO 날짜 문자열을 최근 전투 로그 카드에서 쓰는 `MM-DD HH:mm` 형식으로 바꾼다.

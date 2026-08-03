@@ -19,6 +19,7 @@ type TownItemListProps = {
   footer?: ReactElement | null;
   labelTextStyle?: StyleProp<TextStyle> | ((row: TownRowResponse) => StyleProp<TextStyle>);
   renderTrailing?: (row: TownRowResponse) => ReactNode;
+  renderItemFooter?: (row: TownRowResponse) => ReactNode;
   renderSelectedFooter?: (row: TownRowResponse) => ReactNode;
 };
 
@@ -36,6 +37,7 @@ export function TownItemList({
   footer,
   labelTextStyle,
   renderTrailing,
+  renderItemFooter,
   renderSelectedFooter,
 }: TownItemListProps) {
   const selected = new Set(selectedIds);
@@ -86,7 +88,7 @@ export function TownItemList({
             : [...selectedIds, item.id]);
         };
         const trailing = renderTrailing?.(item);
-        const selectedFooter = isSelected ? renderSelectedFooter?.(item) : null;
+        const itemFooter = renderItemFooter?.(item) ?? (isSelected ? renderSelectedFooter?.(item) : null);
         const resolvedLabelTextStyle = typeof labelTextStyle === 'function' ? labelTextStyle(item) : labelTextStyle;
         const content = <>
           {item.imageUrl ? <Image accessible={false} source={{ uri: item.imageUrl }} style={styles.image} /> : null}
@@ -118,8 +120,8 @@ export function TownItemList({
             {content}
           </Pressable>
         );
-        if (selectedFooter != null) {
-          return <View style={[styles.expandedRow, styles.selectedRow]}>
+        if (itemFooter != null) {
+          return <View style={[styles.expandedRow, isSelected && styles.selectedRow]}>
             <Pressable
               accessibilityLabel={accessibilityLabel}
               accessibilityRole={accessibilityRole}
@@ -130,7 +132,7 @@ export function TownItemList({
             >
               {content}
             </Pressable>
-            <View style={styles.selectedFooter}>{selectedFooter}</View>
+            <View style={styles.selectedFooter}>{itemFooter}</View>
           </View>;
         }
         return trailing == null ? card : <View style={styles.rowLayout}>{card}{trailing}</View>;

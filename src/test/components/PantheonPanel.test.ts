@@ -19,26 +19,34 @@ const { BackendApiError } = require('../../main/services/backendApi') as typeof 
 let mounted: ReactTestRenderer | null = null; afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; });
 
 describe('PantheonPanel', () => {
-  it('가상화된 신전 목록에서 상세로 이동하고 관측된 동작만 표시한다', async () => {
+  it('각 신을 카드로 표시하고 관측된 동작을 카드 아래에 바로 표시한다', async () => {
     await render(React.createElement(PantheonPanel, { api: api() }));
-    assert.equal(text().includes('마르두크의 전당'), true);
-    await press('마르두크의 전당 Marduk 상세 보기');
-    assert.equal(text().includes('전쟁 / 무예'), true);
-    assert.equal(mounted!.root.find((node) => String(node.type) === 'FlatList').props.ListEmptyComponent, null);
-    assert.ok(button('비율 기부 보유 Funds의 1%').length >= 1);
-    await press('아이템 기부 Avatar Ticket ×1');
+    assert.equal(text().includes('군신 마르두크'), true);
+    assert.ok(button('군신 마르두크 비율 기부 · 보유 Funds의 1%').length >= 1);
+    await press('군신 마르두크 아이템 기부 · Avatar Ticket ×1');
     assert.equal(text().includes('기부 아이템 Avatar Ticket ×1'), true);
     await pressLast('취소');
     assert.equal(button('알 수 없는 기부').length, 0);
-    await press('신전 목록으로 돌아가기');
-    assert.equal(text().includes('신전 거리'), true);
   });
 
-  it('비용과 비율을 확인한 후 opaque action id만 한 번 제출하고 같은 상세에 결과를 표시한다', async () => {
+  it('서로 다른 신전의 action과 비용을 해당 카드에만 표시한다', async () => {
+    const distinct = {
+      shrines: [
+        street().shrines[0],
+        { id: 'shrine-2', name: '재주꾼 카즘', alias: 'Kazm', color: null, imageUrl: null, actions: [{ id: 'buy-id', type: 'BUY_PRIEST_ITEM' as const, label: '사제 아이템을 구입한다', costFunds: 12_000, fundsPercent: null, itemName: null, itemQuantity: null }] },
+      ],
+    };
+    await render(React.createElement(PantheonPanel, { api: api(async () => distinct) }));
+
+    assert.ok(button('군신 마르두크 정액 기부 · 50,000 Funds').length >= 1);
+    assert.ok(button('재주꾼 카즘 사제 아이템 구입 · 12,000 Funds').length >= 1);
+    assert.equal(button('재주꾼 카즘 정액 기부 · 50,000 Funds').length, 0);
+  });
+
+  it('카드에서 비용과 비율을 확인한 후 opaque action id만 한 번 제출한다', async () => {
     const calls: unknown[] = [];
     await render(React.createElement(PantheonPanel, { api: api(undefined, async (path, request) => { calls.push([path, request]); return { ...detail(), result: result() }; }) }));
-    await press('마르두크의 전당 Marduk 상세 보기');
-    await press('비율 기부 보유 Funds의 1%');
+    await press('군신 마르두크 비율 기부 · 보유 Funds의 1%');
     assert.equal(text().includes('보유 Funds의 1%'), true);
     await pressLast('비율 기부');
     assert.deepEqual(calls, [['/api/town/pantheon/shrine-1/actions', { actionId: 'percent-id' }]]);
@@ -48,8 +56,7 @@ describe('PantheonPanel', () => {
   it('빠른 중복 확인은 POST를 한 번만 보낸다', async () => {
     const pending = deferred<unknown>(); let calls = 0;
     await render(React.createElement(PantheonPanel, { api: api(undefined, async () => { calls += 1; return pending.promise; }) }));
-    await press('마르두크의 전당 Marduk 상세 보기');
-    await press('정액 기부 50,000 Funds');
+    await press('군신 마르두크 정액 기부 · 50,000 Funds');
     const confirm = pressableWithText('정액 기부');
     await act(async () => { confirm.props.onPress(); confirm.props.onPress(); await Promise.resolve(); });
     assert.equal(calls, 1);
@@ -57,19 +64,17 @@ describe('PantheonPanel', () => {
     await act(async () => { await pending.promise; });
   });
 
-  it('계정 API 변경 뒤 이전 상세 응답과 확인창을 폐기한다', async () => {
-    const oldDetail = deferred<unknown>();
+  it('계정 API 변경 뒤 이전 카드의 확인창을 폐기한다', async () => {
     const newPaths: string[] = [];
-    const oldApi = api(async (path) => path === '/api/town/pantheon' ? street('이전 신전') : oldDetail.promise);
+    const oldApi = api(async () => street('이전 신전'));
     const newApi = api(async (path) => { newPaths.push(path); return path === '/api/town/pantheon' ? street('새 신전') : detail('새 신전'); });
     await render(React.createElement(PantheonPanel, { api: oldApi }));
-    await press('이전 신전 Marduk 상세 보기');
+    await press('이전 신전 정액 기부 · 50,000 Funds');
+    assert.equal(text().includes('이전 신전 · 정액 기부'), true);
     await act(async () => mounted!.update(React.createElement(PantheonPanel, { api: newApi })));
     await act(async () => { await Promise.resolve(); });
     assert.equal(text().includes('새 신전'), true);
     assert.deepEqual(newPaths, ['/api/town/pantheon']);
-    oldDetail.resolve(detail('이전 신전'));
-    await act(async () => { await oldDetail.promise; await Promise.resolve(); });
     assert.equal(text().includes('이전 신전'), false);
   });
 
@@ -81,8 +86,7 @@ describe('PantheonPanel', () => {
       return { ...detail(), result: { ...result(), messages: ['<html>HOF 원문</html>'] } };
     });
     await render(React.createElement(PantheonPanel, { api: captchaApi, resolveCaptcha: async () => { resolves += 1; } }));
-    await press('마르두크의 전당 Marduk 상세 보기');
-    await press('정액 기부 50,000 Funds');
+    await press('군신 마르두크 정액 기부 · 50,000 Funds');
     await pressLast('정액 기부');
     assert.equal(resolves, 1);
     assert.deepEqual(requests, [{ actionId: 'fixed-id' }, { actionId: 'fixed-id' }]);
@@ -92,14 +96,13 @@ describe('PantheonPanel', () => {
     const failingApi = api(undefined, async () => { throw new Error('신전 요청 실패'); });
     await act(async () => mounted!.update(React.createElement(PantheonPanel, { api: failingApi })));
     await act(async () => { await Promise.resolve(); });
-    await press('마르두크의 전당 Marduk 상세 보기');
-    await press('정액 기부 50,000 Funds');
+    await press('군신 마르두크 정액 기부 · 50,000 Funds');
     await pressLast('정액 기부');
     assert.equal(text().includes('신전 요청 실패'), true);
   });
 });
 
-function street(name = '마르두크의 전당') { return { shrines: [{ id: 'shrine-1', name, alias: 'Marduk', color: '#aaa', imageUrl: null }] }; }
+function street(name = '군신 마르두크') { return { shrines: [{ id: 'shrine-1', name, alias: 'Marduk', color: '#aaa', imageUrl: null, actions: detail().actions }] }; }
 function detail(name = '마르두크의 전당') { return { shrineId: 'shrine-1', name, alias: 'Hall of Marduk', description: '전쟁의 신전', imageUrl: null, deity: '군신 마르두크', alignment: 'Neutral', domains: ['전쟁', '무예'], relation: '공민', currentJob: null, actions: [{ id: 'fixed-id', type: 'DONATE_FIXED' as const, label: '교단에 기부한다', costFunds: 50_000, fundsPercent: null, itemName: null, itemQuantity: null }, { id: 'percent-id', type: 'DONATE_PERCENT' as const, label: '교단에 기부한다', costFunds: null, fundsPercent: 1, itemName: null, itemQuantity: null }, { id: 'item-id', type: 'DONATE_ITEM' as const, label: 'Avatar Ticket x1을 기부한다', costFunds: null, fundsPercent: null, itemName: 'Avatar Ticket', itemQuantity: 1 }], result: null }; }
 function result() { return { status: 'SUCCESS' as const, messages: ['기부 완료'], items: [], refreshRequired: true }; }
 function api(load: (path: string) => Promise<unknown> = async (path) => path === '/api/town/pantheon' ? street() : detail(), submit: (path: string, request: unknown) => Promise<unknown> = async () => { throw new Error('unexpected'); }) { return { load, submit } as never; }

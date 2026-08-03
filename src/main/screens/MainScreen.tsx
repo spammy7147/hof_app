@@ -17,6 +17,7 @@ import { theme } from '../styles/theme';
 import type {
   BattleCategoryResponse,
   BattleLogResponse,
+  BattleLogQuery,
   BattleMapResponse,
   BattleResultResponse,
   BattleStatsResponse,
@@ -63,7 +64,7 @@ type MainScreenProps = {
   onLoadBattleCategories: () => void;
   onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
   onRunBattle: (request: RunBattleRequest) => Promise<BattleResultResponse>;
-  onLoadBattleLogs: (limit?: number) => Promise<BattleLogResponse[]>;
+  onLoadBattleLogs: (query?: BattleLogQuery) => Promise<BattleLogResponse[]>;
   onLoadBattleStats: () => Promise<BattleStatsResponse>;
   onOpenCaptcha: () => void;
   onStatusObserved?: (status: HofObservedStatusResponse) => void;
@@ -309,10 +310,11 @@ export function MainScreen({
   const [isCharacterDetailLoading, setIsCharacterDetailLoading] = useState(false);
   const [characterDetailError, setCharacterDetailError] = useState<string | null>(null);
   const [automationEditorOpen, setAutomationEditorOpen] = useState(false);
+  const [dataLogOpen, setDataLogOpen] = useState(false);
   const [townDetailOpen, setTownDetailOpen] = useState(false);
   const isCharacterDetailOpen = activeTabId === 'characters' && selectedCharacter != null;
   const townDetailFullScreen = activeTabId === 'town' && townDetailOpen;
-  const showGlobalChrome = !automationEditorOpen;
+  const showGlobalChrome = !automationEditorOpen && !dataLogOpen;
 
   /**
    * SSE 동기화로 characters 배열이 갱신되면 현재 선택된 캐릭터 객체도 최신 값으로 교체한다.
@@ -430,6 +432,7 @@ export function MainScreen({
             setActiveTabId('battle');
           },
           onAutomationEditorModeChange: setAutomationEditorOpen,
+          onDataLogModeChange: setDataLogOpen,
           onTownDetailOpenChange: setTownDetailOpen,
         })}
       </View>
@@ -513,7 +516,7 @@ type RenderActiveTabArgs = {
   onLoadBattleCategories: () => void;
   onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
   onRunBattle: (request: RunBattleRequest) => Promise<BattleResultResponse>;
-  onLoadBattleLogs: (limit?: number) => Promise<BattleLogResponse[]>;
+  onLoadBattleLogs: (query?: BattleLogQuery) => Promise<BattleLogResponse[]>;
   onLoadBattleStats: () => Promise<BattleStatsResponse>;
   onOpenCaptcha: () => void;
   onStatusObserved?: (status: HofObservedStatusResponse) => void;
@@ -544,6 +547,7 @@ type RenderActiveTabArgs = {
   setCharacterSubTabId: (tabId: CharacterSubTabId) => void;
   setSelectedCharacter: (character: HofCharacter | null) => void;
   onAutomationEditorModeChange: (active: boolean) => void;
+  onDataLogModeChange: (active: boolean) => void;
   onTownDetailOpenChange: (open: boolean) => void;
   townApi?: TownApi;
   resolveCaptcha?: () => Promise<void>;
@@ -601,6 +605,7 @@ function renderActiveTab({
   onOpenFishingBattle,
   pendingBattleTarget,
   consumePendingBattleTarget,
+  onDataLogModeChange,
 }: RenderActiveTabArgs) {
   switch (activeTabId) {
     case 'home':
@@ -718,6 +723,7 @@ function renderActiveTab({
           authenticated={authenticated}
           onLoadBattleLogs={onLoadBattleLogs}
           onLoadBattleStats={onLoadBattleStats}
+          onFullScreenChange={onDataLogModeChange}
         />
       );
     case 'settings':

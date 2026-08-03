@@ -14,6 +14,8 @@ type Props = { api: TownApi; resolveCaptcha?: () => Promise<void>; onOpenBattle?
 type Confirm = { apiKey: number; action: RaidAction; raidId: string | null; title: string; detail: string } | null;
 type ScopedResponse = { apiKey: number; data: RaidPubResponse } | null;
 const apiKeys = new WeakMap<object, number>(); let nextApiKey = 1;
+const GLOBAL_ACTIONS = ['REFRESH', 'REWARD', 'WAIT_RESET'] as const satisfies readonly RaidAction[];
+const RAID_ACTIONS = ['REGISTER', 'LEAVE', 'START', 'RESET'] as const satisfies readonly RaidAction[];
 
 export function RaidPanel({ api, resolveCaptcha, onOpenBattle }: Props) {
   const apiKey = identifyApi(api);
@@ -118,13 +120,14 @@ export function RaidPanel({ api, resolveCaptcha, onOpenBattle }: Props) {
       header={<View style={styles.section}><Text style={styles.title}>전투 정보실</Text><Text style={styles.hint}>레이드 모집 상태를 확인하고 기존 RAID 전투 화면으로 연결합니다.</Text>
         {data.myStatus ? <Text accessibilityLiveRegion="polite" style={styles.status}>{data.myStatus}</Text> : null}
         {applyWaitMessage ? <Text accessibilityLiveRegion="polite" style={styles.wait}>{applyWaitMessage}</Text> : null}
-        <View style={styles.actions}><ActionButton label="갱신" disabled={busy} onPress={refresh} />
-          {data.globalActions.includes('REWARD') ? <ActionButton label="보상 확인" disabled={busy} onPress={() => ask('REWARD', null, '레이드 보상을 확인합니다.')} /> : null}
-          {data.globalActions.includes('WAIT_RESET') ? <ActionButton label="대기 리셋" disabled={busy} onPress={() => ask('WAIT_RESET', null, '신청 대기시간을 초기화합니다.')} /> : null}</View>
+        <View style={styles.actions}>{GLOBAL_ACTIONS.map((action) => <ActionButton key={action} label={ACTION_LABEL[action]}
+          disabled={busy || !data.globalActions.includes(action)} onPress={action === 'REFRESH' ? refresh : () => ask(action, null, GLOBAL_ACTION_DETAIL[action])} />)}</View>
       </View>}
       footer={<View style={styles.section}>
         {selected ? <><Text style={styles.selectedTitle}>{selected.name}</Text><View style={styles.actions}>
-          {selected.actions.map((action) => <ActionButton key={action} label={ACTION_LABEL[action]} disabled={busy || action === 'REGISTER' && registerBlocked} onPress={() => ask(action, selected.id, `${selected.name}에서 ${ACTION_LABEL[action]} 동작을 실행합니다.`)} />)}
+          {RAID_ACTIONS.map((action) => <ActionButton key={action} label={ACTION_LABEL[action]}
+            disabled={busy || !selected.actions.includes(action) || action === 'REGISTER' && registerBlocked}
+            onPress={() => ask(action, selected.id, `${selected.name}에서 ${ACTION_LABEL[action]} 동작을 실행합니다.`)} />)}
         </View>{battleTarget && onOpenBattle ? <ActionButton label="RAID 전투 화면 열기" disabled={busy} onPress={() => onOpenBattle(battleTarget)} /> : null}</> : null}
         {data.result ? <TownActionResult result={data.result} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}
       </View>} emptyMessage="현재 표시할 레이드가 없습니다." />
@@ -139,4 +142,9 @@ function formatDuration(seconds: number) { const safe = Math.max(0, seconds); co
 function info(message: string): TownActionResultResponse { return { status: 'INFORMATIONAL', messages: [message], items: [], refreshRequired: true }; }
 function identifyApi(api: TownApi) { const key = api as object; const old = apiKeys.get(key); if (old != null) return old; const next = nextApiKey++; apiKeys.set(key, next); return next; }
 const ACTION_LABEL: Record<RaidAction, string> = { REGISTER: '등록', LEAVE: '나오기', START: '전투 시작', RESET: '리셋', REWARD: '보상 확인', WAIT_RESET: '대기 리셋', REFRESH: '갱신' };
+const GLOBAL_ACTION_DETAIL: Record<(typeof GLOBAL_ACTIONS)[number], string> = {
+  REFRESH: '전투 정보실 상태를 갱신합니다.',
+  REWARD: '레이드 보상을 확인합니다.',
+  WAIT_RESET: '신청 대기시간을 초기화합니다.',
+};
 const styles = StyleSheet.create({ container: { flex: 1, gap: theme.spacing.md }, section: { gap: theme.spacing.sm, paddingVertical: theme.spacing.sm }, title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' }, hint: { color: theme.colors.textMuted, lineHeight: 20 }, status: { color: theme.colors.accentGreen, fontWeight: '800' }, wait: { color: theme.colors.accentAmber, fontWeight: '800' }, error: { color: theme.colors.danger, lineHeight: 20 }, selectedTitle: { color: theme.colors.text, fontSize: 17, fontWeight: '900' }, actions: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }, button: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, justifyContent: 'center', minHeight: 46, minWidth: 110, paddingHorizontal: theme.spacing.md }, buttonText: { color: theme.colors.background, fontWeight: '900' }, disabled: { opacity: 0.45 } });

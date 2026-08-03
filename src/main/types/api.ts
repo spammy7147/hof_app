@@ -148,17 +148,27 @@ export type BattleLogResponse = {
   createdAt: string;
 };
 
-export type BattleStatsResponse = {
-  accountId: number;
-  totalBattles: number;
-  victories: number;
+export type BattleLogOutcome = 'VICTORY' | 'DEFEAT' | 'DRAW';
+
+export type BattleLogQuery = {
+  limit?: number;
+  offset?: number;
+  outcome?: BattleLogOutcome;
+};
+
+export type AdventureMapOutcomeStatsResponse = {
+  mapCode: string;
+  mapName: string;
   defeats: number;
   draws: number;
-  unknowns: number;
-  winRate: number;
-  totalFunds: number;
-  totalExperience: number;
-  totalLootCount: number;
+};
+
+export type BattleStatsResponse = {
+  accountId: number;
+  dailyFunds: number;
+  weeklyFunds: number;
+  monthlyFunds: number;
+  adventureMapOutcomes: AdventureMapOutcomeStatsResponse[];
 };
 
 export type CaptchaChallengeResponse = {
@@ -207,6 +217,7 @@ export type PantheonShrineResponse = {
   alias: string | null;
   color: string | null;
   imageUrl: string | null;
+  actions: PantheonActionResponse[];
 };
 
 export type PantheonStreetResponse = { shrines: PantheonShrineResponse[] };

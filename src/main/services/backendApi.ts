@@ -4,6 +4,7 @@ import { normalizeHofAssetUrl } from '../domain/hofAssets';
 import type {
   BattleCategoryResponse,
   BattleLogResponse,
+  BattleLogQuery,
   BattleMapResponse,
   BattleResultResponse,
   BattleStatsResponse,
@@ -215,8 +216,13 @@ export class BackendApiClient {
   /**
    * 데이터 탭에 보여줄 최근 전투 로그를 조회한다.
    */
-  fetchBattleLogs(limit = 20): Promise<BattleLogResponse[]> {
-    return this.request(`/api/battle/logs?limit=${encodeURIComponent(limit)}`);
+  fetchBattleLogs(query: BattleLogQuery = {}): Promise<BattleLogResponse[]> {
+    const params = new URLSearchParams({
+      limit: String(query.limit ?? 20),
+      offset: String(query.offset ?? 0),
+    });
+    if (query.outcome) params.set('outcome', query.outcome);
+    return this.request(`/api/battle/logs?${params.toString()}`);
   }
 
   /**

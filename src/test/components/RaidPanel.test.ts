@@ -22,12 +22,47 @@ describe('RaidPanel', () => {
     const calls: unknown[] = [];
     const data = raidData();
     await render(React.createElement(RaidPanel, { api: api(async () => data, async (_path, request) => { calls.push(request); return { ...data, result: result() }; }) }));
-    assert.equal(button('전투 시작').length, 0);
+    assert.equal(button('전투 시작').length, 1);
+    assert.equal(button('전투 시작')[0]!.props.accessibilityState.disabled, true);
     await press('등록');
     assert.deepEqual(calls, []);
     await pressLast('등록');
     assert.deepEqual(calls, [{ action: 'REGISTER', raidId: 'RaidGoblin' }]);
     assert.equal(text().includes('완료'), true);
+  });
+
+  it('공통 버튼 3개와 선택한 맵의 버튼 4개를 항상 표시하고 실행 가능 여부만 비활성화한다', async () => {
+    await render(React.createElement(RaidPanel, { api: api(async () => raidData()) }));
+
+    for (const label of ['갱신', '보상 확인', '대기 리셋']) assert.equal(button(label).length, 1);
+    assert.equal(button('갱신')[0]!.props.accessibilityState.disabled, false);
+    assert.equal(button('보상 확인')[0]!.props.accessibilityState.disabled, false);
+    assert.equal(button('대기 리셋')[0]!.props.accessibilityState.disabled, true);
+
+    for (const label of ['등록', '나오기', '전투 시작', '리셋']) assert.equal(button(label).length, 1);
+    assert.equal(button('등록')[0]!.props.accessibilityState.disabled, false);
+    assert.equal(button('나오기')[0]!.props.accessibilityState.disabled, false);
+    assert.equal(button('전투 시작')[0]!.props.accessibilityState.disabled, true);
+    assert.equal(button('리셋')[0]!.props.accessibilityState.disabled, true);
+  });
+
+  it('하단 버튼 한 세트가 현재 선택한 맵의 action과 raidId를 사용한다', async () => {
+    const calls: unknown[] = [];
+    const data = raidData();
+    data.raids[1]!.playable = true;
+    data.raids[1]!.actions = ['REGISTER'];
+    await render(React.createElement(RaidPanel, { api: api(
+      async () => data,
+      async (_path, request) => { calls.push(request); return { ...data, result: result() }; },
+    ) }));
+
+    await press('시험 레이드 선택');
+    assert.equal(button('등록')[0]!.props.accessibilityState.disabled, false);
+    assert.equal(button('나오기')[0]!.props.accessibilityState.disabled, true);
+    await press('등록');
+    await pressLast('등록');
+
+    assert.deepEqual(calls, [{ action: 'REGISTER', raidId: 'RaidTest' }]);
   });
 
   it('raid_hunt에서 확인된 내가 참가한 raid만 기존 RAID 전투 화면으로 연결한다', async () => {
@@ -142,7 +177,7 @@ function raidData(applyWaitSeconds: number | null = null, applyWait = applyWaitS
 function result(message = '완료') { return { status: 'SUCCESS' as const, messages: [message], items: [], refreshRequired: true }; }
 function api(load: (path: string) => Promise<unknown>, submit: (path: string, request: unknown) => Promise<unknown> = async () => { throw new Error('unexpected'); }) { return { load, submit } as never; }
 async function render(node: React.ReactElement) { await act(async () => { mounted = create(node); }); await act(async () => { await Promise.resolve(); }); }
-function button(label: string): ReactTestInstance[] { return mounted!.root.findAll((node) => node.props.accessibilityLabel === label); }
+function button(label: string): ReactTestInstance[] { return mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.props.accessibilityLabel === label); }
 async function press(label: string) { const node = button(label).at(-1); assert.ok(node, `missing ${label}`); await act(async () => node.props.onPress()); await act(async () => { await Promise.resolve(); }); }
 async function pressLast(label: string) { const node = pressableWithText(label); await act(async () => node.props.onPress()); await act(async () => { await Promise.resolve(); }); }
 function pressableWithText(label: string): ReactTestInstance { return mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0).at(-1)!; }

@@ -24,7 +24,11 @@ describe('RewardPanel', () => {
     await render(React.createElement(RewardPanel, { api: api(async () => data, async (_path, request) => { calls.push(request); return { ...data, result: result() }; }), mode: 'stash' }));
 
     assert.equal(button('선택 불가 선택 불가').props.disabled, true);
+    const actionBar = button('상자 열기 작업');
+    assert.equal(actionBar.parent?.type, 'View');
+    assert.equal(actionBar.find((node) => node.props.accessibilityLabel === '1000개 열기').props.disabled, true);
     await press('Treasure Box 선택');
+    assert.equal(button('1000개 열기').props.disabled, false);
     await press('1000개 열기');
     assert.deepEqual(calls, []);
     await pressLast('열기');
@@ -86,6 +90,22 @@ describe('RewardPanel', () => {
     assert.equal(text().includes('보유 2'), false);
     assert.equal(text().includes('현재 남은 수량: 2개'), true);
     assert.equal(text().includes('현재 남은 수량: 무제한'), true);
+  });
+
+  it('오브 상품명의 대시 장식을 제거하고 교환 버튼을 목록 밖 하단 한 줄에 표시한다', async () => {
+    const data = {
+      ...orbData({ red: 1, blue: 1, green: 1 }, false),
+      rewards: [{ key: 'funds', label: '──────── Funds Bag($ 1,000) ───', remaining: null, unlimited: true }],
+    };
+    await render(React.createElement(RewardPanel, { api: api(async () => data), mode: 'orbs' }));
+
+    assert.equal(text().includes('────────'), false);
+    assert.equal(text().includes('Funds Bag($ 1,000)'), true);
+    assert.equal(text().includes('보유 오브가 부족해 보여도'), false);
+    const actionBar = button('오브 교환 작업');
+    assert.equal(actionBar.parent?.type, 'View');
+    assert.equal(actionBar.findAll((node) => String(node.type) === 'Pressable' && node.props.accessibilityLabel === '오브를 기부한다').length, 1);
+    assert.equal(actionBar.findAll((node) => String(node.type) === 'Pressable' && node.props.accessibilityLabel === '오브를 5회 기부한다').length, 1);
   });
 });
 

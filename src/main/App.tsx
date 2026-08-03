@@ -17,6 +17,7 @@ import { toUserFacingErrorMessage } from './domain/userFacingErrors';
 import type {
   BattleCategoryResponse,
   BattleLogResponse,
+  BattleLogQuery,
   BattleMapResponse,
   BattleResultResponse,
   BattleStatsResponse,
@@ -181,8 +182,8 @@ export default function App() {
     }
   }, [api, waitForCaptchaResolution]);
 
-  const loadBattleLogs = useCallback((limit?: number): Promise<BattleLogResponse[]> => (
-    api.fetchBattleLogs(limit)
+  const loadBattleLogs = useCallback((query?: BattleLogQuery): Promise<BattleLogResponse[]> => (
+    api.fetchBattleLogs(query)
   ), [api]);
 
   const loadBattleStats = useCallback((): Promise<BattleStatsResponse> => api.fetchBattleStats(), [api]);
