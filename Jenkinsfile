@@ -28,7 +28,7 @@ pipeline {
         RELEASE_HOST_DIR = '/home/spammy/hof/releases'
         BACKEND_RELEASE_PUBLISH_URL = 'http://192.168.50.202:8080/internal/app-releases/android'
         NPM_CONFIG_CACHE = '/home/jenkins/workspace/.npm-cache'
-        GRADLE_USER_HOME = '/home/jenkins/workspace/.gradle-cache'
+        GRADLE_USER_HOME = '/home/jenkins/workspace/.gradle-cache/hof-app'
         CI = 'true'
     }
 
