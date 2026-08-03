@@ -116,7 +116,7 @@ NODE
                 sh '''#!/usr/bin/env bash
                     set -Eeuo pipefail
 
-                    if ! printf '%s' "$BASE_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+                    if ! printf '%s' "$BASE_VERSION" | grep -Eq '^[0-9]+[.][0-9]+[.][0-9]+$'; then
                         echo 'app.json expo.version must use MAJOR.MINOR.PATCH format, such as 1.0.0.' >&2
                         exit 1
                     fi
@@ -197,8 +197,8 @@ NODE
                         fi
 
                         install -d -m 755 "$WORKSPACE/dist"
-                        find "$WORKSPACE/dist" -maxdepth 1 -type f \
-                          \( -name 'hof-*.apk' -o -name 'hof-*.apk.sha256' \) -delete
+                        find "$WORKSPACE/dist" -maxdepth 1 -type f -name 'hof-*.apk' -delete
+                        find "$WORKSPACE/dist" -maxdepth 1 -type f -name 'hof-*.apk.sha256' -delete
                         install -m 644 "$apk_source" "$WORKSPACE/dist/$ARTIFACT_NAME"
                         sha256sum "$WORKSPACE/dist/$ARTIFACT_NAME" > "$WORKSPACE/dist/$ARTIFACT_NAME.sha256"
                     '''
