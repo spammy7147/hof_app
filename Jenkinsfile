@@ -3,6 +3,10 @@ pipeline {
         label 'spammy-builder'
     }
 
+    tools {
+        nodejs 'nodejs-22'
+    }
+
     options {
         disableConcurrentBuilds()
         skipDefaultCheckout(true)
