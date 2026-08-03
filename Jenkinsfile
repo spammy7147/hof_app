@@ -35,10 +35,17 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
+                sh '''#!/usr/bin/env bash
+                    set -Eeuo pipefail
+                    if git -C "$WORKSPACE" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+                        git -C "$WORKSPACE" clean -ffdx
+                    fi
+                '''
                 checkout scm
-                // Remove stale non-ignored files while retaining dependency and
-                // build caches that are intentionally ignored by Git.
-                sh 'git clean -ffd'
+                // npm ci and Expo Prebuild recreate dependencies and native output.
+                // Keeping ignored copies between builds consumes several GB and can
+                // exhaust the Jenkins agent before Gradle finishes.
+                sh 'git clean -ffdx'
                 script {
                     env.GIT_REVISION = sh(
                         script: 'git rev-parse HEAD',
@@ -181,12 +188,18 @@ NODE
                         export NODE_ENV=production
 
                         install -m 600 "$HOF_GOOGLE_SERVICES_FILE" "$WORKSPACE/google-services.json"
+                        install -d -m 755 "$GRADLE_USER_HOME/init.d"
+                        install -m 644 \
+                          "$WORKSPACE/.jenkins/gradle-cache-settings.init.gradle" \
+                          "$GRADLE_USER_HOME/init.d/hof-cache-settings.init.gradle"
 
                         npx expo prebuild --platform android --no-install
                         ./android/gradlew -p android \
                           app:assembleRelease \
+                          -PreactNativeArchitectures=arm64-v8a \
                           --build-cache \
                           --console=plain \
+                          --no-daemon \
                           --no-parallel \
                           --max-workers=2
 
@@ -305,8 +318,14 @@ REMOTE_SCRIPT
 
     post {
         always {
-            sh '''
+            sh '''#!/usr/bin/env bash
                 rm -f -- "$WORKSPACE/google-services.json"
+
+                # Archive and publish have already copied everything they need.
+                # Do not retain generated native output or node_modules on the
+                # capacity-constrained Jenkins agent, even after a failed build.
+                git -C "$WORKSPACE" clean -ffdx || \
+                  echo 'Warning: failed to reclaim generated workspace files.' >&2
             '''
         }
         success {
