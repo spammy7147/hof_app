@@ -10,6 +10,7 @@ import { BackendApiClient } from './services/backendApi';
 import { useCharacterSync } from './features/characters/useCharacterSync';
 import { useCaptchaGate } from './features/captcha/useCaptchaGate';
 import { useAndroidPushRegistration } from './features/push/useAndroidPushRegistration';
+import { RequiredUpdateGate } from './features/update/RequiredUpdateGate';
 import { isCaptchaRequiredError } from './domain/captchaGate';
 import { mergeObservedHofStatus } from './domain/hofStatus';
 import { UnifiedAutomationController } from './domain/unifiedAutomationController';
@@ -53,6 +54,16 @@ type AppSession = {
  */
 export default function App() {
   const api = useMemo(() => new BackendApiClient(), []);
+  return (
+    <AppProviders style={styles.container}>
+      <RequiredUpdateGate api={api}>
+        <AppContent api={api} />
+      </RequiredUpdateGate>
+    </AppProviders>
+  );
+}
+
+function AppContent({ api }: { api: BackendApiClient }) {
   const townApi = useMemo(() => createTownApi(api), [api]);
   const automationController = useMemo(() => new UnifiedAutomationController({
     fetch: () => api.fetchUnifiedAutomation(),
@@ -394,8 +405,7 @@ export default function App() {
   }
 
   return (
-    <AppProviders style={styles.container}>
-      <View style={styles.container}>
+    <View style={styles.container}>
         {content}
         {manualActionPending ? (
           <View
@@ -426,8 +436,7 @@ export default function App() {
           onRequestClose={closeCaptchaModal}
         />
         <StatusBar style="light" />
-      </View>
-    </AppProviders>
+    </View>
   );
 }
 

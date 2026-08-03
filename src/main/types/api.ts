@@ -19,6 +19,22 @@ export type TokenResponse = {
   refreshTokenExpiresAt: string;
 };
 
+export type AndroidReleaseResponse = {
+  versionCode: number;
+  versionName: string;
+  fileSize: number;
+  sha256: string;
+  gitRevision: string;
+  jenkinsBuild: number;
+  publishedAt: string;
+  downloadUrl: string;
+};
+
+export type LatestAndroidReleaseResponse = {
+  updateAvailable: boolean;
+  release: AndroidReleaseResponse;
+};
+
 export type HofStatusResponse = {
   accountId: number;
   playerName: string;

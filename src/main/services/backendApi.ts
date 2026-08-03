@@ -18,6 +18,7 @@ import type {
   HofCharacter,
   HofCharacterDetail,
   HofLoginRequest,
+  LatestAndroidReleaseResponse,
   TokenResponse,
   HofStatusResponse,
   LoadPatternResponse,
@@ -144,6 +145,20 @@ export class BackendApiClient {
   /** SSE 연결에서도 같은 Bearer 값을 사용할 수 있도록 현재 메모리 Access Token을 읽는다. */
   getAccessToken(): string | null {
     return this.accessToken;
+  }
+
+  /** 로그인 전에 현재 Android APK보다 새로운 필수 릴리스가 있는지 확인한다. */
+  async fetchLatestAndroidRelease(currentVersionCode: number): Promise<LatestAndroidReleaseResponse> {
+    const response = await this.requestWithoutRefresh<LatestAndroidReleaseResponse>(
+      `/api/app-releases/android/latest?currentVersionCode=${encodeURIComponent(currentVersionCode)}`,
+    );
+    return {
+      ...response,
+      release: {
+        ...response.release,
+        downloadUrl: new URL(response.release.downloadUrl, `${this.baseUrl}/`).toString(),
+      },
+    };
   }
 
   /** HOF에 보내는 수동 action의 단일 실행 상태를 앱 전역 로딩 UI에 전달한다. */

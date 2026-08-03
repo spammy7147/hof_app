@@ -77,6 +77,33 @@ describe('BackendApiClient', () => {
     }
   });
 
+  it('checks the public Android release before login and normalizes its download URL', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const requests: CapturedRequest[] = [];
+    globalThis.fetch = (async (url: RequestInfo | URL, init: RequestInit = {}) => {
+      requests.push({ url: String(url), init });
+      return mockResponse({
+        updateAvailable: true,
+        release: {
+          versionCode: 47,
+          versionName: '1.0.0+47',
+          fileSize: 1024,
+          sha256: 'a'.repeat(64),
+          gitRevision: 'b'.repeat(40),
+          jenkinsBuild: 47,
+          publishedAt: '2026-08-03T00:00:00Z',
+          downloadUrl: '/api/app-releases/android/47/download',
+        },
+      });
+    }) as unknown as typeof fetch;
+
+    const release = await new BackendApiClient('https://backend.test').fetchLatestAndroidRelease(46);
+
+    assert.equal(requests[0]?.url, 'https://backend.test/api/app-releases/android/latest?currentVersionCode=46');
+    assert.equal(readHeader(requests[0]?.init.headers, 'Authorization'), null);
+    assert.equal(release.release.downloadUrl, 'https://backend.test/api/app-releases/android/47/download');
+  });
+
   it('stores only the native refresh token and sends the access token as Bearer authorization', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const storage = memoryTokenStorage();

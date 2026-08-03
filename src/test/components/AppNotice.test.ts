@@ -37,6 +37,9 @@ moduleWithLoader._load = (request, parent, isMain) => {
   }
   if (request === 'expo-status-bar') return { StatusBar: host('StatusBar') };
   if (request.endsWith('/components/AppProviders')) return { AppProviders: host('AppProviders') };
+  if (request.endsWith('/features/update/RequiredUpdateGate')) {
+    return { RequiredUpdateGate: ({ children }: { children: React.ReactNode }) => children };
+  }
   if (request.endsWith('/components/CaptchaChallengeModal')) return { CaptchaChallengeModal: host('CaptchaChallengeModal') };
   if (request.endsWith('/screens/LoginScreen')) return { LoginScreen: host('LoginScreen') };
   if (request.endsWith('/screens/MainScreen')) return { MainScreen: host('MainScreen') };
