@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "HOF 자동화",
+    "name": "spammy ZeroHOF",
     "slug": "hof-automation",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -23,7 +23,7 @@
       "softwareKeyboardLayoutMode": "resize",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#090D12",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
