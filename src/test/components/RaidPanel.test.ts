@@ -82,14 +82,14 @@ describe('RaidPanel', () => {
     assert.equal(button('RAID 전투 화면 열기').length, 0);
   });
 
-  it('countdown은 로컬에서 표시하고 0에 도달할 때 GET을 한 번만 갱신한다', async () => {
+  it('countdown은 로컬에서 표시하고 0에 도달할 때 GET을 한 번만 갱신한다', async (context) => {
+    context.mock.timers.enable({ apis: ['Date', 'setInterval'], now: new Date('2026-08-04T00:00:00Z') });
     let loads = 0;
     await render(React.createElement(RaidPanel, { api: api(async () => { loads += 1; return raidData(loads === 1 ? 1 : null); }) }));
     assert.equal(loads, 1);
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1_150)); });
-    await act(async () => { await Promise.resolve(); });
+    await act(async () => { context.mock.timers.tick(1_000); await Promise.resolve(); });
     assert.equal(loads, 2);
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 1_050)); });
+    await act(async () => { context.mock.timers.tick(1_000); await Promise.resolve(); });
     assert.equal(loads, 2);
   });
 

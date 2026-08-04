@@ -23,11 +23,11 @@ describe('통합 자동화 우선순위 저장 큐', () => {
     queue.enqueue([2, 1, 3]);
     queue.enqueue([2, 3, 1]);
     queue.enqueue([3, 2, 1]);
-    await tick();
+    await flushMicrotasks();
     assert.deepEqual(requests, [[2, 1, 3]]);
 
     resolvers.shift()?.();
-    await tick();
+    await flushMicrotasks();
     assert.deepEqual(requests, [[2, 1, 3], [3, 2, 1]]);
     assert.deepEqual(saved, []);
     assert.deepEqual(persisted, [[2, 1, 3]]);
@@ -106,14 +106,14 @@ describe('통합 자동화 우선순위 저장 큐', () => {
     );
 
     queue.enqueue([2, 1]);
-    await tick();
+    await flushMicrotasks();
     queue.enqueue([1, 2]);
     const idle = queue.whenIdle().then(() => {
       idleResolved = true;
     });
 
     firstFailureRecovery.resolve();
-    await tick();
+    await flushMicrotasks();
     assert.deepEqual(requests, [[2, 1], [1, 2]]);
     assert.equal(idleResolved, false);
 
@@ -123,8 +123,8 @@ describe('통합 자동화 우선순위 저장 큐', () => {
   });
 });
 
-async function tick(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 0));
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve();
 }
 
 function deferred<T>() {

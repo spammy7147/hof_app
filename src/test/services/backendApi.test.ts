@@ -139,24 +139,29 @@ describe('BackendApiClient', () => {
   it('uses one refresh request for concurrent 401 responses and retries each request once', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const storage = memoryTokenStorage('refresh-old');
+    const bothInitialRequestsCompleted = deferred<void>();
+    const refreshResponse = deferred<Response>();
     let refreshCalls = 0;
     const authorizationHeaders: Array<string | null> = [];
     globalThis.fetch = (async (url: RequestInfo | URL, init: RequestInit = {}) => {
       const requestUrl = String(url);
       if (requestUrl.endsWith('/api/auth/refresh')) {
         refreshCalls += 1;
-        await new Promise((resolve) => setTimeout(resolve, 5));
-        return mockResponse(tokenResponse('access-new', 'refresh-new'));
+        return refreshResponse.promise;
       }
       const authorization = readHeader(init.headers, 'Authorization');
       authorizationHeaders.push(authorization);
+      if (authorizationHeaders.length === 2) bothInitialRequestsCompleted.resolve();
       return authorization === 'Bearer access-new'
         ? mockResponse({ accountId: 1, playerName: '공민이' })
         : mockResponse({ code: 'AUTH_TOKEN_INVALID', message: '로그인이 필요합니다.' }, 401);
     }) as unknown as typeof fetch;
     const client = new BackendApiClient('http://backend.test', storage);
 
-    await Promise.all([client.fetchStatus(), client.fetchStatus()]);
+    const statuses = Promise.all([client.fetchStatus(), client.fetchStatus()]);
+    await bothInitialRequestsCompleted.promise;
+    refreshResponse.resolve(mockResponse(tokenResponse('access-new', 'refresh-new')));
+    await statuses;
 
     assert.equal(refreshCalls, 1);
     assert.equal(storage.value, 'refresh-new');
@@ -167,6 +172,8 @@ describe('BackendApiClient', () => {
     const { BackendApiClient } = await loadBackendApi();
     platformOS = 'web';
     globalThis.BroadcastChannel = FakeBroadcastChannel as unknown as typeof BroadcastChannel;
+    const firstRefreshResponse = deferred<Response>();
+    const secondRefreshRequested = deferred<void>();
     let refreshCalls = 0;
 
     globalThis.fetch = (async (url: RequestInfo | URL, init: RequestInit = {}) => {
@@ -177,9 +184,9 @@ describe('BackendApiClient', () => {
       if (requestUrl.endsWith('/api/auth/refresh')) {
         refreshCalls += 1;
         if (refreshCalls === 1) {
-          await new Promise((resolve) => setTimeout(resolve, 10));
-          return mockResponse(tokenResponse('access-new'));
+          return firstRefreshResponse.promise;
         }
+        secondRefreshRequested.resolve();
         return mockResponse({
           code: 'REFRESH_RETRY_REQUIRED',
           message: '다른 요청에서 로그인 정보가 갱신되었습니다.',
@@ -196,10 +203,13 @@ describe('BackendApiClient', () => {
     await firstTab.login({ loginId: 'hof-id', password: 'hof-password' });
     await secondTab.login({ loginId: 'hof-id', password: 'hof-password' });
 
-    const [firstStatus, secondStatus] = await Promise.all([
+    const statuses = Promise.all([
       firstTab.fetchStatus(),
       secondTab.fetchStatus(),
     ]);
+    await secondRefreshRequested.promise;
+    firstRefreshResponse.resolve(mockResponse(tokenResponse('access-new')));
+    const [firstStatus, secondStatus] = await statuses;
 
     assert.equal(refreshCalls, 2);
     assert.equal(firstStatus.playerName, '공민이');

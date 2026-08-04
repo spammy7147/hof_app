@@ -474,17 +474,18 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
     assert.equal(visibleModals(renderer.root).length, 1);
   });
 
-  it('moves focus into the add overlay and restores its invoking control on close', async () => {
+  it('moves focus into the add overlay and restores its invoking control on close', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
     focusCalls.length = 0;
     const renderer = await renderSettings({ entries: [entry(1, 'QUEST')] });
     await act(async () => {
       renderer.root.findByProps({ accessibilityHint: '자동화 유형 선택 창을 엽니다' }).props.onPress();
     });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     await act(async () => {
       visibleModals(renderer.root)[0]?.props.onRequestClose();
     });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(focusLabel(focusCalls.at(-1)), '자동화 추가');
   });
 });
@@ -632,10 +633,6 @@ function deferred<T>() {
   let resolvePromise!: (value: T) => void;
   const promise = new Promise<T>((resolve) => { resolvePromise = resolve; });
   return { promise, resolve: resolvePromise };
-}
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 }
 
 function focusLabel(node: unknown): unknown {

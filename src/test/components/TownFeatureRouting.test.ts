@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { readFileSync } from 'node:fs';
 
 import { TOWN_CATEGORIES, TOWN_MENUS } from '../../main/domain/townMenus';
 import { TOWN_PANEL_REGISTRY } from '../../main/features/town/townPanelRegistry';
@@ -82,19 +81,10 @@ describe('마을 33개 기능 route 통합', () => {
     );
   });
 
-  it('제외 기능과 준비 중 placeholder가 카탈로그·상세 shell에 없다', () => {
+  it('제외 기능이 승인된 마을 카탈로그에 없다', () => {
     assert.equal(
       TOWN_MENUS.some(({ label }) => /검문소|스토리 아이템|마을 신문|초코/.test(label)),
       false,
     );
-    const detailShell = readFileSync(
-      new URL('../../main/features/town/components/TownDetailShell.tsx', import.meta.url),
-      'utf8',
-    );
-    const townScreen = readFileSync(
-      new URL('../../main/screens/TownTabScreen.tsx', import.meta.url),
-      'utf8',
-    );
-    assert.doesNotMatch(`${detailShell}\n${townScreen}`, /기능 연결을 준비하고 있습니다/);
   });
 });

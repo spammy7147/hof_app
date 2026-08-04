@@ -5,8 +5,12 @@ import { describe, it } from 'node:test';
 
 const nativeSource = readFileSync(resolve(process.cwd(), 'src/main/platform/pushNotifications.native.ts'), 'utf8');
 const hookSource = readFileSync(resolve(process.cwd(), 'src/main/features/push/useAndroidPushRegistration.ts'), 'utf8');
-const appConfig = readFileSync(resolve(process.cwd(), 'app.json'), 'utf8');
-const packageJson = readFileSync(resolve(process.cwd(), 'package.json'), 'utf8');
+const appConfig = JSON.parse(readFileSync(resolve(process.cwd(), 'app.json'), 'utf8')) as {
+  expo: { android?: { googleServicesFile?: string }; plugins?: Array<string | [string, unknown]> };
+};
+const packageJson = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8')) as {
+  dependencies?: Record<string, string>;
+};
 
 describe('Android 직접 푸시 등록', () => {
   it('Expo Go에서는 지원되지 않는 원격 푸시 모듈을 앱 시작 시 평가하지 않는다', () => {
@@ -43,12 +47,12 @@ describe('Android 직접 푸시 등록', () => {
   });
 
   it('네이티브 빌드에 알림 플러그인과 Firebase 설정 파일을 연결한다', () => {
-    assert.match(appConfig, /expo-notifications/);
-    assert.match(appConfig, /googleServicesFile/);
+    assert.equal(appConfig.expo.plugins?.includes('expo-notifications'), true);
+    assert.equal(appConfig.expo.android?.googleServicesFile, './google-services.json');
   });
 
   it('개발 클라이언트가 시작 화면을 닫을 수 있도록 splash screen 모듈을 연결한다', () => {
-    assert.match(appConfig, /expo-splash-screen/);
-    assert.match(packageJson, /expo-splash-screen/);
+    assert.equal(appConfig.expo.plugins?.includes('expo-splash-screen'), true);
+    assert.ok(packageJson.dependencies?.['expo-splash-screen']);
   });
 });

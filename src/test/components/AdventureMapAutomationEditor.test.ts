@@ -775,7 +775,8 @@ describe('AdventureMapAutomationEditor', () => {
     assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), '첫 맵'), true);
   });
 
-  it('restores accessibility focus to each live preset trigger after every ordinary close path', async () => {
+  it('restores accessibility focus to each live preset trigger after every ordinary close path', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
     accessibilityFocusCalls.length = 0;
     const renderer = await renderEditor({
       entry: entry([
@@ -789,26 +790,27 @@ describe('AdventureMapAutomationEditor', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.root.findByType('Modal' as unknown as React.ElementType).props.onRequestClose(); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), '첫 맵 프리셋 선택 열기');
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 배경 닫기' }).props.onPress(); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), '둘째 맵 프리셋 선택 열기');
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), '첫 맵 프리셋 선택 열기');
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '고정 파티 프리셋 선택' }).props.onPress(); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), '둘째 맵 프리셋 선택 열기');
   });
 
-  it('does not restore stale adventure preset focus after row removal, busy state, or unmount', async () => {
+  it('does not restore stale adventure preset focus after row removal, busy state, or unmount', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
     accessibilityFocusCalls.length = 0;
     const base = editorProps({
       entry: entry([
@@ -824,20 +826,20 @@ describe('AdventureMapAutomationEditor', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '첫 맵 프리셋 선택 열기' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '첫 맵 삭제' }).props.onPress(); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === '첫 맵 프리셋 선택 열기'), false);
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.update(React.createElement(AdventureMapAutomationEditor, { ...base, saving: true })); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === '둘째 맵 프리셋 선택 열기'), false);
 
     await act(async () => { renderer.update(React.createElement(AdventureMapAutomationEditor, base)); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '둘째 맵 프리셋 선택 열기' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.unmount(); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(accessibilityFocusCalls.length, 0);
   });
 
@@ -1159,7 +1161,4 @@ function deferred<T>() {
     reject = fail;
   });
   return { promise, reject, resolve };
-}
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

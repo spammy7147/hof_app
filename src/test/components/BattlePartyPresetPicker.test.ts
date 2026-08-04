@@ -90,29 +90,31 @@ describe('BattlePartyPresetPicker', () => {
     await act(async () => loading.unmount());
   });
 
-  it('restores the live trigger after close, direct selection, and preset selection', async () => {
+  it('restores the live trigger after close, direct selection, and preset selection', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
     focusCalls.length = 0;
     nativeHandle = 11;
     const renderer = await renderPicker();
 
     await openPicker(renderer);
     await act(async () => (commonPickerCalls.at(-1)?.onClose as () => void)());
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.deepEqual(focusCalls, [11]);
 
     await openPicker(renderer);
     const direct = (commonPickerCalls.at(-1)?.syntheticOptions as Array<Record<string, unknown>>)[0]!;
     await act(async () => (direct.onSelect as () => void)());
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.deepEqual(focusCalls, [11, 11]);
 
     await openPicker(renderer);
     await act(async () => (commonPickerCalls.at(-1)?.onSelectPreset as (preset: PartyPresetResponse) => void)(PRESETS[0]!));
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.deepEqual(focusCalls, [11, 11, 11]);
   });
 
-  it('skips delayed restoration after reopen, unmount, or a native handle replacement', async () => {
+  it('skips delayed restoration after reopen, unmount, or a native handle replacement', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
     focusCalls.length = 0;
     nativeHandle = 11;
     const renderer = await renderPicker();
@@ -120,29 +122,25 @@ describe('BattlePartyPresetPicker', () => {
     await openPicker(renderer);
     await act(async () => (commonPickerCalls.at(-1)?.onClose as () => void)());
     nativeHandle = 12;
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.deepEqual(focusCalls, []);
 
     nativeHandle = 13;
     await openPicker(renderer);
     await act(async () => (commonPickerCalls.at(-1)?.onClose as () => void)());
     await openPicker(renderer);
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.deepEqual(focusCalls, []);
 
     await act(async () => (commonPickerCalls.at(-1)?.onClose as () => void)());
     await act(async () => renderer.unmount());
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.deepEqual(focusCalls, []);
   });
 });
 
 async function openPicker(renderer: ReturnType<typeof create>) {
   await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 파티 프리셋 선택' }).props.onPress());
-}
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 async function renderPicker(overrides: Record<string, unknown> = {}) {

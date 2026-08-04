@@ -712,7 +712,8 @@ describe('PartyPresetList', () => {
     }));
   });
 
-  it('scrolls a beyond-first-viewport tree selection into view and focuses its mounted editor', async () => {
+  it('scrolls a beyond-first-viewport tree selection into view and focuses its mounted editor', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
     scrollToIndexCalls.length = 0;
     accessibilityFocusCalls.length = 0;
     const deepPresets = Array.from({ length: 12 }, (_, index) => ({
@@ -724,7 +725,7 @@ describe('PartyPresetList', () => {
     });
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 폴더, 프리셋 12개, 열기' }).props.onPress());
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '프리셋 12' }).props.onPress());
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 120)); });
+    await act(async () => { context.mock.timers.tick(120); });
 
     assert.ok(scrollToIndexCalls.some((call) => call.index === 11));
     assert.ok(accessibilityFocusCalls.includes(77));

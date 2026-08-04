@@ -283,7 +283,8 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.deepEqual(updates, [[{ ...first, executionOrder: 0 }]]);
   });
 
-  it('fences a duplicate preset picker across reorder while keeping the current picker live', async () => {
+  it('fences a duplicate preset picker across reorder while keeping the current picker live', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
     accessibilityFocusCalls.length = 0;
     const first = mapSetting('kill', 'a', 0);
     const second = { ...mapSetting('kill', 'a', 1), presetMode: 'EXPLICIT' as const, partyPresetId: 8 };
@@ -304,14 +305,14 @@ describe('QuestAutomationEditor mounted behavior', () => {
     });
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '프리셋 검색' }).length, 0);
     await act(async () => { retainedSelect(); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(updates.length, 0);
     assert.deepEqual(accessibilityFocusCalls, []);
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 프리셋 선택' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Safe 프리셋 선택' }).props.onPress(); });
     assert.deepEqual(updates[0]?.map(({ partyPresetId }) => partyPresetId), [7, null]);
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), 'Combat · kill 1번째 맵 프리셋 선택');
   });
 
@@ -787,7 +788,8 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(hasText(renderer.root, '검색 결과가 없습니다'), true);
   });
 
-  it('restores focus to a live quest preset trigger after close and selection', async () => {
+  it('restores focus to a live quest preset trigger after close and selection', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
     accessibilityFocusCalls.length = 0;
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
     const renderer = await renderEditor({
@@ -801,17 +803,18 @@ describe('QuestAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: label }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), label);
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: label }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Safe 프리셋 선택' }).props.onPress(); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), label);
   });
 
-  it('fences stale quest preset focus after target removal, busy closure, newer invocation, and unmount', async () => {
+  it('fences stale quest preset focus after target removal, busy closure, newer invocation, and unmount', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
     const entry = questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [
       mapSetting('kill', 'a', 0), mapSetting('kill', 'b', 1),
@@ -829,13 +832,13 @@ describe('QuestAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · Alpha 삭제' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === firstLabel), false);
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: firstLabel }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.update(React.createElement(QuestAutomationEditor, { ...base, saving: true })); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === firstLabel), false);
 
     await act(async () => { renderer.update(React.createElement(QuestAutomationEditor, base)); });
@@ -843,17 +846,18 @@ describe('QuestAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: firstLabel }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === firstLabel), false);
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.unmount(); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(accessibilityFocusCalls.length, 0);
   });
 
-  it('restores focus to the monster picker trigger after ordinary close and map selection', async () => {
+  it('restores focus to the monster picker trigger after ordinary close and map selection', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
     accessibilityFocusCalls.length = 0;
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
     const entry = questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]);
@@ -866,19 +870,20 @@ describe('QuestAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat 전투맵 추가' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투맵 선택 닫기' }).props.onPress(); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), 'Combat 전투맵 추가');
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat 전투맵 추가' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투맵 검색' }).props.onChangeText('Beta'); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 맵 선택' }).props.onPress(); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투맵 선택' }).length, 0);
     assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), 'Combat 전투맵 추가');
   });
 
-  it('does not restore stale picker focus after busy closure, reopen, or unmount', async () => {
+  it('does not restore stale picker focus after busy closure, reopen, or unmount', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
     const entry = questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]);
     const base = editorProps({ entry, quests: [quest], maps: [catalogMap('battle_map', 'a', 'Alpha')] });
@@ -888,7 +893,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat 전투맵 추가' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.update(React.createElement(QuestAutomationEditor, { ...base, saving: true })); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === 'Combat 전투맵 추가'), false);
 
     await act(async () => { renderer.update(React.createElement(QuestAutomationEditor, base)); });
@@ -896,13 +901,13 @@ describe('QuestAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투맵 선택 닫기' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat 전투맵 추가' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === 'Combat 전투맵 추가'), false);
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투맵 선택 닫기' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.unmount(); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(accessibilityFocusCalls.length, 0);
   });
 
@@ -1697,4 +1702,3 @@ function questMap(categoryId: string, mapCode: string, executionOrder: number) {
 function catalogMap(categoryId: string, mapCode: string, name: string): BattleMapResponse { return { categoryId, mapCode, name, groupName: null, groupOrder: 0, mapOrder: 0, recommendedLevel: null, availableCount: null, attemptCount: null, winCount: null, cooldownRemainingText: null, cooldownRemainingSeconds: null, keyMode: 'NOT_REQUIRED', keyCount: null, requiredTime: null, supportsThreeBattles: false, enabled: true, resolved: true, iconUrl: null, rawHref: '' }; }
 function preset(id: number, name: string) { return { id, accountId: 1, name, displayOrder: id, isPrimary: false, members: [], createdAt: '', updatedAt: '', folderId: null as number | null }; }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; }
-function delay(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }

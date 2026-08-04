@@ -858,7 +858,8 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'Modal').length, 0);
   });
 
-  it('moves focus into the preset modal and restores each live invoking row on every ordinary close path', async () => {
+  it('moves focus into the preset modal and restores each live invoking row on every ordinary close path', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
     accessibilityFocusCalls.length = 0;
     keyboardFocusCalls.length = 0;
     const renderer = await renderEditor({
@@ -872,26 +873,27 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(focusedRole(accessibilityFocusCalls.at(-1)), 'header');
     assert.deepEqual(keyboardFocusCalls, []);
     await act(async () => { renderer.root.find((node) => (node.type as unknown) === 'Modal').props.onRequestClose(); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), 'Alpha 프리셋 선택 열기');
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 프리셋 선택 열기' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 배경 닫기' }).props.onPress(); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), 'Beta 프리셋 선택 열기');
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), 'Alpha 프리셋 선택 열기');
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 프리셋 선택 열기' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Existing 프리셋 선택' }).props.onPress(); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), 'Beta 프리셋 선택 열기');
   });
 
-  it('does not restore a stale preset trigger after its row is removed, the editor becomes busy, or it unmounts', async () => {
+  it('does not restore a stale preset trigger after its row is removed, the editor becomes busy, or it unmounts', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
     accessibilityFocusCalls.length = 0;
     const base = editorProps({
       entry: battleEntry([setting('a', 3, 0), setting('b', 3, 1)]),
@@ -904,20 +906,20 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Alpha 삭제' }).props.onPress(); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === 'Alpha 프리셋 선택 열기'), false);
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 프리셋 선택 열기' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.update(React.createElement(BattleMapAutomationEditor, { ...base, saving: true })); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === 'Beta 프리셋 선택 열기'), false);
 
     await act(async () => { renderer.update(React.createElement(BattleMapAutomationEditor, base)); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 프리셋 선택 열기' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.unmount(); });
-    await act(async () => { await delay(280); });
+    await act(async () => { context.mock.timers.tick(280); });
     assert.equal(accessibilityFocusCalls.length, 0);
   });
 
@@ -1109,7 +1111,4 @@ function deferred<T>() {
   let reject!: (reason?: unknown) => void;
   const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
   return { promise, reject, resolve };
-}
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

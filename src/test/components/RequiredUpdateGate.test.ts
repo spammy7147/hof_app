@@ -158,7 +158,8 @@ describe('RequiredUpdateGate', () => {
     await act(async () => { renderer.unmount(); });
   });
 
-  it('rechecks when the app becomes active after the foreground interval', async () => {
+  it('rechecks when the app becomes active after the foreground interval', async (context) => {
+    context.mock.timers.enable({ apis: ['Date'], now: new Date('2026-08-04T00:00:00Z') });
     process.env.NODE_ENV = 'production';
     let checks = 0;
     const api = {
@@ -185,21 +186,17 @@ describe('RequiredUpdateGate', () => {
     });
     assert.equal(checks, 1);
 
-    const originalNow = Date.now;
-    Date.now = () => originalNow() + 60_001;
-    try {
-      await act(async () => {
-        appStateHandler?.('active');
-        await Promise.resolve();
-      });
-    } finally {
-      Date.now = originalNow;
-    }
+    context.mock.timers.tick(60_001);
+    await act(async () => {
+      appStateHandler?.('active');
+      await Promise.resolve();
+    });
     assert.equal(checks, 2);
     await act(async () => { renderer.unmount(); });
   });
 
-  it('keeps the current app screen mounted while an active-state recheck runs', async () => {
+  it('keeps the current app screen mounted while an active-state recheck runs', async (context) => {
+    context.mock.timers.enable({ apis: ['Date'], now: new Date('2026-08-04T00:00:00Z') });
     process.env.NODE_ENV = 'production';
     const recheck = deferred<ReturnType<typeof latestRelease>>();
     let checks = 0;
@@ -220,28 +217,24 @@ describe('RequiredUpdateGate', () => {
       await Promise.resolve();
     });
 
-    const originalNow = Date.now;
-    Date.now = () => originalNow() + 60_001;
-    try {
-      await act(async () => {
-        appStateHandler?.('active');
-        await Promise.resolve();
-      });
-      assert.equal(checks, 2);
-      assert.equal(renderer.root.findAllByType(ViewMarker).length, 1);
+    context.mock.timers.tick(60_001);
+    await act(async () => {
+      appStateHandler?.('active');
+      await Promise.resolve();
+    });
+    assert.equal(checks, 2);
+    assert.equal(renderer.root.findAllByType(ViewMarker).length, 1);
 
-      await act(async () => {
-        recheck.resolve(latestRelease(46));
-        await recheck.promise;
-      });
-      assert.equal(renderer.root.findAllByType(ViewMarker).length, 1);
-    } finally {
-      Date.now = originalNow;
-    }
+    await act(async () => {
+      recheck.resolve(latestRelease(46));
+      await recheck.promise;
+    });
+    assert.equal(renderer.root.findAllByType(ViewMarker).length, 1);
     await act(async () => { renderer.unmount(); });
   });
 
-  it('shows the update screen only when an active-state recheck finds a new release', async () => {
+  it('shows the update screen only when an active-state recheck finds a new release', async (context) => {
+    context.mock.timers.enable({ apis: ['Date'], now: new Date('2026-08-04T00:00:00Z') });
     process.env.NODE_ENV = 'production';
     let checks = 0;
     const api = {
@@ -261,16 +254,11 @@ describe('RequiredUpdateGate', () => {
       await Promise.resolve();
     });
 
-    const originalNow = Date.now;
-    Date.now = () => originalNow() + 60_001;
-    try {
-      await act(async () => {
-        appStateHandler?.('active');
-        await Promise.resolve();
-      });
-    } finally {
-      Date.now = originalNow;
-    }
+    context.mock.timers.tick(60_001);
+    await act(async () => {
+      appStateHandler?.('active');
+      await Promise.resolve();
+    });
 
     assert.equal(renderer.root.findAllByType(ViewMarker).length, 0);
     assert.equal(renderer.root.findAll(
