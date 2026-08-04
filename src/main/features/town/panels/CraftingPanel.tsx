@@ -8,9 +8,8 @@ import type {
 } from '../../../types/api';
 import type { TownApi } from '../api/townApi';
 import { TownActionResult } from '../components/TownActionResult';
-import { TownConfirmSheet } from '../components/TownConfirmSheet';
 import { TownItemList } from '../components/TownItemList';
-import { TownMutationBusyError, useTownFeature } from '../hooks/useTownFeature';
+import { useTownFeature } from '../hooks/useTownFeature';
 
 type Props = { api: TownApi; mode: CraftingMode; resolveCaptcha?: () => Promise<void> };
 type Mutation = { kind: 'complete' } | { kind: 'item'; request: WorkbaseStartRequest | ClarisCraftRequest | RefineRequest | CreateCraftRequest };
@@ -28,7 +27,6 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
   const [refineCount, setRefineCount] = useState<number | null>(null);
   const [requestedCategoryId, setRequestedCategoryId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [confirmation, setConfirmation] = useState<'item' | 'complete' | null>(null);
   const [response, setResponse] = useState<CraftingResponse | null>(null);
   const [actionResult, setActionResult] = useState<{ key: string; value: TownActionResultResponse } | null>(null);
   const stagedResponse = useRef<CraftingResponse | null>(null);
@@ -58,11 +56,11 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
 
   useEffect(() => {
     stagedResponse.current = null;
-    setResponse(null); setActionResult(null); setSelectedIds([]); setAdditionalIds([]); setQuantityText('1'); setSearchQuery(''); setMaterialPickerOpen(false); setRefineCount(null); setRequestedCategoryId(null); setHistoryOpen(false); setConfirmation(null);
+    setResponse(null); setActionResult(null); setSelectedIds([]); setAdditionalIds([]); setQuantityText('1'); setSearchQuery(''); setMaterialPickerOpen(false); setRefineCount(null); setRequestedCategoryId(null); setHistoryOpen(false);
   }, [apiKey, mode]);
   useEffect(() => {
     stagedResponse.current = null;
-    setResponse(null); setActionResult(null); setSelectedIds([]); setAdditionalIds([]); setMaterialPickerOpen(false); setConfirmation(null);
+    setResponse(null); setActionResult(null); setSelectedIds([]); setAdditionalIds([]); setMaterialPickerOpen(false);
   }, [requestedCategoryId]);
   useEffect(() => {
     if (!data) return;
@@ -102,12 +100,9 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
     if (stagedResponse.current) setResponse(stagedResponse.current);
     setActionResult({ key: featureKey, value: result });
     stagedResponse.current = null;
-    setConfirmation(null);
   };
   const submit = (mutation: Mutation) => {
-    void town.submit(mutation).then(finish).catch((error: unknown) => {
-      if (!(error instanceof TownMutationBusyError)) setConfirmation(null);
-    });
+    void town.submit(mutation).then(finish).catch(() => undefined);
   };
   const resultFooter = <View style={styles.section}>
     {data.warningCode === 'NO_ADDITIONAL_MATERIAL' ? <Text accessibilityRole="alert" style={styles.warning}>추가 소재 없이 제작했습니다.</Text> : null}
@@ -118,7 +113,7 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
   const footer = <View style={styles.section}>
     {needsQuantity ? <QuantityInput value={quantityText} onChange={setQuantityText} min={data.minQuantity} max={data.maxQuantity} valid={quantityValid} /> : null}
     {mode === 'refine' || mode === 'veteran' ? <View style={styles.section}><Text style={styles.label}>제련 횟수</Text><View style={styles.chips}>{data.allowedRefineCounts.map((count) => <Pressable key={count} accessibilityLabel={`제련 ${count}회 선택`} accessibilityRole="radio" accessibilityState={{ checked: refineCount === count }} onPress={() => setRefineCount(count)} style={[styles.chip, refineCount === count && styles.chipSelected]}><Text style={styles.chipText}>{count}회</Text></Pressable>)}</View></View> : null}
-    <ActionButton label={mode === 'refine' || mode === 'veteran' ? '제련' : mode === 'workbase' ? '작업 시작' : mode === 'claris' ? '교환' : '제작'} disabled={!canSubmit || town.status === 'submitting'} onPress={() => setConfirmation('item')} />
+    <ActionButton label={mode === 'refine' || mode === 'veteran' ? '제련' : mode === 'workbase' ? '작업 시작' : mode === 'claris' ? '교환' : '제작'} disabled={!canSubmit || town.status === 'submitting'} onPress={() => request && submit({ kind: 'item', request })} />
     {resultFooter}
   </View>;
   const createControls = mode === 'create' ? <View accessibilityLabel="제작 설정 고정 영역" style={styles.fixedControls}>
@@ -130,7 +125,7 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
       onClose={() => setMaterialPickerOpen(false)}
       onSelect={(id) => { setAdditionalIds(id == null ? [] : [id]); setMaterialPickerOpen(false); }}
     />
-    <ActionButton label="제작" disabled={!canSubmit || town.status === 'submitting'} onPress={() => setConfirmation('item')} />
+    <ActionButton label="제작" disabled={!canSubmit || town.status === 'submitting'} onPress={() => request && submit({ kind: 'item', request })} />
   </View> : null;
 
   return <View style={styles.container}>
@@ -143,15 +138,9 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
       onSelectionChange={(ids) => {
         setSelectedIds(ids.filter((id) => id.startsWith('recipe:')).map((id) => id.slice('recipe:'.length)).slice(0, 1));
       }}
-      header={<View style={styles.section}><Text style={styles.title}>{title}</Text><CategoryDropdown data={data} disabled={town.status === 'submitting'} onSelect={setRequestedCategoryId} />{mode === 'create' ? <CraftingSearch value={searchQuery} onChange={setSearchQuery} resultCount={visibleItems.length} /> : null}{town.status === 'loading' ? <Text accessibilityLiveRegion="polite" style={styles.hint}>선택한 종류의 제작품을 불러오는 중...</Text> : null}{data.activeJob ? <View accessibilityLiveRegion="polite" style={styles.job}><Text style={styles.label}>{data.activeJob.label}</Text><Text style={styles.warning}>{remaining == null ? '남은 시간 확인 불가' : remaining > 0 ? `${remaining.toLocaleString()}초 후 확인 가능` : '제작 결과를 확인할 수 있습니다.'}</Text>{data.activeJob.completionAvailable ? <ActionButton label="제작 완료" disabled={town.status === 'submitting'} onPress={() => setConfirmation('complete')} /> : remaining === 0 ? <ActionButton label="제작 상태 확인" disabled={town.status === 'loading' || town.status === 'submitting'} onPress={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}</View> : null}</View>}
+      header={<View style={styles.section}><Text style={styles.title}>{title}</Text><CategoryDropdown data={data} disabled={town.status === 'submitting'} onSelect={setRequestedCategoryId} />{mode === 'create' ? <CraftingSearch value={searchQuery} onChange={setSearchQuery} resultCount={visibleItems.length} /> : null}{town.status === 'loading' ? <Text accessibilityLiveRegion="polite" style={styles.hint}>선택한 종류의 제작품을 불러오는 중...</Text> : null}{data.activeJob ? <View accessibilityLiveRegion="polite" style={styles.job}><Text style={styles.label}>{data.activeJob.label}</Text><Text style={styles.warning}>{remaining == null ? '남은 시간 확인 불가' : remaining > 0 ? `${remaining.toLocaleString()}초 후 확인 가능` : '제작 결과를 확인할 수 있습니다.'}</Text>{data.activeJob.completionAvailable ? <ActionButton label="제작 완료" disabled={town.status === 'submitting'} onPress={() => submit({ kind: 'complete' })} /> : remaining === 0 ? <ActionButton label="제작 상태 확인" disabled={town.status === 'loading' || town.status === 'submitting'} onPress={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}</View> : null}</View>}
       footer={mode === 'create' ? resultFooter : footer} emptyMessage={town.status === 'loading' ? null : normalizedQuery ? '검색 결과가 없습니다.' : '현재 분류에 표시할 품목이 없습니다.'} />
     {createControls}
-    <TownConfirmSheet visible={confirmation === 'item'} title={`${title} 확인`}
-      message={mode === 'create' && !material ? '추가 소재 없이 제작합니다. 계속할까요?' : '실행 결과는 되돌릴 수 없습니다.'}
-      confirmLabel={mode === 'refine' || mode === 'veteran' ? '제련' : mode === 'workbase' ? '작업 시작' : mode === 'claris' ? '교환' : '제작'} destructive submitting={town.status === 'submitting'}
-      details={[{ label: '품목', value: selected?.label ?? '미선택' }, ...(needsQuantity ? [{ label: '수량', value: `${quantity || 0}개` }] : []), ...(refineCount != null ? [{ label: '제련 횟수', value: `${refineCount}회` }] : []), ...(mode === 'create' ? [{ label: '추가 소재', value: material?.label ?? '사용 안 함', warning: !material }] : []), { label: '표시 비용', value: selected?.cost == null ? '확인 불가' : `$${selected.cost.toLocaleString()}` }]}
-      onCancel={() => setConfirmation(null)} onConfirm={() => request && submit({ kind: 'item', request })} />
-    <TownConfirmSheet visible={confirmation === 'complete'} title="작업장 제작 결과 확인" message="자동 확인하지 않고 지금 HOF 제작 완료 action을 한 번 실행합니다." confirmLabel="제작 완료" submitting={town.status === 'submitting'} details={[]} onCancel={() => setConfirmation(null)} onConfirm={() => submit({ kind: 'complete' })} />
   </View>;
 }
 

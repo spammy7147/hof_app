@@ -23,9 +23,7 @@ describe('PantheonPanel', () => {
     await render(React.createElement(PantheonPanel, { api: api() }));
     assert.equal(text().includes('군신 마르두크'), true);
     assert.ok(button('군신 마르두크 비율 기부 · 보유 Funds의 1%').length >= 1);
-    await press('군신 마르두크 아이템 기부 · Avatar Ticket ×1');
-    assert.equal(text().includes('기부 아이템 Avatar Ticket ×1'), true);
-    await pressLast('취소');
+    assert.ok(button('군신 마르두크 아이템 기부 · Avatar Ticket ×1').length >= 1);
     assert.equal(button('알 수 없는 기부').length, 0);
   });
 
@@ -48,29 +46,26 @@ describe('PantheonPanel', () => {
     await render(React.createElement(PantheonPanel, { api: api(undefined, async (path, request) => { calls.push([path, request]); return { ...detail(), result: result() }; }) }));
     await press('군신 마르두크 비율 기부 · 보유 Funds의 1%');
     assert.equal(text().includes('보유 Funds의 1%'), true);
-    await pressLast('비율 기부');
     assert.deepEqual(calls, [['/api/town/pantheon/shrine-1/actions', { actionId: 'percent-id' }]]);
     assert.equal(text().includes('기부 완료'), true);
   });
 
-  it('빠른 중복 확인은 POST를 한 번만 보낸다', async () => {
+  it('빠른 중복 클릭은 POST를 한 번만 보낸다', async () => {
     const pending = deferred<unknown>(); let calls = 0;
     await render(React.createElement(PantheonPanel, { api: api(undefined, async () => { calls += 1; return pending.promise; }) }));
-    await press('군신 마르두크 정액 기부 · 50,000 Funds');
-    const confirm = pressableWithText('정액 기부');
-    await act(async () => { confirm.props.onPress(); confirm.props.onPress(); await Promise.resolve(); });
+    const action = button('군신 마르두크 정액 기부 · 50,000 Funds').at(-1)!;
+    await act(async () => { action.props.onPress(); action.props.onPress(); await Promise.resolve(); });
     assert.equal(calls, 1);
     pending.resolve({ ...detail(), result: result() });
     await act(async () => { await pending.promise; });
   });
 
-  it('계정 API 변경 뒤 이전 카드의 확인창을 폐기한다', async () => {
+  it('계정 API 변경 뒤 이전 카드를 폐기한다', async () => {
     const newPaths: string[] = [];
     const oldApi = api(async () => street('이전 신전'));
     const newApi = api(async (path) => { newPaths.push(path); return path === '/api/town/pantheon' ? street('새 신전') : detail('새 신전'); });
     await render(React.createElement(PantheonPanel, { api: oldApi }));
-    await press('이전 신전 정액 기부 · 50,000 Funds');
-    assert.equal(text().includes('이전 신전 · 정액 기부'), true);
+    assert.equal(text().includes('이전 신전'), true);
     await act(async () => mounted!.update(React.createElement(PantheonPanel, { api: newApi })));
     await act(async () => { await Promise.resolve(); });
     assert.equal(text().includes('새 신전'), true);
@@ -87,7 +82,6 @@ describe('PantheonPanel', () => {
     });
     await render(React.createElement(PantheonPanel, { api: captchaApi, resolveCaptcha: async () => { resolves += 1; } }));
     await press('군신 마르두크 정액 기부 · 50,000 Funds');
-    await pressLast('정액 기부');
     assert.equal(resolves, 1);
     assert.deepEqual(requests, [{ actionId: 'fixed-id' }, { actionId: 'fixed-id' }]);
     assert.equal(text().includes('<html>'), false);
@@ -97,7 +91,6 @@ describe('PantheonPanel', () => {
     await act(async () => mounted!.update(React.createElement(PantheonPanel, { api: failingApi })));
     await act(async () => { await Promise.resolve(); });
     await press('군신 마르두크 정액 기부 · 50,000 Funds');
-    await pressLast('정액 기부');
     assert.equal(text().includes('신전 요청 실패'), true);
   });
 });
@@ -109,7 +102,5 @@ function api(load: (path: string) => Promise<unknown> = async (path) => path ===
 async function render(node: React.ReactElement) { await act(async () => { mounted = create(node); }); await act(async () => { await Promise.resolve(); }); }
 function button(label: string): ReactTestInstance[] { return mounted!.root.findAll((node) => node.props.accessibilityLabel === label); }
 async function press(label: string) { const node = button(label).at(-1); assert.ok(node, `missing ${label}`); await act(async () => node.props.onPress()); await act(async () => { await Promise.resolve(); }); }
-async function pressLast(label: string) { const node = pressableWithText(label); await act(async () => node.props.onPress()); await act(async () => { await Promise.resolve(); }); }
-function pressableWithText(label: string): ReactTestInstance { return mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0).at(-1)!; }
 function text() { return mounted!.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join('')).join(' '); }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((next) => { resolve = next; }); return { promise, resolve }; }

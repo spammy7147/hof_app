@@ -31,7 +31,6 @@ export function TownDetailShell({ menu, onBack, children }: TownDetailShellProps
           style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
         >
           <Text style={styles.backIcon}>‹</Text>
-          <Text style={styles.backLabel}>목록</Text>
         </Pressable>
         <View style={styles.heading}>
           <Text accessibilityRole="header" accessible ref={titleRef} style={styles.title} testID="town-detail-title">
@@ -67,46 +66,46 @@ const styles = StyleSheet.create({
     gap: theme.spacing.sm,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-    paddingBottom: theme.spacing.sm,
-  },
-  backButton: {
-    minWidth: 64,
-    minHeight: 44,
+    minHeight: 60,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.borderStrong,
-    borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+    paddingBottom: theme.spacing.sm,
+    position: 'relative',
+  },
+  backButton: {
+    position: 'absolute',
+    left: 0,
+    top: 4,
+    width: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   backIcon: {
-    color: theme.colors.accentBlue,
-    fontSize: 26,
-    lineHeight: 28,
-  },
-  backLabel: {
     color: theme.colors.text,
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 34,
+    fontWeight: '400',
+    lineHeight: 38,
   },
   heading: {
     flex: 1,
+    alignItems: 'center',
     gap: 2,
+    marginHorizontal: 52,
   },
   title: {
     color: theme.colors.text,
     fontSize: 18,
     fontWeight: '900',
+    textAlign: 'center',
   },
   subtitle: {
     color: theme.colors.textMuted,
     fontSize: 11,
+    textAlign: 'center',
   },
   body: {
     flex: 1,

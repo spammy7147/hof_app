@@ -43,7 +43,7 @@ describe('CraftingPanel', () => {
     assert.equal(text().includes('1~10 사이의 정수'), true);
   });
 
-  it('작업 완료는 자동 요청하지 않고 사용자가 확인한 뒤 한 번만 제출한다', async () => {
+  it('작업 완료는 자동 요청하지 않고 사용자가 한 번 누르면 제출한다', async () => {
     const calls: Array<{ path: string; request: unknown }> = [];
     const work = data('WORKBASE', { activeJob: { label: '현재 장비를 제작 중입니다.', remainingSeconds: 2974, completionAvailable: true } });
     await render(React.createElement(CraftingPanel, { api: api(async () => work, async (path, request) => { calls.push({ path, request }); return { ...work, activeJob: null, result: result() }; }), mode: 'workbase' }));
@@ -51,20 +51,16 @@ describe('CraftingPanel', () => {
     assert.deepEqual(calls, []);
     assert.equal(text().includes('2,974초 후 확인 가능'), true);
     await press('제작 완료');
-    assert.deepEqual(calls, []);
-    await pressLast('제작 완료');
     assert.deepEqual(calls, [{ path: '/api/town/crafting/workbase/complete', request: {} }]);
   });
 
-  it('제작공방은 추가 소재가 없어도 경고 확인 후 막지 않고 null로 제출한다', async () => {
+  it('제작공방은 추가 소재가 없어도 막지 않고 null로 제출한다', async () => {
     const calls: unknown[] = [];
     const createData = data('CREATE', { maxQuantity: 100, additionalMaterials: [] });
     await render(React.createElement(CraftingPanel, { api: api(async () => createData, async (_path, request) => { calls.push(request); return { ...createData, warningCode: 'NO_ADDITIONAL_MATERIAL', result: result() }; }), mode: 'create' }));
 
     await press('제작품 선택');
     await press('제작');
-    assert.equal(text().includes('추가 소재 없이 제작합니다. 계속할까요?'), true);
-    await pressLast('제작');
     assert.deepEqual(calls, [{ recipeCandidateId: 'item', categoryCandidateId: 'category', quantity: 1, additionalMaterialCandidateId: null }]);
     assert.equal(text().includes('추가 소재 없이 제작했습니다.'), true);
   });
@@ -74,7 +70,7 @@ describe('CraftingPanel', () => {
     const veteran = data('VETERAN', { allowedRefineCounts: [1, 2, 3] });
     await render(React.createElement(CraftingPanel, { api: api(async () => veteran, async (_path, request) => { calls.push(request); return { ...veteran, result: result() }; }), mode: 'veteran' }));
 
-    await press('제작품 선택'); await press('제련 3회 선택'); await press('제련'); await pressLast('제련');
+    await press('제작품 선택'); await press('제련 3회 선택'); await press('제련');
     assert.deepEqual(calls, [{ candidateId: 'item', categoryCandidateId: 'category', refineCount: 3 }]);
   });
 
@@ -155,7 +151,6 @@ describe('CraftingPanel', () => {
     await press('추가 소재 선택');
     await press('Luck Sphere 추가 소재 선택');
     await press('제작');
-    await pressLast('제작');
 
     assert.deepEqual(calls, [{ recipeCandidateId: 'cloak', categoryCandidateId: 'category', quantity: 1, additionalMaterialCandidateId: 'luck' }]);
   });
@@ -229,7 +224,6 @@ function api(load: (path: string) => Promise<unknown>, submit: (path: string, re
 async function render(node: React.ReactElement) { await act(async () => { mounted = create(node); }); await act(async () => { await Promise.resolve(); }); }
 function button(label: string): ReactTestInstance { return mounted!.root.find((node) => node.props.accessibilityLabel === label); }
 async function press(label: string) { await act(async () => button(label).props.onPress()); await act(async () => { await Promise.resolve(); }); }
-async function pressLast(label: string) { const nodes = mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0); await act(async () => nodes.at(-1)!.props.onPress()); await act(async () => { await Promise.resolve(); }); }
 async function change(label: string, value: string) { await act(async () => button(label).props.onChangeText(value)); }
 function text() { return mounted!.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join('')).join(' '); }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; }

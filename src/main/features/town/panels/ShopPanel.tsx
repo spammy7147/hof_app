@@ -17,7 +17,6 @@ import type {
 } from '../../../types/api';
 import type { TownApi } from '../api/townApi';
 import { TownActionResult } from '../components/TownActionResult';
-import { TownConfirmSheet } from '../components/TownConfirmSheet';
 import { TownItemList } from '../components/TownItemList';
 import { useTownFeature } from '../hooks/useTownFeature';
 
@@ -33,7 +32,6 @@ export function ShopPanel({ api, mode, resolveCaptcha }: Props) {
 function PurchasePanel({ api, mode }: Props & { mode: ShopMode }) {
   const [query, setQuery] = useState('');
   const [cart, setCart] = useState<Record<string, number>>({});
-  const [confirming, setConfirming] = useState(false);
   const [invalidQuantities, setInvalidQuantities] = useState<Record<string, boolean>>({});
   const [response, setResponse] = useState<ShopResponse | null>(null);
   const load = useCallback(() => api.load<ShopResponse>(`/api/town/shops/${mode}`), [api, mode]);
@@ -41,7 +39,6 @@ function PurchasePanel({ api, mode }: Props & { mode: ShopMode }) {
     const next = await api.submit<PurchaseRequest, ShopResponse>(`/api/town/shops/${mode}/purchase`, request);
     setResponse(next);
     if (next.result?.status === 'SUCCESS') setCart({});
-    setConfirming(false);
     return next.result ?? info('구매 결과를 갱신했습니다.');
   }, [api, mode]);
   // 공용 상점 목록 조회/구매는 화면을 CAPTCHA 대기 상태로 묶지 않는다.
@@ -70,24 +67,20 @@ function PurchasePanel({ api, mode }: Props & { mode: ShopMode }) {
       <Text style={styles.total}>예상 총액 ${total.toLocaleString()}</Text>
       {quantityInvalid ? <Text style={styles.error}>선택한 품목의 수량을 확인하세요.</Text> : null}
       {totalInvalid ? <Text style={styles.error}>총액이 안전하게 계산할 수 있는 범위를 넘었습니다.</Text> : null}
-      <ActionButton disabled={selected.length === 0 || quantityInvalid || totalInvalid || town.status === 'submitting'} label="장바구니 구매" onPress={() => setConfirming(true)} />
+      <ActionButton disabled={selected.length === 0 || quantityInvalid || totalInvalid || town.status === 'submitting'} label="장바구니 구매" onPress={() => void town.submit({ items: selected.map((id) => ({ itemId: id, quantity: cart[id] })) }).catch(() => undefined)} />
     </View>
-    <TownConfirmSheet visible={confirming} title="구매 확인" message="선택한 상품을 한 번에 구매합니다." confirmLabel="구매" submitting={town.status === 'submitting'}
-      details={[...selected.map((id) => { const item = data.items.find((entry) => entry.id === id)!; return { label: item.label, value: `${cart[id]}개 · $${((item.price ?? 0) * cart[id]).toLocaleString()}` }; }), { label: '예상 총액', value: `$${total.toLocaleString()}` }]}
-      onCancel={() => setConfirming(false)} onConfirm={() => void town.submit({ items: selected.map((id) => ({ itemId: id, quantity: cart[id] })) }).catch(() => undefined)} />
   </View>;
 }
 
 function SellPanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
   const [selected, setSelected] = useState<string[]>([]);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
-  const [confirming, setConfirming] = useState(false);
   const [invalidQuantities, setInvalidQuantities] = useState<Record<string, boolean>>({});
   const [response, setResponse] = useState<SellResponse | null>(null);
   const load = useCallback(() => api.load<SellResponse>('/api/town/sell'), [api]);
   const submitAction = useCallback(async (request: SellRequest) => {
     const next = await api.submit<SellRequest, SellResponse>('/api/town/sell', request);
-    setResponse(next); setConfirming(false); return next.result ?? info('판매 결과를 갱신했습니다.');
+    setResponse(next); return next.result ?? info('판매 결과를 갱신했습니다.');
   }, [api]);
   const town = useTownFeature({ load, submitAction, resolveCaptcha, featureKey: 'sell' });
   const data = response ?? town.data;
@@ -112,11 +105,8 @@ function SellPanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
       <Text style={styles.total}>예상 판매액 ${total.toLocaleString()}</Text>
       {quantityInvalid ? <Text style={styles.error}>선택한 품목의 수량을 확인하세요.</Text> : null}
       {totalInvalid ? <Text style={styles.error}>총액이 안전하게 계산할 수 있는 범위를 넘었습니다.</Text> : null}
-      <ActionButton disabled={!selected.length || quantityInvalid || totalInvalid || town.status === 'submitting'} label="선택 품목 판매" onPress={() => setConfirming(true)} />
+      <ActionButton disabled={!selected.length || quantityInvalid || totalInvalid || town.status === 'submitting'} label="선택 품목 판매" onPress={() => void town.submit({ items: selected.map((id) => ({ candidateId: id, quantity: quantities[id] ?? 1 })) }).catch(() => undefined)} />
     </View>
-    <TownConfirmSheet visible={confirming} title="판매 확인" message="선택한 품목은 되돌릴 수 없습니다." confirmLabel="판매" submitting={town.status === 'submitting'}
-      details={[...selected.map((id) => { const item = data.items.find((entry) => entry.id === id)!; return { label: item.label, value: `${quantities[id] ?? 1}개 · $${((item.price ?? 0) * (quantities[id] ?? 1)).toLocaleString()}` }; }), { label: '예상 판매액', value: `$${total.toLocaleString()}` }, ...(zero.length ? [{ label: '$0 품목', value: `${zero.length}종`, warning: true }] : [])]}
-      onCancel={() => setConfirming(false)} onConfirm={() => void town.submit({ items: selected.map((id) => ({ candidateId: id, quantity: quantities[id] ?? 1 })) }).catch(() => undefined)} />
   </View>;
 }
 
@@ -124,11 +114,10 @@ function CombinePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
   const [selections, setSelections] = useState<Record<CombineSlotId, string | null>>(EMPTY_COMBINE_SELECTIONS);
   const [activeSlotId, setActiveSlotId] = useState<CombineSlotId | null>(null);
   const [quantity, setQuantity] = useState(1);
-  const [confirming, setConfirming] = useState(false);
   const [quantityValid, setQuantityValid] = useState(true);
   const [response, setResponse] = useState<CombineResponse | null>(null);
   const load = useCallback(() => api.load<CombineResponse>('/api/town/combine'), [api]);
-  const submitAction = useCallback(async (request: CombineRequest) => { const next = await api.submit<CombineRequest, CombineResponse>('/api/town/combine', request); setResponse(next); setConfirming(false); return next.result ?? info('조합 결과를 갱신했습니다.'); }, [api]);
+  const submitAction = useCallback(async (request: CombineRequest) => { const next = await api.submit<CombineRequest, CombineResponse>('/api/town/combine', request); setResponse(next); return next.result ?? info('조합 결과를 갱신했습니다.'); }, [api]);
   const town = useTownFeature({ load, submitAction, resolveCaptcha, featureKey: 'combine' });
   const data = response ?? town.data;
   if (!data) return <LoadState loading={town.status === 'loading'} error={town.error} retry={town.reload} />;
@@ -150,12 +139,10 @@ function CombinePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
     </View>
     <View style={styles.section}>
       <QuantityInput label="조합 결과 수량" value={quantity} max={maxQuantity} onChange={setQuantity} onValidityChange={setQuantityValid} />
-      <ActionButton disabled={!ready || !quantityValid || !quantityWithinLimit || town.status === 'submitting'} label="조합" onPress={() => setConfirming(true)} />
+      <ActionButton disabled={!ready || !quantityValid || !quantityWithinLimit || town.status === 'submitting'} label="조합" onPress={() => ready && void town.submit({ primaryCandidateId: selectedOptions[0]!.id, secondaryCandidateIds: selectedOptions.slice(1).map((item) => item!.id) as [string, string, string], quantity }).catch(() => undefined)} />
       {data.result ? <TownActionResult result={data.result} /> : null}
     </View>
     {activeSlot ? <SearchableCombineSelect key={activeSlot.id} group={activeSlot} selectedId={selections[activeSlot.id]} onClose={() => setActiveSlotId(null)} onSelect={(candidateId) => { setSelections((current) => ({ ...current, [activeSlot.id]: candidateId })); setActiveSlotId(null); }} /> : null}
-    <TownConfirmSheet visible={confirming} title="조합 확인" message="주재료와 부재료 3개를 사용합니다." confirmLabel="Combine" submitting={town.status === 'submitting'} details={[...groups.map((group) => { const item = group.items.find((candidate) => candidate.id === selections[group.id]); return { label: group.label, value: `${item?.label ?? '미선택'} · ${quantity}개 사용` }; }), { label: '조합 결과 수량', value: `${quantity}개` }]}
-      onCancel={() => setConfirming(false)} onConfirm={() => ready && void town.submit({ primaryCandidateId: selectedOptions[0]!.id, secondaryCandidateIds: selectedOptions.slice(1).map((item) => item!.id) as [string, string, string], quantity }).catch(() => undefined)} />
   </View>;
 }
 

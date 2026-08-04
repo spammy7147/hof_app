@@ -18,15 +18,13 @@ const { RaidPanel } = require('../../main/features/town/panels/RaidPanel') as ty
 let mounted: ReactTestRenderer | null = null; afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; });
 
 describe('RaidPanel', () => {
-  it('서버가 관측한 raid action만 확인 후 한 번 제출하고 같은 패널에서 결과를 갱신한다', async () => {
+  it('서버가 관측한 raid action을 한 번 눌러 제출하고 같은 패널에서 결과를 갱신한다', async () => {
     const calls: unknown[] = [];
     const data = raidData();
     await render(React.createElement(RaidPanel, { api: api(async () => data, async (_path, request) => { calls.push(request); return { ...data, result: result() }; }) }));
     assert.equal(button('전투 시작').length, 1);
     assert.equal(button('전투 시작')[0]!.props.accessibilityState.disabled, true);
     await press('등록');
-    assert.deepEqual(calls, []);
-    await pressLast('등록');
     assert.deepEqual(calls, [{ action: 'REGISTER', raidId: 'RaidGoblin' }]);
     assert.equal(text().includes('완료'), true);
   });
@@ -60,7 +58,6 @@ describe('RaidPanel', () => {
     assert.equal(button('등록')[0]!.props.accessibilityState.disabled, false);
     assert.equal(button('나오기')[0]!.props.accessibilityState.disabled, true);
     await press('등록');
-    await pressLast('등록');
 
     assert.deepEqual(calls, [{ action: 'REGISTER', raidId: 'RaidTest' }]);
   });
@@ -102,25 +99,19 @@ describe('RaidPanel', () => {
       async () => ++loads === 1 ? raidData() : raidData(null, true),
       async () => { submits += 1; return raidData(); },
     ) }));
-    await press('등록');
-    assert.equal(visibleModal().length, 1);
     await press('갱신');
     assert.equal(text().includes('남은 시간은 HOF에서 확인할 수 없습니다.'), true);
     assert.equal(button('등록')[0]!.props.accessibilityState.disabled, true);
 
-    await pressLast('등록');
     assert.equal(submits, 0);
-    assert.equal(visibleModal().length, 0);
     await press('등록');
-    assert.equal(visibleModal().length, 0);
   });
 
-  it('빠른 중복 확인은 POST를 한 번만 보낸다', async () => {
+  it('빠른 중복 클릭은 POST를 한 번만 보낸다', async () => {
     const pending = deferred<unknown>(); let calls = 0;
     await render(React.createElement(RaidPanel, { api: api(async () => raidData(), async () => { calls += 1; return pending.promise; }) }));
-    await press('등록');
-    const confirm = pressableWithText('등록');
-    await act(async () => { confirm.props.onPress(); confirm.props.onPress(); await Promise.resolve(); });
+    const action = button('등록').at(-1)!;
+    await act(async () => { action.props.onPress(); action.props.onPress(); await Promise.resolve(); });
     assert.equal(calls, 1);
     pending.resolve({ ...raidData(), result: result() });
     await act(async () => { await pending.promise; });
@@ -134,7 +125,6 @@ describe('RaidPanel', () => {
     ) }));
     await press('등록');
     await press('갱신');
-    await pressLast('등록');
     assert.equal(text().includes('완료'), true);
 
     staleReload.resolve(raidData());
@@ -150,13 +140,11 @@ describe('RaidPanel', () => {
     const newApi = api(async () => newData);
     await render(React.createElement(RaidPanel, { api: oldApi }));
     await press('등록');
-    await pressLast('등록');
     assert.equal(oldCalls, 1);
 
     await act(async () => mounted!.update(React.createElement(RaidPanel, { api: newApi })));
     await act(async () => { await Promise.resolve(); });
     assert.equal(text().includes('새 계정 레이드'), true);
-    assert.equal(visibleModal().length, 0);
 
     oldAction.resolve({ ...oldData, result: result('이전 계정 결과') });
     await act(async () => { await oldAction.promise; await Promise.resolve(); });
@@ -164,12 +152,10 @@ describe('RaidPanel', () => {
     assert.equal(text().includes('새 계정 레이드'), true);
   });
 
-  it('action 오류를 같은 패널에 표시하고 확인창을 닫는다', async () => {
+  it('action 오류를 같은 패널에 표시한다', async () => {
     await render(React.createElement(RaidPanel, { api: api(async () => raidData(), async () => { throw new Error('레이드 요청 실패'); }) }));
     await press('등록');
-    await pressLast('등록');
     assert.equal(text().includes('레이드 요청 실패'), true);
-    assert.equal(visibleModal().length, 0);
   });
 });
 
@@ -179,8 +165,5 @@ function api(load: (path: string) => Promise<unknown>, submit: (path: string, re
 async function render(node: React.ReactElement) { await act(async () => { mounted = create(node); }); await act(async () => { await Promise.resolve(); }); }
 function button(label: string): ReactTestInstance[] { return mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.props.accessibilityLabel === label); }
 async function press(label: string) { const node = button(label).at(-1); assert.ok(node, `missing ${label}`); await act(async () => node.props.onPress()); await act(async () => { await Promise.resolve(); }); }
-async function pressLast(label: string) { const node = pressableWithText(label); await act(async () => node.props.onPress()); await act(async () => { await Promise.resolve(); }); }
-function pressableWithText(label: string): ReactTestInstance { return mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0).at(-1)!; }
-function visibleModal(): ReactTestInstance[] { return mounted!.root.findAll((node) => String(node.type) === 'Modal' && node.props.visible === true); }
 function text() { return mounted!.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join('')).join(' '); }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((next) => { resolve = next; }); return { promise, resolve }; }

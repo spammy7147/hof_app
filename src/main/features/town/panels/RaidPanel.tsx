@@ -6,12 +6,10 @@ import { theme } from '../../../styles/theme';
 import type { FishingBattleTarget, RaidAction, RaidPubActionRequest, RaidPubResponse, TownActionResultResponse, TownRowResponse } from '../../../types/api';
 import type { TownApi } from '../api/townApi';
 import { TownActionResult } from '../components/TownActionResult';
-import { TownConfirmSheet } from '../components/TownConfirmSheet';
 import { TownItemList } from '../components/TownItemList';
-import { TownMutationBusyError, useTownFeature } from '../hooks/useTownFeature';
+import { useTownFeature } from '../hooks/useTownFeature';
 
 type Props = { api: TownApi; resolveCaptcha?: () => Promise<void>; onOpenBattle?: (target: FishingBattleTarget) => void };
-type Confirm = { apiKey: number; action: RaidAction; raidId: string | null; title: string; detail: string } | null;
 type ScopedResponse = { apiKey: number; data: RaidPubResponse } | null;
 const apiKeys = new WeakMap<object, number>(); let nextApiKey = 1;
 const GLOBAL_ACTIONS = ['REFRESH', 'REWARD', 'WAIT_RESET'] as const satisfies readonly RaidAction[];
@@ -20,7 +18,6 @@ const RAID_ACTIONS = ['REGISTER', 'LEAVE', 'START', 'RESET'] as const satisfies 
 export function RaidPanel({ api, resolveCaptcha, onOpenBattle }: Props) {
   const apiKey = identifyApi(api);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [confirm, setConfirm] = useState<Confirm>(null);
   const [responseState, setResponseState] = useState<ScopedResponse>(null);
   const [loadedAt, setLoadedAt] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
@@ -37,10 +34,9 @@ export function RaidPanel({ api, resolveCaptcha, onOpenBattle }: Props) {
   }, [api]);
   const town = useTownFeature<RaidPubResponse, RaidPubActionRequest>({ load, submitAction, resolveCaptcha, featureKey: `raidpub-${apiKey}`, describeError: toUserFacingErrorMessage });
   const response = responseState?.apiKey === apiKey ? responseState.data : null;
-  const activeConfirm = confirm?.apiKey === apiKey ? confirm : null;
   const data = response ?? town.data;
 
-  useEffect(() => { responseSequence.current += 1; setResponseState(null); setSelectedId(null); setConfirm(null); staged.current = null; }, [api]);
+  useEffect(() => { responseSequence.current += 1; setResponseState(null); setSelectedId(null); staged.current = null; }, [api]);
   useEffect(() => {
     if (!data) return;
     setLoadedAt(Date.now()); setNow(Date.now()); zeroReloaded.current = false;
@@ -86,22 +82,17 @@ export function RaidPanel({ api, resolveCaptcha, onOpenBattle }: Props) {
       raid.applicants.length ? `신청자 ${raid.applicants.join(', ')}` : '신청자 없음'].filter(Boolean).join(' · ');
     return { id: raid.id, label: raid.name, accessibilityLabel: `${raid.name}${raid.joined ? ' 내가 참가 중' : ''}${raid.playable && !busy ? ' 선택' : ' 선택 불가'}`, detail, imageUrl: null, price: null, quantity: null, selectable: raid.playable && !busy };
   });
-  const ask = (action: RaidAction, raidId: string | null, detail: string) => {
+  const perform = (action: RaidAction, raidId: string | null) => {
     if (action === 'REGISTER' && registerBlockedRef.current) return;
-    setConfirm({ apiKey, action, raidId, title: ACTION_LABEL[action], detail });
-  };
-  const perform = () => {
-    if (!activeConfirm) return;
-    if (activeConfirm.action === 'REGISTER' && registerBlockedRef.current) { setConfirm(null); return; }
-    const request = { action: activeConfirm.action, raidId: activeConfirm.raidId };
+    const request = { action, raidId };
     const submissionApi = api; staged.current = null;
     responseSequence.current += 1;
     void town.submit(request).then(() => {
       if (activeApi.current !== submissionApi) return;
       responseSequence.current += 1;
       if (staged.current) setResponseState({ apiKey, data: staged.current });
-      staged.current = null; setConfirm(null);
-    }).catch((error: unknown) => { if (!(error instanceof TownMutationBusyError) && activeApi.current === submissionApi) setConfirm(null); });
+      staged.current = null;
+    }).catch(() => undefined);
   };
   const refresh = () => {
     const sequence = ++responseSequence.current;
@@ -121,17 +112,16 @@ export function RaidPanel({ api, resolveCaptcha, onOpenBattle }: Props) {
         {data.myStatus ? <Text accessibilityLiveRegion="polite" style={styles.status}>{data.myStatus}</Text> : null}
         {applyWaitMessage ? <Text accessibilityLiveRegion="polite" style={styles.wait}>{applyWaitMessage}</Text> : null}
         <View style={styles.actions}>{GLOBAL_ACTIONS.map((action) => <ActionButton key={action} label={ACTION_LABEL[action]}
-          disabled={busy || !data.globalActions.includes(action)} onPress={action === 'REFRESH' ? refresh : () => ask(action, null, GLOBAL_ACTION_DETAIL[action])} />)}</View>
+          disabled={busy || !data.globalActions.includes(action)} onPress={action === 'REFRESH' ? refresh : () => perform(action, null)} />)}</View>
       </View>}
       footer={<View style={styles.section}>
         {selected ? <><Text style={styles.selectedTitle}>{selected.name}</Text><View style={styles.actions}>
           {RAID_ACTIONS.map((action) => <ActionButton key={action} label={ACTION_LABEL[action]}
             disabled={busy || !selected.actions.includes(action) || action === 'REGISTER' && registerBlocked}
-            onPress={() => ask(action, selected.id, `${selected.name}에서 ${ACTION_LABEL[action]} 동작을 실행합니다.`)} />)}
+            onPress={() => perform(action, selected.id)} />)}
         </View>{battleTarget && onOpenBattle ? <ActionButton label="RAID 전투 화면 열기" disabled={busy} onPress={() => onOpenBattle(battleTarget)} /> : null}</> : null}
         {data.result ? <TownActionResult result={data.result} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}
       </View>} emptyMessage="현재 표시할 레이드가 없습니다." />
-    <TownConfirmSheet visible={activeConfirm != null} title={`${activeConfirm?.title ?? ''} 확인`} message="HOF 서버에 이 동작을 한 번 요청합니다." confirmLabel={activeConfirm?.title ?? '실행'} destructive={activeConfirm?.action !== 'REWARD'} submitting={town.status === 'submitting'} details={activeConfirm ? [{ label: '동작', value: activeConfirm.detail }] : []} onCancel={() => setConfirm(null)} onConfirm={perform} />
   </View>;
 }
 
@@ -142,9 +132,4 @@ function formatDuration(seconds: number) { const safe = Math.max(0, seconds); co
 function info(message: string): TownActionResultResponse { return { status: 'INFORMATIONAL', messages: [message], items: [], refreshRequired: true }; }
 function identifyApi(api: TownApi) { const key = api as object; const old = apiKeys.get(key); if (old != null) return old; const next = nextApiKey++; apiKeys.set(key, next); return next; }
 const ACTION_LABEL: Record<RaidAction, string> = { REGISTER: '등록', LEAVE: '나오기', START: '전투 시작', RESET: '리셋', REWARD: '보상 확인', WAIT_RESET: '대기 리셋', REFRESH: '갱신' };
-const GLOBAL_ACTION_DETAIL: Record<(typeof GLOBAL_ACTIONS)[number], string> = {
-  REFRESH: '전투 정보실 상태를 갱신합니다.',
-  REWARD: '레이드 보상을 확인합니다.',
-  WAIT_RESET: '신청 대기시간을 초기화합니다.',
-};
 const styles = StyleSheet.create({ container: { flex: 1, gap: theme.spacing.md }, section: { gap: theme.spacing.sm, paddingVertical: theme.spacing.sm }, title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' }, hint: { color: theme.colors.textMuted, lineHeight: 20 }, status: { color: theme.colors.accentGreen, fontWeight: '800' }, wait: { color: theme.colors.accentAmber, fontWeight: '800' }, error: { color: theme.colors.danger, lineHeight: 20 }, selectedTitle: { color: theme.colors.text, fontSize: 17, fontWeight: '900' }, actions: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }, button: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, justifyContent: 'center', minHeight: 46, minWidth: 110, paddingHorizontal: theme.spacing.md }, buttonText: { color: theme.colors.background, fontWeight: '900' }, disabled: { opacity: 0.45 } });

@@ -61,7 +61,6 @@ describe('HomePanel', () => {
     assert.match(text(), /진행도 1\/1/);
     await press('손님 맞이 완료 가능');
     await press('완료');
-    await pressLast('완료');
     assert.deepEqual(calls, [{ path: '/api/town/home/quests', body: { actionId: 'claim' } }]);
   });
 
@@ -113,11 +112,5 @@ function text() {
 async function press(label: string) {
   const node = mounted!.root.find((candidate) => candidate.props.accessibilityLabel === label);
   await act(async () => node.props.onPress());
-  await act(async () => { await Promise.resolve(); });
-}
-
-async function pressLast(label: string) {
-  const nodes = mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0);
-  await act(async () => nodes.at(-1)!.props.onPress());
   await act(async () => { await Promise.resolve(); });
 }

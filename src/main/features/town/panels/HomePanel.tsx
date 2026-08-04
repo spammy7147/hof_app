@@ -5,16 +5,14 @@ import { theme } from '../../../styles/theme';
 import type { HomeActionRequest, HomeResponse, RestStatusResponse, TownActionResultResponse, TownRowResponse } from '../../../types/api';
 import type { TownApi } from '../api/townApi';
 import { TownActionResult } from '../components/TownActionResult';
-import { TownConfirmSheet } from '../components/TownConfirmSheet';
 import { TownItemList } from '../components/TownItemList';
-import { TownMutationBusyError, useTownFeature } from '../hooks/useTownFeature';
+import { useTownFeature } from '../hooks/useTownFeature';
 
 type Mode = 'home' | 'rest';
 type HomeMutation = HomeActionRequest & { itemLabel: string; actionLabel: string; expectedRecovery: string | null; overflow: string | null };
 
 export function HomePanel({ api, mode, resolveCaptcha }: { api: TownApi; mode: Mode; resolveCaptcha?: () => Promise<void> }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [confirmation, setConfirmation] = useState<HomeMutation | null>(null);
   const [response, setResponse] = useState<HomeResponse | null>(null);
   const [facilitiesExpanded, setFacilitiesExpanded] = useState(false);
   const staged = useRef<HomeResponse | null>(null);
@@ -28,7 +26,7 @@ export function HomePanel({ api, mode, resolveCaptcha }: { api: TownApi; mode: M
   }, [api, mode]);
   const town = useTownFeature<HomeResponse, HomeMutation>({ load, submitAction, resolveCaptcha, featureKey: `home-${apiKey}-${mode}` });
   const data = response ?? town.data;
-  useEffect(() => { staged.current = null; setResponse(null); setSelectedId(null); setConfirmation(null); setFacilitiesExpanded(false); }, [api, mode]);
+  useEffect(() => { staged.current = null; setResponse(null); setSelectedId(null); setFacilitiesExpanded(false); }, [api, mode]);
   useEffect(() => {
     if (selectedId && data && !rowsOf(data).some((row) => row.id === selectedId)) setSelectedId(null);
   }, [data, selectedId]);
@@ -45,9 +43,8 @@ export function HomePanel({ api, mode, resolveCaptcha }: { api: TownApi; mode: M
     expectedRecovery: mode === 'rest' ? recovery?.expected ?? '확인 불가' : null,
     overflow: mode === 'rest' ? recovery?.overflow ?? '확인 불가' : null,
   } : null;
-  const finish = (result: TownActionResultResponse) => { if (staged.current) setResponse(staged.current); staged.current = null; setSelectedId(null); setConfirmation(null); return result; };
-  const submit = () => { if (!confirmation) return; void town.submit(confirmation).then(finish).catch((error: unknown) => { if (!(error instanceof TownMutationBusyError)) setConfirmation(null); }); };
-  const submitRest = () => {
+  const finish = (result: TownActionResultResponse) => { if (staged.current) setResponse(staged.current); staged.current = null; setSelectedId(null); return result; };
+  const submit = () => {
     if (!mutation) return;
     void town.submit(mutation).then(finish).catch(() => undefined);
   };
@@ -59,11 +56,10 @@ export function HomePanel({ api, mode, resolveCaptcha }: { api: TownApi; mode: M
       header={mode === 'rest' && data.restStatus ? <RestStatusCard status={data.restStatus} expanded={facilitiesExpanded} onToggle={() => setFacilitiesExpanded((value) => !value)} /> : null}
       footer={<View style={styles.footer}>
         {mode === 'rest' && result ? <TownActionResult result={result} showStatusLabel={false} /> : null}
-        {mutation ? <ActionButton label={mutation.actionLabel} disabled={town.status === 'submitting'} onPress={mode === 'rest' ? submitRest : () => setConfirmation(mutation)} /> : <Text style={styles.hint}>{mode === 'home' ? '수락 또는 완료 가능한 퀘스트를 선택하세요.' : '현재 휴식을 이용할 수 없습니다.'}</Text>}
+        {mutation ? <ActionButton label={mutation.actionLabel} disabled={town.status === 'submitting'} onPress={submit} /> : <Text style={styles.hint}>{mode === 'home' ? '수락 또는 완료 가능한 퀘스트를 선택하세요.' : '현재 휴식을 이용할 수 없습니다.'}</Text>}
         {mode === 'home' && result ? <TownActionResult result={result} onRefresh={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}
         {town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}
       </View>} />
-    {mode === 'home' ? <TownConfirmSheet visible={confirmation != null} title={`${confirmation?.actionLabel ?? 'action'} 확인`} message="HOF에 이 action을 한 번 요청합니다. 자동 반복하지 않습니다." confirmLabel={confirmation?.actionLabel ?? '실행'} submitting={town.status === 'submitting'} details={[{ label: '퀘스트', value: confirmation?.itemLabel ?? '선택 없음' }]} onCancel={() => setConfirmation(null)} onConfirm={submit} /> : null}
   </View>;
 }
 

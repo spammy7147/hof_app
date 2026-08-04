@@ -18,7 +18,7 @@ const { RewardPanel } = require('../../main/features/town/panels/RewardPanel') a
 let mounted: ReactTestRenderer | null = null; afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; });
 
 describe('RewardPanel', () => {
-  it('상자 1개와 서버가 제공한 고정 action을 확인한 뒤 한 번만 제출한다', async () => {
+  it('상자 1개와 서버가 제공한 고정 action을 한 번 눌러 제출한다', async () => {
     const calls: unknown[] = [];
     const data = { boxes: [{ id: 'box', label: 'Treasure Box', selectable: true, owned: 76, cost: 0, detail: 'Treasure Box x76' }, { id: 'display', label: '선택 불가', selectable: false, owned: null, cost: 0, detail: null }], actions: [{ action: 'ONE', label: '1개 열기' }, { action: 'THOUSAND', label: '1000개 열기' }], result: null } as const;
     await render(React.createElement(RewardPanel, { api: api(async () => data, async (_path, request) => { calls.push(request); return { ...data, result: result() }; }), mode: 'stash' }));
@@ -30,8 +30,6 @@ describe('RewardPanel', () => {
     await press('Treasure Box 선택');
     assert.equal(button('1000개 열기').props.disabled, false);
     await press('1000개 열기');
-    assert.deepEqual(calls, []);
-    await pressLast('열기');
     assert.deepEqual(calls, [{ boxCandidateId: 'box', action: 'THOUSAND' }]);
   });
 
@@ -43,7 +41,6 @@ describe('RewardPanel', () => {
     assert.equal(button('오브를 기부한다').props.disabled, false);
     await press('오브를 기부한다');
     assert.equal(text().includes('색상별 1,000개'), true);
-    await pressLast('교환');
     assert.deepEqual(calls, [{ action: 'ONE' }]);
     assert.equal(text().includes('계산값입니다'), true);
     assert.equal(text().includes('수량 변화로 추론'), true);
@@ -54,7 +51,7 @@ describe('RewardPanel', () => {
     const actual = orbData({ red: 9_000, blue: 8_000, green: 7_000 }, false);
     const calculated = { ...actual, displayedOrbs: { red: 8_000, blue: 7_000, green: 6_000 }, orbCountsEstimated: true, result: result() };
     await render(React.createElement(RewardPanel, { api: api(async () => { loads += 1; return actual; }, async () => calculated), mode: 'orbs' }));
-    await press('오브를 기부한다'); await pressLast('교환');
+    await press('오브를 기부한다');
     assert.equal(text().includes('계산값입니다'), true);
     await press('마을 정보 새로고침');
     assert.equal(loads, 2);
@@ -62,7 +59,7 @@ describe('RewardPanel', () => {
     assert.equal(text().includes('9,000개'), true);
   });
 
-  it('빠른 중복 확인은 POST를 한 번만 보내고 첫 응답이 올 때까지 확인창을 유지한다', async () => {
+  it('빠른 중복 클릭은 POST를 한 번만 보낸다', async () => {
     const pending = deferred<unknown>();
     let calls = 0;
     const data = stashData();
@@ -71,15 +68,12 @@ describe('RewardPanel', () => {
       mode: 'stash',
     }));
     await press('Treasure Box 선택');
-    await press('1개 열기');
-    const confirm = pressableWithText('열기');
-    await act(async () => { confirm.props.onPress(); confirm.props.onPress(); await Promise.resolve(); });
+    const action = button('1개 열기');
+    await act(async () => { action.props.onPress(); action.props.onPress(); await Promise.resolve(); });
 
     assert.equal(calls, 1);
-    assert.equal(confirmModal().props.visible, true);
     await act(async () => { pending.resolve({ ...data, result: result() }); await pending.promise; });
     await act(async () => { await Promise.resolve(); });
-    assert.equal(confirmModal().props.visible, false);
   });
 
   it('오브 보상은 선택·보유 항목이 아닌 남은 수량 정보로만 표시한다', async () => {
@@ -115,9 +109,6 @@ function result() { return { status: 'SUCCESS' as const, messages: ['완료'], i
 function api(load: (path: string) => Promise<unknown>, submit: (path: string, request: unknown) => Promise<unknown> = async () => { throw new Error('unexpected'); }) { return { load, submit } as never; }
 async function render(node: React.ReactElement) { await act(async () => { mounted = create(node); }); await act(async () => { await Promise.resolve(); }); }
 function button(label: string): ReactTestInstance { return mounted!.root.find((node) => node.props.accessibilityLabel === label); }
-function confirmModal(): ReactTestInstance { return mounted!.root.find((node) => String(node.type) === 'Modal'); }
-function pressableWithText(label: string): ReactTestInstance { return mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0).at(-1)!; }
 async function press(label: string) { await act(async () => button(label).props.onPress()); await act(async () => { await Promise.resolve(); }); }
-async function pressLast(label: string) { const nodes = mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0); await act(async () => nodes.at(-1)!.props.onPress()); await act(async () => { await Promise.resolve(); }); }
 function text() { return mounted!.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join('')).join(' '); }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((next) => { resolve = next; }); return { promise, resolve }; }

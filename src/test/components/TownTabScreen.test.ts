@@ -128,6 +128,11 @@ describe('TownTabScreen', () => {
     assert.equal(allText(renderer.root).includes('카드 강화'), true);
     assert.equal(findHosts(renderer.root, 'TextInput').length, 0);
     assert.equal(focusCalls.at(-1)?.testID, 'town-detail-title');
+    const detailTitle = renderer.root.findByProps({ testID: 'town-detail-title' });
+    const backButton = renderer.root.findByProps({ accessibilityLabel: '마을 메뉴 목록으로' });
+    assert.equal(detailTitle.props.style.textAlign, 'center');
+    assert.equal(detailTitle.parent?.props.style.alignItems, 'center');
+    assert.deepEqual(backButton.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join('')), ['‹']);
 
     await press(renderer.root, '마을 메뉴 목록으로');
     assert.deepEqual(scrollEvents, ['capture', 'restore']);

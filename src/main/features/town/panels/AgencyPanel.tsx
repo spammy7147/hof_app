@@ -5,9 +5,8 @@ import { theme } from '../../../styles/theme';
 import type { QuestSnapshot, RecruitCharacterRequest, RecruitmentResponse, TownActionResultResponse, TownRowResponse } from '../../../types/api';
 import type { TownApi } from '../api/townApi';
 import { TownActionResult } from '../components/TownActionResult';
-import { TownConfirmSheet } from '../components/TownConfirmSheet';
 import { TownItemList } from '../components/TownItemList';
-import { TownMutationBusyError, useTownFeature } from '../hooks/useTownFeature';
+import { useTownFeature } from '../hooks/useTownFeature';
 
 type Tab = 'ACTIVE' | 'CLAIMABLE' | 'AVAILABLE' | 'WAITING';
 type Mutation = { actionNo: string; action: 'accept' | 'claim'; questName: string };
@@ -21,7 +20,6 @@ export function AgencyPanel({ api, resolveCaptcha, mode = 'adventure' }: { api: 
 function AdventureAgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolveCaptcha?: () => Promise<void> }) {
   const [tab, setTab] = useState<Tab>('ACTIVE');
   const [query, setQuery] = useState('');
-  const [confirmation, setConfirmation] = useState<Mutation | null>(null);
   const [response, setResponse] = useState<QuestSnapshot[] | null>(null);
   const staged = useRef<QuestSnapshot[] | null>(null);
   const apiKey = identifyApi(api);
@@ -33,8 +31,7 @@ function AdventureAgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolveCa
   }, [api]);
   const town = useTownFeature<QuestSnapshot[], Mutation>({ load, submitAction, resolveCaptcha, featureKey: `agency-manual-${apiKey}` });
   const data = response ?? town.data ?? [];
-  useEffect(() => { staged.current = null; setResponse(null); setConfirmation(null); }, [apiKey]);
-  useEffect(() => { setConfirmation(null); }, [tab]);
+  useEffect(() => { staged.current = null; setResponse(null); }, [apiKey]);
 
   const filtered = useMemo(() => data.filter((quest) => tabMatches(quest, tab))
     .filter((quest) => `${quest.displayCode} ${quest.name} ${quest.missions.map((mission) => mission.target ?? '').join(' ')}`.toLocaleLowerCase('ko-KR').includes(query.trim().toLocaleLowerCase('ko-KR'))), [data, query, tab]);
@@ -42,34 +39,29 @@ function AdventureAgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolveCa
   const questsByRowId = new Map(filtered.map((quest) => [rowId(quest), quest]));
   const finish = (result: TownActionResultResponse) => {
     if (staged.current) setResponse(staged.current);
-    staged.current = null; setConfirmation(null);
+    staged.current = null;
     return result;
   };
-  const submit = () => {
-    if (!confirmation) return;
-    void town.submit(confirmation).then(finish).catch((error: unknown) => { if (!(error instanceof TownMutationBusyError)) setConfirmation(null); });
+  const submit = (mutation: Mutation) => {
+    void town.submit(mutation).then(finish).catch(() => undefined);
   };
 
   if (!town.data && town.status === 'loading') return <Text style={styles.hint}>퀘스트를 불러오는 중...</Text>;
   return <View style={styles.container}>
-    <Text style={styles.title}>모험 알선소</Text>
     <View accessibilityRole="tablist" style={styles.tabs}>{(['ACTIVE', 'CLAIMABLE', 'AVAILABLE', 'WAITING'] as const).map((value) => <Pressable key={value} accessibilityRole="tab" accessibilityState={{ selected: tab === value }} onPress={() => setTab(value)} style={[styles.tab, tab === value && styles.tabSelected]}><Text style={styles.tabText}>{tabLabel(value)} {data.filter((quest) => tabMatches(quest, value)).length}</Text></Pressable>)}</View>
     <TextInput accessibilityLabel="퀘스트명 또는 미션 검색" value={query} onChangeText={setQuery} placeholder="퀘스트명 또는 미션 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} />
     <TownItemList rows={rows} selectionMode="none" emptyMessage="해당 상태의 퀘스트가 없습니다."
-      renderTrailing={(row) => { const quest = questsByRowId.get(row.id); const mutation = questMutation(quest); return mutation ? <ActionButton label={`${quest!.name} ${mutation.action === 'accept' ? '수락' : '완료'}`} visibleLabel={mutation.action === 'accept' ? '수락' : '완료'} disabled={town.status === 'submitting' || confirmation != null} onPress={() => { if (confirmation == null) setConfirmation(mutation); }} compact /> : null; }}
+      renderItemFooter={(row) => { const quest = questsByRowId.get(row.id); const mutation = questMutation(quest); return mutation ? <ActionButton label={`${quest!.name} ${mutation.action === 'accept' ? '수락' : '완료'}`} visibleLabel={mutation.action === 'accept' ? '수락' : '완료'} disabled={town.status === 'submitting'} onPress={() => submit(mutation)} compact /> : null; }}
       footer={<View style={styles.footer}>{town.result ? <TownActionResult result={town.result} onRefresh={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}</View>} />
-    <TownConfirmSheet visible={confirmation != null} title={confirmation?.action === 'accept' ? '퀘스트 수락 확인' : '퀘스트 완료 확인'} message="HOF에 이 action을 한 번만 요청합니다." confirmLabel={confirmation?.action === 'accept' ? '수락' : '완료'} submitting={town.status === 'submitting'} details={[{ label: '퀘스트', value: confirmation?.questName ?? '선택 없음' }]} onCancel={() => setConfirmation(null)} onConfirm={submit} />
   </View>;
 }
 
-type RecruitConfirmation = RecruitCharacterRequest & { jobName: string; genderLabel: string; price: number };
 type OwnedRecruitmentResponse = { owner: number; value: RecruitmentResponse };
 
 function RecruitmentAgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolveCaptcha?: () => Promise<void> }) {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [selectedGenderId, setSelectedGenderId] = useState<string | null>(null);
   const [name, setName] = useState('');
-  const [confirmation, setConfirmation] = useState<RecruitConfirmation | null>(null);
   const apiKey = identifyApi(api);
   const [response, setResponse] = useState<OwnedRecruitmentResponse | null>(null);
   const staged = useRef<OwnedRecruitmentResponse | null>(null);
@@ -96,7 +88,6 @@ function RecruitmentAgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolve
     setSelectedJobId(null);
     setSelectedGenderId(null);
     setName('');
-    setConfirmation(null);
   }, [apiKey]);
   useEffect(() => {
     if (selectedJobId && !data?.jobs.some((job) => job.id === selectedJobId)) setSelectedJobId(null);
@@ -126,19 +117,17 @@ function RecruitmentAgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolve
     price: job.price,
     quantity: null,
   }));
-  const submit = () => {
-    if (!confirmation) return;
-    void town.submit({ jobId: confirmation.jobId, name: confirmation.name, genderId: confirmation.genderId })
+  const submit = (request: RecruitCharacterRequest) => {
+    void town.submit(request)
       .then((result) => {
         if (staged.current?.owner === apiKey) setResponse(staged.current);
         staged.current = null;
-        setConfirmation(null);
         setSelectedJobId(null);
         setSelectedGenderId(null);
         setName('');
         return result;
       })
-      .catch((error: unknown) => { if (!(error instanceof TownMutationBusyError)) setConfirmation(null); });
+      .catch(() => undefined);
   };
 
   const footer = <View style={styles.footer}>
@@ -178,7 +167,7 @@ function RecruitmentAgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolve
     {full ? <Text accessibilityRole="alert" style={styles.error}>캐릭터 정원이 가득 찼습니다.</Text> : null}
     <ActionButton label="모집하기" disabled={!canRecruit} onPress={() => {
       if (!selectedJob || !selectedGender || !canRecruit) return;
-      setConfirmation({ jobId: selectedJob.id, name: normalizedName, genderId: selectedGender.id, jobName: selectedJob.name, genderLabel: selectedGender.label, price: selectedJob.price });
+      submit({ jobId: selectedJob.id, name: normalizedName, genderId: selectedGender.id });
     }} />
     {town.result ? <TownActionResult result={town.result} onRefresh={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}
     {town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}
@@ -189,19 +178,13 @@ function RecruitmentAgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolve
     <Text accessibilityLabel="캐릭터 정원" style={styles.capacity}>현재 {data.currentCharacters ?? '-'} / 최대 {data.capacity ?? '-'}</Text>
     <Text style={styles.hint}>직업을 선택하고 이름과 성별을 입력해 수동으로 모집합니다.</Text>
     <TownItemList rows={rows} selectionMode="single" selectedIds={selectedJobId ? [selectedJobId] : []} onSelectionChange={(ids) => setSelectedJobId(ids[0] ?? null)} emptyMessage="모집 가능한 직업이 없습니다." footer={footer} />
-    <TownConfirmSheet visible={confirmation != null} title="인재 모집 확인" message="HOF에 이 모집을 한 번만 요청합니다." confirmLabel="모집" submitting={town.status === 'submitting'} details={[
-      { label: '직업', value: confirmation?.jobName ?? '선택 없음' },
-      { label: '이름', value: confirmation?.name ?? '입력 없음' },
-      { label: '성별', value: confirmation?.genderLabel ?? '선택 없음' },
-      { label: '비용', value: confirmation ? `$${confirmation.price.toLocaleString()}` : '-' },
-    ]} onCancel={() => setConfirmation(null)} onConfirm={submit} />
   </View>;
 }
 
 function tabMatches(quest: QuestSnapshot, tab: Tab) { if (tab === 'CLAIMABLE') return quest.state === 'CLAIMABLE'; if (tab === 'ACTIVE') return quest.section === 'ACTIVE' && quest.state !== 'CLAIMABLE'; return quest.section === tab; }
 function tabLabel(tab: Tab) { return tab === 'ACTIVE' ? '진행 중' : tab === 'CLAIMABLE' ? '완료 가능' : tab === 'AVAILABLE' ? '수락 가능' : '대기 중'; }
 function rowId(quest: QuestSnapshot) { return `quest:${quest.questKey}:${quest.sourceOrder}`; }
-function toRow(quest: QuestSnapshot): TownRowResponse { const progress = quest.missions.map((mission) => mission.progress ? `${mission.target ?? '미션'} ${mission.progress.current}/${mission.progress.required}` : mission.target).filter(Boolean).join(' · '); return { id: rowId(quest), label: quest.name, accessibilityLabel: `${quest.name} ${quest.state === 'CLAIMABLE' ? '완료 가능' : tabState(quest)}`, selectable: false, detail: [quest.displayCode, progress, quest.rewards.length ? `보상 ${quest.rewards.join(', ')}` : null].filter(Boolean).join(' · '), imageUrl: null, price: null, quantity: null }; }
+function toRow(quest: QuestSnapshot): TownRowResponse { const progress = quest.missions.map((mission) => mission.progress ? `${mission.target ?? '미션'} ${mission.progress.current}/${mission.progress.required}` : mission.target).filter(Boolean).join(' · '); const label = `[${quest.displayCode}] ${quest.name}`; return { id: rowId(quest), label, accessibilityLabel: `${label} ${quest.state === 'CLAIMABLE' ? '완료 가능' : tabState(quest)}`, selectable: false, detail: [progress, quest.rewards.length ? `보상 ${quest.rewards.join(', ')}` : null].filter(Boolean).join('\n'), imageUrl: null, price: null, quantity: null }; }
 function questMutation(quest: QuestSnapshot | undefined): Mutation | null { return quest?.actionNo && (quest.state === 'AVAILABLE' || quest.state === 'CLAIMABLE') ? { actionNo: quest.actionNo, action: quest.state === 'AVAILABLE' ? 'accept' : 'claim', questName: quest.name } : null; }
 function tabState(quest: QuestSnapshot) { return quest.section === 'ACTIVE' ? '진행 중' : quest.section === 'AVAILABLE' ? '수락 가능' : '대기 중'; }
 function information(message: string): TownActionResultResponse { return { status: 'INFORMATIONAL', messages: [message], items: [], refreshRequired: true }; }
@@ -216,5 +199,5 @@ function recruitmentNameWidth(value: string): number | null {
 }
 const apiKeys = new WeakMap<object, number>(); let nextApiKey = 1;
 function identifyApi(api: TownApi) { const object = api as object; const known = apiKeys.get(object); if (known != null) return known; const next = nextApiKey++; apiKeys.set(object, next); return next; }
-function ActionButton({ label, visibleLabel = label, disabled, onPress, compact = false }: { label: string; visibleLabel?: string; disabled: boolean; onPress: () => void; compact?: boolean }) { return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={[styles.button, compact && styles.compactButton, disabled && styles.disabled]}><Text style={styles.buttonText}>{visibleLabel}</Text></Pressable>; }
-const styles = StyleSheet.create({ container: { flex: 1, gap: theme.spacing.md }, title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' }, capacity: { color: theme.colors.accentGreen, fontSize: 16, fontWeight: '900' }, sectionLabel: { color: theme.colors.text, fontWeight: '800' }, tabs: { flexDirection: 'row', gap: theme.spacing.xs }, tab: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderBottomColor: theme.colors.borderStrong, borderBottomWidth: 2 }, tabSelected: { borderBottomColor: theme.colors.accentGreen }, tabText: { color: theme.colors.text, fontWeight: '800' }, input: { minHeight: 44, borderColor: theme.colors.borderStrong, borderWidth: 1, borderRadius: theme.radius.md, color: theme.colors.text, paddingHorizontal: theme.spacing.md }, genderRow: { flexDirection: 'row', gap: theme.spacing.sm }, genderButton: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, flex: 1, justifyContent: 'center', minHeight: 44 }, genderSelected: { borderColor: theme.colors.accentGreen, borderWidth: 2 }, footer: { gap: theme.spacing.sm, paddingVertical: theme.spacing.md }, hint: { color: theme.colors.textMuted }, error: { color: theme.colors.danger }, button: { minHeight: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md }, compactButton: { minWidth: 64, paddingHorizontal: theme.spacing.sm }, buttonText: { color: theme.colors.background, fontWeight: '900' }, disabled: { opacity: 0.45 } });
+function ActionButton({ label, visibleLabel = label, disabled, onPress, compact = false }: { label: string; visibleLabel?: string; disabled: boolean; onPress: () => void; compact?: boolean }) { return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} hitSlop={compact ? { top: 4, bottom: 4, left: 4, right: 4 } : undefined} onPress={onPress} style={[styles.button, compact && styles.compactButton, disabled && styles.disabled]}><Text style={styles.buttonText}>{visibleLabel}</Text></Pressable>; }
+const styles = StyleSheet.create({ container: { flex: 1, gap: theme.spacing.md }, title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' }, capacity: { color: theme.colors.accentGreen, fontSize: 16, fontWeight: '900' }, sectionLabel: { color: theme.colors.text, fontWeight: '800' }, tabs: { flexDirection: 'row', gap: theme.spacing.xs }, tab: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderBottomColor: theme.colors.borderStrong, borderBottomWidth: 2 }, tabSelected: { borderBottomColor: theme.colors.accentGreen }, tabText: { color: theme.colors.text, fontWeight: '800' }, input: { minHeight: 44, borderColor: theme.colors.borderStrong, borderWidth: 1, borderRadius: theme.radius.md, color: theme.colors.text, paddingHorizontal: theme.spacing.md }, genderRow: { flexDirection: 'row', gap: theme.spacing.sm }, genderButton: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, flex: 1, justifyContent: 'center', minHeight: 44 }, genderSelected: { borderColor: theme.colors.accentGreen, borderWidth: 2 }, footer: { gap: theme.spacing.sm, paddingVertical: theme.spacing.md }, hint: { color: theme.colors.textMuted }, error: { color: theme.colors.danger }, button: { minHeight: 48, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md }, compactButton: { minHeight: 36, paddingHorizontal: theme.spacing.sm }, buttonText: { color: theme.colors.background, fontWeight: '900' }, disabled: { opacity: 0.45 } });

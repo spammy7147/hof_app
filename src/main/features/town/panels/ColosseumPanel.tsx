@@ -11,9 +11,8 @@ import type {
 } from '../../../types/api';
 import type { TownApi } from '../api/townApi';
 import { TownActionResult } from '../components/TownActionResult';
-import { TownConfirmSheet } from '../components/TownConfirmSheet';
 import { TownItemList } from '../components/TownItemList';
-import { TownMutationBusyError, useTownFeature } from '../hooks/useTownFeature';
+import { useTownFeature } from '../hooks/useTownFeature';
 
 type Props = {
   api: TownApi;
@@ -24,8 +23,6 @@ type Props = {
 };
 type BattleMutation = { kind: 'team'; request: SaveColosseumTeamRequest } | { kind: 'challenge'; request: ChallengeColosseumRequest };
 type ShopMutation = { request: ColosseumTradeRequest };
-type BattleConfirm = ({ kind: 'team'; request: SaveColosseumTeamRequest } | { kind: 'challenge'; request: ChallengeColosseumRequest; opponentLabel: string }) | null;
-type ShopConfirm = { request: ColosseumTradeRequest; itemLabel: string; detail: string | null } | null;
 const apiKeys = new WeakMap<object, number>(); let nextApiKey = 1;
 
 export function ColosseumPanel({ api, mode, characters, partyPresetCatalog, resolveCaptcha }: Props) {
@@ -41,7 +38,6 @@ function ColosseumBattlePanel({ api, characters = [], partyPresetCatalog, resolv
   const [selectedPresetId, setSelectedPresetId] = useState<number | null>(null);
   const [openTeamSlot, setOpenTeamSlot] = useState<number | null>(null);
   const [selectedOpponent, setSelectedOpponent] = useState<string | null>(null);
-  const [confirm, setConfirm] = useState<BattleConfirm>(null);
   const [response, setResponse] = useState<ColosseumBattleResponse | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const staged = useRef<ColosseumBattleResponse | null>(null);
@@ -62,7 +58,7 @@ function ColosseumBattlePanel({ api, characters = [], partyPresetCatalog, resolv
   const data = response ?? town.data;
   latestData.current = data;
   useEffect(() => { if (!data) return; setSelectedTeam((current) => current.some((id) => id != null) ? current.map((id) => id != null && data.fighters.some((f) => f.id === id) ? id : null) : toTeamSlots(data.selectedTeam)); }, [data]);
-  useEffect(() => { setResponse(null); setSelectedOpponent(null); setOpenTeamSlot(null); setPartySelectionMode(null); setSelectedPresetId(null); setConfirm(null); }, [api]);
+  useEffect(() => { setResponse(null); setSelectedOpponent(null); setOpenTeamSlot(null); setPartySelectionMode(null); setSelectedPresetId(null); }, [api]);
   if (!data) return <LoadState label="콜로세움" loading={town.status === 'loading'} error={town.error} reload={town.reload} />;
   const busy = town.status === 'loading' || town.status === 'submitting';
   const rows: TownRowResponse[] = data.opponents.map((opponent) => ({ id: opponent.id, label: opponent.label, accessibilityLabel: `${opponent.label}${busy ? ' 선택 불가' : ' 선택'}`, detail: opponent.detail, imageUrl: null, price: null, quantity: null, selectable: !busy }));
@@ -82,13 +78,13 @@ function ColosseumBattlePanel({ api, characters = [], partyPresetCatalog, resolv
     setSelectedTeam(teamSlotsFromPreset(preset, data.fighters));
     setOpenTeamSlot(null);
   };
-  const finish = (_result: TownActionResultResponse) => { if (staged.current) { setResponse(staged.current); setSelectedTeam(toTeamSlots(staged.current.selectedTeam)); } staged.current = null; setConfirm(null); };
-  const submit = (mutation: BattleMutation) => { const submissionApi = api; staged.current = null; setResponse({ ...data, battleResult: mutation.kind === 'challenge' ? null : data.battleResult, result: null }); void town.submit(mutation).then((result) => { if (activeApi.current === submissionApi) finish(result); }).catch((error: unknown) => { if (!(error instanceof TownMutationBusyError) && activeApi.current === submissionApi) setConfirm(null); }); };
+  const finish = (_result: TownActionResultResponse) => { if (staged.current) { setResponse(staged.current); setSelectedTeam(toTeamSlots(staged.current.selectedTeam)); } staged.current = null; };
+  const submit = (mutation: BattleMutation) => { const submissionApi = api; staged.current = null; setResponse({ ...data, battleResult: mutation.kind === 'challenge' ? null : data.battleResult, result: null }); void town.submit(mutation).then((result) => { if (activeApi.current === submissionApi) finish(result); }).catch(() => undefined); };
   const battle = data.battleResult;
   return <View style={styles.container}><TownItemList rows={rows} selectionMode="single" selectedIds={selectedIds} onSelectionChange={onSelection}
     header={<View style={styles.section}><Text style={styles.title}>콜로세움 전투</Text><Text style={styles.hint}>도전할 상대를 선택하세요.</Text></View>}
     footer={<View style={styles.section}>
-      <ActionButton label="Challenge" disabled={busy || !selectedOpponent} onPress={() => { const opponent = data.opponents.find((o) => o.id === selectedOpponent); if (opponent) setConfirm({ kind: 'challenge', request: { opponentCandidateId: opponent.id }, opponentLabel: opponent.label }); }} />
+      <ActionButton label="Challenge" disabled={busy || !selectedOpponent} onPress={() => { const opponent = data.opponents.find((o) => o.id === selectedOpponent); if (opponent) submit({ kind: 'challenge', request: { opponentCandidateId: opponent.id } }); }} />
       {battle ? <View accessibilityLabel="콜로세움 전투 결과" accessibilityLiveRegion="polite" style={styles.resultBox}><Text style={styles.resultTitle}>{battle.summary}</Text>
         <Text style={styles.hint}>{battle.turns == null ? '턴 확인 불가' : `${battle.turns}턴`} · 승자 {battle.winner ?? '확인 불가'}</Text>
         <Text style={styles.hint}>내 HP {battle.playerHp ?? '-'} · 상대 HP {battle.opponentHp ?? '-'}</Text>
@@ -114,12 +110,11 @@ function ColosseumBattlePanel({ api, characters = [], partyPresetCatalog, resolv
           <Text style={styles.teamTitle}>콜로세움 팀</Text>
           <Text style={styles.hint}>팀원 {selectedFighterIds(selectedTeam).length}/5명 · 각 슬롯에서 캐릭터를 검색해 선택하세요.</Text>
           <ColosseumTeamSlots busy={busy} fighters={data.fighters} openSlot={openTeamSlot} selectedTeam={selectedTeam} onOpenSlot={setOpenTeamSlot} onTeamChange={setSelectedTeam} />
-          <ActionButton label="팀 저장" disabled={busy || selectedFighterIds(selectedTeam).length < Math.max(data.minTeamSize, 1)} onPress={() => setConfirm({ kind: 'team', request: { fighterCandidateIds: selectedFighterIds(selectedTeam) } })} />
+          <ActionButton label="팀 저장" disabled={busy || selectedFighterIds(selectedTeam).length < Math.max(data.minTeamSize, 1)} onPress={() => submit({ kind: 'team', request: { fighterCandidateIds: selectedFighterIds(selectedTeam) } })} />
         </> : null}
       </View> : null}
       {data.result ? <TownActionResult result={data.result} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}
     </View>} emptyMessage="현재 도전 가능한 상대가 없습니다." />
-    <TownConfirmSheet visible={confirm != null} title={confirm?.kind === 'team' ? '팀 저장 확인' : '콜로세움 도전 확인'} message={confirm?.kind === 'team' ? '선택한 팀을 HOF에 저장합니다.' : '현재 HOF에 저장된 팀으로 즉시 전투합니다.'} confirmLabel={confirm?.kind === 'team' ? '팀 저장' : 'Challenge'} destructive={confirm?.kind === 'challenge'} submitting={town.status === 'submitting'} details={confirm?.kind === 'team' ? [{ label: '팀원', value: `${confirm.request.fighterCandidateIds.length}명` }] : confirm?.kind === 'challenge' ? [{ label: '상대', value: confirm.opponentLabel }, { label: '팀', value: 'HOF 저장 팀', warning: true }] : []} onCancel={() => setConfirm(null)} onConfirm={() => { if (confirm?.kind === 'team') submit({ kind: 'team', request: confirm.request }); else if (confirm?.kind === 'challenge') submit({ kind: 'challenge', request: confirm.request }); }} />
   </View>;
 }
 
@@ -169,19 +164,18 @@ function ColosseumTeamSlots({ busy, fighters, openSlot, selectedTeam, onOpenSlot
 
 function ColosseumShopPanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
   const apiKey = identifyApi(api);
-  const [categoryId, setCategoryId] = useState<string | null>(null); const [selected, setSelected] = useState<string[]>([]); const [quantityText, setQuantityText] = useState('1'); const [confirm, setConfirm] = useState<ShopConfirm>(null); const [response, setResponse] = useState<ColosseumShopResponse | null>(null); const staged = useRef<ColosseumShopResponse | null>(null); const activeApi = useRef(api); activeApi.current = api;
+  const [categoryId, setCategoryId] = useState<string | null>(null); const [selected, setSelected] = useState<string[]>([]); const [quantityText, setQuantityText] = useState('1'); const [response, setResponse] = useState<ColosseumShopResponse | null>(null); const staged = useRef<ColosseumShopResponse | null>(null); const activeApi = useRef(api); activeApi.current = api;
   const path = categoryId ? `/api/town/pvp/colosseum-shop?categoryCandidateId=${encodeURIComponent(categoryId)}` as const : '/api/town/pvp/colosseum-shop' as const;
   const load = useCallback(() => api.load<ColosseumShopResponse>(path), [api, path]);
   const submitAction = useCallback(async ({ request }: ShopMutation) => { const next = await api.submit<ColosseumTradeRequest, ColosseumShopResponse>('/api/town/pvp/colosseum-shop/trade', request); if (activeApi.current === api) staged.current = next; return next.result ?? info('교환 정보를 갱신했습니다.'); }, [api]);
   const town = useTownFeature<ColosseumShopResponse, ShopMutation>({ load, submitAction, resolveCaptcha, featureKey: `colosseum-shop-${apiKey}-${categoryId ?? 'default'}`, describeError: toUserFacingErrorMessage }); const data = response ?? town.data;
-  useEffect(() => { staged.current = null; setSelected([]); setResponse(null); setConfirm(null); }, [api, categoryId]);
+  useEffect(() => { staged.current = null; setSelected([]); setResponse(null); }, [api, categoryId]);
   if (!data) return <LoadState label="콜로세움 교환소" loading={town.status === 'loading'} error={town.error} reload={town.reload} />;
   const busy = town.status === 'loading' || town.status === 'submitting'; const item = data.items.find((row) => row.id === selected[0]); const quantity = Number(quantityText); const valid = /^\d+$/.test(quantityText) && Number.isSafeInteger(quantity) && quantity > 0 && quantity <= 2_147_483_647;
   const rows = data.items.map((row): TownRowResponse => ({ id: row.id, label: row.label, accessibilityLabel: `${row.label}${row.selectable && !busy ? ' 선택' : ' 선택 불가'}`, detail: row.detail, imageUrl: null, price: row.cost, quantity: row.owned, selectable: row.selectable && !busy }));
   return <View style={styles.container}><TownItemList rows={rows} selectionMode="single" selectedIds={selected} onSelectionChange={setSelected}
     header={<View style={styles.section}><Text style={styles.title}>콜로세움 교환소</Text><View accessibilityRole="radiogroup" style={styles.chips}>{data.categories.map((category) => <Pressable key={category.id} accessibilityRole="radio" accessibilityState={{ checked: category.current, disabled: busy }} accessibilityLabel={`${category.label} 분류`} disabled={busy} onPress={() => !category.current && setCategoryId(category.id)} style={[styles.chip, category.current && styles.chipSelected]}><Text style={styles.chipText}>{category.label}</Text></Pressable>)}</View>{data.currencies.map((currency) => <Text key={currency.label} style={styles.hint}>{currency.label}: {currency.quantity?.toLocaleString() ?? '수량 확인 불가'}</Text>)}</View>}
-    footer={<View style={styles.section}><TextInput accessibilityLabel="교환 수량" keyboardType="number-pad" editable={!busy} value={quantityText} onChangeText={setQuantityText} style={styles.input} />{!valid ? <Text accessibilityRole="alert" style={styles.error}>1~2,147,483,647 사이의 정수를 입력하세요.</Text> : null}<ActionButton label="교환" disabled={busy || !item || !valid} onPress={() => { if (item && valid) setConfirm({ request: { candidateId: item.id, categoryCandidateId: data.currentCategoryId, quantity }, itemLabel: item.label, detail: item.detail }); }} />{data.result ? <TownActionResult result={data.result} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}</View>} emptyMessage="현재 표시할 교환 품목이 없습니다." />
-    <TownConfirmSheet visible={confirm != null} title="교환 확인" message="실행 결과는 되돌릴 수 없습니다." confirmLabel="교환" destructive submitting={town.status === 'submitting'} details={confirm ? [{ label: '품목', value: confirm.itemLabel }, { label: '수량', value: `${confirm.request.quantity}개` }, ...(confirm.detail ? [{ label: '소모 재료', value: confirm.detail }] : [])] : []} onCancel={() => setConfirm(null)} onConfirm={() => { if (!confirm) return; const request = confirm.request; const submissionApi = api; staged.current = null; setResponse({ ...data, result: null }); void town.submit({ request }).then(() => { if (activeApi.current !== submissionApi) return; if (staged.current) setResponse(staged.current); staged.current = null; setConfirm(null); }).catch((error: unknown) => { if (!(error instanceof TownMutationBusyError) && activeApi.current === submissionApi) setConfirm(null); }); }} />
+    footer={<View style={styles.section}><TextInput accessibilityLabel="교환 수량" keyboardType="number-pad" editable={!busy} value={quantityText} onChangeText={setQuantityText} style={styles.input} />{!valid ? <Text accessibilityRole="alert" style={styles.error}>1~2,147,483,647 사이의 정수를 입력하세요.</Text> : null}<ActionButton label="교환" disabled={busy || !item || !valid} onPress={() => { if (!item || !valid) return; const request = { candidateId: item.id, categoryCandidateId: data.currentCategoryId, quantity }; const submissionApi = api; staged.current = null; setResponse({ ...data, result: null }); void town.submit({ request }).then(() => { if (activeApi.current !== submissionApi) return; if (staged.current) setResponse(staged.current); staged.current = null; }).catch(() => undefined); }} />{data.result ? <TownActionResult result={data.result} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}</View>} emptyMessage="현재 표시할 교환 품목이 없습니다." />
   </View>;
 }
 

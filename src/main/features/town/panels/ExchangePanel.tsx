@@ -9,20 +9,14 @@ import type {
 } from '../../../types/api';
 import type { TownApi } from '../api/townApi';
 import { TownActionResult } from '../components/TownActionResult';
-import { TownConfirmSheet } from '../components/TownConfirmSheet';
 import { TownItemList } from '../components/TownItemList';
-import { TownMutationBusyError, useTownFeature } from '../hooks/useTownFeature';
+import { useTownFeature } from '../hooks/useTownFeature';
 
 type Props = { api: TownApi; mode: ExchangeMode; resolveCaptcha?: () => Promise<void> };
 type Mutation =
   | { kind: 'trade'; request: ExchangeTradeRequest }
   | { kind: 'grade'; request: LegacyGradeExchangeRequest }
   | { kind: 'ann'; request: AnnActionRequest };
-type Confirm =
-  | { kind: 'trade'; request: ExchangeTradeRequest; itemLabel: string; detail: string | null; cost: number | null }
-  | { kind: 'grade'; id: string; label: string }
-  | { kind: 'ann'; request: AnnActionRequest; label: string; itemLabel: string | null; detail: string | null; cost: number | null }
-  | null;
 type Loaded = { key: string; value: ExchangeResponse };
 
 const apiKeys = new WeakMap<object, number>();
@@ -33,7 +27,6 @@ export function ExchangePanel({ api, mode, resolveCaptcha }: Props) {
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [quantityText, setQuantityText] = useState('1');
-  const [confirm, setConfirm] = useState<Confirm>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [response, setResponse] = useState<Loaded | null>(null);
   const [actionResult, setActionResult] = useState<{ key: string; value: TownActionResultResponse } | null>(null);
@@ -63,11 +56,11 @@ export function ExchangePanel({ api, mode, resolveCaptcha }: Props) {
   const data = response?.key === featureKey ? response.value : loaded ?? (last.current?.scope === scope ? last.current.value : null);
 
   useEffect(() => {
-    staged.current = null; setCategoryId(null); setSelectedIds([]); setQuantityText('1'); setConfirm(null);
+    staged.current = null; setCategoryId(null); setSelectedIds([]); setQuantityText('1');
     setHistoryOpen(false); setResponse(null); setActionResult(null); setSuppressedResultKey(null);
   }, [apiKey, mode]);
   useEffect(() => {
-    staged.current = null; setSelectedIds([]); setConfirm(null); setResponse(null); setActionResult(null); setSuppressedResultKey(null);
+    staged.current = null; setSelectedIds([]); setResponse(null); setActionResult(null); setSuppressedResultKey(null);
   }, [categoryId]);
   useEffect(() => {
     if (!data) return;
@@ -97,7 +90,6 @@ export function ExchangePanel({ api, mode, resolveCaptcha }: Props) {
   const quantityRow = mode === 'ann' ? selectedAnnRow : selectedTrade;
   const min = quantityRow?.minQuantity ?? 1;
   const quantityValid = validQuantity(quantityText, quantityRow);
-  const busy = town.status === 'submitting';
   const displayedResult = suppressedResultKey === featureKey
     ? actionResult?.key === featureKey ? actionResult.value : null
     : data.result ?? (actionResult?.key === featureKey ? actionResult.value : null);
@@ -105,24 +97,22 @@ export function ExchangePanel({ api, mode, resolveCaptcha }: Props) {
   const finish = (result: TownActionResultResponse, submissionKey: string) => {
     if (activeFeatureKey.current !== submissionKey) return;
     if (staged.current?.key === submissionKey) setResponse(staged.current);
-    setActionResult({ key: submissionKey, value: result }); setSuppressedResultKey(null); staged.current = null; setConfirm(null);
+    setActionResult({ key: submissionKey, value: result }); setSuppressedResultKey(null); staged.current = null;
   };
   const submit = (mutation: Mutation) => {
     const submissionKey = featureKey;
     staged.current = null; setActionResult(null); setSuppressedResultKey(submissionKey);
-    void town.submit(mutation).then((result) => finish(result, submissionKey)).catch((error: unknown) => {
-      if (!(error instanceof TownMutationBusyError) && activeFeatureKey.current === submissionKey) setConfirm(null);
-    });
+    void town.submit(mutation).then((result) => finish(result, submissionKey)).catch(() => undefined);
   };
   const footer = <View style={styles.section}>
     {quantityRow ? <QuantityInput value={quantityText} onChange={setQuantityText} valid={quantityValid} min={min} max={quantityRow.maxQuantity} disabled={interactionBusy} /> : null}
-    {mode !== 'ann' ? <ActionButton label={mode === 'legacy' ? '선택 품목 교환' : '교환'} disabled={!selectedTrade || !quantityValid || interactionBusy} onPress={() => { if (selectedTrade) setConfirm({ kind: 'trade', request: { candidateId: selectedTrade.id, categoryCandidateId: data.currentCategoryId, quantity }, itemLabel: selectedTrade.label, detail: selectedTrade.detail, cost: selectedTrade.cost }); }} /> : null}
-    {data.gradeActions.length ? <View style={styles.section}><Text style={styles.sectionTitle}>등급 즉시 교환</Text>{data.warning ? <Text accessibilityRole="alert" style={styles.warning}>{data.warning}</Text> : null}{data.gradeActions.map((action) => <ActionButton key={action.id} label={action.label} disabled={interactionBusy} onPress={() => setConfirm({ kind: 'grade', id: action.id, label: action.label })} />)}</View> : null}
+    {mode !== 'ann' ? <ActionButton label={mode === 'legacy' ? '선택 품목 교환' : '교환'} disabled={!selectedTrade || !quantityValid || interactionBusy} onPress={() => { if (selectedTrade) submit({ kind: 'trade', request: { candidateId: selectedTrade.id, categoryCandidateId: data.currentCategoryId, quantity } }); }} /> : null}
+    {data.gradeActions.length ? <View style={styles.section}><Text style={styles.sectionTitle}>등급 즉시 교환</Text>{data.warning ? <Text accessibilityRole="alert" style={styles.warning}>{data.warning}</Text> : null}{data.gradeActions.map((action) => <ActionButton key={action.id} label={action.label} disabled={interactionBusy} onPress={() => submit({ kind: 'grade', request: { gradeActionId: action.id } })} />)}</View> : null}
     {data.annActions.map((action) => {
       const selected = selectedAnn(action.type);
       const requiresTarget = action.rows.some((row) => row.selectable);
       const valid = !requiresTarget || Boolean(selected && validQuantity(quantityText, selected));
-      return <ActionButton key={action.type} label={action.label} disabled={interactionBusy || !valid} onPress={() => setConfirm({ kind: 'ann', label: action.label, itemLabel: selected?.label ?? null, detail: selected?.detail ?? null, cost: selected?.cost ?? null, request: { action: action.type, candidateId: selected?.id ?? null, quantity: selected ? quantity : 1 } })} />;
+      return <ActionButton key={action.type} label={action.label} disabled={interactionBusy || !valid} onPress={() => submit({ kind: 'ann', request: { action: action.type, candidateId: selected?.id ?? null, quantity: selected ? quantity : 1 } })} />;
     })}
     {data.history.length ? <Pressable accessibilityRole="button" accessibilityState={{ expanded: historyOpen }} accessibilityLabel={`교환 기록 ${historyOpen ? '접기' : '펼치기'}`} onPress={() => setHistoryOpen((value) => !value)}><Text style={styles.history}>기록 {data.history.length.toLocaleString()}건 {historyOpen ? '접기' : '펼치기'}</Text></Pressable> : null}
     {displayedResult ? <TownActionResult result={displayedResult} onRefresh={interactionBusy ? undefined : () => {
@@ -140,20 +130,6 @@ export function ExchangePanel({ api, mode, resolveCaptcha }: Props) {
       onSelectionChange={setSelectedIds}
       header={<View style={styles.section}><Text style={styles.title}>{title(mode)}</Text><Categories data={data} disabled={interactionBusy} onSelect={setCategoryId} />{town.status === 'loading' ? <Text accessibilityLiveRegion="polite" style={styles.hint}>선택한 교환 정보를 불러오는 중...</Text> : null}{data.ownedCurrencies.length ? <View accessibilityLabel="보유 교환 재화" style={styles.currencyBox}>{data.ownedCurrencies.map((item) => <Text key={item.label} style={styles.hint}>{item.label}: {item.quantity == null ? '수량 확인 불가' : item.quantity.toLocaleString()}</Text>)}</View> : null}</View>}
       footer={footer} emptyMessage="현재 표시할 교환 품목이 없습니다." />
-    <TownConfirmSheet visible={confirm != null} title={`${confirmTitle(confirm)} 확인`} message={confirm?.kind === 'grade' ? (data.warning ?? 'HOF가 교환 대상을 자동 선택합니다.') : '실행 결과는 되돌릴 수 없습니다.'}
-      confirmLabel={confirmTitle(confirm)} destructive submitting={busy}
-      details={confirm?.kind === 'grade'
-        ? [{ label: '교환', value: confirm.label }, { label: '대상', value: 'HOF 자동 선택', warning: true }]
-        : confirm?.kind === 'trade'
-          ? [{ label: '품목', value: confirm.itemLabel }, { label: '수량', value: `${confirm.request.quantity}개` }, { label: '표시 비용', value: money(confirm.cost) }, ...(confirm.detail ? [{ label: '소모 재료·설명', value: confirm.detail }] : [])]
-          : confirm?.kind === 'ann'
-            ? [{ label: '품목', value: confirm.itemLabel ?? '대상 없음' }, ...(confirm.itemLabel ? [{ label: '수량', value: `${confirm.request.quantity}개` }, { label: '표시 비용', value: money(confirm.cost) }, ...(confirm.detail ? [{ label: '소모 재료·설명', value: confirm.detail }] : [])] : [])]
-            : []}
-      onCancel={() => setConfirm(null)} onConfirm={() => {
-        if (confirm?.kind === 'grade') submit({ kind: 'grade', request: { gradeActionId: confirm.id } });
-        else if (confirm?.kind === 'ann') submit({ kind: 'ann', request: confirm.request });
-        else if (confirm?.kind === 'trade') submit({ kind: 'trade', request: confirm.request });
-      }} />
   </View>;
 }
 
@@ -163,11 +139,9 @@ function QuantityInput({ value, onChange, valid, min, max, disabled }: { value: 
 function ActionButton({ label, disabled, onPress }: { label: string; disabled: boolean; onPress: () => void }) { return <Pressable accessibilityLabel={label} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}><Text style={styles.buttonText}>{label}</Text></Pressable>; }
 function LoadState({ loading, error, reload }: { loading: boolean; error: string | null; reload: () => Promise<unknown> }) { return <View style={styles.container}><Text accessibilityRole={error ? 'alert' : undefined} style={error ? styles.error : styles.hint}>{loading ? '교환 시설 정보를 불러오는 중...' : error ?? '교환 시설 정보가 없습니다.'}</Text>{!loading ? <ActionButton label="다시 시도" disabled={false} onPress={() => void reload().catch(() => undefined)} /> : null}</View>; }
 function title(mode: ExchangeMode) { return ({ emblem: '교환상점', event: '특별 교환상점', legacy: '유물 가게', ann: '앤의 가게' } as const)[mode]; }
-function confirmTitle(confirm: Confirm) { return confirm?.kind === 'grade' ? confirm.label : confirm?.kind === 'ann' ? confirm.label : '교환'; }
 function informational(message: string): TownActionResultResponse { return { status: 'INFORMATIONAL', messages: [message], items: [], refreshRequired: true }; }
 function validQuantity(value: string, row: ExchangeResponse['rows'][number] | undefined) { const quantity = Number(value); return Boolean(row && /^\d+$/.test(value) && Number.isSafeInteger(quantity) && quantity >= row.minQuantity && quantity <= effectiveMax(row.maxQuantity)); }
 function effectiveMax(max: number | null) { return Math.min(max ?? 2_147_483_647, 2_147_483_647); }
-function money(value: number | null) { return value == null ? '표시 없음' : `$${value.toLocaleString()}`; }
 function identifyApi(api: TownApi) { const key = api as object; const known = apiKeys.get(key); if (known != null) return known; const next = nextApiKey++; apiKeys.set(key, next); return next; }
 
 const styles = StyleSheet.create({ container: { flex: 1, gap: theme.spacing.md }, section: { gap: theme.spacing.sm, paddingVertical: theme.spacing.sm }, title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' }, sectionTitle: { color: theme.colors.text, fontWeight: '900' }, hint: { color: theme.colors.textMuted, lineHeight: 20 }, warning: { color: theme.colors.accentAmber, lineHeight: 20 }, error: { color: theme.colors.danger, lineHeight: 20 }, currencyBox: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md, gap: theme.spacing.xs, padding: theme.spacing.md }, chips: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs }, chip: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, minHeight: 40, justifyContent: 'center', paddingHorizontal: theme.spacing.md }, chipSelected: { borderColor: theme.colors.accentGreen }, chipText: { color: theme.colors.text, fontWeight: '700' }, input: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md }, invalid: { borderColor: theme.colors.danger }, button: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, justifyContent: 'center', minHeight: 48, paddingHorizontal: theme.spacing.md }, buttonText: { color: theme.colors.background, fontWeight: '900' }, disabled: { opacity: 0.45 }, history: { color: theme.colors.accentBlue, fontWeight: '800', paddingVertical: theme.spacing.sm } });

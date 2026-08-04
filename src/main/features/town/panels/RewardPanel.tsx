@@ -3,10 +3,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { theme } from '../../../styles/theme';
 import type {
-  OrbExchangeAction,
   OrbExchangeRequest,
   OrbExchangeResponse,
-  StashOpenAction,
   StashOpenRequest,
   StashResponse,
   TownActionResultResponse,
@@ -14,9 +12,8 @@ import type {
 } from '../../../types/api';
 import type { TownApi } from '../api/townApi';
 import { TownActionResult } from '../components/TownActionResult';
-import { TownConfirmSheet } from '../components/TownConfirmSheet';
 import { TownItemList } from '../components/TownItemList';
-import { TownMutationBusyError, useTownFeature } from '../hooks/useTownFeature';
+import { useTownFeature } from '../hooks/useTownFeature';
 
 type Props = { api: TownApi; mode: 'stash' | 'orbs'; resolveCaptcha?: () => Promise<void> };
 
@@ -26,7 +23,6 @@ export function RewardPanel(props: Props) {
 
 function StashPanel({ api, resolveCaptcha }: Props) {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [pendingAction, setPendingAction] = useState<{ action: StashOpenAction; label: string } | null>(null);
   const [response, setResponse] = useState<StashResponse | null>(null);
   const stagedResponse = useRef<StashResponse | null>(null);
   const load = useCallback(() => api.load<StashResponse>('/api/town/rewards/stash'), [api]);
@@ -74,39 +70,22 @@ function StashPanel({ api, resolveCaptcha }: Props) {
         <Text style={styles.label}>개봉 방식</Text>
         <View style={[styles.actionGrid, styles.stashActionGrid]}>
           {data.actions.map((action) => (
-            <ActionButton compact key={action.action} label={action.label} disabled={!selected || town.status === 'submitting'} onPress={() => setPendingAction(action)} />
+            <ActionButton compact key={action.action} label={action.label} disabled={!selected || town.status === 'submitting'} onPress={() => {
+              if (!selected) return;
+              void town.submit({ boxCandidateId: selected.id, action: action.action }).then(() => {
+                if (stagedResponse.current) setResponse(stagedResponse.current);
+                stagedResponse.current = null;
+              }).catch(() => undefined);
+            }} />
           ))}
         </View>
         {data.actions.length === 0 ? <Text accessibilityRole="alert" style={styles.error}>현재 HOF 개봉 버튼을 안전하게 확인하지 못했습니다.</Text> : null}
       </View>
-      <TownConfirmSheet
-        visible={pendingAction != null}
-        title="상자 열기 확인"
-        message="개봉 결과는 되돌릴 수 없습니다."
-        confirmLabel="열기"
-        destructive
-        submitting={town.status === 'submitting'}
-        details={[{ label: '상자', value: selected?.label ?? '미선택' }, { label: '개봉 방식', value: pendingAction?.label ?? '미선택' }]}
-        onCancel={() => setPendingAction(null)}
-        onConfirm={() => {
-          if (!selected || !pendingAction) return;
-          void town.submit({ boxCandidateId: selected.id, action: pendingAction.action })
-            .then(() => {
-              if (stagedResponse.current) setResponse(stagedResponse.current);
-              stagedResponse.current = null;
-              setPendingAction(null);
-            })
-            .catch((error: unknown) => {
-              if (!(error instanceof TownMutationBusyError)) setPendingAction(null);
-            });
-        }}
-      />
     </View>
   );
 }
 
 function OrbPanel({ api, resolveCaptcha }: Props) {
-  const [pendingAction, setPendingAction] = useState<{ action: OrbExchangeAction; label: string; repetitions: 1 | 5 } | null>(null);
   const [response, setResponse] = useState<OrbExchangeResponse | null>(null);
   const stagedResponse = useRef<OrbExchangeResponse | null>(null);
   const load = useCallback(() => api.load<OrbExchangeResponse>('/api/town/rewards/orbs'), [api]);
@@ -153,32 +132,15 @@ function OrbPanel({ api, resolveCaptcha }: Props) {
       </View>
       <View accessibilityLabel="오브 교환 작업" style={styles.orbActionBar}>
         <View style={[styles.actionGrid, styles.orbActionGrid]}>
-          {data.actions.map((action) => <ActionButton compact key={action.action} label={action.label} disabled={town.status === 'submitting'} onPress={() => setPendingAction(action)} />)}
+          {data.actions.map((action) => <ActionButton compact key={action.action} label={action.label} disabled={town.status === 'submitting'} onPress={() => {
+            void town.submit({ action: action.action }).then(() => {
+              if (stagedResponse.current) setResponse(stagedResponse.current);
+              stagedResponse.current = null;
+            }).catch(() => undefined);
+          }} />)}
         </View>
         {data.actions.length === 0 ? <Text accessibilityRole="alert" style={styles.error}>현재 HOF 오브 교환 버튼을 안전하게 확인하지 못했습니다.</Text> : null}
       </View>
-      <TownConfirmSheet
-        visible={pendingAction != null}
-        title="오브 교환 확인"
-        message="교환 결과에 따라 실제 성공 횟수만큼 오브가 소비됩니다."
-        confirmLabel="교환"
-        destructive
-        submitting={town.status === 'submitting'}
-        details={[{ label: '교환 횟수', value: `${pendingAction?.repetitions ?? 0}회` }, { label: '필요 오브', value: `색상별 ${((pendingAction?.repetitions ?? 0) * 1_000).toLocaleString()}개` }]}
-        onCancel={() => setPendingAction(null)}
-        onConfirm={() => {
-          if (!pendingAction) return;
-          void town.submit({ action: pendingAction.action })
-            .then(() => {
-              if (stagedResponse.current) setResponse(stagedResponse.current);
-              stagedResponse.current = null;
-              setPendingAction(null);
-            })
-            .catch((error: unknown) => {
-              if (!(error instanceof TownMutationBusyError)) setPendingAction(null);
-            });
-        }}
-      />
     </View>
   );
 }

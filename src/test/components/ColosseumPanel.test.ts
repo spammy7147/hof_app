@@ -28,7 +28,7 @@ describe('ColosseumPanel', () => {
     const search = mounted!.root.find((n) => n.props.accessibilityLabel === '2번 팀원 검색');
     await act(async () => search.props.onChangeText('카즈'));
     assert.equal(button('카즈 팀원 선택').props.accessibilityState.selected, false);
-    await press('카즈 팀원 선택'); await press('팀 저장'); await pressLast('팀 저장');
+    await press('카즈 팀원 선택'); await press('팀 저장');
     assert.deepEqual(calls, [{ path: '/api/town/pvp/colosseum/team', request: { fighterCandidateIds: ['f1', 'f2'] } }]);
   });
 
@@ -41,7 +41,7 @@ describe('ColosseumPanel', () => {
     await act(async () => presetPicker().props.onSelectPreset(preset));
     assert.equal(text().includes('카즈'), true);
     assert.equal(text().includes('팀원 2/5명'), true);
-    await press('팀 저장'); await pressLast('팀 저장');
+    await press('팀 저장');
     assert.deepEqual(calls, [{ path: '/api/town/pvp/colosseum/team', request: { fighterCandidateIds: ['f2', 'f1'] } }]);
   });
 
@@ -52,7 +52,7 @@ describe('ColosseumPanel', () => {
     await press('라이벌 선택');
     await act(async () => presetPicker().props.onSelectDirect());
     assert.ok(text().indexOf('Challenge') < text().indexOf('콜로세움 팀'));
-    await press('Challenge'); await pressLast('Challenge');
+    await press('Challenge');
     assert.deepEqual(calls, [{ path: '/api/town/pvp/colosseum/challenge', request: { opponentCandidateId: 'o1' } }]);
     assert.equal(text().includes('공민이는 승리했다'), true); assert.equal(text().includes('내 상태 5/5 · 상대 상태 0/5'), true); assert.equal(text().includes('전투 상세 펼치기'), true);
   });
@@ -65,7 +65,7 @@ describe('ColosseumPanel', () => {
   it('교환은 확인 후 현재 category와 수량을 보낸다', async () => {
     const calls: unknown[] = []; const value = shop();
     await render(React.createElement(ColosseumPanel, { api: api(async () => value, async (path, request) => { calls.push({ path, request }); return value; }), mode: 'shop' }));
-    await press('검투사의 검 선택'); const input = mounted!.root.find((n) => n.props.accessibilityLabel === '교환 수량'); await act(async () => input.props.onChangeText('2')); await press('교환'); await pressLast('교환');
+    await press('검투사의 검 선택'); const input = mounted!.root.find((n) => n.props.accessibilityLabel === '교환 수량'); await act(async () => input.props.onChangeText('2')); await press('교환');
     assert.deepEqual(calls, [{ path: '/api/town/pvp/colosseum-shop/trade', request: { candidateId: 's1', categoryCandidateId: 'all', quantity: 2 } }]);
   });
 });
@@ -79,6 +79,4 @@ function buttons(label: string) { return mounted!.root.findAll((n) => String(n.t
 function button(label: string) { const found = buttons(label); assert.ok(found.length); return found[0]; }
 function presetPicker() { return mounted!.root.find((node) => String(node.type) === 'BattlePartyPresetPicker'); }
 async function press(label: string) { await act(async () => { button(label).props.onPress(); await Promise.resolve(); await Promise.resolve(); }); }
-async function pressLast(label: string) { await act(async () => { const found = mounted!.root.findAll((n) => String(n.type) === 'Pressable' && (n.props.accessibilityLabel === label || nodeText(n) === label)); assert.ok(found.length); found[found.length - 1].props.onPress(); await Promise.resolve(); await Promise.resolve(); }); }
 function text() { return mounted!.root.findAll((n) => String(n.type) === 'Text').map((n: ReactTestInstance) => n.children.join('')).join('\n'); }
-function nodeText(node: ReactTestInstance): string { return node.children.map((child) => typeof child === 'string' ? child : nodeText(child)).join(''); }

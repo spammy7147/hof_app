@@ -9,7 +9,6 @@ import type {
 } from '../../../types/api';
 import type { TownApi } from '../api/townApi';
 import { TownActionResult } from '../components/TownActionResult';
-import { TownConfirmSheet } from '../components/TownConfirmSheet';
 import { TownItemList } from '../components/TownItemList';
 import { useTownFeature } from '../hooks/useTownFeature';
 
@@ -27,10 +26,10 @@ export function AuctionPanel({ api, mode, resolveCaptcha }: Props) {
 function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
   const [query, setQuery] = useState(''); const [appliedQuery, setAppliedQuery] = useState('');
   const [selected, setSelected] = useState<string[]>([]); const [bidPrice, setBidPrice] = useState('');
-  const [confirm, setConfirm] = useState<TradeRequest | null>(null); const [response, setResponse] = useState<AuctionResponse | null>(null);
+  const [response, setResponse] = useState<AuctionResponse | null>(null);
   const [exhibit, setExhibit] = useState<AuctionExhibitResponse | null>(null); const [exhibitSelected, setExhibitSelected] = useState<string[]>([]);
   const [amount, setAmount] = useState('1'); const [startPrice, setStartPrice] = useState(''); const [duration, setDuration] = useState(''); const [comment, setComment] = useState('');
-  const resetExhibitDraft = useCallback(() => { setExhibitSelected([]); setAmount('1'); setStartPrice(''); setDuration(''); setComment(''); setConfirm(null); }, []);
+  const resetExhibitDraft = useCallback(() => { setExhibitSelected([]); setAmount('1'); setStartPrice(''); setDuration(''); setComment(''); }, []);
   useEffect(() => {
     setDuration((current) => exhibit?.durations.some((option) => option.value === current)
       ? current
@@ -47,7 +46,6 @@ function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
       if (request.kind === 'OPEN_EXHIBIT' || request.kind === 'EXHIBIT') {
         const nextExhibit = next as AuctionExhibitResponse; resetExhibitDraft(); setExhibit(nextExhibit);
       } else { setResponse(next as AuctionResponse); setSelected([]); setBidPrice(''); }
-      setConfirm(null);
     }
     return next.result ?? info('옥션 결과를 갱신했습니다.');
   }, [api, resetExhibitDraft]);
@@ -70,23 +68,21 @@ function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
         <TextInput accessibilityLabel="옥션 검색어" editable={!busy && !exhibit} value={query} onChangeText={setQuery} placeholder="품목명 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} />
         <ActionButton label="옥션 검색" disabled={busy || town.status === 'loading' || exhibit != null} onPress={() => { setResponse(null); setSelected([]); setAppliedQuery(query.trim()); }} />
         {!exhibit && data.capabilities.exhibitEntryActionId ? <ActionButton label="출품 준비" disabled={busy} onPress={() => { resetExhibitDraft(); town.resetOutcome(); void town.submit({ kind: 'OPEN_EXHIBIT', body: { actionId: data.capabilities.exhibitEntryActionId! } }).then(() => town.resetOutcome()).catch(() => undefined); }} /> : null}
-        {!exhibit && data.capabilities.claimItemActionId ? <ActionButton label="낙찰 아이템 수령" disabled={busy} onPress={() => setConfirm({ kind: 'CLAIM_ITEM', body: { actionId: data.capabilities.claimItemActionId! } })} /> : null}
-        {!exhibit && data.capabilities.claimFundsActionId ? <ActionButton label="Funds 수령" disabled={busy} onPress={() => setConfirm({ kind: 'CLAIM_FUNDS', body: { actionId: data.capabilities.claimFundsActionId! } })} /> : null}
+        {!exhibit && data.capabilities.claimItemActionId ? <ActionButton label="낙찰 아이템 수령" disabled={busy} onPress={() => void town.submit({ kind: 'CLAIM_ITEM', body: { actionId: data.capabilities.claimItemActionId! } }).catch(() => undefined)} /> : null}
+        {!exhibit && data.capabilities.claimFundsActionId ? <ActionButton label="Funds 수령" disabled={busy} onPress={() => void town.submit({ kind: 'CLAIM_FUNDS', body: { actionId: data.capabilities.claimFundsActionId! } }).catch(() => undefined)} /> : null}
         {exhibit ? <ActionButton label="옥션 목록으로" disabled={busy} onPress={() => { setExhibit(null); resetExhibitDraft(); town.resetOutcome(); }} /> : null}
       </View>}
       footer={<View style={styles.section}>
-        {!exhibit && chosen ? <><Field label="입찰가" value={bidPrice} setValue={setBidPrice} disabled={busy} numeric /><ActionButton label="입찰 확인" disabled={busy || !bid} onPress={() => bid && setConfirm(bid)} /></> : null}
+        {!exhibit && chosen ? <><Field label="입찰가" value={bidPrice} setValue={setBidPrice} disabled={busy} numeric /><ActionButton label="입찰" disabled={busy || !bid} onPress={() => bid && void town.submit(bid).catch(() => undefined)} /></> : null}
         {exhibit && exhibitItem ? <>
           <Field label="출품 수량" value={amount} setValue={setAmount} disabled={busy} numeric /><Field label="개시가" value={startPrice} setValue={setStartPrice} disabled={busy} numeric />
           <Text style={styles.fieldLabel}>출품 기간</Text>
           <View style={styles.durationOptions}>{exhibit.durations.map((option) => <Pressable key={option.value} accessibilityLabel={`출품 기간 ${option.label}`} accessibilityRole="radio" accessibilityState={{ checked: duration === option.value, disabled: busy }} disabled={busy} onPress={() => setDuration(option.value)} style={[styles.durationOption, duration === option.value && styles.durationSelected]}><Text style={styles.durationText}>{option.label}</Text></Pressable>)}</View>
           <TextInput accessibilityLabel="출품 설명" editable={!busy} maxLength={300} value={comment} onChangeText={setComment} placeholder="코멘트(선택, 최대 300자)" placeholderTextColor={theme.colors.textMuted} style={styles.input} />
-          <ActionButton label="출품 확인" disabled={busy || !exhibitRequest} onPress={() => exhibitRequest && setConfirm(exhibitRequest)} />
+          <ActionButton label="출품" disabled={busy || !exhibitRequest} onPress={() => exhibitRequest && void town.submit(exhibitRequest).catch(() => undefined)} />
         </> : null}
         {town.result ? <TownActionResult result={town.result} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}
       </View>} />
-    <TownConfirmSheet visible={confirm != null} title={`${confirmLabel(confirm)} 확인`} message="입력값과 대상을 확인한 뒤 실행하세요." confirmLabel={confirmLabel(confirm)} destructive submitting={busy}
-      details={confirmDetails(confirm, chosen, exhibitItem)} onCancel={() => { if (!busy) setConfirm(null); }} onConfirm={() => confirm && void town.submit(confirm).catch(() => undefined)} />
   </View>;
 }
 
@@ -124,8 +120,6 @@ function marketRow(item: AuctionMarketItem): TownRowResponse {
 function key(item: AuctionListingResponse) { return item.rowKey; }
 function validWhole(value: string, min: number, max = Number.MAX_SAFE_INTEGER) { return /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) >= min && Number(value) <= max; }
 function Field({ label, value, setValue, disabled, numeric }: { label: string; value: string; setValue: (value: string) => void; disabled: boolean; numeric?: boolean }) { return <TextInput accessibilityLabel={label} editable={!disabled} keyboardType={numeric ? 'number-pad' : 'default'} value={value} onChangeText={setValue} placeholder={label} placeholderTextColor={theme.colors.textMuted} style={styles.input} />; }
-function confirmLabel(request: TradeRequest | null) { return request?.kind === 'BID' ? '입찰' : request?.kind === 'EXHIBIT' ? '출품' : request?.kind === 'CLAIM_ITEM' ? '아이템 수령' : request?.kind === 'CLAIM_FUNDS' ? 'Funds 수령' : '실행'; }
-function confirmDetails(request: TradeRequest | null, listing: AuctionListingResponse | null, exhibit: AuctionListingResponse | null) { if (!request) return []; if (request.kind === 'BID') return [{ label: '품목', value: listing?.name ?? request.body.listingId }, { label: '입찰가', value: `$${request.body.bidPrice.toLocaleString()}`, warning: true }]; if (request.kind === 'EXHIBIT') return [{ label: '품목', value: exhibit?.name ?? request.body.candidateId }, { label: '수량', value: `${request.body.amount}개` }, { label: '개시가', value: `$${request.body.startPrice.toLocaleString()}`, warning: true }, { label: '기간', value: request.body.exhibitTime }]; return [{ label: '작업', value: confirmLabel(request), warning: true }]; }
 function ActionButton({ label, disabled, onPress }: { label: string; disabled: boolean; onPress: () => void }) { return <Pressable accessibilityLabel={label} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}><Text style={styles.buttonText}>{label}</Text></Pressable>; }
 function LoadState({ loading, error, retry }: { loading: boolean; error: string | null; retry: () => Promise<unknown> }) { return <View style={styles.container}><Text accessibilityRole={error ? 'alert' : undefined} style={error ? styles.error : styles.muted}>{loading ? '옥션을 불러오는 중...' : error ?? '표시할 항목이 없습니다.'}</Text>{!loading ? <ActionButton label="다시 시도" disabled={false} onPress={() => void retry().catch(() => undefined)} /> : null}</View>; }
 function info(message: string): TownActionResultResponse { return { status: 'INFORMATIONAL', messages: [message], items: [], refreshRequired: true }; }

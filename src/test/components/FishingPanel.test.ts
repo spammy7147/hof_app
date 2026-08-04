@@ -229,7 +229,7 @@ describe('FishingPanel', () => {
     assert.equal(allText().includes('갑옷 물고기'), true);
   });
 
-  it('교환 수량과 비용을 확인한 뒤에만 정확한 수량을 제출한다', async () => {
+  it('교환 버튼을 한 번 누르면 정확한 수량을 제출한다', async () => {
     const calls: unknown[] = [];
     const response = {
       categories: [{ id: 'type:weapon', label: '무기', current: true }],
@@ -245,10 +245,6 @@ describe('FishingPanel', () => {
     await press('Rank Fish 선택');
     await act(async () => button('교환 수량').props.onChangeText('3'));
     await press('선택한 낚시 품목 교환');
-    assert.deepEqual(calls, []);
-    assert.equal(allText().includes('$300'), true);
-    await act(async () => pressableWithText('교환').props.onPress());
-    await act(async () => { await Promise.resolve(); });
     assert.deepEqual(calls, [{ candidateId: 'rank', categoryCandidateId: 'type:weapon', quantity: 3 }]);
   });
 
@@ -262,7 +258,7 @@ describe('FishingPanel', () => {
 
       assert.equal(button('선택한 낚시 품목 교환').props.disabled, true);
       assert.equal(allText().includes('수량은 1 이상의 10진 정수로 입력하세요.'), true);
-      assert.equal(mounted!.root.find((node) => String(node.type) === 'Modal').props.visible, false);
+      assert.equal(mounted!.root.findAll((node) => String(node.type) === 'Modal').length, 0);
       assert.deepEqual(calls, []);
     });
   }
@@ -292,6 +288,3 @@ async function press(label: string) { await act(async () => button(label).props.
 function button(label: string): ReactTestInstance { return mounted!.root.find((node) => node.props.accessibilityLabel === label); }
 function findButton(label: string): ReactTestInstance | null { return mounted!.root.findAll((node) => node.props.accessibilityLabel === label)[0] ?? null; }
 function allText(): string { return mounted!.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join('')).join(' '); }
-function pressableWithText(label: string): ReactTestInstance {
-  return mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0).at(-1)!;
-}

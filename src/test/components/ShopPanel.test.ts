@@ -103,29 +103,24 @@ describe('ShopPanel', () => {
     assert.ok(button('Wheat flour 구매 수량'));
   });
 
-  it('다중 상품 수량과 예상 비용을 확인한 뒤 한 번만 구매한다', async () => {
+  it('다중 상품 수량과 예상 비용을 계산하고 한 번 눌러 구매한다', async () => {
     const submissions: unknown[] = [];
     await render(React.createElement(ShopPanel, { api: api(async () => shop('general'), async (_path, request) => { submissions.push(request); return { ...shop('general'), result: result('SUCCESS') }; }), mode: 'general' }));
     await press('Potion 선택'); await press('Bread 선택');
     await change('Potion 구매 수량', '2');
     assert.equal(text().includes('예상 총액 $400'), true);
-    await press('장바구니 구매'); assert.deepEqual(submissions, []);
-    assert.equal(text().includes('Potion 2개 · $200'), true);
-    assert.equal(text().includes('Bread 1개 · $200'), true);
-    await pressLast('구매');
+    await press('장바구니 구매');
     assert.deepEqual(submissions, [{ items: [{ itemId: 'a', quantity: 2 }, { itemId: 'b', quantity: 1 }] }]);
     assert.equal(button('장바구니 구매').props.disabled, true, '성공 시 장바구니를 비운다');
   });
 
-  it('$0 판매는 막지 않고 확인창에서 경고한다', async () => {
+  it('$0 판매도 막지 않고 바로 전송한다', async () => {
     const submissions: unknown[] = [];
     const sell = { items: [{ id: 'free', label: 'Funds Bag', selectable: true, detail: null, imageUrl: null, price: 0, quantity: 5, type: 'other' }], result: null };
     await render(React.createElement(ShopPanel, { api: api(async () => sell, async (_path, request) => { submissions.push(request); return { ...sell, result: result('SUCCESS') }; }), mode: 'sell' }));
     await press('Funds Bag 선택');
     assert.equal(text().includes('$0 판매 품목 1개'), true);
     await press('선택 품목 판매');
-    assert.equal(text().includes('Funds Bag 1개 · $0'), true);
-    await pressLast('판매');
     assert.deepEqual(submissions, [{ items: [{ candidateId: 'free', quantity: 1 }] }]);
   });
 
@@ -158,8 +153,6 @@ describe('ShopPanel', () => {
     assert.equal(button('조합').props.disabled, true);
     for (const [slot, option] of [['주재료', 'Milk'], ['부재료(대)', 'A'], ['부재료(중)', 'B'], ['부재료(소)', 'C']]) { await press(`${slot} 선택`); await press(`${option} 선택`); }
     await change('조합 결과 수량', '2'); await press('조합');
-    for (const expected of ['주재료', 'Milk · 2개 사용', '부재료(대)', 'A · 2개 사용', '부재료(중)', 'B · 2개 사용', '부재료(소)', 'C · 2개 사용', '조합 결과 수량', '2개']) assert.equal(text().includes(expected), true);
-    await pressLast('Combine');
     assert.deepEqual(submissions, [{ primaryCandidateId: 'm', secondaryCandidateIds: ['a', 'b', 'c'], quantity: 2 }]);
   });
 
@@ -187,7 +180,7 @@ describe('ShopPanel', () => {
     await render(React.createElement(ShopPanel, { api: api(async () => combine, async (_path, request) => { submissions.push(request); return { ...combine, result: result('SUCCESS') }; }), mode: 'combine' }));
 
     for (const slot of ['주재료', '부재료(대)', '부재료(중)', '부재료(소)']) { await press(`${slot} 선택`); await press('Shared 선택'); }
-    await press('조합'); await pressLast('Combine');
+    await press('조합');
 
     assert.deepEqual(submissions, [{ primaryCandidateId: 'same', secondaryCandidateIds: ['same', 'same', 'same'], quantity: 1 }]);
   });
@@ -213,6 +206,5 @@ function api(load: (path: string) => Promise<unknown>, submit: (path: string, re
 async function render(node: React.ReactElement) { await act(async () => { mounted = create(node); }); await act(async () => { await Promise.resolve(); }); }
 function button(label: string): ReactTestInstance { return mounted!.root.find((node) => node.props.accessibilityLabel === label); }
 async function press(label: string) { await act(async () => button(label).props.onPress()); await act(async () => { await Promise.resolve(); }); }
-async function pressLast(label: string) { const nodes = mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0); await act(async () => nodes.at(-1)!.props.onPress()); await act(async () => { await Promise.resolve(); }); }
 async function change(label: string, value: string) { await act(async () => button(label).props.onChangeText(value)); }
 function text() { return mounted!.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join('')).join(' '); }

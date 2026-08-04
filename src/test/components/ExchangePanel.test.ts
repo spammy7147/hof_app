@@ -51,13 +51,11 @@ describe('ExchangePanel', () => {
     await act(async () => pending.resolve({ ...legacy, currentCategoryId: 'weapon' }));
   });
 
-  it('유물 등급 교환은 대상 선택 없이 경고 후 action id만 전송한다', async () => {
+  it('유물 등급 교환은 대상 선택 없이 action id를 바로 전송한다', async () => {
     const calls: Array<{ path: string; request: unknown }> = [];
     const legacy = data('LEGACY', { rows: [], warning: 'HOF가 +10 레거시 장비 중 1개를 자동 선택합니다. 앱에서는 대상을 지정할 수 없습니다.', gradeActions: [{ id: 'junk', label: 'Junk 등급 교환', consumedItemsPerPress: 1, allowsTargetSelection: false }] });
     await render(React.createElement(ExchangePanel, { api: api(async () => legacy, async (path, request) => { calls.push({ path, request }); return { ...legacy, result: result() }; }), mode: 'legacy' }));
     await press('Junk 등급 교환');
-    assert.equal(text().includes('HOF 자동 선택'), true);
-    await pressLast('Junk 등급 교환');
     assert.deepEqual(calls, [{ path: '/api/town/exchanges/legacy/grade', request: { gradeActionId: 'junk' } }]);
   });
 
@@ -68,29 +66,27 @@ describe('ExchangePanel', () => {
       { type: 'GIVE_GIFT', label: '앤에게 선물', rows: [row('flower', 'Flower')] },
     ] });
     await render(React.createElement(ExchangePanel, { api: api(async () => ann, async (_path, request) => { calls.push(request); return { ...ann, result: result() }; }), mode: 'ann' }));
-    await press('+10 Legacy Arm 선택'); await press('앤에게 아이템을 맡긴다'); await pressLast('앤에게 아이템을 맡긴다');
+    await press('+10 Legacy Arm 선택'); await press('앤에게 아이템을 맡긴다');
     await press('Flower 선택'); await press('앤에게 선물');
     assert.equal(text().includes('Flower'), true);
-    await pressLast('앤에게 선물');
     assert.deepEqual(calls, [
       { action: 'MODIFY_ITEM', candidateId: 'modify', quantity: 1 },
       { action: 'GIVE_GIFT', candidateId: 'flower', quantity: 1 },
     ]);
   });
 
-  it('확인창은 선택 당시의 비용과 소모 설명을 고정해 보여주고 중복 POST를 막는다', async () => {
+  it('교환 버튼은 현재 선택값을 즉시 보내고 중복 POST를 막는다', async () => {
     const pending = deferred<unknown>();
     const calls: unknown[] = [];
     const value = data('EMBLEM', { rows: [{ ...row('trade', '빛나는 검'), detail: 'Order of Gladiator(Green) ×15', cost: 100_000 }] });
     await render(React.createElement(ExchangePanel, { api: api(async () => value, async (_path, request) => { calls.push(request); return pending.promise; }), mode: 'emblem' }));
     await press('빛나는 검 선택');
     await changeInput('교환 수량', '2');
-    await press('교환');
     assert.equal(text().includes('$100,000'), true);
     assert.equal(text().includes('Order of Gladiator(Green) ×15'), true);
 
-    const confirm = lastPressableWithText('교환').props.onPress;
-    await act(async () => { confirm(); confirm(); await Promise.resolve(); });
+    const exchange = button('교환');
+    await act(async () => { exchange.props.onPress(); exchange.props.onPress(); await Promise.resolve(); });
     assert.deepEqual(calls, [{ candidateId: 'trade', categoryCandidateId: 'all', quantity: 2 }]);
     await act(async () => pending.resolve({ ...value, result: result() }));
   });
@@ -104,9 +100,9 @@ describe('ExchangePanel', () => {
       throw new Error('두 번째 교환 실패');
     };
     await render(React.createElement(ExchangePanel, { api: api(async () => value, submit), mode: 'emblem' }));
-    await press('교환품 선택'); await press('교환'); await pressLast('교환');
+    await press('교환품 선택'); await press('교환');
     assert.equal(text().includes('첫 교환 성공'), true);
-    await press('교환'); await pressLast('교환');
+    await press('교환');
     assert.equal(text().includes('두 번째 교환 실패'), true);
     assert.equal(text().includes('첫 교환 성공'), false);
   });
@@ -133,21 +129,18 @@ describe('ExchangePanel', () => {
     await act(async () => newLoad.resolve(data('EMBLEM')));
   });
 
-  it('이전 API의 늦은 실패가 새 계정의 확인창을 닫지 않는다', async () => {
+  it('이전 API의 늦은 실패를 새 계정 화면에 표시하지 않는다', async () => {
     const oldSubmit = deferred<unknown>();
     const value = data('EMBLEM');
     await render(React.createElement(ExchangePanel, { api: api(async () => value, async () => oldSubmit.promise), mode: 'emblem' }));
     await press('교환품 선택'); await press('교환');
-    const oldConfirm = lastPressableWithText('교환').props.onPress;
-    await act(async () => { oldConfirm(); await Promise.resolve(); });
 
     const newApi = api(async () => value, async () => value);
     await act(async () => mounted!.update(React.createElement(ExchangePanel, { api: newApi, mode: 'emblem' })));
     await act(async () => { await Promise.resolve(); });
     await press('교환품 선택'); await press('교환');
-    assert.equal(confirmModal().props.visible, true);
     await act(async () => oldSubmit.reject(new Error('old account failure')));
-    assert.equal(confirmModal().props.visible, true);
+    assert.equal(text().includes('old account failure'), false);
   });
 
   it('네트워크 원문 오류는 사용자용 연결 실패 문구로 바꾼다', async () => {
@@ -173,9 +166,6 @@ function api(load: (path: string) => Promise<unknown>, submit: (path: string, re
 async function render(node: React.ReactElement) { await act(async () => { mounted = create(node); }); await act(async () => { await Promise.resolve(); }); }
 function button(label: string): ReactTestInstance { return mounted!.root.find((node) => node.props.accessibilityLabel === label); }
 async function press(label: string) { await act(async () => button(label).props.onPress()); await act(async () => { await Promise.resolve(); }); }
-async function pressLast(label: string) { const nodes = mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0); await act(async () => nodes.at(-1)!.props.onPress()); await act(async () => { await Promise.resolve(); }); }
-function lastPressableWithText(label: string) { return mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0).at(-1)!; }
-function confirmModal() { return mounted!.root.find((node) => String(node.type) === 'Modal'); }
 async function changeInput(label: string, value: string) { await act(async () => button(label).props.onChangeText(value)); }
 function text() { return mounted!.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join('')).join(' '); }
 function deferred<T>() { let resolve!: (value: T) => void; let reject!: (reason?: unknown) => void; const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; }); return { promise, resolve, reject }; }

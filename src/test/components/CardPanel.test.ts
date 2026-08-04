@@ -21,27 +21,27 @@ describe('CardPanel', () => {
   it('감정은 라디오가 있는 카드 한 장만 확인 후 제출한다', async () => {
     const calls: unknown[] = []; const data = { selectionSlots: 1, cards: [card('a', 'Bat Card'), { ...card('display', 'Joker Card'), selectable: false }], result: null };
     await render(React.createElement(CardPanel, { api: api(async () => data, async (_path, request) => { calls.push(request); return { ...data, result: result('SUCCESS') }; }), mode: 'identify' }));
-    assert.equal(button('Joker Card 선택 불가').props.disabled, true); await press('Bat Card 선택'); await press('선택 카드 감정'); assert.deepEqual(calls, []); await pressLast('감정'); assert.deepEqual(calls, [{ candidateId: 'a' }]);
+    assert.equal(button('Joker Card 선택 불가').props.disabled, true); await press('Bat Card 선택'); await press('선택 카드 감정'); assert.deepEqual(calls, [{ candidateId: 'a' }]);
   });
 
   for (const mode of ['upgrade', 'change'] as const) it(`${mode}는 base와 material을 구분하고 Create를 한 번만 보낸다`, async () => {
     const calls: Array<{ path: string; request: unknown }> = []; const materials = [card('same', 'Same'), card('material', 'Material')]; const data = { selectionSlots: [{ id: 'base', label: '베이스 카드' }, { id: 'material', label: '추가 카드' }], baseCards: [card('same', 'Base')], materialCards: [], selectedBaseCandidateId: null, minQuantity: 1, maxQuantity: mode === 'change' ? 10 : 20, history: ['성공'], result: null };
     await render(React.createElement(CardPanel, { api: api(async () => data, async (path, request) => { if (path.endsWith('/options')) return { ...data, baseCards: [], materialCards: materials, selectedBaseCandidateId: 'same' }; calls.push({ path, request }); return { ...data, result: result('SUCCESS') }; }), mode }));
     await press('베이스 카드 Base 선택'); await press(`${mode === 'upgrade' ? '추가 카드' : '변화 재료'} Same 선택`); assert.equal(button(mode === 'upgrade' ? '카드 강화' : '카드 변화').props.disabled, true, '같은 서버 card id는 차단');
-    await press(`${mode === 'upgrade' ? '추가 카드' : '변화 재료'} Material 선택`); await change(`${mode === 'upgrade' ? '카드 강화' : '카드 변화'} 수량`, '2'); await press(mode === 'upgrade' ? '카드 강화' : '카드 변화'); await pressLast('Create');
+    await press(`${mode === 'upgrade' ? '추가 카드' : '변화 재료'} Material 선택`); await change(`${mode === 'upgrade' ? '카드 강화' : '카드 변화'} 수량`, '2'); await press(mode === 'upgrade' ? '카드 강화' : '카드 변화');
     assert.deepEqual(calls, [{ path: `/api/town/cards/${mode}`, request: { baseCandidateId: 'same', materialCandidateId: 'material', quantity: 2 } }]);
   });
 
   it('카드 판매는 여러 수량과 Blank Card 예상량을 한 요청으로 보낸다', async () => {
     const calls: unknown[] = []; const data = { cards: [{ ...card('a', 'A'), owned: 3, maxQuantity: 3, blankCardValue: 1 }, { ...card('b', 'B'), owned: 2, maxQuantity: 2, blankCardValue: 4 }], multiSelect: true, rewardKind: 'BLANK_CARD', blankCardsOwned: 660, result: null };
     await render(React.createElement(CardPanel, { api: api(async () => data, async (_path, request) => { calls.push(request); return { ...data, result: result('FAILURE') }; }), mode: 'sell' }));
-    await press('A 선택'); await press('B 선택'); await change('A 판매 수량', '2'); assert.equal(text().includes('예상 Blank Card +6장'), true); await press('선택 카드 판매'); await pressLast('판매'); assert.deepEqual(calls, [{ cards: [{ candidateId: 'a', quantity: 2 }, { candidateId: 'b', quantity: 1 }] }]); assert.equal(button('A 판매 수량').props.value, '2', '실패 시 선택과 수량 보존');
+    await press('A 선택'); await press('B 선택'); await change('A 판매 수량', '2'); assert.equal(text().includes('예상 Blank Card +6장'), true); await press('선택 카드 판매'); assert.deepEqual(calls, [{ cards: [{ candidateId: 'a', quantity: 2 }, { candidateId: 'b', quantity: 1 }] }]); assert.equal(button('A 판매 수량').props.value, '2', '실패 시 선택과 수량 보존');
   });
 
   it('소울 에코는 분류와 품목을 선택하고 보유량 검색·이력을 별도로 표시한다', async () => {
     const calls: unknown[] = []; const data = { categories: [{ id: 'type:weapon', label: '무기' }, { id: 'type:armor', label: '방어구' }], currentCategoryId: 'type:weapon', recipes: [{ id: 'recipe', label: '???', selectable: true, category: 'type:weapon', requiredEchoes: ['Bat x96'], cost: 5_000_000, successBonus: 40 }], ownedEchoes: [{ name: 'Bat Chief', region: 'Arena Boss', quantity: 875 }, { name: 'Lord', region: 'Dungeon Boss', quantity: 2 }], history: [{ text: 'Shadow Horse', success: true }], result: null };
     await render(React.createElement(CardPanel, { api: api(async () => data, async (_path, request) => { calls.push(request); return { ...data, result: result('SUCCESS') }; }), mode: 'soul-echo' }));
-    await change('보유 소울 에코 검색', 'arena'); assert.equal(text().includes('Bat Chief'), true); assert.equal(text().includes('Lord'), false); assert.equal(button('현재 품목 분류 무기 선택 불가').props.disabled, true); assert.equal(button('분류 전환 미지원 방어구 선택 불가').props.disabled, true); await press('무기 · Bat x96 · 성공 보정 +40% ??? 선택'); await press('소울 에코 융합'); await pressLast('융합'); assert.deepEqual(calls, [{ categoryCandidateId: 'type:weapon', recipeCandidateId: 'recipe' }]);
+    await change('보유 소울 에코 검색', 'arena'); assert.equal(text().includes('Bat Chief'), true); assert.equal(text().includes('Lord'), false); assert.equal(button('현재 품목 분류 무기 선택 불가').props.disabled, true); assert.equal(button('분류 전환 미지원 방어구 선택 불가').props.disabled, true); await press('무기 · Bat x96 · 성공 보정 +40% ??? 선택'); await press('소울 에코 융합'); assert.deepEqual(calls, [{ categoryCandidateId: 'type:weapon', recipeCandidateId: 'recipe' }]);
   });
 
   it('베이스를 빠르게 바꾸면 늦게 도착한 이전 추가 카드 후보를 버린다', async () => {
@@ -71,7 +71,6 @@ function api(load: (path: string) => Promise<unknown>, submit: (path: string, re
 async function render(node: React.ReactElement) { await act(async () => { mounted = create(node); }); await act(async () => { await Promise.resolve(); }); }
 function button(label: string): ReactTestInstance { return mounted!.root.find((node) => node.props.accessibilityLabel === label); }
 async function press(label: string) { await act(async () => button(label).props.onPress()); await act(async () => { await Promise.resolve(); }); }
-async function pressLast(label: string) { const nodes = mounted!.root.findAll((node) => String(node.type) === 'Pressable' && node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0); await act(async () => nodes.at(-1)!.props.onPress()); await act(async () => { await Promise.resolve(); }); }
 async function change(label: string, value: string) { await act(async () => button(label).props.onChangeText(value)); }
 function text() { return mounted!.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join('')).join(' '); }
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; }

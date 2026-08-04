@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { afterEach, describe, it } from 'node:test';
 import React from 'react';
-import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
+import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import type { RecruitmentResponse } from '../../main/types/api';
 
@@ -51,7 +51,22 @@ afterEach(async () => {
 });
 
 describe('AgencyPanel', () => {
-  it('완료 가능 탭과 카드별 버튼을 제공하고 확인 뒤 완료를 한 번 요청한다', async () => {
+  it('퀘스트 번호를 설명이 아닌 퀘스트명 앞에 표시한다', async () => {
+    const data = [{
+      ...quest('potion-support', '포션 지원', 'ACTIVE', 'ACTIVE', null),
+      displayCode: '0105',
+      missions: [{ target: 'Potion Bottle(10회 사용가능)', progress: { current: 0, required: 1 } }],
+      rewards: ['아이템(Red Potion) x2'],
+    }];
+    await render(React.createElement(AgencyPanel, { api: { loadQuests: async () => data } as never }));
+
+    assert.doesNotMatch(text(), /모험 알선소/);
+    assert.equal(hosts('Text').some((node) => node.children.join('') === '[0105] 포션 지원'), true);
+    assert.equal(hosts('Text').some((node) => node.children.join('').startsWith('0105 ·')), false);
+    assert.equal(hosts('Text').some((node) => node.children.join('') === 'Potion Bottle(10회 사용가능) 0/1\n보상 아이템(Red Potion) x2'), true);
+  });
+
+  it('완료 가능 탭과 카드별 버튼을 제공하고 한 번 눌러 바로 요청한다', async () => {
     const calls: unknown[] = [];
     const data = [
       quest('a', '진행 퀘스트', 'ACTIVE', 'ACTIVE', null),
@@ -69,18 +84,17 @@ describe('AgencyPanel', () => {
     assert.match(text(), /완료 가능 1/);
     await pressText('완료 가능 1');
     assert.doesNotMatch(text(), /진행 퀘스트/);
+    const claimButton = button('완료 퀘스트 완료');
+    assert.deepEqual(claimButton.props.hitSlop, { top: 4, bottom: 4, left: 4, right: 4 });
     await press('완료 퀘스트 완료');
-    assert.equal(calls.length, 0);
-    await pressLast('완료');
     assert.deepEqual(calls, [{ actionNo: 'R610', action: 'claim' }]);
     await pressText('수락 가능 1');
     assert.match(text(), /받을 퀘스트/);
     await press('받을 퀘스트 수락');
-    await pressLast('수락');
     assert.deepEqual(calls, [{ actionNo: 'R610', action: 'claim' }, { actionNo: '351', action: 'accept' }]);
   });
 
-  it('확인창을 연 뒤 선택 callback이 바뀌어도 퀘스트 확인 대상과 POST 대상을 고정한다', async () => {
+  it('선택한 퀘스트의 완료 버튼으로 해당 POST를 즉시 보낸다', async () => {
     const calls: string[] = [];
     const data = [
       quest('a', '첫 퀘스트', 'CLAIMABLE', 'ACTIVE', 'A'),
@@ -94,14 +108,10 @@ describe('AgencyPanel', () => {
 
     await pressText('완료 가능 2');
     await press('첫 퀘스트 완료');
-    await press('둘째 퀘스트 완료');
-    assert.match(confirmText(), /첫 퀘스트/);
-    assert.doesNotMatch(confirmText(), /둘째 퀘스트/);
-    await pressLast('완료');
     assert.deepEqual(calls, ['A']);
   });
 
-  it('직업 이름 성별과 가격을 snapshot으로 확인하고 모집을 한 번 요청한다', async () => {
+  it('직업 이름과 성별을 입력하고 모집을 한 번 요청한다', async () => {
     const calls: unknown[] = [];
     const data = recruitment();
     const api = {
@@ -119,16 +129,6 @@ describe('AgencyPanel', () => {
     await changeText('새 캐릭터 이름', ' 새동료 ');
     await press('여성 선택');
     await press('모집하기');
-    assert.equal(calls.length, 0);
-    assert.match(confirmText(), /Monk/);
-    assert.match(confirmText(), /새동료/);
-    assert.match(confirmText(), /여성/);
-    assert.match(confirmText(), /\$10,000/);
-
-    await press('Warrior 선택');
-    await changeText('새 캐릭터 이름', '다른이름');
-    await press('남성 선택');
-    await pressLast('모집');
     assert.deepEqual(calls, [{ jobId: 'job-2', name: '새동료', genderId: 'gender-f' }]);
     assert.match(text(), /현재 30 \/ 최대 45/);
     assert.equal(input('새 캐릭터 이름').props.value, '');
@@ -169,7 +169,7 @@ describe('AgencyPanel', () => {
     assert.equal(button('모집하기').props.accessibilityState.disabled, true);
   });
 
-  it('중복 확인은 한 POST로 막고 실패하면 모집 draft를 보존한다', async () => {
+  it('빠른 중복 클릭은 한 POST로 막고 실패하면 모집 draft를 보존한다', async () => {
     const data = recruitment();
     const pending = deferred<RecruitmentResponse>();
     let calls = 0;
@@ -179,9 +179,8 @@ describe('AgencyPanel', () => {
     };
     await render(React.createElement(AgencyPanel, { api: api as never, mode: 'recruitment' }));
     await prepareRecruitment('동료');
-    await press('모집하기');
-    const confirm = pressableWithText('모집');
-    await act(async () => { confirm.props.onPress(); confirm.props.onPress(); });
+    const submitButton = button('모집하기');
+    await act(async () => { submitButton.props.onPress(); submitButton.props.onPress(); });
     await flush();
     assert.equal(calls, 1);
     pending.reject(new Error('모집 실패'));
@@ -212,7 +211,6 @@ describe('AgencyPanel', () => {
     }));
     await prepareRecruitment('캡차동료');
     await press('모집하기');
-    await pressLast('모집');
     await flush();
 
     assert.equal(resolves, 1);
@@ -232,7 +230,6 @@ describe('AgencyPanel', () => {
     await render(React.createElement(AgencyPanel, { api: oldApi as never, mode: 'recruitment' }));
     await prepareRecruitment('이전계정');
     await press('모집하기');
-    await pressLast('모집');
 
     await update(React.createElement(AgencyPanel, { api: newApi as never, mode: 'recruitment' }));
     await flush();
@@ -240,7 +237,6 @@ describe('AgencyPanel', () => {
     assert.doesNotMatch(text(), /이전계정/);
     await prepareRecruitment('새계정');
     await press('모집하기');
-    await pressLast('모집');
 
     newMutation.resolve({ ...newData, currentCharacters: 8, result: success('새 계정 모집') });
     oldMutation.resolve({ ...oldData, currentCharacters: 4, result: success('이전 계정 모집') });
@@ -311,11 +307,6 @@ function button(label: string) {
   return mounted!.root.find((node) => String(node.type) === 'Pressable' && node.props.accessibilityLabel === label);
 }
 
-function confirmText() {
-  const sheet = mounted!.root.findByProps({ testID: 'town-confirm-sheet' });
-  return sheet.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join('')).join(' ');
-}
-
 async function press(label: string) {
   const node = mounted!.root.find((candidate) => candidate.props.accessibilityLabel === label);
   await act(async () => node.props.onPress());
@@ -331,19 +322,6 @@ async function pressText(label: string) {
     && candidate.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0);
   await act(async () => node.props.onPress());
   await flush();
-}
-
-async function pressLast(label: string) {
-  const nodes = mounted!.root.findAll((candidate) => String(candidate.type) === 'Pressable'
-    && candidate.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0);
-  await act(async () => nodes.at(-1)!.props.onPress());
-  await flush();
-}
-
-function pressableWithText(label: string): ReactTestInstance {
-  const nodes = mounted!.root.findAll((candidate) => String(candidate.type) === 'Pressable'
-    && candidate.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0);
-  return nodes.at(-1)!;
 }
 
 function deferred<T>() {

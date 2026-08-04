@@ -18,7 +18,6 @@ import type {
 } from '../../../types/api';
 import { normalizeTownRow, type TownApi } from '../api/townApi';
 import { TownActionResult } from '../components/TownActionResult';
-import { TownConfirmSheet } from '../components/TownConfirmSheet';
 import { TownItemList } from '../components/TownItemList';
 import { useTownFeature } from '../hooks/useTownFeature';
 
@@ -166,7 +165,6 @@ function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<Fish
   const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [quantity, setQuantity] = useState('1');
-  const [confirming, setConfirming] = useState(false);
   const [actionResponse, setActionResponse] = useState<FishingExchangeResponse | null>(null);
   const path = categoryId == null
     ? '/api/town/fishing-exchange' as const
@@ -178,7 +176,6 @@ function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<Fish
     );
     setActionResponse(response);
     setSelectedIds((current) => current.filter((id) => response.items.some((item) => item.id === id && item.selectable)).slice(0, 1));
-    setConfirming(false);
     return response.result ?? informational('교환 결과를 갱신했습니다.');
   }, [api]);
   const town = useTownFeature({ load, submitAction, resolveCaptcha, featureKey: `fishing-exchange-${categoryId ?? 'default'}` });
@@ -186,18 +183,15 @@ function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<Fish
   useEffect(() => {
     if (!data) return;
     setSelectedIds((current) => current.filter((id) => data.items.some((item) => item.id === id && item.selectable)).slice(0, 1));
-    setConfirming(false);
   }, [data]);
   useEffect(() => {
     setSelectedIds([]);
     setActionResponse(null);
-    setConfirming(false);
     setCategoryDropdownOpen(false);
   }, [api, categoryId]);
   if (!data && town.status === 'loading') return <Text style={styles.muted}>낚시 교환소를 불러오는 중...</Text>;
   if (!data) return <ErrorState message={town.error} onRetry={town.reload} />;
   const selected = selectedIds[0];
-  const selectedItem = data.items.find((item) => item.id === selected);
   const quantityValid = /^[1-9]\d*$/.test(quantity) && Number.isSafeInteger(Number(quantity));
   const parsedQuantity = quantityValid ? Number(quantity) : null;
   const quantityError = quantityValid ? null : '수량은 1 이상의 10진 정수로 입력하세요.';
@@ -246,31 +240,15 @@ function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<Fish
         accessibilityLabel="선택한 낚시 품목 교환"
         accessibilityRole="button"
         disabled={!canExchange}
-        onPress={() => canExchange && setConfirming(true)}
+        onPress={() => {
+          if (!canExchange || !selected || parsedQuantity === null || !data.currentCategoryId) return;
+          void town.submit({ candidateId: selected, categoryCandidateId: data.currentCategoryId, quantity: parsedQuantity }).catch(() => undefined);
+        }}
         style={[styles.primaryButton, !canExchange && styles.disabled]}
       ><Text style={styles.primaryText}>교환</Text></Pressable>
       {data.result ? <TownActionResult result={data.result} /> : null}
       {town.error ? <Text style={styles.error}>{town.error}</Text> : null}
       <NavigateButton label="낚시터로 이동" onPress={() => onNavigateMode?.('fishing')} />
-      <TownConfirmSheet
-        confirmLabel="교환"
-        details={selectedItem ? [
-          { label: '품목', value: selectedItem.label },
-          { label: '수량', value: `${parsedQuantity ?? 0}개` },
-          ...(selectedItem.price !== null && parsedQuantity !== null ? [{ label: '비용', value: `$${(selectedItem.price * parsedQuantity).toLocaleString()}` }] : []),
-          ...(selectedItem.materials.length ? [{ label: '재료', value: selectedItem.materials.join(', ') }] : []),
-        ] : []}
-        message="선택한 낚시 품목을 교환합니다."
-        onCancel={() => setConfirming(false)}
-        onConfirm={() => {
-          if (!selected || parsedQuantity === null) return;
-          if (!data.currentCategoryId) return;
-          void town.submit({ candidateId: selected, categoryCandidateId: data.currentCategoryId, quantity: parsedQuantity }).catch(() => undefined);
-        }}
-        submitting={town.status === 'submitting'}
-        title="교환 확인"
-        visible={confirming && selectedItem != null && quantityValid}
-      />
     </View>
   );
 }
