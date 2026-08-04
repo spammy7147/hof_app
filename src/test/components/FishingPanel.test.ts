@@ -193,8 +193,38 @@ describe('FishingPanel', () => {
     await render(React.createElement(FishingPanel, { api, mode: 'exchange' }));
 
     assert.equal(findButton('무기(weapon) 선택'), null);
+    assert.equal(allText().includes('무기(weapon)'), true);
+    await press('교환 품목 분류 선택');
     assert.ok(button('방어구(armor) 분류'));
     await press('방어구(armor) 분류');
+    assert.equal(paths.at(-1), '/api/town/fishing-exchange?categoryCandidateId=type%3Aarmor');
+    assert.equal(allText().includes('갑옷 물고기'), true);
+  });
+
+  it('빈 기본 분류에서도 드롭다운으로 다른 분류의 품목을 불러온다', async () => {
+    const paths: string[] = [];
+    const api = fakeApi({
+      load: async (path: string) => {
+        paths.push(path);
+        const armor = path.includes('categoryCandidateId=type%3Aarmor');
+        return {
+          categories: [
+            { id: 'type:weapon', label: '무기(weapon)', current: !armor },
+            { id: 'type:armor', label: '방어구(armor)', current: armor },
+          ],
+          currentCategoryId: armor ? 'type:armor' : 'type:weapon',
+          items: armor ? [{ id: 'armor-item', label: '갑옷 물고기', selectable: true, detail: null, imageUrl: null, price: 10, quantity: null, materials: [] }] : [],
+          result: null,
+        };
+      },
+    });
+    await render(React.createElement(FishingPanel, { api, mode: 'exchange' }));
+
+    assert.equal(allText().includes('갑옷 물고기'), false);
+    assert.equal(button('선택한 낚시 품목 교환').props.disabled, true);
+    await press('교환 품목 분류 선택');
+    await press('방어구(armor) 분류');
+
     assert.equal(paths.at(-1), '/api/town/fishing-exchange?categoryCandidateId=type%3Aarmor');
     assert.equal(allText().includes('갑옷 물고기'), true);
   });

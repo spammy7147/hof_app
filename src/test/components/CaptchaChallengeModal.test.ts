@@ -28,7 +28,7 @@ describe('captcha challenge modal', () => {
 
   it('keeps the retry input reachable when captcha content is taller than the screen', () => {
     assert.match(modalSource, /\bKeyboardAvoidingView\b/);
-    assert.match(modalSource, /behavior=\{Platform\.OS === 'ios' \? 'padding' : undefined\}/);
+    assert.match(modalSource, /behavior=\{Platform\.OS === 'ios' \? 'padding' : 'height'\}/);
     assert.match(modalSource, /\bScrollView\b/);
     assert.match(modalSource, /automaticallyAdjustKeyboardInsets/);
     assert.match(modalSource, /keyboardShouldPersistTaps="handled"/);

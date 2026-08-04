@@ -199,6 +199,86 @@ describe('RequiredUpdateGate', () => {
     await act(async () => { renderer.unmount(); });
   });
 
+  it('keeps the current app screen mounted while an active-state recheck runs', async () => {
+    process.env.NODE_ENV = 'production';
+    const recheck = deferred<ReturnType<typeof latestRelease>>();
+    let checks = 0;
+    const api = {
+      fetchLatestAndroidRelease: async () => {
+        checks += 1;
+        return checks === 1 ? latestRelease(46) : recheck.promise;
+      },
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        React.createElement(
+          RequiredUpdateGate,
+          { api: api as never, children: React.createElement(ViewMarker) },
+        ),
+      );
+      await Promise.resolve();
+    });
+
+    const originalNow = Date.now;
+    Date.now = () => originalNow() + 60_001;
+    try {
+      await act(async () => {
+        appStateHandler?.('active');
+        await Promise.resolve();
+      });
+      assert.equal(checks, 2);
+      assert.equal(renderer.root.findAllByType(ViewMarker).length, 1);
+
+      await act(async () => {
+        recheck.resolve(latestRelease(46));
+        await recheck.promise;
+      });
+      assert.equal(renderer.root.findAllByType(ViewMarker).length, 1);
+    } finally {
+      Date.now = originalNow;
+    }
+    await act(async () => { renderer.unmount(); });
+  });
+
+  it('shows the update screen only when an active-state recheck finds a new release', async () => {
+    process.env.NODE_ENV = 'production';
+    let checks = 0;
+    const api = {
+      fetchLatestAndroidRelease: async () => {
+        checks += 1;
+        return latestRelease(checks === 1 ? 46 : 47);
+      },
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(
+        React.createElement(
+          RequiredUpdateGate,
+          { api: api as never, children: React.createElement(ViewMarker) },
+        ),
+      );
+      await Promise.resolve();
+    });
+
+    const originalNow = Date.now;
+    Date.now = () => originalNow() + 60_001;
+    try {
+      await act(async () => {
+        appStateHandler?.('active');
+        await Promise.resolve();
+      });
+    } finally {
+      Date.now = originalNow;
+    }
+
+    assert.equal(renderer.root.findAllByType(ViewMarker).length, 0);
+    assert.equal(renderer.root.findAll(
+      (node) => String(node.type) === 'PrimaryButton' && node.props.label === '업데이트',
+    ).length, 1);
+    await act(async () => { renderer.unmount(); });
+  });
+
   it('rejects missing or malformed native build versions', () => {
     assert.equal(parseAndroidVersionCode('47'), 47);
     assert.throws(() => parseAndroidVersionCode(null));
@@ -224,4 +304,14 @@ function latestRelease(versionCode: number) {
       downloadUrl: `https://backend.test/api/app-releases/android/${versionCode}/download`,
     },
   };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }

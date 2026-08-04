@@ -30,13 +30,16 @@ export function RequiredUpdateGate({ api, children }: Props) {
   const isOpeningInstallerRef = useRef(false);
   const lastCheckedAtRef = useRef(0);
 
-  const checkForUpdate = useCallback(async (message: string | null = null) => {
+  const checkForUpdate = useCallback(async (
+    message: string | null = null,
+    silent = false,
+  ) => {
     if (Platform.OS !== 'android' || process.env.NODE_ENV !== 'production') {
       setState({ kind: 'ready' });
       return;
     }
 
-    setState({ kind: 'checking' });
+    if (!silent) setState({ kind: 'checking' });
     lastCheckedAtRef.current = Date.now();
     try {
       const currentVersionCode = parseAndroidVersionCode(Application.nativeBuildVersion);
@@ -47,6 +50,7 @@ export function RequiredUpdateGate({ api, children }: Props) {
         setState({ kind: 'ready' });
       }
     } catch {
+      if (silent) return;
       setState({
         kind: 'checkingFailed',
         message: '최신 버전을 확인하지 못했습니다. 네트워크 연결을 확인한 뒤 다시 시도해 주세요.',
@@ -66,7 +70,7 @@ export function RequiredUpdateGate({ api, children }: Props) {
         && !isOpeningInstallerRef.current
         && Date.now() - lastCheckedAtRef.current >= ACTIVE_RECHECK_INTERVAL_MS
       ) {
-        void checkForUpdate();
+        void checkForUpdate(null, true);
       }
     });
     return () => subscription.remove();

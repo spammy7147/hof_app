@@ -36,6 +36,7 @@ describe('ShopPanel', () => {
       assert.equal(mounted!.root.findAllByProps({ testID: 'purchase-action-bar' }).length > 0, true);
       const list = mounted!.root.find((node) => String(node.type) === 'FlatList');
       assert.equal(list.findAllByProps({ testID: 'purchase-action-bar' }).length, 0);
+      assert.deepEqual(list.props.stickyHeaderIndices, [0]);
     });
   }
 

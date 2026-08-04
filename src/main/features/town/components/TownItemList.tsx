@@ -16,6 +16,7 @@ type TownItemListProps = {
   displayOnlyRow?: (row: TownRowResponse) => boolean;
   emptyMessage?: string | null;
   header?: ReactElement | null;
+  stickyHeader?: boolean;
   footer?: ReactElement | null;
   labelTextStyle?: StyleProp<TextStyle> | ((row: TownRowResponse) => StyleProp<TextStyle>);
   renderTrailing?: (row: TownRowResponse) => ReactNode;
@@ -34,6 +35,7 @@ export function TownItemList({
   displayOnlyRow,
   emptyMessage = '표시할 항목이 없습니다.',
   header,
+  stickyHeader = false,
   footer,
   labelTextStyle,
   renderTrailing,
@@ -51,6 +53,7 @@ export function TownItemList({
       initialNumToRender={12}
       windowSize={7}
       ListHeaderComponent={header}
+      stickyHeaderIndices={stickyHeader && header != null ? [0] : undefined}
       ListFooterComponent={footer}
       ListEmptyComponent={emptyMessage == null ? null : <Text style={styles.empty}>{emptyMessage}</Text>}
       renderItem={({ item }) => {
@@ -174,7 +177,8 @@ const styles = StyleSheet.create({
   selectedFooter: {
     borderTopColor: theme.colors.border,
     borderTopWidth: 1,
-    padding: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 6,
   },
   selectedRow: { borderColor: theme.colors.accentGreen, borderWidth: 2 },
   disabledRow: { opacity: 0.68 },

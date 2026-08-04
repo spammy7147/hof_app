@@ -163,6 +163,7 @@ function FishingBattlePanel({ characters, partyPresetCatalog, target, onRefresh,
 
 function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<FishingPanelProps, 'api' | 'resolveCaptcha' | 'onNavigateMode'>) {
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [quantity, setQuantity] = useState('1');
   const [confirming, setConfirming] = useState(false);
@@ -191,6 +192,7 @@ function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<Fish
     setSelectedIds([]);
     setActionResponse(null);
     setConfirming(false);
+    setCategoryDropdownOpen(false);
   }, [api, categoryId]);
   if (!data && town.status === 'loading') return <Text style={styles.muted}>낚시 교환소를 불러오는 중...</Text>;
   if (!data) return <ErrorState message={town.error} onRetry={town.reload} />;
@@ -200,20 +202,42 @@ function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<Fish
   const parsedQuantity = quantityValid ? Number(quantity) : null;
   const quantityError = quantityValid ? null : '수량은 1 이상의 10진 정수로 입력하세요.';
   const canExchange = Boolean(selected && data.currentCategoryId && quantityValid && town.status !== 'submitting');
+  const currentCategory = data.categories.find((category) => category.current)
+    ?? data.categories.find((category) => category.id === data.currentCategoryId)
+    ?? null;
   return (
     <View style={styles.container}>
-      <View accessibilityRole="radiogroup" style={styles.categoryList}>
-        {data.categories.map((category) => (
-          <Pressable
-            key={category.id}
-            accessibilityLabel={`${category.label} 분류`}
-            accessibilityRole="radio"
-            accessibilityState={{ checked: category.current, disabled: town.status === 'submitting' }}
-            disabled={town.status === 'submitting'}
-            onPress={() => { if (!category.current) setCategoryId(category.id); }}
-            style={[styles.categoryChip, category.current && styles.categoryChipSelected]}
-          ><Text style={styles.categoryText}>{category.label}</Text></Pressable>
-        ))}
+      <View style={styles.categoryDropdown}>
+        <Text style={styles.summaryLabel}>교환 품목 분류</Text>
+        <Pressable
+          accessibilityLabel="교환 품목 분류 선택"
+          accessibilityRole="button"
+          accessibilityState={{ expanded: categoryDropdownOpen, disabled: data.categories.length === 0 || town.status === 'submitting' }}
+          disabled={data.categories.length === 0 || town.status === 'submitting'}
+          onPress={() => setCategoryDropdownOpen((open) => !open)}
+          style={[styles.categoryDropdownButton, data.categories.length === 0 && styles.disabled]}
+        >
+          <Text style={styles.categoryDropdownText}>{currentCategory?.label ?? '분류를 불러오지 못했습니다.'}</Text>
+          <Text style={styles.categoryDropdownArrow}>{categoryDropdownOpen ? '▲' : '▼'}</Text>
+        </Pressable>
+        {categoryDropdownOpen ? (
+          <View accessibilityRole="menu" style={styles.categoryDropdownMenu}>
+            {data.categories.map((category) => (
+              <Pressable
+                key={category.id}
+                accessibilityLabel={`${category.label} 분류`}
+                accessibilityRole="menuitem"
+                accessibilityState={{ selected: category.current, disabled: town.status === 'submitting' }}
+                disabled={town.status === 'submitting'}
+                onPress={() => {
+                  setCategoryDropdownOpen(false);
+                  if (!category.current) setCategoryId(category.id);
+                }}
+                style={[styles.categoryDropdownOption, category.current && styles.categoryDropdownOptionSelected]}
+              ><Text style={styles.categoryText}>{category.label}</Text></Pressable>
+            ))}
+          </View>
+        ) : null}
       </View>
       <TownItemList rows={data.items} selectedIds={selectedIds} selectionMode="single" onSelectionChange={setSelectedIds} />
       <TextInput accessibilityLabel="교환 수량" keyboardType="number-pad" onChangeText={setQuantity} style={styles.quantityInput} value={quantity} />
@@ -331,9 +355,13 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.8 },
   catchList: { gap: theme.spacing.sm },
   catchCard: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.md },
-  categoryList: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
-  categoryChip: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
-  categoryChipSelected: { borderColor: theme.colors.accentGreen, borderWidth: 2 },
+  categoryDropdown: { gap: theme.spacing.xs },
+  categoryDropdownButton: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', minHeight: 48, paddingHorizontal: theme.spacing.md },
+  categoryDropdownText: { color: theme.colors.text, flex: 1, fontSize: 15, fontWeight: '800' },
+  categoryDropdownArrow: { color: theme.colors.textMuted, fontSize: 12, marginLeft: theme.spacing.sm },
+  categoryDropdownMenu: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, overflow: 'hidden' },
+  categoryDropdownOption: { borderBottomColor: theme.colors.borderStrong, borderBottomWidth: StyleSheet.hairlineWidth, minHeight: 44, justifyContent: 'center', paddingHorizontal: theme.spacing.md },
+  categoryDropdownOptionSelected: { backgroundColor: theme.colors.surface },
   categoryText: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
   quantityInput: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md },
 });

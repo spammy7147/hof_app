@@ -50,7 +50,7 @@ export function TownTabScrollContainer({ townApi, resolveCaptcha, onOpenFishingB
           scrollRef.current?.scrollTo({ animated: false, y: capturedListOffset.current });
         }}
         renderContent={(content, virtualized) => virtualized ? (
-          <View accessibilityLabel="마을 가상 목록 화면" style={[styles.scroller, styles.container]}>{content}</View>
+          <View accessibilityLabel="마을 가상 목록 화면" style={[styles.scroller, styles.virtualizedContainer]}>{content}</View>
         ) : (
           <ScrollView
             accessibilityLabel="마을 화면 스크롤"
@@ -74,6 +74,12 @@ const styles = {
     padding: theme.spacing.lg,
     paddingBottom: theme.spacing.xl,
     gap: theme.spacing.lg,
+  },
+  virtualizedContainer: {
+    paddingHorizontal: theme.spacing.sm,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.sm,
+    gap: theme.spacing.sm,
   },
   scroller: {
     flex: 1,

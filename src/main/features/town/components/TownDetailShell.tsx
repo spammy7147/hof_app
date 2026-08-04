@@ -64,15 +64,15 @@ function categoryLabel(categoryId: TownMenu['categoryId']): string {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    gap: theme.spacing.md,
+    gap: theme.spacing.sm,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: theme.spacing.md,
+    gap: theme.spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
-    paddingBottom: theme.spacing.md,
+    paddingBottom: theme.spacing.sm,
   },
   backButton: {
     minWidth: 64,
@@ -97,16 +97,16 @@ const styles = StyleSheet.create({
   },
   heading: {
     flex: 1,
-    gap: theme.spacing.xs,
+    gap: 2,
   },
   title: {
     color: theme.colors.text,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '900',
   },
   subtitle: {
     color: theme.colors.textMuted,
-    fontSize: 12,
+    fontSize: 11,
   },
   body: {
     flex: 1,
