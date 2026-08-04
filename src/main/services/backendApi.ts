@@ -266,6 +266,15 @@ export class BackendApiClient {
     return normalizeCaptchaChallenge(captcha, this.baseUrl);
   }
 
+  /** 수동 입력으로 넘겨진 캡차의 자동 인식 시도 횟수를 새로 시작한다. */
+  async retryCaptchaAutomatically(challengeId: number): Promise<CaptchaChallengeResponse | null> {
+    const captcha = await this.request<CaptchaChallengeResponse | null>(
+      `/api/captcha/${challengeId}/auto-solve`,
+      { method: 'POST' },
+    );
+    return normalizeCaptchaChallenge(captcha, this.baseUrl);
+  }
+
   /**
    * 사용자가 입력한 캡차 답을 백엔드로 제출한다.
    */

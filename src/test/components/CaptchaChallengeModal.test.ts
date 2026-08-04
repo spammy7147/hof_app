@@ -26,6 +26,12 @@ describe('captcha challenge modal', () => {
     assert.match(modalSource, /\[captcha\?\.id, captcha\?\.preparationVersion, visible\]/);
   });
 
+  it('offers an explicit automatic recognition retry without removing manual input', () => {
+    assert.match(modalSource, /label="자동 인식 다시 시도"/);
+    assert.match(modalSource, /onPress=\{onAutoRetry\}/);
+    assert.match(modalSource, /placeholder="보안문자 입력"/);
+  });
+
   it('keeps the retry input reachable when captcha content is taller than the screen', () => {
     assert.match(modalSource, /\bKeyboardAvoidingView\b/);
     assert.match(modalSource, /behavior=\{Platform\.OS === 'ios' \? 'padding' : 'height'\}/);

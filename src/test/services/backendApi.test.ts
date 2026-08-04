@@ -238,6 +238,23 @@ describe('BackendApiClient', () => {
     assert.equal(result.preparationVersion, 4);
   });
 
+  it('restarts automatic solving for the selected captcha challenge', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const requests: CapturedRequest[] = [];
+    globalThis.fetch = (async (url: RequestInfo | URL, init: RequestInit = {}) => {
+      requests.push({ url: String(url), init });
+      return mockResponse(null);
+    }) as unknown as typeof fetch;
+    const client = new BackendApiClient('http://backend.test/');
+
+    const result = await client.retryCaptchaAutomatically(7);
+
+    assert.equal(result, null);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0]?.url, 'http://backend.test/api/captcha/7/auto-solve');
+    assert.equal(requests[0]?.init.method, 'POST');
+  });
+
   it('builds captcha image sources with the current Bearer access token', async () => {
     const { BackendApiClient } = await loadBackendApi();
     mockFetch(tokenResponse('captcha-access-token', 'captcha-refresh-token'));

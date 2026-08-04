@@ -115,9 +115,11 @@ function AppContent({ api }: { api: BackendApiClient }) {
     errorMessage: captchaErrorMessage,
     isLoading: isCaptchaLoading,
     isSubmitting: isCaptchaSubmitting,
+    isAutoSolving: isCaptchaAutoSolving,
     open: openCaptchaModal,
     close: closeCaptchaModal,
     submitAnswer: submitGlobalCaptchaAnswer,
+    retryAutomatic: retryGlobalCaptchaAutomatically,
     waitForResolution: waitForCaptchaResolution,
     reset: resetCaptchaGate,
   } = useCaptchaGate({ authenticated: session?.loggedIn === true, api, describeError });
@@ -426,11 +428,15 @@ function AppContent({ api }: { api: BackendApiClient }) {
           imageSource={captchaImageSource}
           isLoading={isCaptchaLoading}
           isSubmitting={isCaptchaSubmitting}
+          isAutoSolving={isCaptchaAutoSolving}
           message={captchaMessage}
           errorMessage={captchaErrorMessage}
           blocking={captchaModalBlocking}
           onRefresh={() => {
             void openCaptchaModal({ blocking: captchaModalBlocking });
+          }}
+          onAutoRetry={() => {
+            void retryGlobalCaptchaAutomatically();
           }}
           onSubmit={submitGlobalCaptchaAnswer}
           onRequestClose={closeCaptchaModal}

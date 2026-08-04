@@ -30,6 +30,7 @@ export function useCaptchaGate({ authenticated, api, describeError }: UseCaptcha
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAutoSolving, setIsAutoSolving] = useState(false);
   const pendingResumeRef = useRef<PendingBattleResume | null>(null);
 
   /** 이미 대기 중인 전투가 있으면 같은 Promise를 반환해 중복 retry 흐름을 만들지 않는다. */
@@ -155,6 +156,39 @@ export function useCaptchaGate({ authenticated, api, describeError }: UseCaptcha
     }
   }, [api, authenticated, captcha, describeError, resolvePending]);
 
+  /** 수동 입력으로 전환된 현재 challenge에 대해 자동 인식 횟수를 새로 시작한다. */
+  const retryAutomatic = useCallback(async (): Promise<void> => {
+    if (!authenticated) {
+      setErrorMessage('로그인 계정이 없습니다.');
+      return;
+    }
+    if (captcha == null) {
+      setErrorMessage('자동 인식할 캡차가 없습니다.');
+      return;
+    }
+
+    setIsAutoSolving(true);
+    setMessage(null);
+    setErrorMessage(null);
+    try {
+      const response = await api.retryCaptchaAutomatically(captcha.id);
+      if (isCaptchaResolved(response)) {
+        setCaptcha(null);
+        setVisible(false);
+        setBlocking(false);
+        setMessage('캡차 자동 인증이 완료되었습니다.');
+        resolvePending();
+        return;
+      }
+      setCaptcha(response);
+      setMessage('자동 인식을 완료하지 못했습니다. 직접 입력하거나 다시 시도해 주세요.');
+    } catch (error) {
+      setErrorMessage(describeError(error));
+    } finally {
+      setIsAutoSolving(false);
+    }
+  }, [api, authenticated, captcha, describeError, resolvePending]);
+
   /** 로그아웃 시 모달 상태와 대기 중 전투를 모두 종료한다. */
   const reset = useCallback((error: unknown) => {
     rejectPending(error);
@@ -165,6 +199,7 @@ export function useCaptchaGate({ authenticated, api, describeError }: UseCaptcha
     setErrorMessage(null);
     setIsLoading(false);
     setIsSubmitting(false);
+    setIsAutoSolving(false);
   }, [rejectPending]);
 
   return {
@@ -175,9 +210,11 @@ export function useCaptchaGate({ authenticated, api, describeError }: UseCaptcha
     errorMessage,
     isLoading,
     isSubmitting,
+    isAutoSolving,
     open,
     close,
     submitAnswer,
+    retryAutomatic,
     waitForResolution,
     reset,
   };

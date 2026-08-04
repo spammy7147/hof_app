@@ -76,4 +76,36 @@ describe('useCaptchaGate on-demand preparation', () => {
     assert.equal(resumed, true);
     await act(async () => { renderer.unmount(); });
   });
+
+  it('restarts automatic solving from manual input and resumes after success', async () => {
+    let gate!: CaptchaGate;
+    let retriedChallengeId: number | null = null;
+    const ready = makeCaptchaChallenge({ id: 11, status: 'READY', preparationVersion: 2 });
+    const api = {
+      prepareCurrentCaptcha: async () => ready,
+      retryCaptchaAutomatically: async (challengeId: number) => {
+        retriedChallengeId = challengeId;
+        return null;
+      },
+    } as unknown as Parameters<typeof useCaptchaGate>[0]['api'];
+    const Harness = () => {
+      gate = useCaptchaGate({ authenticated: true, api, describeError: String });
+      return null;
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(Harness)); });
+    let resumed = false;
+
+    await act(async () => {
+      void gate.waitForResolution().then(() => { resumed = true; });
+      await gate.open({ blocking: true });
+    });
+    await act(async () => { await gate.retryAutomatic(); });
+
+    assert.equal(retriedChallengeId, 11);
+    assert.equal(gate.visible, false);
+    assert.equal(gate.captcha, null);
+    assert.equal(resumed, true);
+    await act(async () => { renderer.unmount(); });
+  });
 });

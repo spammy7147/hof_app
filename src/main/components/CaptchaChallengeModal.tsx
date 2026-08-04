@@ -23,9 +23,11 @@ type CaptchaChallengeModalProps = {
   imageSource: ImageSource | null;
   isLoading: boolean;
   isSubmitting: boolean;
+  isAutoSolving: boolean;
   message: string | null;
   errorMessage: string | null;
   onRefresh: () => void;
+  onAutoRetry: () => void;
   onSubmit: (answer: string) => boolean | void | Promise<boolean | void>;
   onRequestClose?: () => void;
   blocking?: boolean;
@@ -42,9 +44,11 @@ export function CaptchaChallengeModal({
   imageSource,
   isLoading,
   isSubmitting,
+  isAutoSolving,
   message,
   errorMessage,
   onRefresh,
+  onAutoRetry,
   onSubmit,
   onRequestClose,
   blocking = false,
@@ -160,10 +164,17 @@ export function CaptchaChallengeModal({
                 ) : (
                   <Text style={styles.mutedText}>캡차 이미지 주소가 없습니다.</Text>
                 )}
+                <PrimaryButton
+                  label="자동 인식 다시 시도"
+                  variant="secondary"
+                  loading={isAutoSolving}
+                  disabled={isSubmitting || isLoading}
+                  onPress={onAutoRetry}
+                />
                 <TextInput
                   autoCapitalize="none"
                   autoCorrect={false}
-                  editable={!isSubmitting}
+                  editable={!isSubmitting && !isAutoSolving}
                   onChangeText={setAnswer}
                   onSubmitEditing={() => {
                     void submit();
@@ -179,13 +190,14 @@ export function CaptchaChallengeModal({
                     label="새로고침"
                     variant="secondary"
                     loading={isLoading}
+                    disabled={isAutoSolving}
                     onPress={onRefresh}
                     style={styles.actionButton}
                   />
                   <PrimaryButton
                     label="제출"
                     loading={isSubmitting}
-                    disabled={trimmedAnswer.length === 0}
+                    disabled={trimmedAnswer.length === 0 || isAutoSolving}
                     onPress={() => {
                       void submit();
                     }}
