@@ -856,6 +856,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 프리셋 선택 열기' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
     assert.equal(renderer.root.findAll((node) => (node.type as unknown) === 'Modal').length, 0);
+    await act(async () => { renderer.unmount(); });
   });
 
   it('moves focus into the preset modal and restores each live invoking row on every ordinary close path', async (context) => {
