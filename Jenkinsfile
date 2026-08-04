@@ -29,6 +29,7 @@ pipeline {
         BACKEND_RELEASE_PUBLISH_URL = 'http://192.168.50.202:8080/internal/app-releases/android'
         NPM_CONFIG_CACHE = '/home/jenkins/workspace/.npm-cache'
         GRADLE_USER_HOME = '/home/jenkins/workspace/.gradle-cache/hof-app'
+        HOF_CI_STATE_DIR = "${WORKSPACE}/.jenkins-state"
         CI = 'true'
     }
 
@@ -38,14 +39,15 @@ pipeline {
                 sh '''#!/usr/bin/env bash
                     set -Eeuo pipefail
                     if git -C "$WORKSPACE" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-                        git -C "$WORKSPACE" clean -ffdx
+                        # Preserve ignored dependency and native build outputs. Git
+                        # still removes stale untracked, non-ignored files.
+                        git -C "$WORKSPACE" clean -ffd
                     fi
                 '''
                 checkout scm
-                // npm ci and Expo Prebuild recreate dependencies and native output.
-                // Keeping ignored copies between builds consumes several GB and can
-                // exhaust the Jenkins agent before Gradle finishes.
-                sh 'git clean -ffdx'
+                // node_modules, generated Android sources, CMake objects, and Gradle
+                // project state are ignored by Git and intentionally survive builds.
+                sh 'git clean -ffd'
                 script {
                     env.GIT_REVISION = sh(
                         script: 'git rev-parse HEAD',
@@ -149,7 +151,26 @@ NODE
 
         stage('Install Dependencies') {
             steps {
-                sh 'npm ci --no-audit --no-fund --prefer-offline'
+                sh '''#!/usr/bin/env bash
+                    set -Eeuo pipefail
+
+                    install -d -m 755 "$HOF_CI_STATE_DIR"
+                    dependency_hash="$({
+                        sha256sum package.json
+                        sha256sum package-lock.json
+                    } | sha256sum | awk '{ print $1 }')"
+                    dependency_marker="$HOF_CI_STATE_DIR/dependencies.sha256"
+
+                    if [ -d node_modules ] && [ -x node_modules/.bin/expo ] && \
+                       [ -r "$dependency_marker" ] && \
+                       [ "$(cat "$dependency_marker")" = "$dependency_hash" ]; then
+                        echo 'Dependency cache hit; reusing node_modules and native module build outputs.'
+                    else
+                        echo 'Dependency inputs changed or cache is missing; rebuilding node_modules.'
+                        npm ci --no-audit --no-fund --prefer-offline
+                        printf '%s\n' "$dependency_hash" > "$dependency_marker"
+                    fi
+                '''
             }
         }
 
@@ -193,15 +214,31 @@ NODE
                           "$WORKSPACE/.jenkins/gradle-cache-settings.init.gradle" \
                           "$GRADLE_USER_HOME/init.d/hof-cache-settings.init.gradle"
 
-                        npx expo prebuild --platform android --no-install
+                        install -d -m 755 "$HOF_CI_STATE_DIR"
+                        native_input_hash="$({
+                            sha256sum package.json package-lock.json app.json app.config.js
+                            find plugins -type f -print0 | sort -z | xargs -0 -r sha256sum
+                        } | sha256sum | awk '{ print $1 }')"
+                        native_input_marker="$HOF_CI_STATE_DIR/android-native-inputs.sha256"
+
+                        if [ -x android/gradlew ] && \
+                           [ -r "$native_input_marker" ] && \
+                           [ "$(cat "$native_input_marker")" = "$native_input_hash" ]; then
+                            echo 'Android native cache hit; updating generated configuration in place.'
+                            npx expo prebuild --platform android --no-install
+                        else
+                            echo 'Android native inputs changed or cache is missing; regenerating native project.'
+                            npx expo prebuild --platform android --clean --no-install
+                            printf '%s\n' "$native_input_hash" > "$native_input_marker"
+                        fi
+
                         ./android/gradlew -p android \
                           app:assembleRelease \
                           -PreactNativeArchitectures=arm64-v8a \
                           --build-cache \
                           --console=plain \
-                          --no-daemon \
-                          --no-parallel \
-                          --max-workers=2
+                          --parallel \
+                          --max-workers=4
 
                         apk_source="$WORKSPACE/android/app/build/outputs/apk/release/app-release.apk"
                         test -s "$apk_source"
@@ -321,11 +358,16 @@ REMOTE_SCRIPT
             sh '''#!/usr/bin/env bash
                 rm -f -- "$WORKSPACE/google-services.json"
 
-                # Archive and publish have already copied everything they need.
-                # Do not retain generated native output or node_modules on the
-                # capacity-constrained Jenkins agent, even after a failed build.
-                git -C "$WORKSPACE" clean -ffdx || \
-                  echo 'Warning: failed to reclaim generated workspace files.' >&2
+                echo 'Retained build cache sizes:'
+                for cache_path in \
+                  "$WORKSPACE/node_modules" \
+                  "$WORKSPACE/android" \
+                  "$GRADLE_USER_HOME"; do
+                    if [ -d "$cache_path" ]; then
+                        du -sh "$cache_path"
+                    fi
+                done
+                df -h "$WORKSPACE" | tail -1
             '''
         }
         success {
