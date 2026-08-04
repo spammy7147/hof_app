@@ -89,7 +89,7 @@ export function QuestSummaryCard({
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md + 4, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.md },
+  card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md + 4, borderWidth: 1, gap: 2, padding: theme.spacing.sm },
   cardSelected: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.accentGreen },
   summaryPressable: { justifyContent: 'center', minHeight: 44 },
   summaryPressed: { opacity: 0.72 },
@@ -100,5 +100,5 @@ const styles = StyleSheet.create({
   section: { color: theme.colors.textMuted, fontSize: 10, fontWeight: '700' },
   summary: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
   reward: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
-  mapSection: { borderTopColor: theme.colors.border, borderTopWidth: 1, marginTop: theme.spacing.xs, paddingTop: theme.spacing.sm },
+  mapSection: { borderTopColor: theme.colors.border, borderTopWidth: 1, marginTop: 2, paddingTop: theme.spacing.xs },
 });

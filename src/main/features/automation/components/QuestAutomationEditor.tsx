@@ -643,6 +643,7 @@ export function QuestAutomationEditor({
           ) : null}
           ListEmptyComponent={<Text style={styles.empty}>{activeTab.empty}</Text>}
           maxToRenderPerBatch={12}
+          nestedScrollEnabled
           removeClippedSubviews
           renderItem={renderQuest}
           style={styles.questList}
@@ -780,7 +781,7 @@ function serializeDraftSource(entry: TypedAutomationEntryResponse, snapshots: re
 function sectionLabel(section: QuestSection): string { return TABS.find((tab) => tab.section === section)?.label ?? '완료'; }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, gap: theme.spacing.md, padding: theme.spacing.lg },
+  screen: { flex: 1, gap: theme.spacing.sm, padding: theme.spacing.md },
   header: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
   iconButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
   headerCopy: { flex: 1 },
@@ -792,7 +793,7 @@ const styles = StyleSheet.create({
   tabText: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '800' },
   tabTextActive: { color: theme.colors.accentGreen },
   search: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: 46, paddingHorizontal: theme.spacing.md },
-  listContent: { gap: theme.spacing.sm, paddingBottom: theme.spacing.sm },
+  listContent: { gap: 6, paddingBottom: theme.spacing.xs },
   questList: { flex: 1 },
   missingList: { gap: theme.spacing.sm, marginBottom: theme.spacing.sm },
   missingCard: { borderColor: theme.colors.accentAmber },

@@ -360,7 +360,8 @@ describe('QuestAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Mixed 선택' }).props.onPress(); });
     assert.deepEqual(renderer.root.findByProps({ testID: 'quest-summary:Mixed' }).props.accessibilityState, { checked: true, disabled: false });
     assert.doesNotMatch(renderedText(renderer.root), /✓/);
-    assert.equal(hasText(renderer.root, '자동 매칭'), true);
+    assert.equal(hasText(renderer.root, '자동 매칭'), false);
+    assert.ok(findHosts(renderer.root, 'FlatList').some(({ props }) => props.nestedScrollEnabled === true));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Mixed 전투맵 추가' }));
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Mixed · item 전투맵 추가' }).length, 0);
     assert.equal(hasText(renderer.root, '맵 설정이 필요 없는 미션입니다.'), false);
@@ -702,7 +703,9 @@ describe('QuestAutomationEditor mounted behavior', () => {
     const trigger = renderer.root.findByProps({ accessibilityLabel: 'Combat 1번째 맵 프리셋 선택' });
     assert.equal(trigger.props.accessibilityRole, 'button');
     assert.deepEqual(trigger.props.accessibilityValue, { text: '대표 프리셋 없음' });
-    assert.equal(trigger.props.style.minHeight, 44);
+    assert.equal(trigger.props.style.minHeight, 34);
+    assert.equal(trigger.props.hitSlop, 5);
+    assert.ok(findHosts(renderer.root, 'DraggableFlatList').some(({ props }) => props.nestedScrollEnabled === true));
     await act(async () => { trigger.props.onPress(); });
     assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), 'Alpha'), true);
     assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), 'Alpha 프리셋 선택'), false);
@@ -979,7 +982,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
       await adventure.promise;
     });
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 사용' }));
-    assert.equal(hasText(renderer.root, '자동 매칭'), true);
+    assert.equal(hasText(renderer.root, '자동 매칭'), false);
   });
 
   it('renders one shared map editor for a quest with multiple combat missions', async () => {
@@ -996,7 +999,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     });
 
     assert.equal(findHosts(renderer.root, 'Pressable').filter(({ props }) => props.accessibilityLabel === 'Mixed 전투맵 추가').length, 1);
-    assert.equal(findHosts(renderer.root, 'Text').filter(({ children }) => children.join('') === '사용자 설정').length, 1);
+    assert.equal(findHosts(renderer.root, 'Text').filter(({ children }) => children.join('') === '사용자 설정').length, 0);
     assert.equal(hasText(renderer.root, '자동 매칭됨'), false);
     assert.equal(hasText(renderer.root, '사용자 변경'), false);
     assert.equal(hasText(renderer.root, 'Target'), false);
@@ -1011,16 +1014,16 @@ describe('QuestAutomationEditor mounted behavior', () => {
       quests: [quest],
       maps: [catalogMap('battle_map', 'target', 'Target'), catalogMap('battle_map', 'other', 'Other Field')],
     });
-    assert.equal(hasText(renderer.root, '자동 매칭'), true);
+    assert.equal(hasText(renderer.root, '자동 매칭'), false);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Clear Quest · Target 삭제' }).length, 0);
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Clear Quest 전투맵 추가' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투맵 검색' }).props.onChangeText('Other'); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Other Field 맵 선택' }).props.onPress(); });
-    assert.equal(hasText(renderer.root, '사용자 설정'), true);
+    assert.equal(hasText(renderer.root, '사용자 설정'), false);
     assert.equal(hasText(renderer.root, 'Target'), false);
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Clear Quest · Other Field 삭제' }).props.onPress(); });
-    assert.equal(hasText(renderer.root, '자동 매칭'), true);
+    assert.equal(hasText(renderer.root, '자동 매칭'), false);
     assert.equal(hasText(renderer.root, 'Target'), true);
     assert.equal(hasText(renderer.root, 'Other Field'), false);
   });
@@ -1036,14 +1039,14 @@ describe('QuestAutomationEditor mounted behavior', () => {
       onSave: async (request) => { saves.push(request); return true; },
     });
 
-    assert.equal(hasText(renderer.root, '자동 매칭'), true);
+    assert.equal(hasText(renderer.root, '자동 매칭'), false);
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Clear Quest 전투맵 추가' }).props.onPress(); });
     assert.equal(hasText(renderer.root, '전투맵 추가'), true);
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투맵 검색' }).props.onChangeText('Other'); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Other Field 맵 선택' }).props.onPress(); });
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Clear Quest · Target 삭제' }).length, 0);
     assert.equal(hasText(renderer.root, 'Other Field'), true);
-    assert.equal(hasText(renderer.root, '사용자 설정'), true);
+    assert.equal(hasText(renderer.root, '사용자 설정'), false);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Clear Quest · Other Field 삭제' }));
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투맵 선택' }).length, 0);
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });

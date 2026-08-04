@@ -105,7 +105,6 @@ export function QuestMapEditor({
 
   return (
     <View style={styles.editor}>
-      <Text style={styles.source}>{quest.mapMode === 'AUTO' ? '자동 매칭' : '사용자 설정'}</Text>
       {quest.maps.length > 0 ? (
         <QuestMapList
           catalog={catalog}
@@ -124,6 +123,7 @@ export function QuestMapEditor({
         accessibilityRole="button"
         accessibilityState={{ disabled }}
         disabled={disabled}
+        hitSlop={3}
         onPress={openPicker}
         style={styles.pickerButton}
       >
@@ -147,9 +147,8 @@ export function QuestMapEditor({
 }
 
 const styles = StyleSheet.create({
-  editor: { gap: theme.spacing.sm },
-  source: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '800' },
+  editor: { gap: theme.spacing.xs },
   problem: { color: theme.colors.accentAmber, fontSize: 11, fontWeight: '800' },
-  pickerButton: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderStyle: 'dashed', borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, minHeight: 44, justifyContent: 'center' },
+  pickerButton: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderStyle: 'dashed', borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, minHeight: 36, justifyContent: 'center' },
   pickerButtonText: { color: theme.colors.accentGreen, fontSize: 12, fontWeight: '800' },
 });
