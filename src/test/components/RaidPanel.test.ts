@@ -3,6 +3,7 @@ import Module from 'node:module';
 import { afterEach, describe, it } from 'node:test';
 import React from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
+import type { RaidPubResponse } from '../../main/types/api';
 
 const host = (name: string) => (props: Record<string, unknown>) => React.createElement(name, props, props.children as React.ReactNode);
 const reactNativeMock = {
@@ -34,12 +35,12 @@ describe('RaidPanel', () => {
 
     for (const label of ['갱신', '보상 확인', '대기 리셋']) assert.equal(button(label).length, 1);
     assert.equal(button('갱신')[0]!.props.accessibilityState.disabled, false);
-    assert.equal(button('보상 확인')[0]!.props.accessibilityState.disabled, false);
+    assert.equal(button('보상 확인')[0]!.props.accessibilityState.disabled, true);
     assert.equal(button('대기 리셋')[0]!.props.accessibilityState.disabled, true);
 
     for (const label of ['등록', '나오기', '전투 시작', '리셋']) assert.equal(button(label).length, 1);
     assert.equal(button('등록')[0]!.props.accessibilityState.disabled, false);
-    assert.equal(button('나오기')[0]!.props.accessibilityState.disabled, false);
+    assert.equal(button('나오기')[0]!.props.accessibilityState.disabled, true);
     assert.equal(button('전투 시작')[0]!.props.accessibilityState.disabled, true);
     assert.equal(button('리셋')[0]!.props.accessibilityState.disabled, true);
   });
@@ -48,6 +49,7 @@ describe('RaidPanel', () => {
     const calls: unknown[] = [];
     const data = raidData();
     data.raids[1]!.playable = true;
+    data.raids[1]!.status = 'RECRUITING';
     data.raids[1]!.actions = ['REGISTER'];
     await render(React.createElement(RaidPanel, { api: api(
       async () => data,
@@ -64,9 +66,60 @@ describe('RaidPanel', () => {
 
   it('raid_hunt에서 확인된 내가 참가한 raid만 기존 RAID 전투 화면으로 연결한다', async () => {
     const targets: unknown[] = [];
-    await render(React.createElement(RaidPanel, { api: api(async () => raidData()), onOpenBattle: (target) => targets.push(target) }));
+    const data = raidData(); data.raids[0]!.joined = true;
+    await render(React.createElement(RaidPanel, { api: api(async () => data), onOpenBattle: (target) => targets.push(target) }));
     await press('RAID 전투 화면 열기');
-    assert.deepEqual(targets, [{ categoryId: 'raid', mapCode: 'RaidGoblin' }]);
+    assert.deepEqual(targets, [{ categoryId: 'raid', mapCode: 'RaidGoblin', cooldownRemainingSeconds: null }]);
+  });
+
+  it('모집 대기부터 보상 리셋과 세 시간 공유 대기까지 같은 수동 흐름을 강제한다', async () => {
+    const calls: unknown[] = [];
+    const waiting = raidData();
+    Object.assign(waiting.raids[0]!, {
+      status: 'WAITING', statusText: '파티 모집 중 (1294초 후 출발 가능)', waitSeconds: 1294,
+      joined: true, actions: ['START'], battleTarget: null,
+    });
+    const ready = structuredClone(waiting);
+    Object.assign(ready.raids[0]!, { status: 'READY', statusText: '파티 모집 중 (출발 가능)', waitSeconds: null });
+    const completed = structuredClone(ready);
+    Object.assign(completed.raids[0]!, {
+      status: 'COMPLETED', statusText: '보상 확인 시간 (남은 시간 앞으로 0시간 26분 43초)',
+      actions: ['RESET'], battleTarget: null,
+    });
+    completed.globalActions = ['REFRESH', 'REWARD'];
+    const rewarded = structuredClone(completed);
+    rewarded.applyWait = true; rewarded.applyWaitSeconds = 10_786; rewarded.result = result('보상 수령 완료');
+    const reset = structuredClone(rewarded);
+    Object.assign(reset.raids[0]!, { status: 'RECRUITING', statusText: '신청 안됨', joined: false, actions: ['REGISTER'] });
+    reset.result = result('리셋 완료');
+    let current = waiting;
+    await render(React.createElement(RaidPanel, { api: api(
+      async () => current,
+      async (_path, request) => {
+        calls.push(request);
+        current = (request as { action: string }).action === 'START' ? completed
+          : (request as { action: string }).action === 'REWARD' ? rewarded : reset;
+        return current;
+      },
+    ) }));
+
+    assert.equal(button('전투 시작')[0]!.props.accessibilityState.disabled, true);
+    current = ready; await press('갱신');
+    assert.equal(button('전투 시작')[0]!.props.accessibilityState.disabled, false);
+    await press('전투 시작');
+    assert.equal(button('보상 확인')[0]!.props.accessibilityState.disabled, false);
+    assert.equal(button('리셋')[0]!.props.accessibilityState.disabled, true);
+    await press('보상 확인');
+    assert.equal(button('보상 확인')[0]!.props.accessibilityState.disabled, true);
+    assert.equal(button('리셋')[0]!.props.accessibilityState.disabled, false);
+    assert.equal(text().includes('신청 가능까지 2시간 59분'), true);
+    await press('리셋');
+    assert.equal(button('등록')[0]!.props.accessibilityState.disabled, true);
+    assert.deepEqual(calls, [
+      { action: 'START', raidId: 'RaidGoblin' },
+      { action: 'REWARD', raidId: null },
+      { action: 'RESET', raidId: 'RaidGoblin' },
+    ]);
   });
 
   it('참가하지 않았거나 RAID 카테고리가 아닌 battle target은 전투 CTA로 노출하지 않는다', async () => {
@@ -76,7 +129,7 @@ describe('RaidPanel', () => {
     assert.equal(button('RAID 전투 화면 열기').length, 0);
 
     const invalidCategory = raidData();
-    invalidCategory.raids[0]!.battleTarget = { categoryId: 'battle_map', mapCode: 'RaidGoblin' };
+    invalidCategory.raids[0]!.battleTarget = { categoryId: 'battle_map', mapCode: 'RaidGoblin', cooldownRemainingSeconds: null };
     await act(async () => mounted!.update(React.createElement(RaidPanel, { api: api(async () => invalidCategory), onOpenBattle: () => assert.fail('must not navigate') })));
     await act(async () => { await Promise.resolve(); });
     assert.equal(button('RAID 전투 화면 열기').length, 0);
@@ -121,15 +174,15 @@ describe('RaidPanel', () => {
     const staleReload = deferred<unknown>(); let loads = 0;
     await render(React.createElement(RaidPanel, { api: api(
       async () => ++loads === 1 ? raidData() : staleReload.promise,
-      async () => ({ ...raidData(), result: result() }),
+      async () => ({ ...raidData(), result: result('최신 action 결과') }),
     ) }));
-    await press('등록');
     await press('갱신');
-    assert.equal(text().includes('완료'), true);
+    await press('등록');
+    assert.equal(text().includes('최신 action 결과'), true);
 
     staleReload.resolve(raidData());
     await act(async () => { await staleReload.promise; await Promise.resolve(); });
-    assert.equal(text().includes('완료'), true);
+    assert.equal(text().includes('최신 action 결과'), true);
   });
 
   it('계정 API 변경 뒤 이전 계정의 확인과 늦은 action 완료를 폐기한다', async () => {
@@ -159,7 +212,7 @@ describe('RaidPanel', () => {
   });
 });
 
-function raidData(applyWaitSeconds: number | null = null, applyWait = applyWaitSeconds != null) { return { raids: [{ id: 'RaidGoblin', name: '고블린 전투 마차', playable: true, difficulty: '평범 레벨 40', maxPartySize: 6, rewardDamage: '100000+', status: 'RECRUITING' as const, statusText: '모집 중', waitSeconds: null, applicants: ['공민이'], joined: true, actions: ['REGISTER' as const, 'LEAVE' as const], battleTarget: { categoryId: 'raid', mapCode: 'RaidGoblin' } }, { id: 'RaidTest', name: '시험 레이드', playable: false, difficulty: null, maxPartySize: null, rewardDamage: null, status: 'TESTING' as const, statusText: '신청 안됨', waitSeconds: null, applicants: [], joined: false, actions: [], battleTarget: null }], applied: true, applyWait, applyWaitSeconds, myStatus: '신청 완료', globalActions: ['REFRESH' as const, 'REWARD' as const], result: null }; }
+function raidData(applyWaitSeconds: number | null = null, applyWait = applyWaitSeconds != null): RaidPubResponse { return { raids: [{ id: 'RaidGoblin', name: '고블린 전투 마차', playable: true, difficulty: '평범 레벨 40', maxPartySize: 6, rewardDamage: '100000+', status: 'RECRUITING', statusText: '모집 중', waitSeconds: null, applicants: [], joined: false, actions: ['REGISTER', 'LEAVE'], battleTarget: { categoryId: 'raid', mapCode: 'RaidGoblin', cooldownRemainingSeconds: null } }, { id: 'RaidTest', name: '시험 레이드', playable: false, difficulty: null, maxPartySize: null, rewardDamage: null, status: 'TESTING', statusText: '신청 안됨', waitSeconds: null, applicants: [], joined: false, actions: [], battleTarget: null }], applied: false, applyWait, applyWaitSeconds, myStatus: null, globalActions: ['REFRESH', 'REWARD'], result: null }; }
 function result(message = '완료') { return { status: 'SUCCESS' as const, messages: [message], items: [], refreshRequired: true }; }
 function api(load: (path: string) => Promise<unknown>, submit: (path: string, request: unknown) => Promise<unknown> = async () => { throw new Error('unexpected'); }) { return { load, submit } as never; }
 async function render(node: React.ReactElement) { await act(async () => { mounted = create(node); }); await act(async () => { await Promise.resolve(); }); }

@@ -3,13 +3,13 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { toUserFacingErrorMessage } from '../../../domain/userFacingErrors';
 import { theme } from '../../../styles/theme';
-import type { FishingBattleTarget, RaidAction, RaidPubActionRequest, RaidPubResponse, TownActionResultResponse, TownRowResponse } from '../../../types/api';
+import type { RaidAction, RaidBattleTarget, RaidPubActionRequest, RaidPubResponse, RaidPubRaidResponse, TownActionResultResponse, TownRowResponse } from '../../../types/api';
 import type { TownApi } from '../api/townApi';
 import { TownActionResult } from '../components/TownActionResult';
 import { TownItemList } from '../components/TownItemList';
 import { useTownFeature } from '../hooks/useTownFeature';
 
-type Props = { api: TownApi; resolveCaptcha?: () => Promise<void>; onOpenBattle?: (target: FishingBattleTarget) => void };
+type Props = { api: TownApi; resolveCaptcha?: () => Promise<void>; onOpenBattle?: (target: RaidBattleTarget) => void };
 type ScopedResponse = { apiKey: number; data: RaidPubResponse } | null;
 const apiKeys = new WeakMap<object, number>(); let nextApiKey = 1;
 const GLOBAL_ACTIONS = ['REFRESH', 'REWARD', 'WAIT_RESET'] as const satisfies readonly RaidAction[];
@@ -83,7 +83,12 @@ export function RaidPanel({ api, resolveCaptcha, onOpenBattle }: Props) {
     return { id: raid.id, label: raid.name, accessibilityLabel: `${raid.name}${raid.joined ? ' 내가 참가 중' : ''}${raid.playable && !busy ? ' 선택' : ' 선택 불가'}`, detail, imageUrl: null, price: null, quantity: null, selectable: raid.playable && !busy };
   });
   const perform = (action: RaidAction, raidId: string | null) => {
-    if (action === 'REGISTER' && registerBlockedRef.current) return;
+    if (raidId == null) {
+      if (!canUseGlobalAction(data, action)) return;
+    } else {
+      const raid = data.raids.find((candidate) => candidate.id === raidId);
+      if (!raid || !canUseRaidAction(raid, action, registerBlockedRef.current, data.applyWait)) return;
+    }
     const request = { action, raidId };
     const submissionApi = api; staged.current = null;
     responseSequence.current += 1;
@@ -112,12 +117,12 @@ export function RaidPanel({ api, resolveCaptcha, onOpenBattle }: Props) {
         {data.myStatus ? <Text accessibilityLiveRegion="polite" style={styles.status}>{data.myStatus}</Text> : null}
         {applyWaitMessage ? <Text accessibilityLiveRegion="polite" style={styles.wait}>{applyWaitMessage}</Text> : null}
         <View style={styles.actions}>{GLOBAL_ACTIONS.map((action) => <ActionButton key={action} label={ACTION_LABEL[action]}
-          disabled={busy || !data.globalActions.includes(action)} onPress={action === 'REFRESH' ? refresh : () => perform(action, null)} />)}</View>
+          disabled={busy || !canUseGlobalAction(data, action)} onPress={action === 'REFRESH' ? refresh : () => perform(action, null)} />)}</View>
       </View>}
       footer={<View style={styles.section}>
         {selected ? <><Text style={styles.selectedTitle}>{selected.name}</Text><View style={styles.actions}>
           {RAID_ACTIONS.map((action) => <ActionButton key={action} label={ACTION_LABEL[action]}
-            disabled={busy || !selected.actions.includes(action) || action === 'REGISTER' && registerBlocked}
+            disabled={busy || !canUseRaidAction(selected, action, registerBlocked, data.applyWait)}
             onPress={() => perform(action, selected.id)} />)}
         </View>{battleTarget && onOpenBattle ? <ActionButton label="RAID 전투 화면 열기" disabled={busy} onPress={() => onOpenBattle(battleTarget)} /> : null}</> : null}
         {data.result ? <TownActionResult result={data.result} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}
@@ -128,6 +133,19 @@ export function RaidPanel({ api, resolveCaptcha, onOpenBattle }: Props) {
 function ActionButton({ label, disabled, onPress }: { label: string; disabled: boolean; onPress: () => void }) { return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}><Text style={styles.buttonText}>{label}</Text></Pressable>; }
 function LoadState({ loading, error, reload }: { loading: boolean; error: string | null; reload: () => Promise<unknown> }) { return <View style={styles.container}><Text accessibilityRole={error ? 'alert' : undefined} style={error ? styles.error : styles.hint}>{loading ? '전투 정보실을 불러오는 중...' : error ?? '전투 정보실 정보가 없습니다.'}</Text>{!loading ? <ActionButton label="다시 시도" disabled={false} onPress={() => void reload().catch(() => undefined)} /> : null}</View>; }
 function positive(value: number | null): value is number { return value != null && value > 0; }
+function canUseGlobalAction(data: RaidPubResponse, action: RaidAction) {
+  if (!data.globalActions.includes(action)) return false;
+  if (action === 'REWARD') return !data.applyWait && data.raids.some((raid) => raid.status === 'COMPLETED');
+  return true;
+}
+function canUseRaidAction(raid: RaidPubRaidResponse, action: RaidAction, registerBlocked: boolean, applyWait: boolean) {
+  if (!raid.actions.includes(action)) return false;
+  if (action === 'REGISTER') return !registerBlocked && !raid.joined && !['IN_BATTLE', 'COMPLETED', 'CLOSED', 'TESTING'].includes(raid.status);
+  if (action === 'LEAVE') return raid.joined;
+  if (action === 'START') return raid.joined && raid.status === 'READY';
+  if (action === 'RESET') return raid.joined && raid.status === 'COMPLETED' && applyWait;
+  return false;
+}
 function formatDuration(seconds: number) { const safe = Math.max(0, seconds); const hour = Math.floor(safe / 3600); const minute = Math.floor((safe % 3600) / 60); const second = safe % 60; return [hour ? `${hour}시간` : '', minute ? `${minute}분` : '', !hour || (!minute && second) ? `${second}초` : ''].filter(Boolean).join(' '); }
 function info(message: string): TownActionResultResponse { return { status: 'INFORMATIONAL', messages: [message], items: [], refreshRequired: true }; }
 function identifyApi(api: TownApi) { const key = api as object; const old = apiKeys.get(key); if (old != null) return old; const next = nextApiKey++; apiKeys.set(key, next); return next; }
