@@ -623,6 +623,7 @@ function renderActiveTab({
           onOpenCaptcha={onOpenCaptcha}
           onStatusObserved={onStatusObserved}
           onDetailModeChange={onAutomationEditorModeChange}
+          townApi={townApi}
         />
       );
     case 'battle':

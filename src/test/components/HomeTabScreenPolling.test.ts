@@ -34,6 +34,7 @@ moduleWithLoader._load = (request, parent, isMain) => {
   if (request.endsWith('/QuestAutomationEditor')) return { QuestAutomationEditor: host('QuestAutomationEditor') };
   if (request.endsWith('/BattleMapAutomationEditor')) return { BattleMapAutomationEditor: host('BattleMapAutomationEditor') };
   if (request.endsWith('/AdventureMapAutomationEditor')) return { AdventureMapAutomationEditor: host('AdventureMapAutomationEditor') };
+  if (request.endsWith('/NewAutomationEditor')) return { NewAutomationEditor: host('NewAutomationEditor') };
   return originalLoad(request, parent, isMain);
 };
 const { HomeTabScreen } = require('../../main/screens/HomeTabScreen') as typeof import('../../main/screens/HomeTabScreen');

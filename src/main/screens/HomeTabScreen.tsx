@@ -13,11 +13,13 @@ import { UnifiedAutomationSettings } from '../features/automation/components/Uni
 import { NewAutomationEditor } from '../features/automation/components/NewAutomationEditor';
 import { AutomationHistoryScreen } from '../features/automation/components/AutomationHistoryScreen';
 import { theme } from '../styles/theme';
+import type { TownApi } from '../features/town/api/townApi';
 import type {
   BattleCategoryResponse,
   BattleMapResponse,
   AutomationType,
   HofObservedStatusResponse,
+  RaidPubResponse,
   TypedAutomationEntryResponse,
   UpdateFishingAutomationRequest,
   UpdateRaidAutomationRequest,
@@ -37,6 +39,7 @@ type HomeTabScreenProps = {
   onOpenCaptcha: () => void;
   onStatusObserved?: (status: HofObservedStatusResponse) => void;
   onDetailModeChange?: (active: boolean) => void;
+  townApi?: TownApi;
 };
 
 type HomeRoute = 'dashboard' | 'settings' | 'editor' | 'history';
@@ -60,7 +63,11 @@ export function HomeTabScreen({
   onOpenCaptcha,
   onStatusObserved,
   onDetailModeChange,
+  townApi,
 }: HomeTabScreenProps) {
+  const loadRaidTargets = useCallback((): Promise<RaidPubResponse> => townApi == null
+    ? Promise.reject(new Error('레이드 목록 API를 사용할 수 없습니다.'))
+    : townApi.load<RaidPubResponse>('/api/town/raid'), [townApi]);
   const [route, setRoute] = useState<HomeRoute>('dashboard');
   const [typedEditorEntry, setTypedEditorEntry] = useState<TypedAutomationEntryResponse | null>(null);
   const [rulesOpen, setRulesOpen] = useState(false);
@@ -241,6 +248,7 @@ export function HomeTabScreen({
     return <NewAutomationEditor
       entry={currentEntry} saving={savingEntryIds.includes(currentEntry.id) || savingTypes.includes(currentEntry.type)}
       mutationMessage={message ?? error} onBack={closeEditor} onLoadBattleMaps={onLoadBattleMaps}
+      onLoadRaidTargets={loadRaidTargets}
       partyPresetCatalog={partyPresetCatalog} onSave={async (request) => {
         let saved = false;
         if (currentEntry.type === 'FISHING') saved = await automationController.saveFishingSettings(request as UpdateFishingAutomationRequest);
