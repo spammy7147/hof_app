@@ -60,15 +60,12 @@ export function NewAutomationEditor({ entry, saving, mutationMessage, onBack, on
   useEffect(() => {
     if (catalog.length === 0) return;
     setSelected((current) => {
-      if (entry.type === 'FISHING' && current.length === 0 && entry.fishing != null) {
-        return catalog.map(({ key, name }) => ({ key, name, preset: entry.fishing! }));
-      }
       return current.map((item) => ({
         ...item,
         name: catalog.find(({ key }) => key === item.key)?.name ?? item.name,
       }));
     });
-  }, [catalog, entry.fishing, entry.type]);
+  }, [catalog]);
   const presets = partyPresetCatalog.catalog.presets;
   const primary = useMemo<PresetSelection>(() => ({ presetMode: 'PRIMARY', partyPresetId: null }), []);
   const activePreset = selected.find(({ key }) => key === activePresetKey)?.preset ?? null;

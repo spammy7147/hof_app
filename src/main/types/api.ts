@@ -576,15 +576,11 @@ export type UpdateAdventureMapAutomationRequest = {
   enabled: boolean;
   maps: AdventureMapSettingRequest[];
 };
-export type FishingAutomationSettingResponse = PresetSelection;
 export type FishingMapSettingRequest = PresetSelection & { categoryId: string; mapCode: string; executionOrder: number };
 export type FishingMapSettingResponse = FishingMapSettingRequest & { displayName?: string | null };
 export type UpdateFishingAutomationRequest = {
   enabled: boolean;
   maps: FishingMapSettingRequest[];
-  /** 이전 단일 프리셋 설정을 맵별 설정 저장 전까지 보존하기 위한 배포 호환 필드다. */
-  presetMode?: PresetSelection['presetMode'];
-  partyPresetId?: number | null;
 };
 export type UnionMapSettingRequest = PresetSelection & { categoryId: string; mapCode: string; executionOrder: number };
 export type UnionMapSettingResponse = UnionMapSettingRequest & { displayName?: string | null };
@@ -618,7 +614,6 @@ export type TypedAutomationEntryResponse = {
   /** 설정과 별도로 서버가 소유하는 한국 날짜 기준 전투맵 성공 횟수다. */
   battleMapProgress: BattleMapDailyProgressResponse[];
   adventureMaps: AdventureMapSettingResponse[];
-  fishing?: FishingAutomationSettingResponse | null;
   fishingMaps?: FishingMapSettingResponse[];
   unionMaps?: UnionMapSettingResponse[];
   raidTargets?: RaidTargetSettingResponse[];

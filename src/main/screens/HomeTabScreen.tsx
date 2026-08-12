@@ -148,7 +148,6 @@ export function HomeTabScreen({
     if (entry.type === 'FISHING') return automationController.saveFishingSettings({
       enabled: !entry.enabled,
       maps: entry.fishingMaps ?? [],
-      ...(entry.fishingMaps?.length ? {} : entry.fishing ?? {}),
     });
     if (entry.type === 'UNION') return automationController.saveUnionSettings({ enabled: !entry.enabled, maps: entry.unionMaps ?? [] });
     return automationController.saveRaidSettings({ enabled: !entry.enabled, targets: entry.raidTargets ?? [] });
