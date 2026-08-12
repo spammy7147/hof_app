@@ -110,10 +110,10 @@ describe('DataTabScreen recent battle card', () => {
       '소셜2, 사제',
       'Funds 3,660',
       '얼어붙은 산의 비밀을 해결했다.',
-      'https://example.com/battle/detail/1',
     ];
 
     assert.deepEqual(expected.filter((text) => !cardText.includes(text)), []);
+    assert.equal(cardText.includes('https://example.com/battle/detail/1'), false);
   });
 
   it('omits detailed battle-result rows from the recent card', async () => {

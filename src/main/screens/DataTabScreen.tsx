@@ -372,7 +372,6 @@ function BattleLogCard({ log, onOpenDetail }: { log: BattleLogResponse; onOpenDe
       {log.quest ? <Text style={styles.questText} numberOfLines={2}>{log.quest}</Text> : null}
       {detailUrl ? (
         <View style={styles.linkPanel}>
-          <Text selectable style={styles.linkText} numberOfLines={2}>{log.rawLogUrl}</Text>
           <View style={styles.linkActions}>
             <PrimaryButton label="상세 보기" onPress={onOpenDetail} style={styles.linkButton} />
             <PrimaryButton
@@ -540,7 +539,6 @@ const styles = StyleSheet.create({
   questText: { color: theme.colors.accentBlue, fontSize: 12, fontWeight: '800', lineHeight: 17 },
   linkPanel: { gap: theme.spacing.sm, marginTop: theme.spacing.sm },
   linkActions: { flexDirection: 'row', gap: theme.spacing.sm },
-  linkText: { color: theme.colors.accentBlue, fontSize: 11, fontWeight: '700', lineHeight: 16 },
   noLinkText: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '700', marginTop: theme.spacing.xs },
   linkButton: { minHeight: 34, flex: 1, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.xs },
 });
