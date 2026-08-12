@@ -289,6 +289,11 @@ function normalizeFishingExchangeResponse(value: unknown): FishingExchangeRespon
     label: typeof category.label === 'string' ? category.label.trim() : '',
     current: category.current === true,
   })).filter((category) => category.id.length > 0 && category.label.length > 0);
+  const currentCategoryId = typeof value.currentCategoryId === 'string' ? value.currentCategoryId.trim() : '';
+  const currentCategories = categories.filter((category) => category.current);
+  if (categories.length === 0 || currentCategoryId.length === 0 || currentCategories.length !== 1 || currentCategories[0]?.id !== currentCategoryId) {
+    throw new Error('낚시 교환소 응답 형식을 확인할 수 없습니다.');
+  }
   const items = value.items.filter(isRecord).map((item) => ({
     ...normalizeTownRow(item),
     materials: Array.isArray(item.materials)
@@ -297,7 +302,7 @@ function normalizeFishingExchangeResponse(value: unknown): FishingExchangeRespon
   })).filter((item) => item.id.length > 0);
   return {
     categories,
-    currentCategoryId: typeof value.currentCategoryId === 'string' ? value.currentCategoryId : null,
+    currentCategoryId,
     items,
     result: isRecord(value.result) ? value.result as TownActionResultResponse : null,
   };

@@ -159,6 +159,16 @@ describe('FishingPanel', () => {
     assert.ok(button('낚시 정보 다시 불러오기'));
   });
 
+  it('빈 분류 목록을 정상 교환소 상태로 표시하지 않는다', async () => {
+    await render(React.createElement(FishingPanel, {
+      api: fakeApi({ load: async () => ({ categories: [], currentCategoryId: null, items: [], result: null }) }),
+      mode: 'exchange',
+    }));
+
+    assert.equal(allText().includes('낚시 교환소 응답 형식을 확인할 수 없습니다.'), true);
+    assert.ok(button('낚시 정보 다시 불러오기'));
+  });
+
   it('교환 품목의 materials가 누락돼도 안전하게 목록을 표시한다', async () => {
     await render(React.createElement(FishingPanel, {
       api: fakeApi({ load: async () => ({
