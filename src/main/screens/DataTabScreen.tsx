@@ -22,6 +22,7 @@ import { formatBattleOutcome } from '../domain/battleResults';
 import { theme } from '../styles/theme';
 import type {
   AdventureMapOutcomeStatsResponse,
+  AdventureMapStatsPeriod,
   BattleLogOutcome,
   BattleLogQuery,
   BattleLogResponse,
@@ -31,13 +32,18 @@ import type {
 type DataTabScreenProps = {
   authenticated: boolean;
   onLoadBattleLogs: (query?: BattleLogQuery) => Promise<BattleLogResponse[]>;
-  onLoadBattleStats: () => Promise<BattleStatsResponse>;
+  onLoadBattleStats: (period?: AdventureMapStatsPeriod) => Promise<BattleStatsResponse>;
   onFullScreenChange?: (open: boolean) => void;
 };
 
 type LogFilter = 'ALL' | BattleLogOutcome;
 
 const LOG_PAGE_SIZE = 40;
+const ADVENTURE_PERIODS: ReadonlyArray<{ id: AdventureMapStatsPeriod; label: string; description: string }> = [
+  { id: 'DAY', label: '일간', description: '오늘 00:00부터 현재까지' },
+  { id: 'WEEK', label: '주간', description: '이번 주 월요일 00:00부터 현재까지' },
+  { id: 'MONTH', label: '월간', description: '이번 달 1일 00:00부터 현재까지' },
+];
 const LOG_FILTERS: ReadonlyArray<{ id: LogFilter; label: string }> = [
   { id: 'ALL', label: '전체' },
   { id: 'VICTORY', label: '승리' },
@@ -56,6 +62,7 @@ export function DataTabScreen({
   const [isStatsLoading, setIsStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
   const [logScreenOpen, setLogScreenOpen] = useState(false);
+  const [adventureStatsOpen, setAdventureStatsOpen] = useState(false);
 
   const loadStats = useCallback(async () => {
     if (!authenticated) {
@@ -75,9 +82,13 @@ export function DataTabScreen({
 
   useEffect(() => { void loadStats(); }, [loadStats]);
   useEffect(() => {
-    onFullScreenChange?.(logScreenOpen);
+    onFullScreenChange?.(logScreenOpen || adventureStatsOpen);
     return () => onFullScreenChange?.(false);
-  }, [logScreenOpen, onFullScreenChange]);
+  }, [adventureStatsOpen, logScreenOpen, onFullScreenChange]);
+
+  if (adventureStatsOpen) {
+    return <AdventureMapStatsScreen authenticated={authenticated} onBack={() => setAdventureStatsOpen(false)} onLoad={onLoadBattleStats} />;
+  }
 
   if (logScreenOpen) {
     return (
@@ -108,7 +119,15 @@ export function DataTabScreen({
 
       {isStatsLoading && !stats ? <LoadingPanel label="통계 확인 중" /> : null}
       {statsError ? <StatePanel message={statsError} error /> : null}
-      {stats ? <StatsPanel stats={stats} /> : null}
+      {stats ? <FundsStatsPanel stats={stats} /> : null}
+
+      <View style={styles.logLaunchCard}>
+        <View style={styles.logLaunchCopy}>
+          <Text style={styles.sectionTitle}>모험맵 통계</Text>
+          <Text style={styles.description}>모험맵 패배·무승부를 일간·주간·월간으로 확인합니다.</Text>
+        </View>
+        <PrimaryButton label="통계 보기" onPress={() => setAdventureStatsOpen(true)} />
+      </View>
 
       <View style={styles.logLaunchCard}>
         <View style={styles.logLaunchCopy}>
@@ -121,10 +140,8 @@ export function DataTabScreen({
   );
 }
 
-/** 일/주/월 Funds와 모험맵 패배·무승부 집계를 표시한다. */
-function StatsPanel({ stats }: { stats: BattleStatsResponse }) {
-  const failedMaps = stats.adventureMapOutcomes.filter(({ defeats }) => defeats > 0);
-  const drawnMaps = stats.adventureMapOutcomes.filter(({ draws }) => draws > 0);
+/** 데이터 첫 화면에는 Funds 요약만 유지한다. */
+function FundsStatsPanel({ stats }: { stats: BattleStatsResponse }) {
   return (
     <View style={styles.statsStack}>
       <View style={styles.fundsGrid}>
@@ -133,12 +150,6 @@ function StatsPanel({ stats }: { stats: BattleStatsResponse }) {
         <StatCard label="월간 펀드" value={formatFunds(stats.monthlyFunds)} />
       </View>
 
-      <View style={styles.outcomePanel}>
-        <Text style={styles.sectionTitle}>모험맵 점검</Text>
-        <Text style={styles.description}>패배·무승부가 기록된 맵만 집계합니다.</Text>
-        <MapOutcomeSection label="패배" maps={failedMaps} outcome="DEFEAT" />
-        <MapOutcomeSection label="무승부" maps={drawnMaps} outcome="DRAW" />
-      </View>
     </View>
   );
 }
@@ -155,29 +166,61 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint?:
   );
 }
 
-function MapOutcomeSection({
-  label,
-  maps,
-  outcome,
-}: {
-  label: string;
-  maps: AdventureMapOutcomeStatsResponse[];
-  outcome: 'DEFEAT' | 'DRAW';
+function AdventureMapStatsScreen({ authenticated, onBack, onLoad }: {
+  authenticated: boolean;
+  onBack: () => void;
+  onLoad: (period?: AdventureMapStatsPeriod) => Promise<BattleStatsResponse>;
 }) {
-  return (
-    <View style={styles.mapSection}>
-      <Text style={[styles.mapSectionTitle, outcome === 'DEFEAT' && styles.defeatText]}>{label}</Text>
-      {maps.length === 0 ? (
-        <Text style={styles.emptyInline}>기록 없음</Text>
-      ) : maps.map((map) => (
-        <View key={`${outcome}-${map.mapCode}`} style={styles.mapRow}>
-          <Text style={styles.mapName} numberOfLines={2}>{map.mapName.trim() || map.mapCode}</Text>
-          <Text style={[styles.mapCount, outcome === 'DEFEAT' && styles.defeatText]}>
-            {outcome === 'DEFEAT' ? map.defeats : map.draws}회
-          </Text>
-        </View>
-      ))}
+  const [period, setPeriod] = useState<AdventureMapStatsPeriod>('DAY');
+  const [maps, setMaps] = useState<AdventureMapOutcomeStatsResponse[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
+  const load = useCallback(async () => {
+    if (!authenticated) { setError('로그인 계정이 없습니다.'); return; }
+    const requestId = ++requestIdRef.current;
+    setLoading(true); setError(null);
+    try {
+      const response = await onLoad(period);
+      if (requestId === requestIdRef.current) setMaps(response.adventureMapOutcomes);
+    } catch (reason) {
+      if (requestId === requestIdRef.current) setError(reason instanceof Error ? reason.message : '모험맵 통계를 불러오지 못했습니다.');
+    } finally {
+      if (requestId === requestIdRef.current) setLoading(false);
+    }
+  }, [authenticated, onLoad, period]);
+  useEffect(() => { void load(); return () => { requestIdRef.current += 1; }; }, [load]);
+  const selectedPeriod = ADVENTURE_PERIODS.find((item) => item.id === period) ?? ADVENTURE_PERIODS[0];
+  const header = (
+    <View style={styles.adventureHeaderStack}>
+      <View style={styles.header}>
+        <PrimaryButton label="돌아가기" variant="secondary" onPress={onBack} style={styles.compactButton} />
+        <Text style={styles.logScreenTitle}>모험맵 통계</Text>
+        <PrimaryButton label="새로고침" variant="secondary" loading={loading} onPress={load} style={styles.compactButton} />
+      </View>
+      <View accessibilityRole="tablist" style={styles.filterRow}>
+        {ADVENTURE_PERIODS.map((option) => <Pressable
+          accessibilityRole="tab" accessibilityState={{ selected: period === option.id }} key={option.id}
+          onPress={() => setPeriod(option.id)} style={[styles.filterButton, period === option.id && styles.filterButtonActive]}
+        ><Text style={[styles.filterLabel, period === option.id && styles.filterLabelActive]}>{option.label}</Text></Pressable>)}
+      </View>
+      <Text style={styles.description}>{selectedPeriod.description} · 패배와 무승부가 발생한 맵만 표시합니다.</Text>
+      {error ? <StatePanel message={error} error /> : null}
+      <View style={styles.mapTableHeader}><Text style={styles.mapName}>모험맵</Text><Text style={styles.mapMetricHeader}>패배</Text><Text style={styles.mapMetricHeader}>무승부</Text></View>
     </View>
+  );
+  return (
+    <FlatList
+      contentContainerStyle={styles.logListContainer} data={maps} ListHeaderComponent={header}
+      ListEmptyComponent={!loading && !error ? <StatePanel message={`${selectedPeriod.label} 패배·무승부 기록이 없습니다.`} /> : null}
+      keyExtractor={(map) => map.mapCode}
+      renderItem={({ item }) => <View style={styles.mapRow}>
+        <Text style={styles.mapName} numberOfLines={2}>{item.mapName.trim() || item.mapCode}</Text>
+        <Text style={[styles.mapCount, styles.defeatText]}>{item.defeats}회</Text>
+        <Text style={styles.mapCount}>{item.draws}회</Text>
+      </View>}
+      style={styles.list}
+    />
   );
 }
 
@@ -433,6 +476,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
     padding: theme.spacing.lg,
   },
+  adventureHeaderStack: { gap: theme.spacing.md, marginBottom: theme.spacing.sm },
   sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: '900' },
   description: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '700', lineHeight: 17 },
   mapSection: { gap: theme.spacing.sm, marginTop: theme.spacing.sm },
@@ -447,7 +491,9 @@ const styles = StyleSheet.create({
     paddingTop: theme.spacing.sm,
   },
   mapName: { flex: 1, color: theme.colors.text, fontSize: 13, fontWeight: '800', lineHeight: 18 },
-  mapCount: { color: theme.colors.accentBlue, fontSize: 13, fontWeight: '900' },
+  mapCount: { width: 54, color: theme.colors.accentBlue, fontSize: 13, fontWeight: '900', textAlign: 'right' },
+  mapTableHeader: { flexDirection: 'row', gap: theme.spacing.md, borderBottomWidth: 1, borderBottomColor: theme.colors.borderStrong, paddingBottom: theme.spacing.sm },
+  mapMetricHeader: { width: 54, color: theme.colors.textMuted, fontSize: 12, fontWeight: '900', textAlign: 'right' },
   emptyInline: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '700' },
   defeatText: { color: theme.colors.danger },
   drawText: { color: theme.colors.accentBlue },

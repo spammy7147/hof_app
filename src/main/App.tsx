@@ -22,6 +22,7 @@ import type {
   BattleMapResponse,
   BattleResultResponse,
   BattleStatsResponse,
+  AdventureMapStatsPeriod,
   CreatePartyPresetRequest,
   CreatePartyPresetFolderRequest,
   HofCharacterDetail,
@@ -203,7 +204,7 @@ function AppContent({ api }: { api: BackendApiClient }) {
     api.fetchBattleLogs(query)
   ), [api]);
 
-  const loadBattleStats = useCallback((): Promise<BattleStatsResponse> => api.fetchBattleStats(), [api]);
+  const loadBattleStats = useCallback((period?: AdventureMapStatsPeriod): Promise<BattleStatsResponse> => api.fetchBattleStats(period), [api]);
 
   const getPartyPresetCatalog = useCallback((): Promise<PartyPresetCatalogResponse> => api.getPartyPresetCatalog(), [api]);
   const createPartyPresetFolder = useCallback((request: CreatePartyPresetFolderRequest) => api.createPartyPresetFolder(request), [api]);

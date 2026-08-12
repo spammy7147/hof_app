@@ -21,6 +21,7 @@ import type {
   BattleMapResponse,
   BattleResultResponse,
   BattleStatsResponse,
+  AdventureMapStatsPeriod,
   FishingBattleTarget,
   CreatePartyPresetRequest,
   CreatePartyPresetFolderRequest,
@@ -65,7 +66,7 @@ type MainScreenProps = {
   onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
   onRunBattle: (request: RunBattleRequest) => Promise<BattleResultResponse>;
   onLoadBattleLogs: (query?: BattleLogQuery) => Promise<BattleLogResponse[]>;
-  onLoadBattleStats: () => Promise<BattleStatsResponse>;
+  onLoadBattleStats: (period?: AdventureMapStatsPeriod) => Promise<BattleStatsResponse>;
   onOpenCaptcha: () => void;
   onStatusObserved?: (status: HofObservedStatusResponse) => void;
   automationController: UnifiedAutomationController;
@@ -517,7 +518,7 @@ type RenderActiveTabArgs = {
   onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
   onRunBattle: (request: RunBattleRequest) => Promise<BattleResultResponse>;
   onLoadBattleLogs: (query?: BattleLogQuery) => Promise<BattleLogResponse[]>;
-  onLoadBattleStats: () => Promise<BattleStatsResponse>;
+  onLoadBattleStats: (period?: AdventureMapStatsPeriod) => Promise<BattleStatsResponse>;
   onOpenCaptcha: () => void;
   onStatusObserved?: (status: HofObservedStatusResponse) => void;
   automationController: UnifiedAutomationController;

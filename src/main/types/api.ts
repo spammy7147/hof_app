@@ -179,6 +179,8 @@ export type AdventureMapOutcomeStatsResponse = {
   draws: number;
 };
 
+export type AdventureMapStatsPeriod = 'DAY' | 'WEEK' | 'MONTH';
+
 export type BattleStatsResponse = {
   accountId: number;
   dailyFunds: number;

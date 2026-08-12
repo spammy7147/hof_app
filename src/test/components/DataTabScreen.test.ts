@@ -60,29 +60,43 @@ afterEach(async () => {
 });
 
 describe('DataTabScreen recent battle card', () => {
-  it('shows only period Funds and adventure-map defeat/draw aggregates on the stats screen', async () => {
+  it('keeps Funds on data home and opens period-specific adventure-map statistics', async () => {
+    const periods: Array<string | undefined> = [];
     let renderer!: ReactTestRenderer;
     await act(async () => {
       renderer = create(React.createElement(DataTabScreen, {
         authenticated: true,
         onLoadBattleLogs: async () => [],
-        onLoadBattleStats: async () => ({
+        onLoadBattleStats: async (period) => {
+          periods.push(period);
+          return ({
           accountId: 7,
           dailyFunds: 100,
           weeklyFunds: 200,
           monthlyFunds: 300,
           adventureMapOutcomes: [{ mapCode: 'snow22', mapName: '얼어붙은 산', defeats: 2, draws: 1 }],
-        }),
+          });
+        },
       }));
     });
     mountedRenderer = renderer;
     const text = flattenText(renderer.root);
 
     assert.deepEqual(
-      ['일일 펀드', '$ 100', '주간 펀드', '월요일~일요일', '$ 200', '월간 펀드', '$ 300', '얼어붙은 산', '2회', '1회']
+      ['일일 펀드', '$ 100', '주간 펀드', '월요일~일요일', '$ 200', '월간 펀드', '$ 300', '모험맵 통계']
         .filter((value) => !text.includes(value)),
       [],
     );
+    assert.equal(text.includes('얼어붙은 산'), false);
+
+    const launch = renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '통계 보기');
+    await act(async () => { launch.props.onPress(); });
+    assert.deepEqual(periods, [undefined, 'DAY']);
+    assert.deepEqual(['일간', '주간', '월간', '얼어붙은 산', '2회', '1회'].filter((value) => !flattenText(renderer.root).includes(value)), []);
+
+    const weekly = renderer.root.find((node) => String(node.type) === 'Pressable' && flattenText(node).includes('주간'));
+    await act(async () => { weekly.props.onPress(); });
+    assert.deepEqual(periods, [undefined, 'DAY', 'WEEK']);
     assert.deepEqual(['승률', '경험치', '전리품', '승/패/무'].filter((value) => text.includes(value)), []);
   });
 
