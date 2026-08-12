@@ -273,6 +273,16 @@ describe('AutomationAddSheet mounted interactions', () => {
 });
 
 describe('UnifiedAutomationSettings mounted interactions', () => {
+  it('lets the outer settings scroller own vertical gestures started on automation cards', async () => {
+    const renderer = await renderSettings({
+      entries: [entry(1, 'QUEST'), entry(2, 'BATTLE_MAP')],
+    });
+    const list = findHost(renderer.root, 'DraggableFlatList');
+
+    assert.equal(list.props.scrollEnabled, false);
+    assert.equal(list.props.activationDistance, 20);
+  });
+
   it('opens from the single trigger, closes after success, and stays open after failure', async () => {
     let addSucceeds = true;
     const renderer = await renderSettings({

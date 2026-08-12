@@ -169,13 +169,14 @@ export function UnifiedAutomationSettings({
         </View>
       ) : (
         <NestableDraggableFlatList
-          activationDistance={8}
+          activationDistance={20}
           data={entries}
           keyExtractor={(entry) => String(entry.id)}
           onDragEnd={({ data, from, to }) => {
             if (from !== to) onReorder(data);
           }}
           renderItem={renderItem}
+          scrollEnabled={false}
         />
       )}
 
