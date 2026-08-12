@@ -55,6 +55,19 @@ const { NewAutomationEditor } = require(
 moduleWithLoader._load = originalLoad;
 
 describe('NewAutomationEditor', () => {
+  it('shows observed fishing battle maps with an independent preset picker', async () => {
+    const renderer = await renderEditor({
+      entry: entry('FISHING', {
+        fishingMaps: [{ categoryId: 'battle_map', mapCode: 'fish-1', executionOrder: 0, presetMode: 'PRIMARY', partyPresetId: null }],
+      }),
+      maps: [map('battle_map', 'fish-1', '거대 잉어', '낚시터 전투')],
+    });
+
+    assert.equal(hasText(renderer.root, '1. 거대 잉어'), true);
+    const trigger = renderer.root.findByProps({ accessibilityLabel: '거대 잉어 프리셋 선택 열기' });
+    assert.equal(hasText(trigger, '대표 · 기본 파티'), true);
+  });
+
   it('hydrates union codes with map names and uses the shared preset picker trigger', async () => {
     const renderer = await renderEditor({
       entry: entry('UNION', {
@@ -111,7 +124,7 @@ async function renderEditor({
   return renderer;
 }
 
-function entry(type: 'UNION' | 'RAID', overrides: Partial<TypedAutomationEntryResponse> = {}): TypedAutomationEntryResponse {
+function entry(type: 'FISHING' | 'UNION' | 'RAID', overrides: Partial<TypedAutomationEntryResponse> = {}): TypedAutomationEntryResponse {
   return {
     id: type === 'UNION' ? 5 : 4,
     type,
@@ -129,9 +142,9 @@ function entry(type: 'UNION' | 'RAID', overrides: Partial<TypedAutomationEntryRe
   };
 }
 
-function map(categoryId: string, mapCode: string, name: string): BattleMapResponse {
+function map(categoryId: string, mapCode: string, name: string, groupName: string | null = null): BattleMapResponse {
   return {
-    categoryId, mapCode, name, groupName: null, groupOrder: 0, mapOrder: 0, recommendedLevel: null,
+    categoryId, mapCode, name, groupName, groupOrder: 0, mapOrder: 0, recommendedLevel: null,
     availableCount: null, attemptCount: null, winCount: null, cooldownRemainingText: null,
     cooldownRemainingSeconds: null, keyMode: 'NOT_REQUIRED', keyCount: null, requiredTime: null,
     supportsThreeBattles: false, enabled: true, resolved: true, iconUrl: null, rawHref: '',

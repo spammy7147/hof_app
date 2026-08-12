@@ -267,7 +267,9 @@ function entrySummary(entry: TypedAutomationEntryResponse): string {
   if (entry.type === 'ADVENTURE_MAP') return `모험맵 ${entry.adventureMaps.length}개`;
   if (entry.type === 'RAID') return `레이드 ${entry.raidTargets?.length ?? 0}개 · 완료 후 다음 대상으로 순환`;
   if (entry.type === 'UNION') return `유니온 ${entry.unionMaps?.length ?? 0}개 · 공유 쿨다운마다 순환`;
-  return entry.fishing ? '일일 낚시 자동 진행' : '전투 프리셋 설정 필요';
+  return (entry.fishingMaps?.length ?? 0) > 0 || entry.fishing
+    ? `일일 낚시 · 전투 맵 ${entry.fishingMaps?.length ?? 0}개`
+    : '낚시 전투 맵 설정 필요';
 }
 
 const styles = StyleSheet.create({

@@ -9,6 +9,7 @@ import type {
   UpdateBattleMapAutomationRequest,
   UpdateQuestAutomationRequest,
   UpdateFishingAutomationRequest,
+  FishingMapSettingRequest,
   UpdateRaidAutomationRequest,
   UpdateUnionAutomationRequest,
   UnionMapSettingRequest,
@@ -111,8 +112,8 @@ export function buildAdventureMapAutomationRequest(
   return { enabled, maps: normalizeOrder(maps) };
 }
 
-export function buildFishingAutomationRequest(enabled: boolean, preset: PresetSelection): UpdateFishingAutomationRequest {
-  return { enabled, ...preset };
+export function buildFishingAutomationRequest(enabled: boolean, maps: readonly FishingMapSettingRequest[]): UpdateFishingAutomationRequest {
+  return { enabled, maps: normalizeOrder(maps) };
 }
 export function buildUnionAutomationRequest(enabled: boolean, maps: readonly UnionMapSettingRequest[]): UpdateUnionAutomationRequest {
   return { enabled, maps: normalizeOrder(maps) };

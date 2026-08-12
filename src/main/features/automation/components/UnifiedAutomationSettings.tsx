@@ -377,7 +377,7 @@ function getEntrySummary(entry: TypedAutomationEntryResponse): string {
   if (entry.type === 'ADVENTURE_MAP') return `모험 맵 ${entry.adventureMaps.length}개`;
   if (entry.type === 'RAID') return `레이드 ${entry.raidTargets?.length ?? 0}개`;
   if (entry.type === 'UNION') return `유니온 맵 ${entry.unionMaps?.length ?? 0}개`;
-  return entry.fishing ? '전투 프리셋 설정됨' : '설정 필요';
+  return `낚시 전투 맵 ${entry.fishingMaps?.length ?? 0}개`;
 }
 
 function AutomationTypeIcon({ type }: { type: AutomationType }) {

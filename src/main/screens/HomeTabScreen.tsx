@@ -145,7 +145,11 @@ export function HomeTabScreen({
       return automationController.saveBattleMapSettings({ enabled: !entry.enabled, maps: entry.battleMaps });
     }
     if (entry.type === 'ADVENTURE_MAP') return automationController.saveAdventureMapSettings({ enabled: !entry.enabled, maps: entry.adventureMaps });
-    if (entry.type === 'FISHING') return automationController.saveFishingSettings({ enabled: !entry.enabled, ...(entry.fishing ?? { presetMode: 'PRIMARY', partyPresetId: null }) });
+    if (entry.type === 'FISHING') return automationController.saveFishingSettings({
+      enabled: !entry.enabled,
+      maps: entry.fishingMaps ?? [],
+      ...(entry.fishingMaps?.length ? {} : entry.fishing ?? {}),
+    });
     if (entry.type === 'UNION') return automationController.saveUnionSettings({ enabled: !entry.enabled, maps: entry.unionMaps ?? [] });
     return automationController.saveRaidSettings({ enabled: !entry.enabled, targets: entry.raidTargets ?? [] });
   }
