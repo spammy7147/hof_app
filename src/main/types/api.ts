@@ -510,10 +510,15 @@ export type ColosseumTradeRequest = { candidateId: string; categoryCandidateId: 
 
 export type RaidAction = 'REGISTER' | 'LEAVE' | 'START' | 'RESET' | 'REWARD' | 'WAIT_RESET' | 'REFRESH';
 export type RaidStatus = 'RECRUITING' | 'WAITING' | 'READY' | 'IN_BATTLE' | 'COMPLETED' | 'CLOSED' | 'TESTING' | 'UNKNOWN';
+export type RaidBattleTarget = {
+  categoryId: string;
+  mapCode: string;
+  cooldownRemainingSeconds: number | null;
+};
 export type RaidPubRaidResponse = {
   id: string; name: string; playable: boolean; difficulty: string | null; maxPartySize: number | null;
   rewardDamage: string | null; status: RaidStatus; statusText: string | null; waitSeconds: number | null;
-  applicants: string[]; joined: boolean; actions: RaidAction[]; battleTarget: FishingBattleTarget | null;
+  applicants: string[]; joined: boolean; actions: RaidAction[]; battleTarget: RaidBattleTarget | null;
 };
 export type RaidPubResponse = {
   raids: RaidPubRaidResponse[]; applied: boolean; applyWait: boolean; applyWaitSeconds: number | null; myStatus: string | null;
