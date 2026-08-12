@@ -36,6 +36,14 @@ export function hofRetryMessage(nextAttemptAt: string | null, nowMs = Date.now()
   return `HOF 서버 연결이 원활하지 않습니다. ${delay} 후 자동으로 다시 시도합니다.`;
 }
 
+function retryDelay(nextAttemptAt: string | null, nowMs = Date.now()): string {
+  const retryAtMs = nextAttemptAt == null ? Number.NaN : Date.parse(nextAttemptAt);
+  const remainingMs = retryAtMs - nowMs;
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return '곧';
+  const remainingSeconds = Math.ceil(remainingMs / 1_000);
+  return remainingSeconds < 60 ? `${remainingSeconds}초 후` : `${Math.ceil(remainingSeconds / 60)}분 후`;
+}
+
 /** Typed automation aggregate만 사용해 실행/중지/설정 상태를 한 화면에 분리해 표시한다. */
 export function UnifiedAutomationDashboard({
   aggregate,
@@ -52,47 +60,48 @@ export function UnifiedAutomationDashboard({
   const running = runtime.lifecycle === 'RUNNING' || runtime.lifecycle === 'DRAINING';
   const paused = runtime.lifecycle === 'PAUSED';
   const stoppedWithReason = runtime.lifecycle === 'STOPPED' && runtime.stopReason != null;
-  const networkStopped = stoppedWithReason && (runtime.stopReason === 'NETWORK' || runtime.stopReason === 'FATAL');
-  const waitingCaptcha = stoppedWithReason && runtime.stopReason === 'CAPTCHA';
-  const waitingLogin = stoppedWithReason && runtime.stopReason === 'AUTHENTICATION';
   const waiting = running && current == null && runtime.nextAttemptAt != null;
-  const waitingForHof = waiting && runtime.waitReason === 'HOF_CONNECTION';
+  const automaticRetry = waiting && runtime.stopReason != null && runtime.stopReason !== 'MANUAL_STOP';
+  const networkRetry = automaticRetry && (runtime.stopReason === 'NETWORK' || runtime.stopReason === 'FATAL' || runtime.stopReason === 'UNKNOWN');
+  const waitingCaptcha = automaticRetry && runtime.stopReason === 'CAPTCHA';
+  const waitingLogin = automaticRetry && runtime.stopReason === 'AUTHENTICATION';
+  const waitingForHof = waiting && !automaticRetry && runtime.waitReason === 'HOF_CONNECTION';
   const waitingForWork = waiting && !waitingForHof;
   const warningCount = new Set(runtime.warnings).size;
 
   return (
     <View style={styles.stack}>
-      <View style={[styles.hero, (networkStopped || waitingCaptcha || waitingLogin || waitingForHof) && styles.warningHero]}>
+      <View style={[styles.hero, (networkRetry || waitingCaptcha || waitingLogin || waitingForHof) && styles.warningHero]}>
         <View style={styles.heroHeader}>
-          <View style={[styles.statusDot, networkStopped && styles.dangerDot, (waitingCaptcha || waitingLogin || waitingForHof) && styles.warningDot]} />
-          <Text style={[styles.statusLabel, networkStopped && styles.dangerText, (waitingCaptcha || waitingLogin || waitingForHof) && styles.warningText]}>
+          <View style={[styles.statusDot, networkRetry && styles.dangerDot, (waitingCaptcha || waitingLogin || waitingForHof) && styles.warningDot]} />
+          <Text style={[styles.statusLabel, networkRetry && styles.dangerText, (waitingCaptcha || waitingLogin || waitingForHof) && styles.warningText]}>
             {statusLabel(aggregate)}
           </Text>
         </View>
 
-        {waitingForHof ? (
-          <Text style={styles.stopTitle}>{hofRetryMessage(runtime.nextAttemptAt, nowMs)}</Text>
-        ) : waitingForWork ? (
-          <Text style={styles.stopTitle}>현재 진행할 작업이 없습니다. 실행 가능한 작업이 생기면 자동으로 계속합니다.</Text>
-        ) : networkStopped ? (
+        {networkRetry ? (
           <>
             <Text style={styles.stopTitle}>
               {runtime.stopReason === 'NETWORK'
-                ? '네트워크 오류로 자동화가 중지되었습니다.'
-                : '자동화를 안전하게 계속할 수 없어 중지되었습니다.'}
+                ? `네트워크 오류가 발생했습니다. ${retryDelay(runtime.nextAttemptAt, nowMs)} 자동으로 다시 시도합니다.`
+                : `자동화 오류가 발생했습니다. ${retryDelay(runtime.nextAttemptAt, nowMs)} 자동으로 다시 시도합니다.`}
             </Text>
             {runtime.lastError ? <Text style={styles.stopReason}>{runtime.lastError}</Text> : null}
             {current ? <CurrentAction current={current} /> : null}
           </>
         ) : waitingCaptcha ? (
           <>
-            <Text style={styles.stopTitle}>캡차 인증이 필요합니다.</Text>
+            <Text style={styles.stopTitle}>캡차 인증이 필요합니다. 해결될 때까지 자동으로 다시 확인합니다.</Text>
             <Pressable accessibilityLabel="캡차 인증 열기" accessibilityRole="button" onPress={onOpenCaptcha} style={styles.captchaButton}>
               <Text style={styles.captchaButtonText}>지금 인증하기</Text>
             </Pressable>
           </>
         ) : waitingLogin ? (
-          <Text style={styles.stopTitle}>HOF 로그인이 필요합니다. 저장된 로그인 정보로 재로그인을 확인하고 있어요.</Text>
+          <Text style={styles.stopTitle}>HOF 로그인이 필요합니다. 저장된 로그인 정보로 {retryDelay(runtime.nextAttemptAt, nowMs)} 다시 시도합니다.</Text>
+        ) : waitingForHof ? (
+          <Text style={styles.stopTitle}>{hofRetryMessage(runtime.nextAttemptAt, nowMs)}</Text>
+        ) : waitingForWork ? (
+          <Text style={styles.stopTitle}>현재 진행할 작업이 없습니다. 실행 가능한 작업이 생기면 자동으로 계속합니다.</Text>
         ) : (
           <>
             <Text style={styles.currentLabel}>현재 작업</Text>
@@ -232,9 +241,12 @@ function ActionButton({
 
 function statusLabel(aggregate: TypedAutomationAggregateResponse): string {
   const { runtime } = aggregate;
-  const waiting = runtime.lifecycle === 'RUNNING'
+  const waiting = (runtime.lifecycle === 'RUNNING' || runtime.lifecycle === 'DRAINING')
     && runtime.currentAction == null
     && runtime.nextAttemptAt != null;
+  if (waiting && runtime.stopReason === 'AUTHENTICATION') return '로그인 재시도 대기';
+  if (waiting && runtime.stopReason === 'CAPTCHA') return '캡차 재확인 대기';
+  if (waiting && runtime.stopReason != null) return '오류 재시도 대기';
   if (waiting && runtime.waitReason === 'HOF_CONNECTION') return 'HOF 서버 연결 대기 중';
   if (waiting) return '자동화 대기 중';
   if (runtime.lifecycle === 'RUNNING') return '실행 중';

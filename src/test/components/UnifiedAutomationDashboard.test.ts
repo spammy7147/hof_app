@@ -29,28 +29,39 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('UnifiedAutomationDashboard', () => {
-  it('separates a fatal network stop and exposes only a manual resume action', async () => {
+  it('shows network failures as automatic retry without a manual resume action', async () => {
     const actions: UnifiedAutomationAction[] = [];
-    const renderer = await renderDashboard(networkStopped(), (action) => { actions.push(action); });
+    const aggregate = networkStopped();
+    aggregate.runtime.lifecycle = 'RUNNING';
+    aggregate.runtime.nextAttemptAt = '2026-07-23T00:01:00Z';
+    aggregate.runtime.waitReason = 'HOF_CONNECTION';
+    aggregate.runtime.currentAction = null;
+    const renderer = await renderDashboard(
+      aggregate,
+      (action) => { actions.push(action); },
+      undefined,
+      Date.parse('2026-07-23T00:00:00Z'),
+    );
 
-    assert.equal(hasText(renderer.root, '네트워크 오류로 자동화가 중지되었습니다.'), true);
+    assert.equal(hasText(renderer.root, '오류 재시도 대기'), true);
+    assert.equal(hasText(renderer.root, '네트워크 오류가 발생했습니다. 1분 후 자동으로 다시 시도합니다.'), true);
     assert.equal(hasText(renderer.root, 'connection refused'), true);
-    assert.equal(hasText(renderer.root, '전투맵 실행'), true);
-    assert.equal(hasText(renderer.root, 'Castle In The Sky- 천공성(제 2탑)'), true);
-    assert.equal(hasText(renderer.root, '3회 전투 진행 중'), true);
     assert.equal(hasText(renderer.root, '오늘 모험맵 초기화 완료 · 오전 12:03'), true);
     assert.equal(hasText(renderer.root, '설정 경고 2개'), true);
-    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '중지된 자동화 재개' }).props.onPress(); });
-    assert.deepEqual(actions, ['resume']);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '중지된 자동화 재개' }).length, 0);
+    assert.deepEqual(actions, []);
   });
 
   it('keeps captcha waiting separate from network stop', async () => {
     let opened = 0;
     const aggregate = networkStopped();
+    aggregate.runtime.lifecycle = 'RUNNING';
     aggregate.runtime.stopReason = 'CAPTCHA';
+    aggregate.runtime.nextAttemptAt = '2026-07-23T00:01:00Z';
+    aggregate.runtime.currentAction = null;
     aggregate.runtime.lastError = null;
     const renderer = await renderDashboard(aggregate, () => undefined, () => { opened += 1; });
-    assert.equal(hasText(renderer.root, '캡차 인증이 필요합니다.'), true);
+    assert.equal(hasText(renderer.root, '캡차 인증이 필요합니다. 해결될 때까지 자동으로 다시 확인합니다.'), true);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '중지된 자동화 재개' }).length, 0);
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '캡차 인증 열기' }).props.onPress(); });
     assert.equal(opened, 1);
@@ -58,11 +69,20 @@ describe('UnifiedAutomationDashboard', () => {
 
   it('keeps authentication waiting separate from a manual network resume', async () => {
     const aggregate = networkStopped();
+    aggregate.runtime.lifecycle = 'RUNNING';
     aggregate.runtime.stopReason = 'AUTHENTICATION';
+    aggregate.runtime.nextAttemptAt = '2026-07-23T00:01:00Z';
+    aggregate.runtime.currentAction = null;
     aggregate.runtime.lastError = null;
-    const renderer = await renderDashboard(aggregate, () => undefined);
+    const renderer = await renderDashboard(
+      aggregate,
+      () => undefined,
+      undefined,
+      Date.parse('2026-07-23T00:00:00Z'),
+    );
 
-    assert.equal(hasText(renderer.root, 'HOF 로그인이 필요합니다. 저장된 로그인 정보로 재로그인을 확인하고 있어요.'), true);
+    assert.equal(hasText(renderer.root, '로그인 재시도 대기'), true);
+    assert.equal(hasText(renderer.root, 'HOF 로그인이 필요합니다. 저장된 로그인 정보로 1분 후 다시 시도합니다.'), true);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '중지된 자동화 재개' }).length, 0);
   });
 
