@@ -8,21 +8,32 @@ import type {
   UpdateAdventureMapAutomationRequest,
   UpdateBattleMapAutomationRequest,
   UpdateQuestAutomationRequest,
+  UpdateFishingAutomationRequest,
+  UpdateRaidAutomationRequest,
+  UpdateUnionAutomationRequest,
+  UnionMapSettingRequest,
+  RaidTargetSettingRequest,
 } from '../types/api';
 
 export const AUTOMATION_TYPE_ORDER: readonly AutomationType[] = [
   'QUEST',
   'BATTLE_MAP',
   'ADVENTURE_MAP',
+  'RAID',
+  'UNION',
+  'FISHING',
 ];
 
 export const AUTOMATION_TYPE_METADATA: Readonly<Record<AutomationType, {
   label: string;
-  icon: 'scroll-text' | 'swords' | 'map';
+  icon: 'scroll-text' | 'swords' | 'map' | 'raid' | 'union' | 'fishing';
 }>> = {
   QUEST: { label: '퀘스트', icon: 'scroll-text' },
   BATTLE_MAP: { label: '전투 맵', icon: 'swords' },
   ADVENTURE_MAP: { label: '모험 맵', icon: 'map' },
+  RAID: { label: '레이드', icon: 'raid' },
+  UNION: { label: '유니온', icon: 'union' },
+  FISHING: { label: '낚시', icon: 'fishing' },
 };
 
 export function getAddableAutomationTypes(
@@ -98,6 +109,16 @@ export function buildAdventureMapAutomationRequest(
   maps: readonly AdventureMapSettingRequest[],
 ): UpdateAdventureMapAutomationRequest {
   return { enabled, maps: normalizeOrder(maps) };
+}
+
+export function buildFishingAutomationRequest(enabled: boolean, preset: PresetSelection): UpdateFishingAutomationRequest {
+  return { enabled, ...preset };
+}
+export function buildUnionAutomationRequest(enabled: boolean, maps: readonly UnionMapSettingRequest[]): UpdateUnionAutomationRequest {
+  return { enabled, maps: normalizeOrder(maps) };
+}
+export function buildRaidAutomationRequest(enabled: boolean, targets: readonly RaidTargetSettingRequest[]): UpdateRaidAutomationRequest {
+  return { enabled, targets: normalizeOrder(targets) };
 }
 
 function normalizeOrder<T extends { executionOrder: number }>(items: readonly T[]): T[] {

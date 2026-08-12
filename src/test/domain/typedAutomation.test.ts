@@ -19,8 +19,8 @@ describe('typed automation domain', () => {
     assert.deepEqual(getAddableAutomationTypes([
       entry(1, 'QUEST', 0),
       entry(2, 'ADVENTURE_MAP', 1),
-    ]), ['BATTLE_MAP']);
-    assert.deepEqual(getAddableAutomationTypes([]), ['QUEST', 'BATTLE_MAP', 'ADVENTURE_MAP']);
+    ]), ['BATTLE_MAP', 'RAID', 'UNION', 'FISHING']);
+    assert.deepEqual(getAddableAutomationTypes([]), ['QUEST', 'BATTLE_MAP', 'ADVENTURE_MAP', 'RAID', 'UNION', 'FISHING']);
     assert.equal(hasAllAutomationTypes([]), false);
     assert.equal(canAddAutomationType([entry(1, 'QUEST', 0)], 'QUEST'), false);
     assert.equal(canAddAutomationType([entry(1, 'QUEST', 0)], 'BATTLE_MAP'), true);
@@ -28,6 +28,9 @@ describe('typed automation domain', () => {
       entry(1, 'QUEST', 0),
       entry(2, 'BATTLE_MAP', 1),
       entry(3, 'ADVENTURE_MAP', 2),
+      entry(4, 'RAID', 3),
+      entry(5, 'UNION', 4),
+      entry(6, 'FISHING', 5),
     ]), true);
   });
 

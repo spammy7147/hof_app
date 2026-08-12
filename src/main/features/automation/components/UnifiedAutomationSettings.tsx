@@ -9,7 +9,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { GripVertical, Map, Plus, ScrollText, Swords, Trash2 } from 'lucide-react-native';
+import { Fish, GripVertical, Map, Plus, ScrollText, Shield, Swords, Trash2, Users } from 'lucide-react-native';
 import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from 'react-native-gesture-handler/ReanimatedSwipeable';
@@ -373,14 +373,20 @@ function focusNode(node: ElementRef<typeof Pressable> | null): void {
 function getEntrySummary(entry: TypedAutomationEntryResponse): string {
   if (entry.type === 'QUEST') return `선택 ${entry.quests.length}개`;
   if (entry.type === 'BATTLE_MAP') return `전투 맵 ${entry.battleMaps.length}개`;
-  return `모험 맵 ${entry.adventureMaps.length}개`;
+  if (entry.type === 'ADVENTURE_MAP') return `모험 맵 ${entry.adventureMaps.length}개`;
+  if (entry.type === 'RAID') return `레이드 ${entry.raidTargets?.length ?? 0}개`;
+  if (entry.type === 'UNION') return `유니온 맵 ${entry.unionMaps?.length ?? 0}개`;
+  return entry.fishing ? '전투 프리셋 설정됨' : '설정 필요';
 }
 
 function AutomationTypeIcon({ type }: { type: AutomationType }) {
   const iconProps = { color: theme.colors.accentGreen, size: 18 };
   if (type === 'QUEST') return <ScrollText {...iconProps} />;
   if (type === 'BATTLE_MAP') return <Swords {...iconProps} />;
-  return <Map {...iconProps} />;
+  if (type === 'ADVENTURE_MAP') return <Map {...iconProps} />;
+  if (type === 'RAID') return <Shield {...iconProps} />;
+  if (type === 'UNION') return <Users {...iconProps} />;
+  return <Fish {...iconProps} />;
 }
 
 const styles = StyleSheet.create({

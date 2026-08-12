@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { ChevronRight, Pause, Play, RotateCcw, Settings, Square } from 'lucide-react-native';
+import { ChevronRight, History, Pause, Play, RotateCcw, Settings, Square } from 'lucide-react-native';
 
 import { formatAdventureDailyRefresh } from '../../../domain/adventureMapAutomation';
 import { AUTOMATION_TYPE_METADATA } from '../../../domain/typedAutomation';
@@ -19,6 +19,7 @@ type Props = {
   onOpenSettings: () => void;
   onOpenModule: (entryId: number) => void;
   onOpenCaptcha: () => void;
+  onOpenHistory?: () => void;
   nowMs?: number;
 };
 
@@ -43,11 +44,12 @@ export function UnifiedAutomationDashboard({
   onOpenSettings,
   onOpenModule,
   onOpenCaptcha,
+  onOpenHistory,
   nowMs,
 }: Props) {
   const { runtime } = aggregate;
   const current = runtime.currentAction;
-  const running = runtime.lifecycle === 'RUNNING';
+  const running = runtime.lifecycle === 'RUNNING' || runtime.lifecycle === 'DRAINING';
   const paused = runtime.lifecycle === 'PAUSED';
   const stoppedWithReason = runtime.lifecycle === 'STOPPED' && runtime.stopReason != null;
   const networkStopped = stoppedWithReason && (runtime.stopReason === 'NETWORK' || runtime.stopReason === 'FATAL');
@@ -122,6 +124,7 @@ export function UnifiedAutomationDashboard({
         ) : null}
         {running || paused ? <ActionButton disabled={busy} icon={Square} label="종료" onPress={() => onChangeState('stop')} secondary /> : null}
         <ActionButton disabled={busy} icon={Settings} label="설정" onPress={onOpenSettings} secondary />
+        <ActionButton disabled={busy} icon={History} label="기록" onPress={onOpenHistory ?? (() => undefined)} secondary />
       </View>
 
       <View style={styles.card}>
@@ -235,6 +238,7 @@ function statusLabel(aggregate: TypedAutomationAggregateResponse): string {
   if (waiting && runtime.waitReason === 'HOF_CONNECTION') return 'HOF 서버 연결 대기 중';
   if (waiting) return '자동화 대기 중';
   if (runtime.lifecycle === 'RUNNING') return '실행 중';
+  if (runtime.lifecycle === 'DRAINING') return '레이드 사이클 마무리 중';
   if (runtime.lifecycle === 'PAUSED') return '일시정지';
   if (runtime.stopReason === 'NETWORK' || runtime.stopReason === 'FATAL') return '완전 중지';
   if (runtime.stopReason === 'CAPTCHA') return '캡차 대기';
@@ -248,7 +252,10 @@ function entrySummary(entry: TypedAutomationEntryResponse): string {
   if (entry.warnings.length > 0) return entry.warnings[0] ?? '설정 확인 필요';
   if (entry.type === 'QUEST') return `퀘스트 ${entry.quests.filter(({ enabled }) => enabled).length}개`;
   if (entry.type === 'BATTLE_MAP') return `전투맵 ${entry.battleMaps.length}개`;
-  return `모험맵 ${entry.adventureMaps.length}개`;
+  if (entry.type === 'ADVENTURE_MAP') return `모험맵 ${entry.adventureMaps.length}개`;
+  if (entry.type === 'RAID') return `레이드 ${entry.raidTargets?.length ?? 0}개 · 완료 후 다음 대상으로 순환`;
+  if (entry.type === 'UNION') return `유니온 ${entry.unionMaps?.length ?? 0}개 · 공유 쿨다운마다 순환`;
+  return entry.fishing ? '일일 낚시 자동 진행' : '전투 프리셋 설정 필요';
 }
 
 const styles = StyleSheet.create({

@@ -521,8 +521,8 @@ export type RaidPubResponse = {
 };
 export type RaidPubActionRequest = { action: RaidAction; raidId: string | null };
 
-/** 저장 가능한 자동화는 백엔드가 소유하는 세 가지 singleton 유형으로 제한된다. */
-export type AutomationType = 'QUEST' | 'BATTLE_MAP' | 'ADVENTURE_MAP';
+/** 백엔드가 소유하는 여섯 singleton 자동화 유형. */
+export type AutomationType = 'QUEST' | 'BATTLE_MAP' | 'ADVENTURE_MAP' | 'RAID' | 'UNION' | 'FISHING';
 
 /** PRIMARY는 ID를 보내지 않고 EXPLICIT은 유효한 preset ID를 반드시 보낸다. */
 export type PresetSelection =
@@ -576,6 +576,14 @@ export type UpdateAdventureMapAutomationRequest = {
   enabled: boolean;
   maps: AdventureMapSettingRequest[];
 };
+export type FishingAutomationSettingResponse = PresetSelection;
+export type UpdateFishingAutomationRequest = PresetSelection & { enabled: boolean };
+export type UnionMapSettingRequest = PresetSelection & { categoryId: string; mapCode: string; executionOrder: number };
+export type UnionMapSettingResponse = UnionMapSettingRequest & { displayName?: string | null };
+export type UpdateUnionAutomationRequest = { enabled: boolean; maps: UnionMapSettingRequest[] };
+export type RaidTargetSettingRequest = PresetSelection & { raidId: string; displayName: string; executionOrder: number };
+export type RaidTargetSettingResponse = RaidTargetSettingRequest;
+export type UpdateRaidAutomationRequest = { enabled: boolean; targets: RaidTargetSettingRequest[] };
 
 export type QuestMapSettingResponse = QuestMapSettingRequest;
 export type QuestSelectionResponse = QuestSelectionRequest;
@@ -602,9 +610,27 @@ export type TypedAutomationEntryResponse = {
   /** 설정과 별도로 서버가 소유하는 한국 날짜 기준 전투맵 성공 횟수다. */
   battleMapProgress: BattleMapDailyProgressResponse[];
   adventureMaps: AdventureMapSettingResponse[];
+  fishing?: FishingAutomationSettingResponse | null;
+  unionMaps?: UnionMapSettingResponse[];
+  raidTargets?: RaidTargetSettingResponse[];
 };
 
-export type TypedAutomationLifecycle = 'RUNNING' | 'PAUSED' | 'STOPPED';
+export type AutomationDecisionResult = 'ACTION_SELECTED' | 'WAITING' | 'IDLE' | 'FATAL';
+export type AutomationHistoryEventKind = 'EVALUATED' | 'SELECTED' | 'WAITING' | 'SKIPPED' | 'CONFIGURATION_WARNING'
+  | 'ACTION_STARTED' | 'ACTION_SUCCEEDED' | 'ACTION_FAILED' | 'CYCLE_COMPLETED' | 'CYCLE_ABORTED';
+export type AutomationHistoryEvent = {
+  id: number; sequence: number; entryId: number | null; type: AutomationType | null;
+  kind: AutomationHistoryEventKind; reasonCode: string; message: string;
+  targetKey: string | null; targetName: string | null; actionKind: string | null;
+  presetId: number | null; presetName: string | null; nextRunAt: string | null; occurredAt: string;
+};
+export type AutomationHistoryCycle = {
+  id: number; result: AutomationDecisionResult; selectedEntryId: number | null;
+  startedAt: string; finishedAt: string; events: AutomationHistoryEvent[];
+};
+export type AutomationHistoryPage = { cycles: AutomationHistoryCycle[]; nextCursor: number | null };
+
+export type TypedAutomationLifecycle = 'RUNNING' | 'DRAINING' | 'PAUSED' | 'STOPPED';
 export type AutomationWaitReason = 'SCHEDULED' | 'HOF_CONNECTION';
 export type AutomationStopReason =
   | 'AUTHENTICATION'

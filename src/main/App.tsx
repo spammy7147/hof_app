@@ -73,6 +73,10 @@ function AppContent({ api }: { api: BackendApiClient }) {
     updateQuest: (request) => api.updateQuestAutomation(request),
     updateBattle: (request) => api.updateBattleMapAutomation(request),
     updateAdventure: (request) => api.updateAdventureMapAutomation(request),
+    updateFishing: (request) => api.updateFishingAutomation(request),
+    updateUnion: (request) => api.updateUnionAutomation(request),
+    updateRaid: (request) => api.updateRaidAutomation(request),
+    fetchHistory: (cursor) => api.fetchAutomationHistory(cursor),
     fetchQuests: () => api.fetchQuests(),
     changeState: (action) => api.changeUnifiedAutomationState(action),
   }), [api]);

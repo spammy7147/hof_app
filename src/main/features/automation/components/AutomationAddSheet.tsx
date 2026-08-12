@@ -11,7 +11,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { Map, ScrollText, Swords, X } from 'lucide-react-native';
+import { Fish, Map, ScrollText, Shield, Swords, Users, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -34,6 +34,9 @@ const TYPE_DESCRIPTIONS: Readonly<Record<AutomationType, string>> = {
   QUEST: '수락·완료와 전투 퀘스트를 자동으로 진행해요.',
   BATTLE_MAP: '일일 목표 횟수에 맞춰 전투 맵을 실행해요.',
   ADVENTURE_MAP: '쿨다운과 횟수 제한에 맞춰 모험 맵을 진행해요.',
+  RAID: '등록부터 누적 전투와 보상 수령까지 한 사이클로 진행해요.',
+  UNION: '공유 쿨다운마다 선택한 유니온 맵을 순환해요.',
+  FISHING: '일일 횟수가 끝날 때까지 시작과 잡기를 반복해요.',
 };
 
 export function AutomationAddSheet({
@@ -201,7 +204,10 @@ function AutomationTypeIcon({ type }: { type: AutomationType }) {
   const icon = AUTOMATION_TYPE_METADATA[type].icon;
   if (icon === 'scroll-text') return <ScrollText {...iconProps} />;
   if (icon === 'swords') return <Swords {...iconProps} />;
-  return <Map {...iconProps} />;
+  if (icon === 'map') return <Map {...iconProps} />;
+  if (icon === 'raid') return <Shield {...iconProps} />;
+  if (icon === 'union') return <Users {...iconProps} />;
+  return <Fish {...iconProps} />;
 }
 
 const styles = StyleSheet.create({

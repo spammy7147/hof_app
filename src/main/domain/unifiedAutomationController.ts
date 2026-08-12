@@ -10,6 +10,10 @@ import type {
   UpdateAdventureMapAutomationRequest,
   UpdateBattleMapAutomationRequest,
   UpdateQuestAutomationRequest,
+  UpdateFishingAutomationRequest,
+  UpdateRaidAutomationRequest,
+  UpdateUnionAutomationRequest,
+  AutomationHistoryPage,
 } from '../types/api';
 
 export type UnifiedAutomationControllerApi = {
@@ -20,6 +24,10 @@ export type UnifiedAutomationControllerApi = {
   updateQuest: (request: UpdateQuestAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
   updateBattle: (request: UpdateBattleMapAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
   updateAdventure: (request: UpdateAdventureMapAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
+  updateFishing?: (request: UpdateFishingAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
+  updateUnion?: (request: UpdateUnionAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
+  updateRaid?: (request: UpdateRaidAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
+  fetchHistory?: (cursor?: number) => Promise<AutomationHistoryPage>;
   fetchQuests: () => Promise<QuestSnapshot[]>;
   changeState: (action: UnifiedAutomationAction) => Promise<TypedAutomationAggregateResponse>;
 };
@@ -193,6 +201,21 @@ export class UnifiedAutomationController {
 
   saveAdventureMapSettings(request: UpdateAdventureMapAutomationRequest): Promise<boolean> {
     return this.saveSettings('ADVENTURE_MAP', request, (body) => this.api.updateAdventure(body));
+  }
+  saveFishingSettings(request: UpdateFishingAutomationRequest): Promise<boolean> {
+    return this.saveSettings('FISHING', request, (body) => this.requireApi(this.api.updateFishing, '낚시')(body));
+  }
+  saveUnionSettings(request: UpdateUnionAutomationRequest): Promise<boolean> {
+    return this.saveSettings('UNION', request, (body) => this.requireApi(this.api.updateUnion, '유니온')(body));
+  }
+  saveRaidSettings(request: UpdateRaidAutomationRequest): Promise<boolean> {
+    return this.saveSettings('RAID', request, (body) => this.requireApi(this.api.updateRaid, '레이드')(body));
+  }
+  fetchHistory(cursor?: number): Promise<AutomationHistoryPage> { return this.requireApi(this.api.fetchHistory, '자동화 기록')(cursor); }
+
+  private requireApi<A extends unknown[], R>(api: ((...args: A) => R) | undefined, label: string): (...args: A) => R {
+    if (!api) throw new Error(`${label} API가 연결되지 않았습니다.`);
+    return api;
   }
 
   reorderEntries(entries: readonly TypedAutomationEntryResponse[]): void {

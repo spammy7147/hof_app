@@ -10,6 +10,8 @@ import { AdventureMapAutomationEditor } from '../features/automation/components/
 import { BattleMapAutomationEditor } from '../features/automation/components/BattleMapAutomationEditor';
 import { QuestAutomationEditor } from '../features/automation/components/QuestAutomationEditor';
 import { UnifiedAutomationSettings } from '../features/automation/components/UnifiedAutomationSettings';
+import { NewAutomationEditor } from '../features/automation/components/NewAutomationEditor';
+import { AutomationHistoryScreen } from '../features/automation/components/AutomationHistoryScreen';
 import { theme } from '../styles/theme';
 import type {
   BattleCategoryResponse,
@@ -17,6 +19,9 @@ import type {
   AutomationType,
   HofObservedStatusResponse,
   TypedAutomationEntryResponse,
+  UpdateFishingAutomationRequest,
+  UpdateRaidAutomationRequest,
+  UpdateUnionAutomationRequest,
 } from '../types/api';
 
 type HomeTabScreenProps = {
@@ -34,7 +39,7 @@ type HomeTabScreenProps = {
   onDetailModeChange?: (active: boolean) => void;
 };
 
-type HomeRoute = 'dashboard' | 'settings' | 'editor';
+type HomeRoute = 'dashboard' | 'settings' | 'editor' | 'history';
 
 /**
  * 공유 자동화 store를 구독하고 대시보드·설정·편집 화면을 전환하는 홈 화면이다.
@@ -112,7 +117,7 @@ export function HomeTabScreen({
   }
 
   function openEntryDetail(entry: TypedAutomationEntryResponse) {
-    if (entry.type === 'QUEST' || entry.type === 'BATTLE_MAP' || entry.type === 'ADVENTURE_MAP') {
+    if (entry.type === 'QUEST' || entry.type === 'BATTLE_MAP' || entry.type === 'ADVENTURE_MAP' || entry.type === 'RAID' || entry.type === 'UNION' || entry.type === 'FISHING') {
       if (savingEntryIds.includes(entry.id) || savingTypes.includes(entry.type)) {
         automationController.showMessage('이 자동화를 저장하고 있어요. 완료된 뒤 다시 열어 주세요.');
         return;
@@ -132,7 +137,10 @@ export function HomeTabScreen({
     if (entry.type === 'BATTLE_MAP') {
       return automationController.saveBattleMapSettings({ enabled: !entry.enabled, maps: entry.battleMaps });
     }
-    return automationController.saveAdventureMapSettings({ enabled: !entry.enabled, maps: entry.adventureMaps });
+    if (entry.type === 'ADVENTURE_MAP') return automationController.saveAdventureMapSettings({ enabled: !entry.enabled, maps: entry.adventureMaps });
+    if (entry.type === 'FISHING') return automationController.saveFishingSettings({ enabled: !entry.enabled, ...(entry.fishing ?? { presetMode: 'PRIMARY', partyPresetId: null }) });
+    if (entry.type === 'UNION') return automationController.saveUnionSettings({ enabled: !entry.enabled, maps: entry.unionMaps ?? [] });
+    return automationController.saveRaidSettings({ enabled: !entry.enabled, targets: entry.raidTargets ?? [] });
   }
 
   const closeEditor = useCallback(() => {
@@ -228,6 +236,23 @@ export function HomeTabScreen({
     );
   }
 
+  if (aggregate && route === 'editor' && typedEditorEntry && typedEditorEntry.type in { RAID: 1, UNION: 1, FISHING: 1 }) {
+    const currentEntry = aggregate.entries.find(({ id }) => id === typedEditorEntry.id) ?? typedEditorEntry;
+    return <NewAutomationEditor
+      entry={currentEntry} saving={savingEntryIds.includes(currentEntry.id) || savingTypes.includes(currentEntry.type)}
+      mutationMessage={message ?? error} onBack={closeEditor} onLoadBattleMaps={onLoadBattleMaps}
+      partyPresetCatalog={partyPresetCatalog} onSave={async (request) => {
+        let saved = false;
+        if (currentEntry.type === 'FISHING') saved = await automationController.saveFishingSettings(request as UpdateFishingAutomationRequest);
+        else if (currentEntry.type === 'UNION') saved = await automationController.saveUnionSettings(request as UpdateUnionAutomationRequest);
+        else saved = await automationController.saveRaidSettings(request as UpdateRaidAutomationRequest);
+        if (saved) closeEditor(); return saved;
+      }}
+    />;
+  }
+
+  if (route === 'history') return <AutomationHistoryScreen onBack={() => { onDetailModeChange?.(false); setRoute('dashboard'); }} load={(cursor) => automationController.fetchHistory(cursor)} />;
+
   const showPageHeader = route !== 'editor';
   return (
     <NestableScrollContainer
@@ -285,6 +310,7 @@ export function HomeTabScreen({
           onOpenCaptcha={onOpenCaptcha}
           onOpenModule={openModule}
           onOpenSettings={() => setRoute('settings')}
+          onOpenHistory={() => { onDetailModeChange?.(true); setRoute('history'); }}
         />
       ) : null}
 

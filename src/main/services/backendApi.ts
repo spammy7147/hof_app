@@ -40,6 +40,10 @@ import type {
   UpdateBattleMapAutomationRequest,
   UpdatePartyPresetRequest,
   UpdateQuestAutomationRequest,
+  UpdateFishingAutomationRequest,
+  UpdateRaidAutomationRequest,
+  UpdateUnionAutomationRequest,
+  AutomationHistoryPage,
 } from '../types/api';
 import { refreshTokenStorage, type RefreshTokenStorage } from '../platform/tokenStorage';
 import { createSseConnection, type SseSubscription } from './sseClient';
@@ -340,6 +344,19 @@ export class BackendApiClient {
     return this.request('/api/automation/unified/adventure-maps', {
       method: 'PUT', body: JSON.stringify(request),
     });
+  }
+
+  updateFishingAutomation(request: UpdateFishingAutomationRequest): Promise<TypedAutomationAggregateResponse> {
+    return this.request('/api/automation/unified/fishing', { method: 'PUT', body: JSON.stringify(request) });
+  }
+  updateUnionAutomation(request: UpdateUnionAutomationRequest): Promise<TypedAutomationAggregateResponse> {
+    return this.request('/api/automation/unified/union', { method: 'PUT', body: JSON.stringify(request) });
+  }
+  updateRaidAutomation(request: UpdateRaidAutomationRequest): Promise<TypedAutomationAggregateResponse> {
+    return this.request('/api/automation/unified/raid', { method: 'PUT', body: JSON.stringify(request) });
+  }
+  fetchAutomationHistory(cursor?: number): Promise<AutomationHistoryPage> {
+    return this.request(`/api/automation/unified/history${cursor == null ? '' : `?cursor=${cursor}`}`);
   }
 
   async fetchQuests(): Promise<QuestSnapshot[]> {
