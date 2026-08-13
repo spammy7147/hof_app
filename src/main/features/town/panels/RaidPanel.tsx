@@ -135,7 +135,7 @@ function LoadState({ loading, error, reload }: { loading: boolean; error: string
 function positive(value: number | null): value is number { return value != null && value > 0; }
 function canUseGlobalAction(data: RaidPubResponse, action: RaidAction) {
   if (!data.globalActions.includes(action)) return false;
-  if (action === 'REWARD') return !data.applyWait && data.raids.some((raid) => raid.status === 'COMPLETED');
+  if (action === 'REWARD') return !data.applyWait && data.raids.some((raid) => raid.status === 'COMPLETED' && !isResetRequired(raid.statusText));
   return true;
 }
 function canUseRaidAction(raid: RaidPubRaidResponse, action: RaidAction, registerBlocked: boolean, applyWait: boolean) {
@@ -143,9 +143,10 @@ function canUseRaidAction(raid: RaidPubRaidResponse, action: RaidAction, registe
   if (action === 'REGISTER') return !registerBlocked && !raid.joined && !['IN_BATTLE', 'COMPLETED', 'CLOSED', 'TESTING'].includes(raid.status);
   if (action === 'LEAVE') return raid.joined;
   if (action === 'START') return raid.joined && raid.status === 'READY';
-  if (action === 'RESET') return raid.joined && raid.status === 'COMPLETED' && applyWait;
+  if (action === 'RESET') return raid.joined && raid.status === 'COMPLETED' && (applyWait || isResetRequired(raid.statusText));
   return false;
 }
+function isResetRequired(statusText: string | null) { return /보상\s*확인\s*종료\s*\(\s*리셋\s*가능\s*\)/.test(statusText ?? ''); }
 function formatDuration(seconds: number) { const safe = Math.max(0, seconds); const hour = Math.floor(safe / 3600); const minute = Math.floor((safe % 3600) / 60); const second = safe % 60; return [hour ? `${hour}시간` : '', minute ? `${minute}분` : '', !hour || (!minute && second) ? `${second}초` : ''].filter(Boolean).join(' '); }
 function info(message: string): TownActionResultResponse { return { status: 'INFORMATIONAL', messages: [message], items: [], refreshRequired: true }; }
 function identifyApi(api: TownApi) { const key = api as object; const old = apiKeys.get(key); if (old != null) return old; const next = nextApiKey++; apiKeys.set(key, next); return next; }

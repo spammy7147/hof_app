@@ -133,6 +133,25 @@ describe('RaidPanel', () => {
     ]);
   });
 
+  it('보상 확인 종료 리셋 가능 상태는 공유 대기 표기가 없어도 리셋할 수 있다', async () => {
+    const calls: unknown[] = [];
+    const data = raidData();
+    Object.assign(data.raids[0]!, {
+      status: 'COMPLETED', statusText: '보상 확인 종료(리셋 가능)',
+      joined: true, actions: ['RESET'], battleTarget: null,
+    });
+    await render(React.createElement(RaidPanel, { api: api(
+      async () => data,
+      async (_path, request) => { calls.push(request); return { ...data, result: result('리셋 완료') }; },
+    ) }));
+
+    assert.equal(button('보상 확인')[0]!.props.accessibilityState.disabled, true);
+    assert.equal(button('리셋')[0]!.props.accessibilityState.disabled, false);
+    await press('리셋');
+
+    assert.deepEqual(calls, [{ action: 'RESET', raidId: 'RaidGoblin' }]);
+  });
+
   it('참가하지 않았거나 RAID 카테고리가 아닌 battle target은 전투 CTA로 노출하지 않는다', async () => {
     const data = raidData();
     data.raids[0]!.joined = false;
