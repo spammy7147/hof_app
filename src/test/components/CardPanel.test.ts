@@ -38,6 +38,24 @@ describe('CardPanel', () => {
     await press('A 선택'); await press('B 선택'); await change('A 판매 수량', '2'); assert.equal(text().includes('예상 Blank Card +6장'), true); await press('선택 카드 판매'); assert.deepEqual(calls, [{ cards: [{ candidateId: 'a', quantity: 2 }, { candidateId: 'b', quantity: 1 }] }]); assert.equal(button('A 판매 수량').props.value, '2', '실패 시 선택과 수량 보존');
   });
 
+  it('카드 판매는 검색하고 선택한 카드 안에서 수량을 편집하며 판매 버튼을 목록 밖에 고정한다', async () => {
+    const data = { cards: [{ ...card('bat', "Bat's Card"), owned: 3, maxQuantity: 3, blankCardValue: 1 }, { ...card('soul', "Soul Taker's Card"), owned: 4, maxQuantity: 4, blankCardValue: 4 }], multiSelect: true, rewardKind: 'BLANK_CARD', blankCardsOwned: 660, result: null };
+    await render(React.createElement(CardPanel, { api: api(async () => data), mode: 'sell' }));
+
+    await change('판매 카드 검색', 'soul taker');
+    assert.equal(text().includes("Bat's Card"), false);
+    assert.equal(text().includes("Soul Taker's Card"), true);
+    await press("Soul Taker's Card 선택");
+
+    const selectedCard = button("Soul Taker's Card 선택").parent;
+    assert.ok((selectedCard?.findAll((node) => node.props.accessibilityLabel === "Soul Taker's Card 판매 수량").length ?? 0) > 0);
+    const listArea = mounted!.root.findByProps({ testID: 'card-sell-list' });
+    const actionBar = mounted!.root.findByProps({ testID: 'card-sell-action-bar' });
+    assert.equal(listArea.findAll((node) => node.props.accessibilityLabel === '선택 카드 판매').length, 0);
+    assert.ok(actionBar.findAll((node) => node.props.accessibilityLabel === '선택 카드 판매').length > 0);
+    assert.equal(listArea.parent, actionBar.parent);
+  });
+
   it('소울 에코는 분류와 품목을 선택하고 보유량 검색·이력을 별도로 표시한다', async () => {
     const calls: unknown[] = []; const data = { categories: [{ id: 'type:weapon', label: '무기' }, { id: 'type:armor', label: '방어구' }], currentCategoryId: 'type:weapon', recipes: [{ id: 'recipe', label: '???', selectable: true, category: 'type:weapon', requiredEchoes: ['Bat x96'], cost: 5_000_000, successBonus: 40 }], ownedEchoes: [{ name: 'Bat Chief', region: 'Arena Boss', quantity: 875 }, { name: 'Lord', region: 'Dungeon Boss', quantity: 2 }], history: [{ text: 'Shadow Horse', success: true }], result: null };
     await render(React.createElement(CardPanel, { api: api(async () => data, async (_path, request) => { calls.push(request); return { ...data, result: result('SUCCESS') }; }), mode: 'soul-echo' }));
