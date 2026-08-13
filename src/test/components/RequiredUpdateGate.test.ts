@@ -67,7 +67,7 @@ moduleWithLoader._load = (request, parent, isMain) => {
   if (request.endsWith('/components/PrimaryButton')) return { PrimaryButton: host('PrimaryButton') };
   return originalLoad(request, parent, isMain);
 };
-const { RequiredUpdateGate, parseAndroidVersionCode } = require(
+const { RequiredUpdateGate, formatReleaseVersionName, parseAndroidVersionCode } = require(
   '../../main/features/update/RequiredUpdateGate',
 ) as typeof import('../../main/features/update/RequiredUpdateGate');
 moduleWithLoader._load = originalLoad;
@@ -91,6 +91,11 @@ afterEach(() => {
 });
 
 describe('RequiredUpdateGate', () => {
+  it('shows a legacy base-plus-build version as one semantic version', () => {
+    assert.equal(formatReleaseVersionName('1.0.0+21'), '1.0.21');
+    assert.equal(formatReleaseVersionName('1.2.3'), '1.2.3');
+  });
+
   it('uses the native Android versionCode and mounts the app only when it is current', async () => {
     process.env.NODE_ENV = 'production';
     const api = {
@@ -129,6 +134,11 @@ describe('RequiredUpdateGate', () => {
     });
 
     assert.equal(renderer.root.findAllByType(ViewMarker).length, 0);
+    const visibleText = renderer.root.findAll((node) => String(node.type) === 'Text')
+      .map((node) => node.children.join(''))
+      .join(' ');
+    assert.equal(visibleText.includes('새 버전 1.0.47이 준비되었습니다.'), true);
+    assert.equal(visibleText.includes('1.0.0+47'), false);
     const updateButton = renderer.root.find(
       (node) => String(node.type) === 'PrimaryButton' && node.props.label === '업데이트',
     );

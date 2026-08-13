@@ -152,7 +152,7 @@ export function RequiredUpdateGate({ api, children }: Props) {
     <UpdateScreen
       description={state.kind === 'required' && state.message
         ? state.message
-        : `새 버전 ${release.versionName}이 준비되었습니다. 업데이트 후 앱을 이용할 수 있습니다.`}
+        : `새 버전 ${formatReleaseVersionName(release.versionName)}이 준비되었습니다. 업데이트 후 앱을 이용할 수 있습니다.`}
       installing={installing}
       primaryLabel="업데이트"
       onPrimary={() => { void installUpdate(release); }}
@@ -216,6 +216,11 @@ export function parseAndroidVersionCode(nativeBuildVersion: string | null): numb
     throw new Error('Android versionCode is invalid.');
   }
   return versionCode;
+}
+
+export function formatReleaseVersionName(versionName: string): string {
+  const legacy = /^(\d+)\.(\d+)\.0\+(\d+)$/.exec(versionName.trim());
+  return legacy ? `${legacy[1]}.${legacy[2]}.${legacy[3]}` : versionName;
 }
 
 const APK_MEDIA_TYPE = 'application/vnd.android.package-archive';

@@ -124,8 +124,12 @@ NODE
                         script: '''node -p "require('./app.json').expo.version"''',
                         returnStdout: true,
                     ).trim()
+                    def baseVersionParts = env.BASE_VERSION.split(/[.]/)
+                    if (baseVersionParts.size() != 3 || !baseVersionParts.every { it ==~ /[0-9]+/ }) {
+                        error('app.json expo.version must use MAJOR.MINOR.PATCH format, such as 1.0.0.')
+                    }
                     env.VERSION_CODE = env.BUILD_NUMBER
-                    env.VERSION_NAME = "${env.BASE_VERSION}+${env.BUILD_NUMBER}"
+                    env.VERSION_NAME = "${baseVersionParts[0]}.${baseVersionParts[1]}.${env.BUILD_NUMBER}"
                     env.ARTIFACT_NAME = "hof-app-${env.BASE_VERSION}-build-${env.BUILD_NUMBER}-${env.GIT_SHORT}.apk"
                 }
                 sh '''#!/usr/bin/env bash
