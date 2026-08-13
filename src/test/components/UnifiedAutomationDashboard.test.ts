@@ -29,6 +29,26 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('UnifiedAutomationDashboard', () => {
+  it('keeps all four running automation controls on one responsive row', async () => {
+    const aggregate = networkStopped();
+    aggregate.runtime.lifecycle = 'RUNNING';
+    aggregate.runtime.stopReason = null;
+    aggregate.runtime.nextAttemptAt = null;
+    const renderer = await renderDashboard(aggregate, () => undefined);
+
+    const row = renderer.root.findByProps({ testID: 'automation-action-row' });
+    assert.equal(styleOf(row).flexWrap, 'nowrap');
+    assert.equal(styleOf(row).width, '100%');
+    const controls = ['일시정지', '정지', '설정', '기록'].map((label) =>
+      renderer.root.findAllByProps({ accessibilityLabel: label })
+        .find((node) => (node.type as unknown) === 'Pressable'));
+    for (const control of controls) {
+      assert.ok(control);
+      assert.equal(styleOf(control).flex, 1);
+      assert.equal(styleOf(control).minWidth, 0);
+    }
+  });
+
   it('shows network failures as automatic retry without a manual resume action', async () => {
     const actions: UnifiedAutomationAction[] = [];
     const aggregate = networkStopped();
@@ -158,6 +178,31 @@ describe('UnifiedAutomationDashboard', () => {
     assert.equal(treeText(renderer.root).includes('서버 연결 대기'), false);
   });
 
+  it('shows an active raid action as retrying when the runtime scheduled an error retry', async () => {
+    const aggregate = networkStopped();
+    aggregate.runtime.lifecycle = 'RUNNING';
+    aggregate.runtime.stopReason = 'FATAL';
+    aggregate.runtime.lastError = '현재 해당 레이드에서 실행할 수 없는 동작입니다.';
+    aggregate.runtime.nextAttemptAt = '2026-07-23T00:01:00Z';
+    aggregate.runtime.waitReason = 'HOF_CONNECTION';
+    aggregate.runtime.currentAction = {
+      source: 'RAID', kind: 'RAID_TOWN', actionLabel: '레이드', questName: null,
+      missionLabel: null, missionCurrent: null, missionRequired: null, mapName: null, battleCount: null,
+    };
+
+    const renderer = await renderDashboard(
+      aggregate,
+      () => undefined,
+      undefined,
+      Date.parse('2026-07-23T00:00:00Z'),
+    );
+
+    assert.equal(hasText(renderer.root, '오류 재시도 대기'), true);
+    assert.equal(hasText(renderer.root, '자동화 오류가 발생했습니다. 1분 후 자동으로 다시 시도합니다.'), true);
+    assert.equal(hasText(renderer.root, '현재 해당 레이드에서 실행할 수 없는 동작입니다.'), true);
+    assert.equal(hasText(renderer.root, '레이드'), true);
+  });
+
   it('treats an omitted wait reason as normal scheduled waiting', async () => {
     const aggregate = networkStopped();
     aggregate.runtime.lifecycle = 'RUNNING';
@@ -263,6 +308,13 @@ function hasText(root: ReactTestInstance, text: string): boolean {
 }
 function treeText(root: ReactTestInstance): string {
   return root.findAll((node) => (node.type as unknown) === 'Text').flatMap((node) => node.children).filter((child): child is string => typeof child === 'string').join(' ');
+}
+function styleOf(node: ReactTestInstance): Record<string, unknown> {
+  const rawStyle = typeof node.props.style === 'function'
+    ? node.props.style({ pressed: false })
+    : node.props.style;
+  const values = Array.isArray(rawStyle) ? rawStyle : [rawStyle];
+  return Object.assign({}, ...values.filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === 'object'));
 }
 function runtimeWithCurrentAction(currentAction: TypedAutomationCurrentActionResponse): TypedAutomationAggregateResponse {
   const aggregate = networkStopped();

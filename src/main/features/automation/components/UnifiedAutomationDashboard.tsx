@@ -61,7 +61,8 @@ export function UnifiedAutomationDashboard({
   const paused = runtime.lifecycle === 'PAUSED';
   const stoppedWithReason = runtime.lifecycle === 'STOPPED' && runtime.stopReason != null;
   const waiting = running && current == null && runtime.nextAttemptAt != null;
-  const automaticRetry = waiting && runtime.stopReason != null && runtime.stopReason !== 'MANUAL_STOP';
+  const automaticRetry = running && runtime.nextAttemptAt != null
+    && runtime.stopReason != null && runtime.stopReason !== 'MANUAL_STOP';
   const networkRetry = automaticRetry && (runtime.stopReason === 'NETWORK' || runtime.stopReason === 'FATAL' || runtime.stopReason === 'UNKNOWN');
   const waitingCaptcha = automaticRetry && runtime.stopReason === 'CAPTCHA';
   const waitingLogin = automaticRetry && runtime.stopReason === 'AUTHENTICATION';
@@ -116,7 +117,7 @@ export function UnifiedAutomationDashboard({
         {running && current != null ? <Text style={styles.reevaluate}>현재 행동이 끝나면 전체 우선순위를 다시 확인합니다.</Text> : null}
       </View>
 
-      <View style={styles.actionRow}>
+      <View testID="automation-action-row" style={styles.actionRow}>
         {runtime.lifecycle === 'STOPPED' && !stoppedWithReason ? (
           <ActionButton disabled={busy} icon={Play} label="시작" onPress={() => onChangeState('start')} />
         ) : null}
@@ -131,10 +132,15 @@ export function UnifiedAutomationDashboard({
             onPress={() => onChangeState('resume')}
           />
         ) : null}
-        {running || paused ? <ActionButton disabled={busy} icon={Square} label="종료" onPress={() => onChangeState('stop')} secondary /> : null}
+        {running || paused ? <ActionButton disabled={busy} icon={Square} label="정지" onPress={() => onChangeState('stop')} secondary /> : null}
         <ActionButton disabled={busy} icon={Settings} label="설정" onPress={onOpenSettings} secondary />
         <ActionButton disabled={busy} icon={History} label="기록" onPress={onOpenHistory ?? (() => undefined)} secondary />
       </View>
+      {running || paused ? (
+        <Text style={styles.controlHint}>
+          일시정지는 현재 작업을 보존하고, 정지는 다음 시작 때 최신 상태부터 새로 판단합니다.
+        </Text>
+      ) : null}
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>자동화 구성</Text>
@@ -221,7 +227,7 @@ function ActionButton({
 }: ActionButtonProps) {
   return (
     <Pressable
-      accessibilityLabel={accessibilityLabel}
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityRole="button"
       accessibilityState={{ disabled }}
       disabled={disabled}
@@ -234,19 +240,22 @@ function ActionButton({
       ]}
     >
       <Icon color={secondary ? theme.colors.text : theme.colors.buttonText} size={16} />
-      <Text style={[styles.actionText, secondary && styles.secondaryText]}>{label}</Text>
+      <Text adjustsFontSizeToFit minimumFontScale={0.75} numberOfLines={1} style={[styles.actionText, secondary && styles.secondaryText]}>{label}</Text>
     </Pressable>
   );
 }
 
 function statusLabel(aggregate: TypedAutomationAggregateResponse): string {
   const { runtime } = aggregate;
+  const running = runtime.lifecycle === 'RUNNING' || runtime.lifecycle === 'DRAINING';
+  const automaticRetry = running && runtime.nextAttemptAt != null
+    && runtime.stopReason != null && runtime.stopReason !== 'MANUAL_STOP';
   const waiting = (runtime.lifecycle === 'RUNNING' || runtime.lifecycle === 'DRAINING')
     && runtime.currentAction == null
     && runtime.nextAttemptAt != null;
-  if (waiting && runtime.stopReason === 'AUTHENTICATION') return '로그인 재시도 대기';
-  if (waiting && runtime.stopReason === 'CAPTCHA') return '캡차 재확인 대기';
-  if (waiting && runtime.stopReason != null) return '오류 재시도 대기';
+  if (automaticRetry && runtime.stopReason === 'AUTHENTICATION') return '로그인 재시도 대기';
+  if (automaticRetry && runtime.stopReason === 'CAPTCHA') return '캡차 재확인 대기';
+  if (automaticRetry) return '오류 재시도 대기';
   if (waiting && runtime.waitReason === 'HOF_CONNECTION') return 'HOF 서버 연결 대기 중';
   if (waiting) return '자동화 대기 중';
   if (runtime.lifecycle === 'RUNNING') return '실행 중';
@@ -294,10 +303,11 @@ const styles = StyleSheet.create({
   reevaluate: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
   captchaButton: { alignItems: 'center', backgroundColor: theme.colors.accentAmber, borderRadius: theme.radius.sm, marginTop: 8, padding: 11 },
   captchaButtonText: { color: theme.colors.buttonText, fontWeight: '800' },
-  actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
-  actionButton: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.sm, flexDirection: 'row', gap: 6, minHeight: 42, paddingHorizontal: 14 },
+  actionRow: { flexDirection: 'row', flexWrap: 'nowrap', gap: 6, width: '100%' },
+  actionButton: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.sm, flex: 1, flexDirection: 'row', gap: 4, justifyContent: 'center', minHeight: 42, minWidth: 0, paddingHorizontal: 6 },
   secondaryButton: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.border, borderWidth: 1 },
   actionText: { color: theme.colors.buttonText, fontSize: 14, fontWeight: '800' },
+  controlHint: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
   secondaryText: { color: theme.colors.text },
   disabled: { opacity: 0.45 },
   pressed: { opacity: 0.78 },
