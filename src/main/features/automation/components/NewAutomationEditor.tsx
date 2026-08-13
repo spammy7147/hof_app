@@ -6,6 +6,7 @@ import { NestableScrollContainer } from 'react-native-draggable-flatlist';
 import type { PartyPresetCatalogResource } from '../../../domain/partyPresetCatalogLoader';
 import { formatAutomationPresetSelection } from '../../../domain/partyPresets';
 import { AUTOMATION_TYPE_METADATA } from '../../../domain/typedAutomation';
+import { resolveUnionMapDisplayName } from '../../../domain/unionAutomation';
 import { theme } from '../../../styles/theme';
 import type {
   BattleMapResponse, PresetSelection, RaidPubResponse, TypedAutomationEntryResponse,
@@ -31,7 +32,11 @@ export function NewAutomationEditor({ entry, saving, mutationMessage, onBack, on
   const [activePresetKey, setActivePresetKey] = useState<string | null>(null);
   const [selected, setSelected] = useState<SelectedTarget[]>(() => {
     if (entry.type === 'FISHING') return (entry.fishingMaps ?? []).map((item) => ({ key: item.mapCode, name: item.displayName ?? item.mapCode, preset: item }));
-    if (entry.type === 'UNION') return (entry.unionMaps ?? []).map((item) => ({ key: item.mapCode, name: item.displayName ?? item.mapCode, preset: item }));
+    if (entry.type === 'UNION') return (entry.unionMaps ?? []).map((item) => ({
+      key: item.mapCode,
+      name: resolveUnionMapDisplayName(item.mapCode, item.displayName),
+      preset: item,
+    }));
     if (entry.type === 'RAID') return (entry.raidTargets ?? []).map((item) => ({ key: item.raidId, name: item.displayName, preset: item }));
     return [];
   });
@@ -48,7 +53,7 @@ export function NewAutomationEditor({ entry, saving, mutationMessage, onBack, on
       : entry.type === 'UNION'
       ? onLoadBattleMaps('union').then((maps) => maps
         .filter((map): map is BattleMapResponse & { mapCode: string } => Boolean(map.mapCode && map.enabled && map.resolved))
-        .map((map) => ({ key: map.mapCode, name: map.name })))
+        .map((map) => ({ key: map.mapCode, name: resolveUnionMapDisplayName(map.mapCode, map.name) })))
       : onLoadRaidTargets().then((pub) => pub.raids
         .filter(({ playable }) => playable)
         .map((raid) => ({ key: raid.id, name: raid.name })));

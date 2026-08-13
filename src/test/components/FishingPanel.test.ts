@@ -183,6 +183,52 @@ describe('FishingPanel', () => {
     assert.equal(allText().includes('Rank Fish'), true);
   });
 
+  it('교환 품목의 이름 설명 교환 재료를 분리해 표시한다', async () => {
+    await render(React.createElement(FishingPanel, {
+      api: fakeApi({ load: async () => ({
+        categories: [{ id: 'type:all', label: '전부', current: true }],
+        currentCategoryId: 'type:all',
+        items: [{
+          id: 'dragon',
+          label: 'Dragon Fish (99회 사용가능)',
+          selectable: true,
+          detail: 'h:2 · 용과 같은 모습의 한 물고기',
+          imageUrl: null,
+          price: 10,
+          quantity: null,
+          materials: ['Fishing Coin x 30(45)'],
+        }],
+        result: null,
+      }) }),
+      mode: 'exchange',
+    }));
+
+    assert.equal(allText().includes('Dragon Fish (99회 사용가능)'), true);
+    assert.equal(allText().includes('h:2 · 용과 같은 모습의 한 물고기'), true);
+    assert.equal(allText().includes('교환 재료'), true);
+    assert.equal(allText().includes('Fishing Coin x 30(45)'), true);
+  });
+
+  it('교환 목록만 남은 높이를 스크롤하고 교환 작업은 하단에 고정한다', async () => {
+    await render(React.createElement(FishingPanel, {
+      api: fakeApi({ load: async () => ({
+        categories: [{ id: 'type:all', label: '전부', current: true }],
+        currentCategoryId: 'type:all',
+        items: [{ id: 'rank', label: 'Rank Fish', selectable: true, detail: null, imageUrl: null, price: 10, quantity: null, materials: [] }],
+        result: null,
+      }) }),
+      mode: 'exchange',
+    }));
+
+    const screen = mounted!.root.find((node) => node.props.accessibilityLabel === '낚시 교환소 화면');
+    const list = mounted!.root.find((node) => String(node.type) === 'FlatList');
+    const actions = mounted!.root.find((node) => node.props.accessibilityLabel === '낚시 교환 작업');
+    assert.equal(screen.props.style.flex, 1);
+    assert.equal(list.props.style.flex, 1);
+    assert.equal(actions.findAll((node) => String(node.type) === 'Pressable' && node.props.accessibilityLabel === '선택한 낚시 품목 교환').length, 1);
+    assert.equal(list.findAll((node) => String(node.type) === 'Pressable' && node.props.accessibilityLabel === '선택한 낚시 품목 교환').length, 0);
+  });
+
   it('교환 품목 분류는 아이템 행이 아니라 상단 선택지로 전환한다', async () => {
     const paths: string[] = [];
     const api = fakeApi({

@@ -73,7 +73,7 @@ describe('NewAutomationEditor', () => {
       entry: entry('UNION', {
         unionMaps: [{ categoryId: 'union', mapCode: '0003', executionOrder: 0, presetMode: 'PRIMARY', partyPresetId: null }],
       }),
-      maps: [map('union', '0003', '도적소탕'), map('union', '0004', '사막의 살인자')],
+      maps: [map('union', '0003', '0003'), map('union', '0004', '0004')],
     });
 
     assert.equal(hasText(renderer.root, '1. 도적소탕'), true);

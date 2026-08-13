@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import type { ReactElement, ReactNode } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 
 import { theme } from '../../../styles/theme';
 import type { TownRowResponse } from '../../../types/api';
@@ -18,6 +18,7 @@ type TownItemListProps = {
   header?: ReactElement | null;
   stickyHeader?: boolean;
   footer?: ReactElement | null;
+  style?: StyleProp<ViewStyle>;
   labelTextStyle?: StyleProp<TextStyle> | ((row: TownRowResponse) => StyleProp<TextStyle>);
   renderTrailing?: (row: TownRowResponse) => ReactNode;
   renderItemFooter?: (row: TownRowResponse) => ReactNode;
@@ -37,6 +38,7 @@ export function TownItemList({
   header,
   stickyHeader = false,
   footer,
+  style,
   labelTextStyle,
   renderTrailing,
   renderItemFooter,
@@ -46,6 +48,7 @@ export function TownItemList({
 
   return (
     <FlatList
+      style={style}
       data={rows}
       keyExtractor={(row) => row.id}
       keyboardShouldPersistTaps="handled"

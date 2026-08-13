@@ -196,11 +196,13 @@ function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<Fish
   const parsedQuantity = quantityValid ? Number(quantity) : null;
   const quantityError = quantityValid ? null : '수량은 1 이상의 10진 정수로 입력하세요.';
   const canExchange = Boolean(selected && data.currentCategoryId && quantityValid && town.status !== 'submitting');
+  const selectedItem = data.items.find((item) => item.id === selected) ?? null;
   const currentCategory = data.categories.find((category) => category.current)
     ?? data.categories.find((category) => category.id === data.currentCategoryId)
     ?? null;
+  const materialsByItemId = new Map(data.items.map((item) => [item.id, item.materials]));
   return (
-    <View style={styles.container}>
+    <View accessibilityLabel="낚시 교환소 화면" style={styles.exchangeScreen}>
       <View style={styles.categoryDropdown}>
         <Text style={styles.summaryLabel}>교환 품목 분류</Text>
         <Pressable
@@ -244,22 +246,46 @@ function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<Fish
           </View>
         </Modal>
       </View>
-      <TownItemList rows={data.items} selectedIds={selectedIds} selectionMode="single" onSelectionChange={setSelectedIds} />
-      <TextInput accessibilityLabel="교환 수량" keyboardType="number-pad" onChangeText={setQuantity} style={styles.quantityInput} value={quantity} />
-      {quantityError ? <Text accessibilityLiveRegion="polite" style={styles.error}>{quantityError}</Text> : null}
-      <Pressable
-        accessibilityLabel="선택한 낚시 품목 교환"
-        accessibilityRole="button"
-        disabled={!canExchange}
-        onPress={() => {
-          if (!canExchange || !selected || parsedQuantity === null || !data.currentCategoryId) return;
-          void town.submit({ candidateId: selected, categoryCandidateId: data.currentCategoryId, quantity: parsedQuantity }).catch(() => undefined);
+      <TownItemList
+        footer={<View style={styles.exchangeListFooter}>
+          {data.result ? <TownActionResult result={data.result} /> : null}
+          {town.error ? <Text style={styles.error}>{town.error}</Text> : null}
+          <NavigateButton label="낚시터로 이동" onPress={() => onNavigateMode?.('fishing')} />
+        </View>}
+        onSelectionChange={setSelectedIds}
+        renderItemFooter={(item) => {
+          const materials = materialsByItemId.get(item.id) ?? [];
+          return materials.length > 0 ? (
+            <View accessibilityLabel={`${item.label} 교환 재료`} style={styles.exchangeMaterials}>
+              <Text style={styles.exchangeMaterialsTitle}>교환 재료</Text>
+              {materials.map((material) => <Text key={material} style={styles.exchangeMaterial}>{material}</Text>)}
+            </View>
+          ) : null;
         }}
-        style={[styles.primaryButton, !canExchange && styles.disabled]}
-      ><Text style={styles.primaryText}>교환</Text></Pressable>
-      {data.result ? <TownActionResult result={data.result} /> : null}
-      {town.error ? <Text style={styles.error}>{town.error}</Text> : null}
-      <NavigateButton label="낚시터로 이동" onPress={() => onNavigateMode?.('fishing')} />
+        rows={data.items}
+        selectedIds={selectedIds}
+        selectionMode="single"
+        style={styles.exchangeList}
+      />
+      <View accessibilityLabel="낚시 교환 작업" style={styles.exchangeActionBar}>
+        <Text numberOfLines={1} style={styles.exchangeSelection}>
+          {selectedItem ? `선택: ${selectedItem.label}` : '교환할 품목을 선택하세요.'}
+        </Text>
+        <View style={styles.exchangeActionRow}>
+          <TextInput accessibilityLabel="교환 수량" keyboardType="number-pad" onChangeText={setQuantity} style={styles.quantityInput} value={quantity} />
+          <Pressable
+            accessibilityLabel="선택한 낚시 품목 교환"
+            accessibilityRole="button"
+            disabled={!canExchange}
+            onPress={() => {
+              if (!canExchange || !selected || parsedQuantity === null || !data.currentCategoryId) return;
+              void town.submit({ candidateId: selected, categoryCandidateId: data.currentCategoryId, quantity: parsedQuantity }).catch(() => undefined);
+            }}
+            style={[styles.exchangeButton, !canExchange && styles.disabled]}
+          ><Text style={styles.primaryText}>교환</Text></Pressable>
+        </View>
+        {quantityError ? <Text accessibilityLiveRegion="polite" style={styles.error}>{quantityError}</Text> : null}
+      </View>
     </View>
   );
 }
@@ -326,6 +352,16 @@ function value(input: number | null, suffix: string) { return input === null ? '
 
 const styles = StyleSheet.create({
   container: { gap: theme.spacing.md },
+  exchangeScreen: { flex: 1, gap: theme.spacing.sm, minHeight: 0 },
+  exchangeList: { flex: 1, minHeight: 0 },
+  exchangeListFooter: { gap: theme.spacing.md, paddingBottom: theme.spacing.sm },
+  exchangeMaterials: { gap: theme.spacing.xs },
+  exchangeMaterialsTitle: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '800' },
+  exchangeMaterial: { color: theme.colors.text, fontSize: 13, lineHeight: 18 },
+  exchangeActionBar: { backgroundColor: theme.colors.background, borderTopColor: theme.colors.borderStrong, borderTopWidth: 1, gap: theme.spacing.xs, paddingTop: theme.spacing.sm },
+  exchangeSelection: { color: theme.colors.textMuted, fontSize: 12 },
+  exchangeActionRow: { flexDirection: 'row', gap: theme.spacing.sm },
+  exchangeButton: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.sm, flex: 1, justifyContent: 'center', minHeight: 48, paddingHorizontal: theme.spacing.lg },
   summary: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md, gap: theme.spacing.xs, padding: theme.spacing.md },
   heading: { color: theme.colors.text, fontSize: 17, fontWeight: '900' },
   info: { color: theme.colors.textMuted, fontSize: 13, lineHeight: 19 },
@@ -364,5 +400,5 @@ const styles = StyleSheet.create({
   categoryDropdownOption: { borderBottomColor: theme.colors.borderStrong, borderBottomWidth: StyleSheet.hairlineWidth, minHeight: 44, justifyContent: 'center', paddingHorizontal: theme.spacing.md },
   categoryDropdownOptionSelected: { backgroundColor: theme.colors.surface },
   categoryText: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
-  quantityInput: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md },
+  quantityInput: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md, width: 96 },
 });
