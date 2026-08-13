@@ -52,7 +52,7 @@ export function NewAutomationEditor({ entry, saving, mutationMessage, onBack, on
         .map((map) => ({ key: map.mapCode, name: map.name })))
       : entry.type === 'UNION'
       ? onLoadBattleMaps('union').then((maps) => maps
-        .filter((map): map is BattleMapResponse & { mapCode: string } => Boolean(map.mapCode && map.enabled && map.resolved))
+        .filter((map): map is BattleMapResponse & { mapCode: string } => Boolean(map.mapCode && map.resolved))
         .map((map) => ({ key: map.mapCode, name: resolveUnionMapDisplayName(map.mapCode, map.name) })))
       : onLoadRaidTargets().then((pub) => pub.raids
         .filter(({ playable }) => playable)
@@ -110,7 +110,7 @@ export function NewAutomationEditor({ entry, saving, mutationMessage, onBack, on
         <Text style={styles.targetName}>{index + 1}. {item.name}</Text>
         <PresetTrigger name={item.name} value={item.preset} presets={presets} onPress={() => setActivePresetKey(item.key)} />
       </View>)}
-      <Text style={styles.section}>{entry.type === 'FISHING' ? '관측된 낚시 전투 맵' : '선택 가능 목록'}</Text>
+      <Text style={styles.section}>{entry.type === 'FISHING' ? '관측된 낚시 전투 맵' : entry.type === 'UNION' ? '전체 유니온 맵' : '선택 가능 목록'}</Text>
       {loading ? <ActivityIndicator color={theme.colors.accentGreen} /> : null}
       {error ? <Text style={styles.warning}>{error}</Text> : null}
       {catalog.map((target) => <Pressable key={target.key} accessibilityLabel={`${target.name} ${entry.type === 'RAID' ? '레이드 ' : ''}${selected.some((item) => item.key === target.key) ? '선택됨' : '추가'}`} accessibilityRole="checkbox" accessibilityState={{ checked: selected.some((item) => item.key === target.key) }} onPress={() => toggle(target)} style={styles.catalogRow}>

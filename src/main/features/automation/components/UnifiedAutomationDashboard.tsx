@@ -1,5 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { ChevronRight, History, Pause, Play, RotateCcw, Settings, Square } from 'lucide-react-native';
+import { ChevronRight, History, Pause, Play, Settings, Square } from 'lucide-react-native';
 
 import { formatAdventureDailyRefresh } from '../../../domain/adventureMapAutomation';
 import { AUTOMATION_TYPE_METADATA } from '../../../domain/typedAutomation';
@@ -59,7 +59,6 @@ export function UnifiedAutomationDashboard({
   const current = runtime.currentAction;
   const running = runtime.lifecycle === 'RUNNING' || runtime.lifecycle === 'DRAINING';
   const paused = runtime.lifecycle === 'PAUSED';
-  const stoppedWithReason = runtime.lifecycle === 'STOPPED' && runtime.stopReason != null;
   const waiting = running && current == null && runtime.nextAttemptAt != null;
   const automaticRetry = running && runtime.nextAttemptAt != null
     && runtime.stopReason != null && runtime.stopReason !== 'MANUAL_STOP';
@@ -118,27 +117,19 @@ export function UnifiedAutomationDashboard({
       </View>
 
       <View testID="automation-action-row" style={styles.actionRow}>
-        {runtime.lifecycle === 'STOPPED' && !stoppedWithReason ? (
-          <ActionButton disabled={busy} icon={Play} label="시작" onPress={() => onChangeState('start')} />
+        {runtime.lifecycle === 'STOPPED' ? (
+          <ActionButton disabled={busy} icon={Play} label="실행" onPress={() => onChangeState('start')} />
         ) : null}
-        {running ? <ActionButton disabled={busy} icon={Pause} label="일시정지" onPress={() => onChangeState('pause')} /> : null}
-        {paused ? <ActionButton disabled={busy} icon={RotateCcw} label="계속" onPress={() => onChangeState('resume')} /> : null}
-        {stoppedWithReason && !waitingCaptcha && !waitingLogin ? (
-          <ActionButton
-            accessibilityLabel="중지된 자동화 재개"
-            disabled={busy || waitingCaptcha || waitingLogin}
-            icon={RotateCcw}
-            label="재개"
-            onPress={() => onChangeState('resume')}
-          />
-        ) : null}
+        {runtime.lifecycle === 'RUNNING' ? <ActionButton disabled={busy} icon={Pause} label="일시정지" onPress={() => onChangeState('pause')} /> : null}
+        {runtime.lifecycle === 'DRAINING' ? <ActionButton disabled icon={Pause} label="일시정지 대기" onPress={() => undefined} /> : null}
+        {paused ? <ActionButton disabled={busy} icon={Play} label="실행" onPress={() => onChangeState('resume')} /> : null}
         {running || paused ? <ActionButton disabled={busy} icon={Square} label="정지" onPress={() => onChangeState('stop')} secondary /> : null}
         <ActionButton disabled={busy} icon={Settings} label="설정" onPress={onOpenSettings} secondary />
         <ActionButton disabled={busy} icon={History} label="기록" onPress={onOpenHistory ?? (() => undefined)} secondary />
       </View>
       {running || paused ? (
         <Text style={styles.controlHint}>
-          일시정지는 현재 작업을 보존하고, 정지는 다음 시작 때 최신 상태부터 새로 판단합니다.
+          일시정지는 현재 실행 중인 행동을 마친 뒤 멈추고, 정지는 대기·실행 작업을 즉시 비웁니다.
         </Text>
       ) : null}
 
@@ -259,7 +250,7 @@ function statusLabel(aggregate: TypedAutomationAggregateResponse): string {
   if (waiting && runtime.waitReason === 'HOF_CONNECTION') return 'HOF 서버 연결 대기 중';
   if (waiting) return '자동화 대기 중';
   if (runtime.lifecycle === 'RUNNING') return '실행 중';
-  if (runtime.lifecycle === 'DRAINING') return '레이드 사이클 마무리 중';
+  if (runtime.lifecycle === 'DRAINING') return '현재 행동 완료 후 일시정지';
   if (runtime.lifecycle === 'PAUSED') return '일시정지';
   if (runtime.stopReason === 'NETWORK' || runtime.stopReason === 'FATAL') return '완전 중지';
   if (runtime.stopReason === 'CAPTCHA') return '캡차 대기';

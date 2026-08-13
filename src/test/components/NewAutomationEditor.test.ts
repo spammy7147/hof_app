@@ -82,6 +82,20 @@ describe('NewAutomationEditor', () => {
     assert.equal(hasText(trigger, '대표 · 기본 파티'), true);
   });
 
+  it('offers every observed union map even when it is not currently available', async () => {
+    const renderer = await renderEditor({
+      entry: entry('UNION'),
+      maps: [
+        map('union', '0003', '0003'),
+        { ...map('union', '0004', '0004'), enabled: false },
+      ],
+    });
+
+    assert.equal(hasText(renderer.root, '전체 유니온 맵'), true);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '도적소탕 추가' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '사막의 살인적 추가' }));
+  });
+
   it('loads selectable raids from the raid pub instead of the battle map catalog', async () => {
     const raidPub: RaidPubResponse = {
       raids: [{

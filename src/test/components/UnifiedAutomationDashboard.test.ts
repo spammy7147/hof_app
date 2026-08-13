@@ -29,6 +29,35 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('UnifiedAutomationDashboard', () => {
+  it('uses the same execution label to resume stopped and paused automation', async () => {
+    for (const lifecycle of ['STOPPED', 'PAUSED'] as const) {
+      const actions: UnifiedAutomationAction[] = [];
+      const aggregate = networkStopped();
+      aggregate.runtime.lifecycle = lifecycle;
+      aggregate.runtime.stopReason = lifecycle === 'STOPPED' ? 'MANUAL_STOP' : null;
+      const renderer = await renderDashboard(aggregate, (action) => { actions.push(action); });
+
+      const execute = renderer.root.findByProps({ accessibilityLabel: '실행' });
+      await act(async () => { execute.props.onPress(); });
+
+      assert.deepEqual(actions, [lifecycle === 'STOPPED' ? 'start' : 'resume']);
+      assert.equal(treeText(renderer.root).includes('계속'), false);
+      assert.equal(treeText(renderer.root).includes('재개'), false);
+    }
+  });
+
+  it('describes immediate stop and action-completing pause precisely', async () => {
+    const aggregate = networkStopped();
+    aggregate.runtime.lifecycle = 'RUNNING';
+    aggregate.runtime.stopReason = null;
+    const renderer = await renderDashboard(aggregate, () => undefined);
+
+    assert.equal(hasText(
+      renderer.root,
+      '일시정지는 현재 실행 중인 행동을 마친 뒤 멈추고, 정지는 대기·실행 작업을 즉시 비웁니다.',
+    ), true);
+  });
+
   it('keeps all four running automation controls on one responsive row', async () => {
     const aggregate = networkStopped();
     aggregate.runtime.lifecycle = 'RUNNING';
