@@ -39,6 +39,8 @@ type Props = {
   onToggle: (entry: TypedAutomationEntryResponse) => void;
 };
 
+const DRAG_HANDLE_GESTURE_WIDTH = 48;
+
 export function UnifiedAutomationSettings({
   entries,
   error,
@@ -52,6 +54,7 @@ export function UnifiedAutomationSettings({
   onToggle,
 }: Props) {
   const [addSheetOpen, setAddSheetOpen] = useState(false);
+  const [listWidth, setListWidth] = useState(0);
   const mountedRef = useRef(false);
   const addTriggerRef = useRef<ElementRef<typeof Pressable>>(null);
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
@@ -171,7 +174,11 @@ export function UnifiedAutomationSettings({
         <NestableDraggableFlatList
           activationDistance={20}
           data={entries}
+          dragHitSlop={listWidth > DRAG_HANDLE_GESTURE_WIDTH
+            ? { right: -(listWidth - DRAG_HANDLE_GESTURE_WIDTH) }
+            : undefined}
           keyExtractor={(entry) => String(entry.id)}
+          onLayout={(event) => setListWidth(event.nativeEvent.layout.width)}
           onDragEnd={({ data, from, to }) => {
             if (from !== to) onReorder(data);
           }}

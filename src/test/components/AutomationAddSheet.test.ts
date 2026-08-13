@@ -277,10 +277,15 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
     const renderer = await renderSettings({
       entries: [entry(1, 'QUEST'), entry(2, 'BATTLE_MAP')],
     });
-    const list = findHost(renderer.root, 'DraggableFlatList');
+    let list = findHost(renderer.root, 'DraggableFlatList');
 
     assert.equal(list.props.scrollEnabled, false);
     assert.equal(list.props.activationDistance, 20);
+    await act(async () => {
+      list.props.onLayout({ nativeEvent: { layout: { width: 320 } } });
+    });
+    list = findHost(renderer.root, 'DraggableFlatList');
+    assert.deepEqual(list.props.dragHitSlop, { right: -272 });
   });
 
   it('opens from the single trigger, closes after success, and stays open after failure', async () => {

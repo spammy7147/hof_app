@@ -171,6 +171,8 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Quest · Alpha 삭제' }).length, 0);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Quest 1번째 맵 순서 이동' }).length, 0);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Quest 1번째 맵 프리셋 선택' }));
+    assert.equal(findHosts(renderer.root, 'DraggableFlatList').length, 0, '자동 맵 카드 위 세로 제스처는 바깥 퀘스트 목록이 소유해야 한다');
+    assert.equal(findHosts(renderer.root, 'ReanimatedSwipeable').length, 0, '삭제할 수 없는 자동 맵에 스와이프 제스처를 설치하지 않는다');
   });
 
   it('supports ordering and deletion for manual quest maps without mission labels', async () => {
@@ -189,6 +191,12 @@ describe('QuestAutomationEditor mounted behavior', () => {
 
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Quest 1번째 맵 순서 이동' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Quest · Alpha 삭제' }));
+    let draggable = findHost(renderer.root, 'DraggableFlatList');
+    await act(async () => {
+      draggable.props.onLayout({ nativeEvent: { layout: { width: 320 } } });
+    });
+    draggable = findHost(renderer.root, 'DraggableFlatList');
+    assert.deepEqual(draggable.props.dragHitSlop, { right: -272 }, '순서 드래그 제스처는 왼쪽 48px 손잡이에서만 시작해야 한다');
   });
 
   it('closes an open mission-map swipe when same-identity map fields change', async () => {
@@ -706,7 +714,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.deepEqual(trigger.props.accessibilityValue, { text: '대표 프리셋 없음' });
     assert.equal(trigger.props.style.minHeight, 34);
     assert.equal(trigger.props.hitSlop, 5);
-    assert.ok(findHosts(renderer.root, 'DraggableFlatList').some(({ props }) => props.nestedScrollEnabled === true));
+    assert.equal(findHosts(renderer.root, 'DraggableFlatList').length, 0, '한 개뿐인 맵에는 불필요한 순서 드래그 제스처를 설치하지 않는다');
     await act(async () => { trigger.props.onPress(); });
     assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), 'Alpha'), true);
     assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), 'Alpha 프리셋 선택'), false);

@@ -83,7 +83,12 @@ describe('AutomationMapOrderList', () => {
     await act(async () => { firstHandle.props.onLongPress(); });
     assert.deepEqual(dragCalls.map(({ id }) => id), ['a']);
 
-    const draggable = findHost(renderer.root, 'DraggableFlatList');
+    let draggable = findHost(renderer.root, 'DraggableFlatList');
+    await act(async () => {
+      draggable.props.onLayout({ nativeEvent: { layout: { width: 300 } } });
+    });
+    draggable = findHost(renderer.root, 'DraggableFlatList');
+    assert.deepEqual(draggable.props.dragHitSlop, { right: -252 });
     await act(async () => {
       draggable.props.onDragEnd({ data: [row('b', 'Beta'), row('a', 'Alpha')], from: 0, to: 1 });
     });

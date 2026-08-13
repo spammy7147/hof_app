@@ -42,6 +42,8 @@ type MissionMapRow = {
   rowKey: string;
 };
 
+const DRAG_HANDLE_GESTURE_WIDTH = 48;
+
 function buildMissionMapRows(maps: readonly QuestMapSettingRequest[]): MissionMapRow[] {
   const occurrences = new Map<string, number>();
   return maps.map((map, index) => {
@@ -64,6 +66,7 @@ export function QuestMissionMapList({
 }: QuestMissionMapListProps) {
   const [activePresetRowKey, setActivePresetRowKey] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [listWidth, setListWidth] = useState(0);
   const mountedRef = useRef(false);
   const disabledRef = useRef(disabled);
   const draggingRef = useRef(dragging);
@@ -96,6 +99,7 @@ export function QuestMissionMapList({
   }
   const renderInteractionGeneration = interactionGenerationRef.current;
   const rows = buildMissionMapRows(maps);
+  const canReorder = allowMapMutations && rows.length > 1;
   rowsRef.current = rows;
   activePresetRowKeyRef.current = activePresetRowKey;
 
@@ -286,8 +290,62 @@ export function QuestMissionMapList({
     ] : [];
     const accessibilityPrefix = missionKey ? `${questContext} · ${missionKey}` : questContext;
 
+    const mapCard = (
+      <View key={rowKey} style={[styles.mapCard, isActive && styles.mapCardActive]}>
+        {canReorder ? <Pressable
+          accessibilityActions={accessibilityActions}
+          accessibilityHint="길게 누르거나 접근성 동작으로 순서를 바꾸세요"
+          accessibilityLabel={`${accessibilityPrefix} ${index + 1}번째 맵 순서 이동`}
+          accessibilityRole="adjustable"
+          accessibilityState={{ disabled: interactionDisabled }}
+          delayLongPress={120}
+          disabled={interactionDisabled}
+          onAccessibilityAction={({ nativeEvent: { actionName } }) => {
+            if (actionName === 'decrement') moveRow(rowKey, map, renderInteractionGeneration, -1);
+            if (actionName === 'increment') moveRow(rowKey, map, renderInteractionGeneration, 1);
+            if (actionName === 'delete') deleteRow(rowKey, map, renderInteractionGeneration);
+          }}
+          onLongPress={() => beginDrag(rowKey, map, renderInteractionGeneration, drag)}
+          style={({ pressed }) => [styles.dragHandle, pressed && !interactionDisabled && styles.pressed]}
+        >
+          <GripVertical color={theme.colors.textMuted} size={18} />
+        </Pressable> : null}
+        <View style={styles.mapBody}>
+          <View style={styles.mapCopy}>
+            <Text style={styles.mapName}>{mapName}</Text>
+            {resolved?.groupName || category ? <Text style={styles.mapContext}>{[resolved?.groupName, category].filter(Boolean).join(' · ')}</Text> : null}
+          </View>
+          {map.mapCode.trim() ? (
+            <Pressable
+              ref={(node) => {
+                if (node) presetTriggerNodesRef.current.set(rowKey, node);
+                else presetTriggerNodesRef.current.delete(rowKey);
+              }}
+              accessibilityLabel={`${accessibilityPrefix} ${index + 1}번째 맵 프리셋 선택`}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: interactionDisabled }}
+              accessibilityValue={{ text: presetLabel }}
+              disabled={interactionDisabled}
+              hitSlop={5}
+              onPress={() => {
+                if (!findCurrentRow(rowKey, map, renderInteractionGeneration)) return;
+                swipeableNodesRef.current.get(rowKey)?.close();
+                openPresetPicker(rowKey, map, renderInteractionGeneration);
+              }}
+              style={styles.presetButton}
+            >
+              <Text style={styles.presetButtonText}>{presetLabel}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
+    );
+
+    if (!allowMapMutations) return mapCard;
+
     return (
       <ReanimatedSwipeable
+        key={rowKey}
         ref={(node) => {
           if (node) swipeableNodesRef.current.set(rowKey, node);
           else swipeableNodesRef.current.delete(rowKey);
@@ -301,7 +359,7 @@ export function QuestMissionMapList({
           }
         }}
         overshootRight={false}
-        renderRightActions={allowMapMutations ? () => (
+        renderRightActions={() => (
           <Pressable
             accessibilityLabel={`${accessibilityPrefix} · ${mapName} 삭제`}
             accessibilityRole="button"
@@ -313,68 +371,25 @@ export function QuestMissionMapList({
             <Trash2 color={theme.colors.buttonText} size={18} />
             <Text style={styles.deleteActionText}>삭제</Text>
           </Pressable>
-        ) : undefined}
+        )}
         rightThreshold={40}
       >
-        <View style={[styles.mapCard, isActive && styles.mapCardActive]}>
-          {allowMapMutations ? <Pressable
-            accessibilityActions={accessibilityActions}
-            accessibilityHint="길게 누르거나 접근성 동작으로 순서를 바꾸세요"
-            accessibilityLabel={`${accessibilityPrefix} ${index + 1}번째 맵 순서 이동`}
-            accessibilityRole="adjustable"
-            accessibilityState={{ disabled: interactionDisabled }}
-            delayLongPress={120}
-            disabled={interactionDisabled}
-            onAccessibilityAction={({ nativeEvent: { actionName } }) => {
-              if (actionName === 'decrement') moveRow(rowKey, map, renderInteractionGeneration, -1);
-              if (actionName === 'increment') moveRow(rowKey, map, renderInteractionGeneration, 1);
-              if (actionName === 'delete') deleteRow(rowKey, map, renderInteractionGeneration);
-            }}
-            onLongPress={() => beginDrag(rowKey, map, renderInteractionGeneration, drag)}
-            style={({ pressed }) => [styles.dragHandle, pressed && !interactionDisabled && styles.pressed]}
-          >
-            <GripVertical color={theme.colors.textMuted} size={18} />
-          </Pressable> : null}
-          <View style={styles.mapBody}>
-            <View style={styles.mapCopy}>
-              <Text style={styles.mapName}>{mapName}</Text>
-              {resolved?.groupName || category ? <Text style={styles.mapContext}>{[resolved?.groupName, category].filter(Boolean).join(' · ')}</Text> : null}
-            </View>
-            {map.mapCode.trim() ? (
-              <Pressable
-                ref={(node) => {
-                  if (node) presetTriggerNodesRef.current.set(rowKey, node);
-                  else presetTriggerNodesRef.current.delete(rowKey);
-                }}
-                accessibilityLabel={`${accessibilityPrefix} ${index + 1}번째 맵 프리셋 선택`}
-                accessibilityRole="button"
-                accessibilityState={{ disabled: interactionDisabled }}
-                accessibilityValue={{ text: presetLabel }}
-                disabled={interactionDisabled}
-                hitSlop={5}
-                onPress={() => {
-                  if (!findCurrentRow(rowKey, map, renderInteractionGeneration)) return;
-                  swipeableNodesRef.current.get(rowKey)?.close();
-                  openPresetPicker(rowKey, map, renderInteractionGeneration);
-                }}
-                style={styles.presetButton}
-              >
-                <Text style={styles.presetButtonText}>{presetLabel}</Text>
-              </Pressable>
-            ) : null}
-          </View>
-        </View>
+        {mapCard}
       </ReanimatedSwipeable>
     );
   }
 
   return (
     <>
-      <DraggableFlatList
+      {canReorder ? <DraggableFlatList
         activationDistance={8}
         data={rows}
+        dragHitSlop={listWidth > DRAG_HANDLE_GESTURE_WIDTH
+          ? { right: -(listWidth - DRAG_HANDLE_GESTURE_WIDTH) }
+          : undefined}
         keyExtractor={(row) => `${missionKey}:${row.rowKey}`}
         nestedScrollEnabled
+        onLayout={(event) => setListWidth(event.nativeEvent.layout.width)}
         onDragBegin={() => {
           if (!allowMapMutationsRef.current || renderInteractionGeneration !== interactionGenerationRef.current || disabledRef.current) return;
           closeOpenSwipeable();
@@ -399,7 +414,12 @@ export function QuestMissionMapList({
         }}
         renderItem={renderMapRow}
         scrollEnabled={false}
-      />
+      /> : rows.map((row, index) => renderMapRow({
+        item: row,
+        drag: () => undefined,
+        getIndex: () => index,
+        isActive: false,
+      }))}
       <BattleMapPresetPickerModal
         disabled={disabled}
         mapName={activeCatalogMap?.name ?? activePresetMap?.mapCode ?? ''}

@@ -22,6 +22,7 @@ export type AutomationMapOrderListProps<T extends object> = {
 };
 
 type Row<T> = { id: string; item: T };
+const DRAG_HANDLE_GESTURE_WIDTH = 48;
 
 export function AutomationMapOrderList<T extends object>({
   data,
@@ -35,6 +36,7 @@ export function AutomationMapOrderList<T extends object>({
   nested = false,
 }: AutomationMapOrderListProps<T>) {
   const [dragging, setDragging] = useState(false);
+  const [listWidth, setListWidth] = useState(0);
   const disabledRef = useRef(disabled);
   const draggingRef = useRef(dragging);
   const interactionGenerationRef = useRef(0);
@@ -165,8 +167,14 @@ export function AutomationMapOrderList<T extends object>({
   const listProps = {
     activationDistance: nested ? 20 : 8,
     data: rows,
+    dragHitSlop: listWidth > DRAG_HANDLE_GESTURE_WIDTH
+      ? { right: -(listWidth - DRAG_HANDLE_GESTURE_WIDTH) }
+      : undefined,
     ItemSeparatorComponent: MapRowSeparator,
     keyExtractor: ({ id }: Row<T>) => id,
+    onLayout: (event: { nativeEvent: { layout: { width: number } } }) => {
+      setListWidth(event.nativeEvent.layout.width);
+    },
     onDragBegin: () => {
       if (disabledRef.current || renderInteractionGeneration !== interactionGenerationRef.current) return;
       closeOpenSwipeable();
