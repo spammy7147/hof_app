@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { theme } from '../../../styles/theme';
 import { toRunBattleRequest, type BattlePartyMember } from '../../../domain/battleParty';
@@ -208,30 +208,41 @@ function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<Fish
           accessibilityRole="button"
           accessibilityState={{ expanded: categoryDropdownOpen, disabled: data.categories.length === 0 || town.status === 'submitting' }}
           disabled={data.categories.length === 0 || town.status === 'submitting'}
-          onPress={() => setCategoryDropdownOpen((open) => !open)}
+          onPress={() => setCategoryDropdownOpen(true)}
           style={[styles.categoryDropdownButton, data.categories.length === 0 && styles.disabled]}
         >
           <Text style={styles.categoryDropdownText}>{currentCategory?.label ?? '분류를 불러오지 못했습니다.'}</Text>
           <Text style={styles.categoryDropdownArrow}>{categoryDropdownOpen ? '▲' : '▼'}</Text>
         </Pressable>
-        {categoryDropdownOpen ? (
-          <View accessibilityRole="menu" style={styles.categoryDropdownMenu}>
-            {data.categories.map((category) => (
-              <Pressable
-                key={category.id}
-                accessibilityLabel={`${category.label} 분류`}
-                accessibilityRole="menuitem"
-                accessibilityState={{ selected: category.current, disabled: town.status === 'submitting' }}
-                disabled={town.status === 'submitting'}
-                onPress={() => {
-                  setCategoryDropdownOpen(false);
-                  if (!category.current) setCategoryId(category.id);
-                }}
-                style={[styles.categoryDropdownOption, category.current && styles.categoryDropdownOptionSelected]}
-              ><Text style={styles.categoryText}>{category.label}</Text></Pressable>
-            ))}
+        <Modal animationType="fade" onRequestClose={() => setCategoryDropdownOpen(false)} transparent visible={categoryDropdownOpen}>
+          <View accessibilityViewIsModal style={styles.categoryModalRoot}>
+            <Pressable accessibilityLabel="교환 품목 분류 선택 닫기" accessibilityRole="button" onPress={() => setCategoryDropdownOpen(false)} style={styles.categoryModalBackdrop} />
+            <View style={styles.categoryDropdownSheet}>
+              <View style={styles.categoryDropdownHeader}>
+                <Text style={styles.categoryDropdownTitle}>교환 품목 분류</Text>
+                <Pressable accessibilityLabel="교환 품목 분류 선택 닫기" accessibilityRole="button" onPress={() => setCategoryDropdownOpen(false)} style={styles.categoryCloseButton}>
+                  <Text style={styles.categoryCloseText}>×</Text>
+                </Pressable>
+              </View>
+              <ScrollView accessibilityRole="menu" keyboardShouldPersistTaps="handled" style={styles.categoryDropdownMenu}>
+                {data.categories.map((category) => (
+                  <Pressable
+                    key={category.id}
+                    accessibilityLabel={`${category.label} 분류`}
+                    accessibilityRole="menuitem"
+                    accessibilityState={{ selected: category.current, disabled: town.status === 'submitting' }}
+                    disabled={town.status === 'submitting'}
+                    onPress={() => {
+                      setCategoryDropdownOpen(false);
+                      if (!category.current) setCategoryId(category.id);
+                    }}
+                    style={[styles.categoryDropdownOption, category.current && styles.categoryDropdownOptionSelected]}
+                  ><Text style={styles.categoryText}>{category.label}</Text></Pressable>
+                ))}
+              </ScrollView>
+            </View>
           </View>
-        ) : null}
+        </Modal>
       </View>
       <TownItemList rows={data.items} selectedIds={selectedIds} selectionMode="single" onSelectionChange={setSelectedIds} />
       <TextInput accessibilityLabel="교환 수량" keyboardType="number-pad" onChangeText={setQuantity} style={styles.quantityInput} value={quantity} />
@@ -342,7 +353,14 @@ const styles = StyleSheet.create({
   categoryDropdownButton: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', minHeight: 48, paddingHorizontal: theme.spacing.md },
   categoryDropdownText: { color: theme.colors.text, flex: 1, fontSize: 15, fontWeight: '800' },
   categoryDropdownArrow: { color: theme.colors.textMuted, fontSize: 12, marginLeft: theme.spacing.sm },
-  categoryDropdownMenu: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, overflow: 'hidden' },
+  categoryModalRoot: { flex: 1, justifyContent: 'flex-end' },
+  categoryModalBackdrop: { backgroundColor: theme.colors.overlay, bottom: 0, left: 0, position: 'absolute', right: 0, top: 0 },
+  categoryDropdownSheet: { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderStrong, borderTopLeftRadius: theme.radius.md, borderTopRightRadius: theme.radius.md, borderWidth: 1, maxHeight: '70%', padding: theme.spacing.lg },
+  categoryDropdownHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: theme.spacing.md },
+  categoryDropdownTitle: { color: theme.colors.text, fontSize: 18, fontWeight: '900' },
+  categoryCloseButton: { alignItems: 'center', height: 40, justifyContent: 'center', width: 40 },
+  categoryCloseText: { color: theme.colors.textMuted, fontSize: 26 },
+  categoryDropdownMenu: { flexGrow: 0 },
   categoryDropdownOption: { borderBottomColor: theme.colors.borderStrong, borderBottomWidth: StyleSheet.hairlineWidth, minHeight: 44, justifyContent: 'center', paddingHorizontal: theme.spacing.md },
   categoryDropdownOptionSelected: { backgroundColor: theme.colors.surface },
   categoryText: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },

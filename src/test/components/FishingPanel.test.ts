@@ -211,6 +211,26 @@ describe('FishingPanel', () => {
     assert.equal(allText().includes('갑옷 물고기'), true);
   });
 
+  it('긴 교환 품목 분류는 높이가 제한된 모달 스크롤 목록으로 연다', async () => {
+    const categories = Array.from({ length: 17 }, (_, index) => ({
+      id: `type:${index}`,
+      label: `분류 ${index + 1}`,
+      current: index === 0,
+    }));
+    await render(React.createElement(FishingPanel, {
+      api: fakeApi({ load: async () => ({ categories, currentCategoryId: 'type:0', items: [], result: null }) }),
+      mode: 'exchange',
+    }));
+
+    await press('교환 품목 분류 선택');
+
+    const modal = mounted?.root.findAll((node) => String(node.type) === 'Modal')[0];
+    const scrollView = mounted?.root.findAll((node) => String(node.type) === 'ScrollView')[0];
+    assert.equal(modal?.props.visible, true);
+    assert.equal(scrollView?.props.keyboardShouldPersistTaps, 'handled');
+    assert.equal(scrollView?.props.accessibilityRole, 'menu');
+  });
+
   it('빈 기본 분류에서도 드롭다운으로 다른 분류의 품목을 불러온다', async () => {
     const paths: string[] = [];
     const api = fakeApi({
@@ -268,7 +288,7 @@ describe('FishingPanel', () => {
 
       assert.equal(button('선택한 낚시 품목 교환').props.disabled, true);
       assert.equal(allText().includes('수량은 1 이상의 10진 정수로 입력하세요.'), true);
-      assert.equal(mounted!.root.findAll((node) => String(node.type) === 'Modal').length, 0);
+      assert.equal(mounted!.root.findAll((node) => String(node.type) === 'Modal' && node.props.visible === true).length, 0);
       assert.deepEqual(calls, []);
     });
   }
