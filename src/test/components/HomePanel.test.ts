@@ -58,10 +58,47 @@ describe('HomePanel', () => {
 
     assert.match(text(), /조건 달성 중/);
     assert.match(text(), /제한 하루 1회/);
+    assert.doesNotMatch(text(), /진행도 1\/1/);
+    assert.match(text(), /진행 중 1/);
+    assert.match(text(), /완료 가능 1/);
+    await press('완료 가능 1');
+    assert.doesNotMatch(text(), /제한 하루 1회/);
     assert.match(text(), /진행도 1\/1/);
     await press('손님 맞이 완료 가능');
     await press('완료');
     assert.deepEqual(calls, [{ path: '/api/town/home/quests', body: { actionId: 'claim' } }]);
+  });
+
+  it('자택 퀘스트를 상태별 카테고리와 개수로 분리한다', async () => {
+    const home = {
+      mode: 'HOME',
+      quests: [
+        { id: 'active', name: '진행 퀘스트', state: 'ACTIVE', mission: null, reward: null, details: [], actionId: null },
+        { id: 'claimable', name: '완료 가능 퀘스트', state: 'CLAIMABLE', mission: null, reward: null, details: [], actionId: 'claim' },
+        { id: 'available', name: '수락 가능 퀘스트', state: 'AVAILABLE', mission: null, reward: null, details: [], actionId: 'accept' },
+        { id: 'waiting', name: '대기 퀘스트', state: 'WAITING', mission: null, reward: null, details: [], actionId: null },
+        { id: 'completed', name: '완료 퀘스트', state: 'COMPLETED', mission: null, reward: null, details: [], actionId: null },
+      ],
+      actions: [],
+      restStatus: null,
+      result: null,
+    };
+    await render(React.createElement(HomePanel, {
+      api: { load: async () => home, submit: async () => home } as never,
+      mode: 'home',
+    }));
+
+    assert.match(text(), /진행 중 1/);
+    assert.match(text(), /완료 가능 1/);
+    assert.match(text(), /수락 가능 1/);
+    assert.match(text(), /대기 중 1/);
+    assert.match(text(), /완료 1/);
+    assert.match(text(), /진행 퀘스트/);
+    assert.doesNotMatch(text(), /대기 퀘스트/);
+
+    await press('대기 중 1');
+    assert.match(text(), /대기 퀘스트/);
+    assert.doesNotMatch(text(), /진행 퀘스트/);
   });
 
   it('휴식 성공을 상태 카드에 반영하고 이미 완료한 action을 다시 노출하지 않는다', async () => {
