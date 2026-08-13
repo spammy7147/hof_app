@@ -11,6 +11,7 @@ import { BattleMapAutomationEditor } from '../features/automation/components/Bat
 import { QuestAutomationEditor } from '../features/automation/components/QuestAutomationEditor';
 import { UnifiedAutomationSettings } from '../features/automation/components/UnifiedAutomationSettings';
 import { NewAutomationEditor } from '../features/automation/components/NewAutomationEditor';
+import { HomeQuestAutomationEditor } from '../features/automation/components/HomeQuestAutomationEditor';
 import { AutomationHistoryScreen } from '../features/automation/components/AutomationHistoryScreen';
 import { theme } from '../styles/theme';
 import { scrollFocusedInputIntoView } from '../components/keyboardAwareScroll';
@@ -21,6 +22,7 @@ import type {
   AutomationType,
   HofObservedStatusResponse,
   RaidPubResponse,
+  HomeResponse,
   TypedAutomationEntryResponse,
   UpdateFishingAutomationRequest,
   UpdateRaidAutomationRequest,
@@ -69,6 +71,9 @@ export function HomeTabScreen({
   const loadRaidTargets = useCallback((): Promise<RaidPubResponse> => townApi == null
     ? Promise.reject(new Error('레이드 목록 API를 사용할 수 없습니다.'))
     : townApi.load<RaidPubResponse>('/api/town/raid'), [townApi]);
+  const loadHomeQuests = useCallback((): Promise<HomeResponse> => townApi == null
+    ? Promise.reject(new Error('자택 관리 API를 사용할 수 없습니다.'))
+    : townApi.load<HomeResponse>('/api/town/home'), [townApi]);
   const [route, setRoute] = useState<HomeRoute>('dashboard');
   const [typedEditorEntry, setTypedEditorEntry] = useState<TypedAutomationEntryResponse | null>(null);
   const [rulesOpen, setRulesOpen] = useState(false);
@@ -126,7 +131,7 @@ export function HomeTabScreen({
   }
 
   function openEntryDetail(entry: TypedAutomationEntryResponse) {
-    if (entry.type === 'QUEST' || entry.type === 'BATTLE_MAP' || entry.type === 'ADVENTURE_MAP' || entry.type === 'RAID' || entry.type === 'UNION' || entry.type === 'FISHING') {
+    if (entry.type === 'QUEST' || entry.type === 'HOME_QUEST' || entry.type === 'BATTLE_MAP' || entry.type === 'ADVENTURE_MAP' || entry.type === 'RAID' || entry.type === 'UNION' || entry.type === 'FISHING') {
       if (savingEntryIds.includes(entry.id) || savingTypes.includes(entry.type)) {
         automationController.showMessage('이 자동화를 저장하고 있어요. 완료된 뒤 다시 열어 주세요.');
         return;
@@ -142,6 +147,9 @@ export function HomeTabScreen({
   function toggleEntry(entry: TypedAutomationEntryResponse) {
     if (entry.type === 'QUEST') {
       return automationController.saveQuestSettings({ enabled: !entry.enabled, quests: entry.quests });
+    }
+    if (entry.type === 'HOME_QUEST') {
+      return automationController.saveHomeQuestSettings({ enabled: !entry.enabled, quests: entry.homeQuests ?? [] });
     }
     if (entry.type === 'BATTLE_MAP') {
       return automationController.saveBattleMapSettings({ enabled: !entry.enabled, maps: entry.battleMaps });
@@ -193,6 +201,24 @@ export function HomeTabScreen({
         }}
       />
     );
+  }
+
+  if (aggregate && route === 'editor' && typedEditorEntry?.type === 'HOME_QUEST') {
+    const currentEntry = aggregate.entries.find(({ id }) => id === typedEditorEntry.id);
+    const entry = currentEntry?.type === 'HOME_QUEST' ? currentEntry : typedEditorEntry;
+    return <HomeQuestAutomationEditor
+      entry={entry}
+      loadHome={loadHomeQuests}
+      mutationMessage={message ?? error}
+      onBack={closeEditor}
+      onDelete={() => automationController.deleteEntry(entry.id)}
+      onSave={async (request) => {
+        const saved = await automationController.saveHomeQuestSettings(request);
+        if (saved) closeEditor();
+        return saved;
+      }}
+      saving={savingEntryIds.includes(entry.id) || savingTypes.includes('HOME_QUEST')}
+    />;
   }
 
   if (aggregate && route === 'editor' && typedEditorEntry?.type === 'BATTLE_MAP') {

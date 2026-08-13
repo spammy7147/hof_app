@@ -25,6 +25,8 @@ import type {
   AdventureMapStatsPeriod,
   CreatePartyPresetRequest,
   CreatePartyPresetFolderRequest,
+  CharacterManagementActionRequest,
+  CharacterManagementSnapshot,
   HofCharacterDetail,
   HofStatusResponse,
   HofObservedStatusResponse,
@@ -72,6 +74,7 @@ function AppContent({ api }: { api: BackendApiClient }) {
     delete: (entryId) => api.deleteAutomationEntry(entryId),
     reorder: (entryIds) => api.reorderAutomationEntries(entryIds),
     updateQuest: (request) => api.updateQuestAutomation(request),
+    updateHomeQuest: (request) => api.updateHomeQuestAutomation(request),
     updateBattle: (request) => api.updateBattleMapAutomation(request),
     updateAdventure: (request) => api.updateAdventureMapAutomation(request),
     updateFishing: (request) => api.updateFishingAutomation(request),
@@ -110,6 +113,7 @@ function AppContent({ api }: { api: BackendApiClient }) {
     loadSavedCharacters,
     startAutomaticSyncIfRequired,
     upsertCharacter,
+    replaceCharacters,
     resetCharacterSync,
   } = useCharacterSync({ api, describeError, onNotice: setNotice });
   const {
@@ -237,6 +241,26 @@ function AppContent({ api }: { api: BackendApiClient }) {
   const loadCharacterDetail = useCallback((
     hofCharacterId: string,
   ): Promise<HofCharacterDetail> => api.fetchCharacterDetail(hofCharacterId), [api]);
+
+  const loadCharacterManagement = useCallback((
+    hofCharacterId: string,
+  ): Promise<CharacterManagementSnapshot> => api.fetchCharacterManagement(hofCharacterId), [api]);
+
+  const executeCharacterAction = useCallback((
+    hofCharacterId: string,
+    request: CharacterManagementActionRequest,
+  ): Promise<CharacterManagementSnapshot> => api.executeCharacterManagementAction(
+    hofCharacterId,
+    request,
+  ).then((snapshot) => {
+    if (snapshot.characters.length > 0 || snapshot.targetRemoved) {
+      replaceCharacters(snapshot.characters);
+    } else if (snapshot.character) {
+      upsertCharacter(snapshot.character);
+    }
+    if (snapshot.messages.length > 0) setNotice(snapshot.messages.join('\n'));
+    return snapshot;
+  }), [api, replaceCharacters, upsertCharacter]);
 
   const loadCharacterPattern = useCallback((
     hofCharacterId: string,
@@ -402,6 +426,8 @@ function AppContent({ api }: { api: BackendApiClient }) {
         onReorderPartyPresets={reorderPartyPresets}
         onDeletePartyPreset={deletePartyPreset}
         onLoadCharacterDetail={loadCharacterDetail}
+        onLoadCharacterManagement={loadCharacterManagement}
+        onExecuteCharacterAction={executeCharacterAction}
         onLoadPattern={loadCharacterPattern}
         onLogout={handleLogout}
         onOpenLogin={() => setMode('login')}

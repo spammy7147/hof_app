@@ -11,7 +11,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { Fish, Map, ScrollText, Shield, Swords, Users, X } from 'lucide-react-native';
+import { Fish, House, Map, ScrollText, Shield, Swords, Users, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -32,6 +32,7 @@ type Props = {
 
 const TYPE_DESCRIPTIONS: Readonly<Record<AutomationType, string>> = {
   QUEST: '수락·완료와 전투 퀘스트를 자동으로 진행해요.',
+  HOME_QUEST: '자택 퀘스트의 수락과 완료 보상 수령을 자동으로 처리해요.',
   BATTLE_MAP: '일일 목표 횟수에 맞춰 전투 맵을 실행해요.',
   ADVENTURE_MAP: '쿨다운과 횟수 제한에 맞춰 모험 맵을 진행해요.',
   RAID: '등록부터 누적 전투와 보상 수령까지 한 사이클로 진행해요.',
@@ -203,6 +204,7 @@ function AutomationTypeIcon({ type }: { type: AutomationType }) {
   const iconProps = { color: theme.colors.accentGreen, size: 21 };
   const icon = AUTOMATION_TYPE_METADATA[type].icon;
   if (icon === 'scroll-text') return <ScrollText {...iconProps} />;
+  if (icon === 'home') return <House {...iconProps} />;
   if (icon === 'swords') return <Swords {...iconProps} />;
   if (icon === 'map') return <Map {...iconProps} />;
   if (icon === 'raid') return <Shield {...iconProps} />;

@@ -141,6 +141,26 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
 
   if (historyScreenOpen) return <CraftingHistoryScreen rows={historyRows} onBack={() => setHistoryScreenOpen(false)} />;
 
+  if (mode === 'workbase' && data.activeJob) {
+    return <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.activeJobScreen}>
+        <Text style={styles.title}>{title}</Text>
+        <View accessibilityLabel="현재 작업장 작업" accessibilityLiveRegion="polite" style={styles.job}>
+          <Text style={styles.jobTitle}>진행 중인 작업</Text>
+          <Text style={styles.label}>{data.activeJob.label}</Text>
+          <Text style={styles.warning}>{remaining == null ? '남은 시간 확인 불가' : remaining > 0 ? `${remaining.toLocaleString()}초 후 확인 가능` : '제작 결과를 확인할 수 있습니다.'}</Text>
+          {data.activeJob.completionAvailable
+            ? <ActionButton label="제작 완료" disabled={town.status === 'submitting'} onPress={() => submit({ kind: 'complete' })} />
+            : remaining === 0
+              ? <ActionButton label="제작 상태 확인" disabled={town.status === 'loading' || town.status === 'submitting'} onPress={() => { setResponse(null); void town.reload().catch(() => undefined); }} />
+              : null}
+        </View>
+        <Text style={styles.hint}>현재 작업이 끝난 뒤 새 작업을 선택할 수 있습니다.</Text>
+        {resultFooter}
+      </ScrollView>
+    </View>;
+  }
+
   return <View style={styles.container}>
     <View style={styles.listArea}><TownItemList rows={rows} selectionMode="single" selectedIds={selectedIds.map((id) => `recipe:${id}`)}
       labelTextStyle={(row) => row.id.startsWith('recipe:') ? styles.itemHeadline : undefined}
@@ -331,6 +351,8 @@ const styles = StyleSheet.create({
   fixedValue: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', minHeight: 48, paddingHorizontal: theme.spacing.md },
   fixedValueText: { color: theme.colors.accentGreen, fontWeight: '900' },
   job: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md, gap: theme.spacing.sm, padding: theme.spacing.md },
+  jobTitle: { color: theme.colors.text, fontSize: 18, fontWeight: '900' },
+  activeJobScreen: { gap: theme.spacing.md, paddingBottom: theme.spacing.xl },
   input: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md },
   invalid: { borderColor: theme.colors.danger },
   button: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, justifyContent: 'center', minHeight: 48, paddingHorizontal: theme.spacing.md },

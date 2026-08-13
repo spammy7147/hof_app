@@ -13,6 +13,8 @@ import type {
   CharacterSyncEventResponse,
   CharacterSyncEventType,
   CharacterSyncJobResponse,
+  CharacterManagementActionRequest,
+  CharacterManagementSnapshot,
   CreateAutomationEntryRequest,
   CreatePartyPresetFolderRequest,
   CreatePartyPresetRequest,
@@ -44,6 +46,7 @@ import type {
   UpdateFishingAutomationRequest,
   UpdateRaidAutomationRequest,
   UpdateUnionAutomationRequest,
+  UpdateHomeQuestAutomationRequest,
   AutomationHistoryPage,
 } from '../types/api';
 import { refreshTokenStorage, type RefreshTokenStorage } from '../platform/tokenStorage';
@@ -302,7 +305,7 @@ export class BackendApiClient {
     return this.request('/api/automation/unified');
   }
 
-  /** 세 singleton 자동화 유형 중 아직 없는 항목을 마지막에 추가한다. */
+  /** singleton 자동화 유형 중 아직 없는 항목을 마지막에 추가한다. */
   createAutomationEntry(
     request: CreateAutomationEntryRequest,
   ): Promise<TypedAutomationAggregateResponse> {
@@ -327,6 +330,12 @@ export class BackendApiClient {
 
   updateQuestAutomation(request: UpdateQuestAutomationRequest): Promise<TypedAutomationAggregateResponse> {
     return this.request('/api/automation/unified/quest', {
+      method: 'PUT', body: JSON.stringify(request),
+    });
+  }
+
+  updateHomeQuestAutomation(request: UpdateHomeQuestAutomationRequest): Promise<TypedAutomationAggregateResponse> {
+    return this.request('/api/automation/unified/home-quests', {
       method: 'PUT', body: JSON.stringify(request),
     });
   }
@@ -587,6 +596,32 @@ export class BackendApiClient {
     return {
       ...response,
       character: response.character ? normalizeCharacter(response.character) : null,
+    };
+  }
+
+  async fetchCharacterManagement(hofCharacterId: string): Promise<CharacterManagementSnapshot> {
+    const response = await this.request<CharacterManagementSnapshot>(
+      `/api/characters/${encodeURIComponent(hofCharacterId)}/management`,
+    );
+    return {
+      ...response,
+      character: response.character ? normalizeCharacter(response.character) : null,
+      characters: response.characters.map(normalizeCharacter),
+    };
+  }
+
+  async executeCharacterManagementAction(
+    hofCharacterId: string,
+    request: CharacterManagementActionRequest,
+  ): Promise<CharacterManagementSnapshot> {
+    const response = await this.runManualAction(() => this.request<CharacterManagementSnapshot>(
+      `/api/characters/${encodeURIComponent(hofCharacterId)}/management/actions`,
+      { method: 'POST', body: JSON.stringify(request) },
+    ));
+    return {
+      ...response,
+      character: response.character ? normalizeCharacter(response.character) : null,
+      characters: response.characters.map(normalizeCharacter),
     };
   }
 

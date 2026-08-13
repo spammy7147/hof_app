@@ -127,6 +127,10 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
     });
   }, []);
 
+  const replaceCharacters = useCallback((incoming: HofCharacter[]) => {
+    setCharacters(incoming);
+  }, []);
+
   /** 로그아웃에서 화면 목록, 진행 표시와 연결을 원자적으로 초기화한다. */
   const resetCharacterSync = useCallback(() => {
     closeSubscription();
@@ -143,6 +147,7 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
     loadSavedCharacters,
     startAutomaticSyncIfRequired,
     upsertCharacter,
+    replaceCharacters,
     resetCharacterSync,
   };
 }

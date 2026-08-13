@@ -5,6 +5,7 @@ import {
   buildAdventureMapAutomationRequest,
   buildBattleMapAutomationRequest,
   buildExplicitPresetSelection,
+  buildHomeQuestAutomationRequest,
   buildPrimaryPresetSelection,
   buildQuestAutomationRequest,
   canAddAutomationType,
@@ -19,18 +20,19 @@ describe('typed automation domain', () => {
     assert.deepEqual(getAddableAutomationTypes([
       entry(1, 'QUEST', 0),
       entry(2, 'ADVENTURE_MAP', 1),
-    ]), ['BATTLE_MAP', 'RAID', 'UNION', 'FISHING']);
-    assert.deepEqual(getAddableAutomationTypes([]), ['QUEST', 'BATTLE_MAP', 'ADVENTURE_MAP', 'RAID', 'UNION', 'FISHING']);
+    ]), ['HOME_QUEST', 'BATTLE_MAP', 'RAID', 'UNION', 'FISHING']);
+    assert.deepEqual(getAddableAutomationTypes([]), ['QUEST', 'HOME_QUEST', 'BATTLE_MAP', 'ADVENTURE_MAP', 'RAID', 'UNION', 'FISHING']);
     assert.equal(hasAllAutomationTypes([]), false);
     assert.equal(canAddAutomationType([entry(1, 'QUEST', 0)], 'QUEST'), false);
     assert.equal(canAddAutomationType([entry(1, 'QUEST', 0)], 'BATTLE_MAP'), true);
     assert.equal(hasAllAutomationTypes([
       entry(1, 'QUEST', 0),
-      entry(2, 'BATTLE_MAP', 1),
-      entry(3, 'ADVENTURE_MAP', 2),
-      entry(4, 'RAID', 3),
-      entry(5, 'UNION', 4),
-      entry(6, 'FISHING', 5),
+      entry(2, 'HOME_QUEST', 1),
+      entry(3, 'BATTLE_MAP', 2),
+      entry(4, 'ADVENTURE_MAP', 3),
+      entry(5, 'RAID', 4),
+      entry(6, 'UNION', 5),
+      entry(7, 'FISHING', 6),
     ]), true);
   });
 
@@ -87,11 +89,16 @@ describe('typed automation domain', () => {
       { categoryId: 'adventure_map', mapCode: 'Noble102', executionOrder: 3, ...buildPrimaryPresetSelection() },
       { categoryId: 'adventure_map', mapCode: 'Noble101', executionOrder: 3, ...buildExplicitPresetSelection(5) },
     ]);
+    const home = buildHomeQuestAutomationRequest(true, [
+      { questId: 'hq2', questName: '둘째', enabled: true, sourceOrder: 8 },
+      { questId: 'hq1', questName: '첫째', enabled: true, sourceOrder: 8 },
+    ]);
 
     assert.deepEqual(quest.quests.map((item) => item.sourceOrder), [0, 1]);
     assert.deepEqual(quest.quests[0]?.maps.map((item) => item.executionOrder), [0, 1]);
     assert.deepEqual(battle.maps.map((item) => item.executionOrder), [0, 1]);
     assert.deepEqual(adventure.maps.map((item) => item.executionOrder), [0, 1]);
+    assert.deepEqual(home.quests.map((item) => item.sourceOrder), [0, 1]);
     assert.equal(quest.quests[0]?.maps[1]?.presetMode, 'EXPLICIT');
     assert.equal(quest.quests[0]?.maps[1]?.partyPresetId, 7);
   });

@@ -26,6 +26,9 @@ import type {
   FishingBattleTarget,
   CreatePartyPresetRequest,
   CreatePartyPresetFolderRequest,
+  CharacterManagementActionRequest,
+  CharacterManagementSnapshot,
+  CharacterObservedAction,
   HofCharacter,
   HofCharacterDetail,
   HofObservedStatusResponse,
@@ -88,6 +91,11 @@ type MainScreenProps = {
   onReorderPartyPresets: (request: ReorderPartyPresetsRequest) => Promise<PartyPresetResponse[]>;
   onDeletePartyPreset: (presetId: number) => Promise<null>;
   onLoadCharacterDetail: (hofCharacterId: string) => Promise<HofCharacterDetail>;
+  onLoadCharacterManagement?: (hofCharacterId: string) => Promise<CharacterManagementSnapshot>;
+  onExecuteCharacterAction?: (
+    hofCharacterId: string,
+    request: CharacterManagementActionRequest,
+  ) => Promise<CharacterManagementSnapshot>;
   onLoadPattern: (hofCharacterId: string, slot: number) => Promise<LoadPatternResponse>;
   onLogout: () => void;
   onOpenLogin: () => void;
@@ -130,6 +138,8 @@ export function MainScreen({
   onReorderPartyPresets,
   onDeletePartyPreset,
   onLoadCharacterDetail,
+  onLoadCharacterManagement,
+  onExecuteCharacterAction,
   onLoadPattern,
   onLogout,
   onOpenLogin,
@@ -309,6 +319,7 @@ export function MainScreen({
   const [characterSubTabId, setCharacterSubTabId] = useState<CharacterSubTabId>('characters');
   const [selectedCharacter, setSelectedCharacter] = useState<HofCharacter | null>(null);
   const [selectedCharacterDetail, setSelectedCharacterDetail] = useState<HofCharacterDetail | null>(null);
+  const [characterActions, setCharacterActions] = useState<CharacterObservedAction[]>([]);
   const [isCharacterDetailLoading, setIsCharacterDetailLoading] = useState(false);
   const [characterDetailError, setCharacterDetailError] = useState<string | null>(null);
   const [automationEditorOpen, setAutomationEditorOpen] = useState(false);
@@ -339,6 +350,7 @@ export function MainScreen({
   useEffect(() => {
     if (!selectedCharacter || !session?.loggedIn) {
       setSelectedCharacterDetail(null);
+      setCharacterActions([]);
       setIsCharacterDetailLoading(false);
       setCharacterDetailError(null);
       return;
@@ -349,10 +361,20 @@ export function MainScreen({
     setIsCharacterDetailLoading(true);
     setCharacterDetailError(null);
 
-    onLoadCharacterDetail(selectedCharacter.hofCharacterId)
-      .then((detail) => {
+    (onLoadCharacterManagement
+      ? onLoadCharacterManagement(selectedCharacter.hofCharacterId)
+      : onLoadCharacterDetail(selectedCharacter.hofCharacterId).then((character) => ({
+          character,
+          actions: [],
+          messages: [],
+          characters: [],
+          targetRemoved: false,
+        })))
+      .then((snapshot) => {
         if (!cancelled) {
-          setSelectedCharacterDetail(detail);
+          if (!snapshot.character) throw new Error('캐릭터 정보를 확인하지 못했습니다.');
+          setSelectedCharacterDetail(snapshot.character);
+          setCharacterActions(snapshot.actions);
         }
       })
       .catch((error: unknown) => {
@@ -369,7 +391,27 @@ export function MainScreen({
     return () => {
       cancelled = true;
     };
-  }, [onLoadCharacterDetail, selectedCharacter?.hofCharacterId, session?.loggedIn]);
+  }, [onLoadCharacterDetail, onLoadCharacterManagement, selectedCharacter?.hofCharacterId, session?.loggedIn]);
+
+  async function handleCharacterAction(
+    request: CharacterManagementActionRequest,
+  ): Promise<CharacterManagementSnapshot> {
+    if (!selectedCharacter) throw new Error('캐릭터를 선택해 주세요.');
+    if (!onExecuteCharacterAction) throw new Error('캐릭터 관리 작업을 사용할 수 없습니다.');
+    const snapshot = await onExecuteCharacterAction(selectedCharacter.hofCharacterId, request);
+    if (!snapshot.character) {
+      setSelectedCharacter(null);
+      setSelectedCharacterDetail(null);
+      setCharacterActions([]);
+      return snapshot;
+    }
+    if (snapshot.character.hofCharacterId !== selectedCharacter.hofCharacterId) {
+      setSelectedCharacter(snapshot.character);
+    }
+    setSelectedCharacterDetail(snapshot.character);
+    setCharacterActions(snapshot.actions);
+    return snapshot;
+  }
 
   async function handleLoadPattern(hofCharacterId: string, slot: number): Promise<LoadPatternResponse> {
     const response = await onLoadPattern(hofCharacterId, slot);
@@ -422,9 +464,11 @@ export function MainScreen({
           isCharacterDetailLoading,
           selectedCharacter,
           selectedCharacterDetail,
+          characterActions,
           characterSubTabId,
           setCharacterSubTabId,
           setSelectedCharacter,
+          onExecuteCharacterAction: handleCharacterAction,
           townApi,
           resolveCaptcha,
           pendingBattleTarget,
@@ -545,9 +589,11 @@ type RenderActiveTabArgs = {
   isCharacterDetailLoading: boolean;
   selectedCharacter: HofCharacter | null;
   selectedCharacterDetail: HofCharacterDetail | null;
+  characterActions: CharacterObservedAction[];
   characterSubTabId: CharacterSubTabId;
   setCharacterSubTabId: (tabId: CharacterSubTabId) => void;
   setSelectedCharacter: (character: HofCharacter | null) => void;
+  onExecuteCharacterAction: (request: CharacterManagementActionRequest) => Promise<CharacterManagementSnapshot>;
   onAutomationEditorModeChange: (active: boolean) => void;
   onDataLogModeChange: (active: boolean) => void;
   onTownDetailOpenChange: (open: boolean) => void;
@@ -597,9 +643,11 @@ function renderActiveTab({
   isCharacterDetailLoading,
   selectedCharacter,
   selectedCharacterDetail,
+  characterActions,
   characterSubTabId,
   setCharacterSubTabId,
   setSelectedCharacter,
+  onExecuteCharacterAction,
   onAutomationEditorModeChange,
   onTownDetailOpenChange,
   townApi,
@@ -653,19 +701,17 @@ function renderActiveTab({
               <Text style={styles.sectionMeta}>{characterSyncLabel ?? `${characters.length}명`}</Text>
             </View>
           </View>
-          <ScrollView
-            contentContainerStyle={[styles.detailContainer, styles.containerWithStickyFooter]}
-            contentInsetAdjustmentBehavior="automatic"
-            style={styles.tabScroller}
-          >
+          <CharacterDetailScroll>
             <CharacterDetail
               character={selectedCharacter}
               detail={selectedCharacterDetail}
               isLoading={isCharacterDetailLoading}
               errorMessage={characterDetailError}
               onLoadPattern={onLoadPattern}
+              actions={characterActions}
+              onExecuteAction={onExecuteCharacterAction}
             />
-          </ScrollView>
+          </CharacterDetailScroll>
         </View>
       ) : (
         <View style={styles.tabPanel}>
@@ -809,6 +855,24 @@ function TabScrollContainer({ children }: { children: ReactNode }) {
     <ScrollView
       automaticallyAdjustKeyboardInsets
       contentContainerStyle={styles.container}
+      contentInsetAdjustmentBehavior="automatic"
+      keyboardDismissMode="interactive"
+      keyboardShouldPersistTaps="handled"
+      onFocus={(event) => scrollFocusedInputIntoView(scrollRef.current, event.nativeEvent.target)}
+      ref={scrollRef}
+      style={styles.tabScroller}
+    >
+      {children}
+    </ScrollView>
+  );
+}
+
+function CharacterDetailScroll({ children }: { children: ReactNode }) {
+  const scrollRef = useRef<ScrollView>(null);
+  return (
+    <ScrollView
+      automaticallyAdjustKeyboardInsets
+      contentContainerStyle={[styles.detailContainer, styles.containerWithStickyFooter]}
       contentInsetAdjustmentBehavior="automatic"
       keyboardDismissMode="interactive"
       keyboardShouldPersistTaps="handled"

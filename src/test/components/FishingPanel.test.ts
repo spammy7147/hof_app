@@ -207,6 +207,11 @@ describe('FishingPanel', () => {
     assert.equal(allText().includes('h:2 · 용과 같은 모습의 한 물고기'), true);
     assert.equal(allText().includes('교환 재료'), true);
     assert.equal(allText().includes('Fishing Coin x 30(45)'), true);
+
+    await press('Dragon Fish (99회 사용가능) 교환 재료');
+
+    assert.equal(allText().includes('선택: Dragon Fish (99회 사용가능)'), true);
+    assert.equal(button('선택한 낚시 품목 교환').props.disabled, false);
   });
 
   it('교환 목록만 남은 높이를 스크롤하고 교환 작업은 하단에 고정한다', async () => {
@@ -227,6 +232,11 @@ describe('FishingPanel', () => {
     assert.equal(list.props.style.flex, 1);
     assert.equal(actions.findAll((node) => String(node.type) === 'Pressable' && node.props.accessibilityLabel === '선택한 낚시 품목 교환').length, 1);
     assert.equal(list.findAll((node) => String(node.type) === 'Pressable' && node.props.accessibilityLabel === '선택한 낚시 품목 교환').length, 0);
+
+    await press('Rank Fish 선택');
+
+    assert.equal(list.findAll((node) => String(node.type) === 'TextInput' && node.props.accessibilityLabel === '교환 수량').length, 1);
+    assert.equal(actions.findAll((node) => String(node.type) === 'TextInput').length, 0);
   });
 
   it('교환 품목 분류는 아이템 행이 아니라 상단 선택지로 전환한다', async () => {

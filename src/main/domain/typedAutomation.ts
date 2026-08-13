@@ -12,12 +12,15 @@ import type {
   FishingMapSettingRequest,
   UpdateRaidAutomationRequest,
   UpdateUnionAutomationRequest,
+  UpdateHomeQuestAutomationRequest,
+  HomeQuestSelectionRequest,
   UnionMapSettingRequest,
   RaidTargetSettingRequest,
 } from '../types/api';
 
 export const AUTOMATION_TYPE_ORDER: readonly AutomationType[] = [
   'QUEST',
+  'HOME_QUEST',
   'BATTLE_MAP',
   'ADVENTURE_MAP',
   'RAID',
@@ -27,9 +30,10 @@ export const AUTOMATION_TYPE_ORDER: readonly AutomationType[] = [
 
 export const AUTOMATION_TYPE_METADATA: Readonly<Record<AutomationType, {
   label: string;
-  icon: 'scroll-text' | 'swords' | 'map' | 'raid' | 'union' | 'fishing';
+  icon: 'scroll-text' | 'home' | 'swords' | 'map' | 'raid' | 'union' | 'fishing';
 }>> = {
   QUEST: { label: '퀘스트', icon: 'scroll-text' },
+  HOME_QUEST: { label: '자택 관리', icon: 'home' },
   BATTLE_MAP: { label: '전투 맵', icon: 'swords' },
   ADVENTURE_MAP: { label: '모험 맵', icon: 'map' },
   RAID: { label: '레이드', icon: 'raid' },
@@ -96,6 +100,13 @@ export function buildQuestAutomationRequest(
       maps: normalizeOrder(quest.maps),
     })),
   };
+}
+
+export function buildHomeQuestAutomationRequest(
+  enabled: boolean,
+  quests: readonly HomeQuestSelectionRequest[],
+): UpdateHomeQuestAutomationRequest {
+  return { enabled, quests: quests.map((quest, sourceOrder) => ({ ...quest, sourceOrder })) };
 }
 
 export function buildBattleMapAutomationRequest(

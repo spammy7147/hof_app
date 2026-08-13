@@ -272,6 +272,7 @@ function entrySummary(entry: TypedAutomationEntryResponse): string {
   if (!entry.enabled) return '사용 안 함';
   if (entry.warnings.length > 0) return entry.warnings[0] ?? '설정 확인 필요';
   if (entry.type === 'QUEST') return `퀘스트 ${entry.quests.filter(({ enabled }) => enabled).length}개`;
+  if (entry.type === 'HOME_QUEST') return `자택 퀘스트 ${entry.homeQuests?.filter(({ enabled }) => enabled).length ?? 0}개`;
   if (entry.type === 'BATTLE_MAP') return `전투맵 ${entry.battleMaps.length}개`;
   if (entry.type === 'ADVENTURE_MAP') return `모험맵 ${entry.adventureMaps.length}개`;
   if (entry.type === 'RAID') return `레이드 ${entry.raidTargets?.length ?? 0}개 · 완료 후 다음 대상으로 순환`;

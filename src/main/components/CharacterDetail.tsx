@@ -1,478 +1,550 @@
 import type { ReactNode } from 'react';
-import { useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
-import {
-  displayCharacterJob,
-  displayCharacterName,
-  formatCharacterLevel,
-} from '../domain/characters';
-import {
-  buildCharacterDetailMetrics,
-  type CharacterDetailMetric,
-} from '../domain/characterDetails';
+import { displayCharacterJob, displayCharacterName, formatCharacterLevel } from '../domain/characters';
+import { buildCharacterDetailMetrics } from '../domain/characterDetails';
 import { normalizeHofAssetUrl } from '../domain/hofAssets';
 import { theme } from '../styles/theme';
 import type {
+  CharacterManagementActionRequest,
+  CharacterManagementSnapshot,
+  CharacterObservedAction,
   HofCharacter,
   HofCharacterDetail,
   HofCharacterEquipment,
   HofCharacterPatternSlot,
+  HofCharacterSkill,
   LoadPatternResponse,
 } from '../types/api';
+
+type CharacterManagementView = 'hub' | 'stats' | 'patterns' | 'equipment' | 'skills' | 'items' | 'info';
 
 type CharacterDetailProps = {
   character: HofCharacter;
   detail: HofCharacterDetail | null;
   isLoading: boolean;
   errorMessage: string | null;
+  actions?: CharacterObservedAction[];
   onLoadPattern?: (hofCharacterId: string, slot: number) => Promise<LoadPatternResponse>;
+  onExecuteAction?: (request: CharacterManagementActionRequest) => Promise<CharacterManagementSnapshot>;
 };
 
-/**
- * 캐릭터 상세 화면이다.
- *
- * 저장 패턴 로드, 핵심 스탯, 장착 장비를 한 화면에 보여준다.
- */
+/** 캐릭터의 요약과 각 관리 기능으로 들어가는 모바일 허브다. */
 export function CharacterDetail({
   character,
   detail,
   isLoading,
   errorMessage,
+  actions = [],
   onLoadPattern,
+  onExecuteAction,
 }: CharacterDetailProps) {
-  const [loadingPatternSlot, setLoadingPatternSlot] = useState<string | null>(null);
-  const [patternMessage, setPatternMessage] = useState<string | null>(null);
-  const [patternErrorMessage, setPatternErrorMessage] = useState<string | null>(null);
+  const [view, setView] = useState<CharacterManagementView>('hub');
+  const [resultMessage, setResultMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const name = displayCharacterName(character);
-  const metrics = detail ? buildCharacterDetailMetrics(detail) : [];
 
-  /**
-   * 선택한 저장 패턴 슬롯을 HOF 원본 서버에 로드하도록 백엔드에 요청한다.
-   */
-  async function loadPatternSlot(slot: HofCharacterPatternSlot) {
-    if (!onLoadPattern) return;
+  if (isLoading) return <LoadingPanel />;
+  if (errorMessage) return <Text style={styles.errorText}>{errorMessage}</Text>;
+  if (!detail) return null;
 
-    const slotNumber = Number.parseInt(slot.slot, 10);
-    if (Number.isNaN(slotNumber)) {
-      setPatternMessage(null);
-      setPatternErrorMessage('패턴 번호를 읽지 못했습니다.');
-      return;
-    }
-
-    setLoadingPatternSlot(slot.slot);
-    setPatternMessage(null);
-    setPatternErrorMessage(null);
-
+  const runAction = async (request: CharacterManagementActionRequest) => {
+    if (!onExecuteAction) return;
+    setResultMessage(null);
+    setActionError(null);
     try {
-      const response = await onLoadPattern(character.hofCharacterId, slotNumber);
-      setPatternMessage(response.message);
+      const snapshot = await onExecuteAction(request);
+      setResultMessage(snapshot.messages.filter(Boolean).join('\n') || '작업을 완료했습니다.');
     } catch (error) {
-      setPatternErrorMessage(error instanceof Error ? error.message : '패턴 로드에 실패했습니다.');
-    } finally {
-      setLoadingPatternSlot(null);
+      setActionError(error instanceof Error ? error.message : '작업을 완료하지 못했습니다.');
+      throw error;
     }
-  }
+  };
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Avatar name={name} imageUrl={detail?.imageUrl ?? null} />
+        <Avatar name={name} imageUrl={detail.imageUrl} />
         <View style={styles.headerText}>
           <Text style={styles.name}>{name}</Text>
-          <Text style={styles.subtitle}>
-            {formatCharacterLevel(character)} · {displayCharacterJob(character)}
-          </Text>
+          <Text style={styles.subtitle}>{formatCharacterLevel(character)} · {displayCharacterJob(character)}</Text>
         </View>
       </View>
 
-      {isLoading ? (
-        <View style={styles.loadingPanel}>
-          <ActivityIndicator color={theme.colors.accentGreen} />
-          <Text style={styles.loadingText}>캐릭터 상세 정보를 불러오는 중</Text>
-        </View>
-      ) : null}
-
-      {errorMessage != null && errorMessage.length > 0 ? (
-        <Text style={styles.errorText}>{errorMessage}</Text>
-      ) : null}
-
-      {detail ? (
-        <>
-          <Section title="저장 패턴">
-            <PatternSlotList
-              loadingSlot={loadingPatternSlot}
-              onLoadSlot={onLoadPattern ? loadPatternSlot : undefined}
-              slots={detail.patternSlots}
-            />
-            {patternMessage != null && patternMessage.length > 0 ? (
-              <Text style={styles.successText}>{patternMessage}</Text>
-            ) : null}
-            {patternErrorMessage != null && patternErrorMessage.length > 0 ? (
-              <Text style={styles.inlineErrorText}>{patternErrorMessage}</Text>
-            ) : null}
-          </Section>
-
-          <Section title="스탯">
-            <View style={styles.statGrid}>
-              {metrics.map((metric) => (
-                <StatMetric key={metric.label} metric={metric} />
-              ))}
-            </View>
-          </Section>
-
-          <Section title="장착 장비">
-            <EquipmentList equipment={detail.equipment} />
-          </Section>
-        </>
-      ) : null}
-    </View>
-  );
-}
-
-type AvatarProps = {
-  name: string;
-  imageUrl: string | null;
-};
-
-/**
- * 캐릭터 이미지가 있으면 실제 이미지를, 없으면 이름 첫 글자 fallback을 보여준다.
- */
-function Avatar({ name, imageUrl }: AvatarProps) {
-  const normalizedImageUrl = normalizeHofAssetUrl(imageUrl);
-
-  return (
-    <View style={styles.avatar}>
-      {normalizedImageUrl ? (
-        <Image source={{ uri: normalizedImageUrl }} style={styles.avatarImage} resizeMode="contain" />
-      ) : (
-        <Text style={styles.avatarText}>{name.slice(0, 1)}</Text>
-      )}
-    </View>
-  );
-}
-
-type StatMetricProps = {
-  metric: CharacterDetailMetric;
-};
-
-/**
- * 캐릭터 상세의 단일 스탯 카드다.
- */
-function StatMetric({ metric }: StatMetricProps) {
-  return (
-    <View style={styles.statMetric}>
-      <Text style={styles.statLabel}>{metric.label}</Text>
-      <Text style={styles.statValue}>{metric.value}</Text>
-    </View>
-  );
-}
-
-type SectionProps = {
-  title: string;
-  children: ReactNode;
-};
-
-/**
- * 캐릭터 상세 화면의 반복되는 섹션 레이아웃을 만든다.
- */
-function Section({ title, children }: SectionProps) {
-  return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      {children}
-    </View>
-  );
-}
-
-type PatternSlotListProps = {
-  loadingSlot: string | null;
-  onLoadSlot?: (slot: HofCharacterPatternSlot) => void;
-  slots: HofCharacterPatternSlot[];
-};
-
-/**
- * 캐릭터가 저장해둔 패턴 슬롯 목록을 보여준다.
- *
- * 로드 가능한 슬롯은 버튼처럼 동작하고, 빈 슬롯은 비활성 상태로 표시한다.
- */
-function PatternSlotList({ loadingSlot, onLoadSlot, slots }: PatternSlotListProps) {
-  if (slots.length === 0) {
-    return <Text style={styles.emptyText}>저장된 패턴 슬롯이 없습니다.</Text>;
-  }
-
-  return (
-    <View style={styles.cardList}>
-      {slots.map((slot) => (
-        <Pressable
-          accessibilityRole="button"
-          disabled={!slot.canLoad || !onLoadSlot || loadingSlot != null}
-          key={slot.slot}
-          onPress={() => onLoadSlot?.(slot)}
-          style={({ pressed }) => [
-            styles.patternCard,
-            slot.canLoad && onLoadSlot && styles.loadablePatternCard,
-            (!slot.canLoad || !onLoadSlot) && styles.disabledPatternCard,
-            pressed && styles.pressedCard,
-          ]}
-        >
-          <View style={styles.patternCardText}>
-            <Text style={styles.patternName} numberOfLines={1}>
-              {slot.label || formatPatternSlotLabel(slot.slot)}
-            </Text>
-            <Text style={styles.patternMeta} numberOfLines={1}>
-              {slot.canLoad ? '전투 전에 불러올 수 있음' : '비어 있는 슬롯'}
-            </Text>
-          </View>
-          <Text style={[styles.patternActionText, !slot.canLoad && styles.disabledActionText]}>
-            {loadingSlot === slot.slot ? '로드 중' : slot.canLoad ? '로드' : '빈 슬롯'}
-          </Text>
+      {view !== 'hub' ? (
+        <Pressable accessibilityRole="button" onPress={() => setView('hub')} style={styles.backButton}>
+          <Text style={styles.backButtonText}>‹ 캐릭터 관리</Text>
         </Pressable>
-      ))}
+      ) : null}
+
+      {resultMessage ? <ResultNotice tone="success" message={resultMessage} /> : null}
+      {actionError ? <ResultNotice tone="error" message={actionError} /> : null}
+
+      {view === 'hub' ? <ManagementHub detail={detail} onOpen={setView} /> : null}
+      {view === 'patterns' ? (
+        <PatternManagement
+          detail={detail}
+          actions={actions.filter(isPatternAction)}
+          characterId={character.hofCharacterId}
+          onExecute={runAction}
+          onLoadPattern={onLoadPattern}
+        />
+      ) : null}
+      {view === 'stats' ? (
+        <StatManagement detail={detail} actions={actions.filter(isStatAction)} onExecute={runAction} />
+      ) : null}
+      {view === 'equipment' ? (
+        <EquipmentManagement detail={detail} actions={actions.filter(isEquipmentAction)} onExecute={runAction} />
+      ) : null}
+      {view === 'skills' ? (
+        <SkillManagement detail={detail} actions={actions.filter(isSkillAction)} onExecute={runAction} />
+      ) : null}
+      {view === 'items' ? (
+        <ObservedActions title="아이템 사용" actions={actions.filter(isItemAction)} onExecute={runAction} />
+      ) : null}
+      {view === 'info' ? (
+        <FullInformation detail={detail} actions={actions.filter(isIdentityAction)} onExecute={runAction} />
+      ) : null}
     </View>
   );
 }
 
-type EquipmentListProps = {
-  equipment: HofCharacterEquipment[];
-};
-
-/**
- * 캐릭터의 장착 장비 목록을 장비 부위별 카드로 표시한다.
- */
-function EquipmentList({ equipment }: EquipmentListProps) {
-  if (equipment.length === 0) {
-    return <Text style={styles.emptyText}>저장된 장착 장비가 없습니다.</Text>;
-  }
-
+function LoadingPanel() {
   return (
-    <View style={styles.cardList}>
-      {equipment.map((item) => (
-        <View key={`${item.slot}-${item.name}`} style={styles.equipmentCard}>
-          <Text style={styles.equipmentPart}>{item.part || item.slot || '-'}</Text>
-          <View style={styles.equipmentBody}>
-            <Text style={styles.equipmentName} numberOfLines={2}>{item.name}</Text>
-            {item.description ? (
-              <Text style={styles.equipmentDescription} numberOfLines={3}>{item.description}</Text>
-            ) : null}
-          </View>
+    <View style={styles.loadingPanel}>
+      <ActivityIndicator color={theme.colors.accentGreen} />
+      <Text style={styles.mutedText}>최신 캐릭터 정보를 확인하는 중</Text>
+    </View>
+  );
+}
+
+function ManagementHub({ detail, onOpen }: { detail: HofCharacterDetail; onOpen: (view: CharacterManagementView) => void }) {
+  const metrics = buildCharacterDetailMetrics(detail);
+  const cards: Array<{ id: CharacterManagementView; title: string; description: string }> = [
+    { id: 'stats', title: '스탯 배분', description: detail.statusLines.some((line) => /point\s*:/i.test(line)) ? '배분 가능한 포인트 확인' : '남은 포인트 없음' },
+    { id: 'patterns', title: '패턴 관리', description: `행동 패턴 ${detail.actionPatterns.length}개 · 저장 슬롯 ${detail.patternSlots.length}개` },
+    { id: 'equipment', title: '장비 관리', description: `현재 장착 ${detail.equipment.filter((item) => item.checked).length}개` },
+    { id: 'skills', title: '스킬 관리', description: `보유 ${detail.learnedSkills.length}개 · 습득 가능 ${detail.learnableSkills.length}개` },
+    { id: 'items', title: '아이템 사용', description: '사용 가능한 캐릭터 아이템 확인' },
+    { id: 'info', title: '전체 정보 및 기본 관리', description: '추가 효과·이름·순서·삭제 관리' },
+  ];
+  return (
+    <>
+      <Section title="핵심 능력치">
+        <View style={styles.metricGrid}>
+          {metrics.map((metric) => (
+            <View key={metric.label} style={styles.metricCard}>
+              <Text style={styles.metricLabel}>{metric.label}</Text>
+              <Text style={styles.metricValue}>{metric.value}</Text>
+            </View>
+          ))}
+        </View>
+      </Section>
+      <Section title="관리">
+        <View style={styles.list}>
+          {cards.map((card) => (
+            <Pressable key={card.id} accessibilityRole="button" onPress={() => onOpen(card.id)} style={styles.navigationCard}>
+              <View style={styles.flex}>
+                <Text style={styles.cardTitle}>{card.title}</Text>
+                <Text style={styles.mutedText}>{card.description}</Text>
+              </View>
+              <Text style={styles.chevron}>›</Text>
+            </Pressable>
+          ))}
+        </View>
+      </Section>
+    </>
+  );
+}
+
+function StatManagement({ detail, actions, onExecute }: {
+  detail: HofCharacterDetail;
+  actions: CharacterObservedAction[];
+  onExecute: (request: CharacterManagementActionRequest) => Promise<void>;
+}) {
+  const pointLine = detail.statusLines.find((line) => /point\s*:/i.test(line));
+  return (
+    <>
+      <ScreenHeading title="스탯 배분" description="남은 포인트 안에서 STR·INT·DEX·SPD·LUK를 배분합니다." />
+      <Section title="현재 상태">
+        <Text style={styles.cardTitle}>{pointLine || '남은 스탯 포인트가 없습니다.'}</Text>
+      </Section>
+      <ObservedActions title="포인트 배분" actions={actions} onExecute={onExecute} />
+    </>
+  );
+}
+
+function PatternManagement({
+  detail,
+  actions,
+  characterId,
+  onExecute,
+  onLoadPattern,
+}: {
+  detail: HofCharacterDetail;
+  actions: CharacterObservedAction[];
+  characterId: string;
+  onExecute: (request: CharacterManagementActionRequest) => Promise<void>;
+  onLoadPattern?: CharacterDetailProps['onLoadPattern'];
+}) {
+  const [loadingSlot, setLoadingSlot] = useState<string | null>(null);
+  const loadSlot = async (slot: HofCharacterPatternSlot) => {
+    if (!onLoadPattern) return;
+    const slotNumber = Number.parseInt(slot.slot, 10);
+    if (Number.isNaN(slotNumber)) return;
+    setLoadingSlot(slot.slot);
+    try { await onLoadPattern(characterId, slotNumber); } finally { setLoadingSlot(null); }
+  };
+  return (
+    <>
+      <ScreenHeading title="패턴 관리" description="행동 규칙과 위치·호위를 편집하고 별도 슬롯에 저장합니다." />
+      <Section title="행동 패턴">
+        <View style={styles.list}>
+          {detail.actionPatterns.map((row) => (
+            <View key={row.index} style={styles.card}>
+              <Text style={styles.cardTitle}>{row.index + 1}. {row.judgeText || row.judge || '조건 없음'}</Text>
+              <Text style={styles.mutedText}>기준 {row.quantityText || row.quantity || '0'}</Text>
+              <Text style={styles.accentText}>{row.skillText || row.skill || '행동 없음'}</Text>
+            </View>
+          ))}
+          {detail.actionPatterns.length === 0 ? <EmptyText text="표시할 행동 패턴이 없습니다." /> : null}
+        </View>
+        <Text style={styles.caption}>위치 {detail.positionGuard.selectedPosition || '-'} · 호위 {detail.positionGuard.guardText || '-'}</Text>
+      </Section>
+      <Section title="저장 슬롯">
+        <View style={styles.list}>
+          {detail.patternSlots.map((slot) => (
+            <Pressable
+              key={slot.slot}
+              disabled={!slot.canLoad || loadingSlot != null || !onLoadPattern}
+              onPress={() => loadSlot(slot)}
+              style={[styles.navigationCard, !slot.canLoad && styles.disabledCard]}
+            >
+              <View style={styles.flex}>
+                <Text style={styles.cardTitle}>{slot.label || `패턴 ${Number(slot.slot) + 1}`}</Text>
+                <Text style={styles.mutedText}>{slot.canLoad ? '행동 패턴과 위치·호위 불러오기' : '빈 슬롯'}</Text>
+              </View>
+              <Text style={styles.accentText}>{loadingSlot === slot.slot ? '로드 중' : slot.canLoad ? '로드' : '비어 있음'}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </Section>
+      <ObservedActions
+        title="패턴 작업"
+        actions={actions.filter((action) => !normalizedSource(action).includes('loadpattern'))}
+        onExecute={onExecute}
+      />
+    </>
+  );
+}
+
+function EquipmentManagement({ detail, actions, onExecute }: {
+  detail: HofCharacterDetail;
+  actions: CharacterObservedAction[];
+  onExecute: (request: CharacterManagementActionRequest) => Promise<void>;
+}) {
+  const current = detail.equipment.filter((item) => item.checked);
+  return (
+    <>
+      <ScreenHeading title="장비 관리" description="현재 장비와 장착 가능한 보유 장비를 관리합니다." />
+      <Section title="현재 장비"><EquipmentList equipment={current} /></Section>
+      <ObservedActions title="장착 가능한 장비·해제·세트 슬롯" actions={actions} onExecute={onExecute} />
+    </>
+  );
+}
+
+function EquipmentList({ equipment }: { equipment: HofCharacterEquipment[] }) {
+  if (equipment.length === 0) return <EmptyText text="표시할 장비가 없습니다." />;
+  return <View style={styles.list}>{equipment.map((item) => (
+    <View key={`${item.slot}-${item.name}`} style={styles.card}>
+      <Text style={styles.overline}>{item.part || item.slot || '장비'}</Text>
+      <Text style={styles.cardTitle}>{item.name}</Text>
+      {item.description ? <Text style={styles.mutedText}>{item.description}</Text> : null}
+    </View>
+  ))}</View>;
+}
+
+function SkillManagement({ detail, actions, onExecute }: {
+  detail: HofCharacterDetail;
+  actions: CharacterObservedAction[];
+  onExecute: (request: CharacterManagementActionRequest) => Promise<void>;
+}) {
+  return (
+    <>
+      <ScreenHeading title="스킬 관리" description="보유 스킬을 확인하고 현재 배울 수 있는 스킬을 습득합니다." />
+      <Section title="배울 수 있는 스킬"><SkillList skills={detail.learnableSkills} /></Section>
+      <Section title="보유 스킬"><SkillList skills={detail.learnedSkills} /></Section>
+      <ObservedActions title="스킬 작업" actions={actions} onExecute={onExecute} />
+    </>
+  );
+}
+
+function SkillList({ skills }: { skills: HofCharacterSkill[] }) {
+  if (skills.length === 0) return <EmptyText text="표시할 스킬이 없습니다." />;
+  return <View style={styles.list}>{skills.map((skill, index) => (
+    <View key={`${skill.value}-${skill.name}-${index}`} style={styles.card}>
+      {skill.category ? <Text style={styles.overline}>{skill.category}</Text> : null}
+      <Text style={styles.cardTitle}>{skill.name}</Text>
+    </View>
+  ))}</View>;
+}
+
+function FullInformation({ detail, actions, onExecute }: {
+  detail: HofCharacterDetail;
+  actions: CharacterObservedAction[];
+  onExecute: (request: CharacterManagementActionRequest) => Promise<void>;
+}) {
+  return (
+    <>
+      <ScreenHeading title="전체 정보 및 기본 관리" description="HOF에 표시된 캐릭터 상태와 기본 작업을 확인합니다." />
+      <Section title="상태 및 추가 효과">
+        {detail.statusLines.length ? detail.statusLines.map((line, index) => (
+          <Text key={`${line}-${index}`} style={styles.statusLine}>{line}</Text>
+        )) : <EmptyText text="추가 상태 정보가 없습니다." />}
+      </Section>
+      <ObservedActions title="기본 작업" actions={actions.filter((action) => !isDangerousAction(action))} onExecute={onExecute} />
+      <ObservedActions title="위험 작업" actions={actions.filter(isDangerousAction)} onExecute={onExecute} dangerous />
+    </>
+  );
+}
+
+function ObservedActions({ title, actions, onExecute, dangerous = false }: {
+  title: string;
+  actions: CharacterObservedAction[];
+  onExecute: (request: CharacterManagementActionRequest) => Promise<void>;
+  dangerous?: boolean;
+}) {
+  if (actions.length === 0) return <Section title={title}><EmptyText text="현재 실행 가능한 작업이 없습니다." /></Section>;
+  return <Section title={title}><View style={styles.list}>{actions.map((action) => (
+    <ObservedActionCard key={action.actionId} action={action} onExecute={onExecute} dangerous={dangerous || isDangerousAction(action)} />
+  ))}</View></Section>;
+}
+
+function ObservedActionCard({ action, onExecute, dangerous }: {
+  action: CharacterObservedAction;
+  onExecute: (request: CharacterManagementActionRequest) => Promise<void>;
+  dangerous: boolean;
+}) {
+  const [selectedCandidates, setSelectedCandidates] = useState<Record<string, string>>(() => Object.fromEntries(
+    action.candidates.filter((candidate) => candidate.selected).map((candidate) => [candidate.groupId, candidate.id]),
+  ));
+  const [expanded, setExpanded] = useState(false);
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
+  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(action.fields.map((field) => [field.id, field.value])));
+  const [submitting, setSubmitting] = useState(false);
+  const candidateGroups = useMemo(() => groupCharacterCandidates(action.candidates), [action.candidates]);
+  const request = useMemo<CharacterManagementActionRequest>(() => ({
+    action: {
+      actionId: action.actionId,
+      selections: Object.values(selectedCandidates).map((candidateId) => ({ candidateId })),
+      values: action.fields.map((field) => ({ fieldId: field.id, value: values[field.id] ?? '' })),
+    },
+  }), [action, selectedCandidates, values]);
+  const execute = async () => {
+    setSubmitting(true);
+    try { await onExecute(request); } finally { setSubmitting(false); }
+  };
+  const confirm = () => {
+    if (!dangerous) { void execute(); return; }
+    Alert.alert('위험 작업 확인', dangerousDescription(action), [
+      { text: '취소', style: 'cancel' },
+      { text: actionLabel(action), style: 'destructive', onPress: () => void execute() },
+    ]);
+  };
+  return (
+    <View style={[styles.actionCard, dangerous && styles.dangerCard]}>
+      <Pressable accessibilityRole="button" onPress={() => setExpanded((current) => !current)} style={styles.actionHeader}>
+        <Text style={styles.cardTitle}>{actionLabel(action)}</Text>
+        <Text style={styles.chevron}>{expanded ? '⌃' : '⌄'}</Text>
+      </Pressable>
+      {expanded ? <>
+      {candidateGroups.length ? <View style={styles.choiceList}>{candidateGroups.map(([groupId, candidates = []]) => {
+        const selected = candidates.find((candidate) => candidate.id === selectedCandidates[groupId]);
+        const groupOpen = expandedGroup === groupId;
+        return <View key={groupId} style={styles.choiceGroup}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: groupOpen }}
+            onPress={() => setExpandedGroup((current) => current === groupId ? null : groupId)}
+            style={styles.choiceGroupHeader}
+          >
+            <View style={styles.flex}>
+              <Text style={styles.fieldLabel}>{candidateGroupLabel(groupId)}</Text>
+              <Text style={styles.choiceText}>{selected?.label || '선택하세요'}</Text>
+            </View>
+            <Text style={styles.chevron}>{groupOpen ? '⌃' : '⌄'}</Text>
+          </Pressable>
+          {groupOpen ? candidates.map((candidate) => (
+            <Pressable
+              accessibilityRole="radio"
+              accessibilityState={{ checked: selectedCandidates[groupId] === candidate.id }}
+              key={candidate.id}
+              onPress={() => {
+                setSelectedCandidates((current) => ({ ...current, [groupId]: candidate.id }));
+                setExpandedGroup(null);
+              }}
+              style={[styles.choice, selectedCandidates[groupId] === candidate.id && styles.choiceSelected]}
+            >
+              <Text style={styles.choiceText}>{candidate.label}</Text>
+            </Pressable>
+          )) : null}
+        </View>;
+      })}</View> : null}
+      {action.fields.map((field) => (
+        <View key={field.id} style={styles.fieldGroup}>
+          <Text style={styles.fieldLabel}>{field.label}</Text>
+          <TextInput
+            keyboardType={field.inputType === 'NUMBER' ? 'number-pad' : 'default'}
+            maxLength={field.maxLength ?? undefined}
+            onChangeText={(value) => setValues((current) => ({ ...current, [field.id]: value }))}
+            style={styles.input}
+            value={values[field.id] ?? ''}
+          />
         </View>
       ))}
+      <Pressable
+        accessibilityRole="button"
+        disabled={submitting}
+        onPress={confirm}
+        style={[styles.actionButton, dangerous && styles.dangerButton, submitting && styles.disabledCard]}
+      >
+        <Text style={styles.actionButtonText}>{submitting ? '처리 중' : actionLabel(action)}</Text>
+      </Pressable>
+      </> : null}
     </View>
   );
 }
 
-/**
- * 원본 슬롯 번호를 사용자가 읽는 1부터 시작하는 패턴 번호 라벨로 바꾼다.
- */
-function formatPatternSlotLabel(slot: string): string {
-  const slotNumber = Number.parseInt(slot, 10);
-  return Number.isNaN(slotNumber) ? `패턴 ${slot}` : `패턴 ${slotNumber + 1}`;
+function ScreenHeading({ title, description }: { title: string; description: string }) {
+  return <View><Text style={styles.screenTitle}>{title}</Text><Text style={styles.mutedText}>{description}</Text></View>;
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return <View style={styles.section}><Text style={styles.sectionTitle}>{title}</Text>{children}</View>;
+}
+
+function EmptyText({ text }: { text: string }) { return <Text style={styles.mutedText}>{text}</Text>; }
+
+function ResultNotice({ tone, message }: { tone: 'success' | 'error'; message: string }) {
+  return <View accessibilityLiveRegion="assertive" style={[styles.notice, tone === 'error' && styles.errorNotice]}>
+    <Text style={styles.noticeTitle}>{tone === 'success' ? '완료' : '확인 필요'}</Text>
+    <Text style={styles.noticeText}>{message}</Text>
+  </View>;
+}
+
+function Avatar({ name, imageUrl }: { name: string; imageUrl: string | null }) {
+  const url = normalizeHofAssetUrl(imageUrl);
+  return <View style={styles.avatar}>{url ? <Image source={{ uri: url }} style={styles.avatarImage} resizeMode="contain" /> : <Text style={styles.avatarText}>{name.slice(0, 1)}</Text>}</View>;
+}
+
+const normalizedLabel = (action: CharacterObservedAction) => action.label.toLowerCase();
+const normalizedSource = (action: CharacterObservedAction) => action.source.toLowerCase();
+const hasAny = (action: CharacterObservedAction, words: string[]) => words.some((word) => normalizedLabel(action).includes(word));
+const isPatternAction = (action: CharacterObservedAction) => {
+  const label = normalizedLabel(action).trim();
+  return /pattern|guard|position/.test(normalizedSource(action)) ||
+    hasAny(action, ['pattern', '패턴', 'simulate', 'switch pattern']) ||
+    label === 'add' || label === 'delete' || label.startsWith('set ');
+};
+const isEquipmentAction = (action: CharacterObservedAction) => /equip|remove/.test(normalizedSource(action)) || hasAny(action, ['equip', 'remove', '장착', '해제']);
+const isSkillAction = (action: CharacterObservedAction) => /learnskill|pray/.test(normalizedSource(action)) || hasAny(action, ['learn skill', '스킬 배우기', '기도']);
+const isStatAction = (action: CharacterObservedAction) => /status/.test(normalizedSource(action)) || hasAny(action, ['increase status', '스탯']);
+const isItemAction = (action: CharacterObservedAction) => /showreset|use_char_item/.test(normalizedSource(action));
+const isDangerousAction = (action: CharacterObservedAction) => /byebye|kick|knockback/.test(normalizedSource(action)) || hasAny(action, ['kick', 'knockback', '해고', '맨 뒤', '리스트 맨 뒤']);
+const isIdentityAction = (action: CharacterObservedAction) => /rename|pray|byebye|kick|knockback/.test(normalizedSource(action)) || hasAny(action, ['change', 'name', '이름', '기도', 'pray', 'kick', 'knockback', '해고', '맨 뒤']);
+
+function candidateGroupLabel(groupId: string): string {
+  const judge = /^judge(\d+)$/i.exec(groupId);
+  if (judge) return `${Number(judge[1]) + 1}번 행동 조건`;
+  const skill = /^skill(\d+)$/i.exec(groupId);
+  if (skill) return `${Number(skill[1]) + 1}번 실행 스킬`;
+  if (/patternnumber/i.test(groupId)) return '편집할 패턴';
+  if (/position/i.test(groupId)) return '위치';
+  if (/guard/i.test(groupId)) return '호위';
+  if (/newskill/i.test(groupId)) return '배울 스킬';
+  if (/item_no|spot/i.test(groupId)) return '대상 아이템';
+  return groupId;
+}
+
+function groupCharacterCandidates(candidates: CharacterObservedAction['candidates']) {
+  const grouped = new Map<string, CharacterObservedAction['candidates']>();
+  candidates.forEach((candidate) => {
+    const current = grouped.get(candidate.groupId) ?? [];
+    grouped.set(candidate.groupId, [...current, candidate]);
+  });
+  return [...grouped.entries()];
+}
+
+function actionLabel(action: CharacterObservedAction): string {
+  const source = normalizedSource(action);
+  const target = action.label.includes(' · ') ? ` · ${action.label.split(' · ').slice(1).join(' · ')}` : '';
+  if (/knockback\d+/.test(source)) return '맨 뒤로 이동 확인';
+  if (source.includes('knockback')) return '맨 뒤로 이동';
+  if (/byebye\d+/.test(source)) return '캐릭터 삭제 확인';
+  if (source.includes('byebye')) return '캐릭터 삭제';
+  if (source.includes('rename')) return action.label.toLowerCase() === 'change' ? '이름 변경 확인' : '이름 변경';
+  if (source.includes('showreset')) return '사용 아이템 목록 열기';
+  if (source.includes('use_char_item')) return '선택 아이템 사용';
+  if (source.includes('loadpattern')) return `저장 패턴 불러오기${target}`;
+  if (source.includes('savepattern')) return `현재 패턴 저장${target}`;
+  if (source.includes('delpattern')) return `저장 패턴 삭제${target}`;
+  if (source.includes('changepattern')) return '행동 패턴 적용';
+  if (source.includes('testbattle')) return '패턴 적용 후 시험 전투';
+  if (source.includes('patternmemo')) return '편집 패턴 전환';
+  if (source.includes('addnewpattern')) return '행동 패턴 추가';
+  if (source.includes('deletepattern')) return '행동 패턴 삭제';
+  if (source.includes('equip_l_')) return `장비 세트 불러오기${target}`;
+  if (source.includes('equip_s_')) return `장비 세트 저장${target}`;
+  if (source.includes('equip_item')) return '선택 장비 장착';
+  if (source.includes('remove_all')) return '장비 전체 해제';
+  if (source.includes('remove')) return '선택 장비 해제';
+  if (source === 'unnamed-submit' && normalizedLabel(action).trim() === 'set') return '위치·호위 저장';
+  if (hasAny(action, ['knockback', '리스트 맨 뒤'])) return '맨 뒤로 이동';
+  if (hasAny(action, ['kick', '해고'])) return '캐릭터 삭제';
+  if (hasAny(action, ['changename', 'change', '이름'])) return '이름 변경';
+  if (hasAny(action, ['기도', 'pray'])) return '기도하기';
+  if (hasAny(action, ['learn'])) return '스킬 배우기';
+  return action.label || '실행';
+}
+
+function dangerousDescription(action: CharacterObservedAction): string {
+  if (normalizedSource(action).includes('knockback') || hasAny(action, ['knockback', '리스트 맨 뒤'])) return '캐릭터 ID가 변경되며 저장 파티와 콜로세움 팀에서 제거될 수 있습니다.';
+  return '캐릭터가 삭제됩니다. 이 작업은 되돌릴 수 없습니다.';
 }
 
 const styles = StyleSheet.create({
-  container: {
-    gap: theme.spacing.lg,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-    paddingBottom: theme.spacing.lg,
-  },
-  avatar: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.surfaceAlt,
-    borderWidth: 1,
-    borderColor: theme.colors.accentGreen,
-    overflow: 'hidden',
-  },
-  avatarImage: {
-    width: 46,
-    height: 46,
-  },
-  avatarText: {
-    color: theme.colors.text,
-    fontSize: 22,
-    fontWeight: '900',
-  },
-  headerText: {
-    flex: 1,
-    minWidth: 0,
-  },
-  name: {
-    color: theme.colors.text,
-    fontSize: 22,
-    fontWeight: '900',
-  },
-  subtitle: {
-    marginTop: 4,
-    color: theme.colors.textMuted,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  loadingPanel: {
-    minHeight: 48,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.sm,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.surface,
-    padding: theme.spacing.md,
-  },
-  loadingText: {
-    color: theme.colors.textMuted,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  errorText: {
-    color: theme.colors.danger,
-    borderWidth: 1,
-    borderColor: theme.colors.danger,
-    borderRadius: theme.radius.sm,
-    padding: theme.spacing.md,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  successText: {
-    color: theme.colors.accentGreen,
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  inlineErrorText: {
-    color: theme.colors.danger,
-    fontSize: 12,
-    fontWeight: '800',
-  },
-  section: {
-    gap: theme.spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-    paddingTop: theme.spacing.lg,
-  },
-  sectionTitle: {
-    color: theme.colors.accentGreen,
-    fontSize: 15,
-    fontWeight: '900',
-  },
-  statGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: theme.spacing.sm,
-  },
-  statMetric: {
-    width: '31%',
-    minWidth: 94,
-    minHeight: 54,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.surface,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: theme.spacing.sm,
-  },
-  statLabel: {
-    color: theme.colors.textMuted,
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  statValue: {
-    marginTop: 4,
-    color: theme.colors.text,
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  emptyText: {
-    color: theme.colors.textMuted,
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  cardList: {
-    gap: theme.spacing.sm,
-  },
-  patternCard: {
-    minHeight: 54,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: theme.spacing.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.surface,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-  },
-  loadablePatternCard: {
-    borderColor: theme.colors.accentGreen,
-  },
-  disabledPatternCard: {
-    opacity: 0.62,
-  },
-  pressedCard: {
-    opacity: 0.75,
-  },
-  patternCardText: {
-    minWidth: 0,
-    flex: 1,
-    gap: 2,
-  },
-  patternName: {
-    color: theme.colors.text,
-    fontSize: 14,
-    fontWeight: '900',
-  },
-  patternMeta: {
-    color: theme.colors.textMuted,
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  patternActionText: {
-    color: theme.colors.accentAmber,
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  disabledActionText: {
-    color: theme.colors.textMuted,
-  },
-  equipmentCard: {
-    flexDirection: 'row',
-    gap: theme.spacing.sm,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.surface,
-    padding: theme.spacing.sm,
-  },
-  equipmentPart: {
-    minWidth: 70,
-    maxWidth: 86,
-    color: theme.colors.accentAmber,
-    fontSize: 12,
-    fontWeight: '900',
-  },
-  equipmentBody: {
-    flex: 1,
-    minWidth: 0,
-    gap: 2,
-  },
-  equipmentName: {
-    color: theme.colors.text,
-    fontSize: 13,
-    fontWeight: '900',
-    lineHeight: 18,
-  },
-  equipmentDescription: {
-    color: theme.colors.textMuted,
-    fontSize: 12,
-    lineHeight: 17,
-  },
+  container: { gap: theme.spacing.lg, paddingBottom: theme.spacing.xl },
+  header: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md },
+  headerText: { flex: 1, gap: theme.spacing.xs },
+  name: { color: theme.colors.text, fontSize: 24, fontWeight: '800' },
+  subtitle: { color: theme.colors.textMuted, fontSize: 15 },
+  avatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.borderStrong, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarImage: { width: 58, height: 58 }, avatarText: { color: theme.colors.accentGreen, fontSize: 24, fontWeight: '800' },
+  loadingPanel: { minHeight: 180, alignItems: 'center', justifyContent: 'center', gap: theme.spacing.md },
+  errorText: { color: theme.colors.danger, fontSize: 15 }, mutedText: { color: theme.colors.textMuted, fontSize: 14, lineHeight: 21 },
+  backButton: { alignSelf: 'flex-start', paddingVertical: theme.spacing.sm }, backButtonText: { color: theme.colors.accentGreen, fontSize: 16, fontWeight: '700' },
+  section: { gap: theme.spacing.md }, sectionTitle: { color: theme.colors.text, fontSize: 19, fontWeight: '800' }, screenTitle: { color: theme.colors.text, fontSize: 24, fontWeight: '800', marginBottom: theme.spacing.xs },
+  list: { gap: theme.spacing.md }, flex: { flex: 1, gap: theme.spacing.xs },
+  navigationCard: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, padding: theme.spacing.lg, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface, borderRadius: theme.radius.md },
+  card: { gap: theme.spacing.sm, padding: theme.spacing.lg, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface, borderRadius: theme.radius.md },
+  cardTitle: { color: theme.colors.text, fontSize: 16, fontWeight: '800', lineHeight: 22 }, overline: { color: theme.colors.accentAmber, fontSize: 12, fontWeight: '800' }, accentText: { color: theme.colors.accentGreen, fontSize: 14, fontWeight: '700' }, chevron: { color: theme.colors.textMuted, fontSize: 28 }, caption: { color: theme.colors.textMuted, fontSize: 13, marginTop: theme.spacing.sm },
+  metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }, metricCard: { width: '31%', minWidth: 90, padding: theme.spacing.md, borderRadius: theme.radius.md, backgroundColor: theme.colors.surface }, metricLabel: { color: theme.colors.textMuted, fontSize: 12 }, metricValue: { color: theme.colors.text, fontSize: 16, fontWeight: '800', marginTop: theme.spacing.xs },
+  notice: { borderLeftWidth: 4, borderLeftColor: theme.colors.accentGreen, padding: theme.spacing.lg, gap: theme.spacing.sm, backgroundColor: theme.colors.surface, borderRadius: theme.radius.md }, errorNotice: { borderLeftColor: theme.colors.danger }, noticeTitle: { color: theme.colors.text, fontSize: 17, fontWeight: '800' }, noticeText: { color: theme.colors.textMuted, fontSize: 15, lineHeight: 22 },
+  statusLine: { color: theme.colors.textMuted, fontSize: 14, lineHeight: 21, paddingVertical: theme.spacing.xs },
+  actionCard: { gap: theme.spacing.md, padding: theme.spacing.lg, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface, borderRadius: theme.radius.md }, dangerCard: { borderColor: theme.colors.danger },
+  actionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md },
+  choiceList: { gap: theme.spacing.sm }, choice: { padding: theme.spacing.md, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceAlt }, choiceSelected: { borderColor: theme.colors.accentGreen }, choiceText: { color: theme.colors.text, fontSize: 14 },
+  choiceGroup: { gap: theme.spacing.sm }, choiceGroupHeader: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, padding: theme.spacing.md, borderWidth: 1, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceAlt },
+  fieldGroup: { gap: theme.spacing.sm }, fieldLabel: { color: theme.colors.textMuted, fontSize: 13, fontWeight: '700' }, input: { minHeight: 48, paddingHorizontal: theme.spacing.md, color: theme.colors.text, backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md },
+  actionButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.md, backgroundColor: theme.colors.accentGreen }, dangerButton: { backgroundColor: theme.colors.danger }, actionButtonText: { color: theme.colors.buttonText, fontSize: 16, fontWeight: '800' }, disabledCard: { opacity: 0.45 },
 });

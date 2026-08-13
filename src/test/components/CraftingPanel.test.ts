@@ -102,6 +102,21 @@ describe('CraftingPanel', () => {
     assert.deepEqual(calls, [{ path: '/api/town/crafting/workbase/complete', request: {} }]);
   });
 
+  it('작업 중에는 빈 종류 선택기와 새 작업 목록을 숨기고 현재 작업만 표시한다', async () => {
+    const work = data('WORKBASE', {
+      categories: [],
+      currentCategoryId: null,
+      activeJob: { label: '제작 결과 확인 가능', remainingSeconds: null, completionAvailable: true },
+    });
+    await render(React.createElement(CraftingPanel, { api: api(async () => work), mode: 'workbase' }));
+
+    assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === '제작 종류 선택').length, 0);
+    assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === '제작품 선택').length, 0);
+    assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === '작업 시작').length, 0);
+    assert.equal(button('제작 완료').props.disabled, false);
+    assert.equal(text().includes('현재 작업이 끝난 뒤 새 작업을 선택할 수 있습니다.'), true);
+  });
+
   it('제작공방은 추가 소재가 없어도 막지 않고 null로 제출한다', async () => {
     const calls: unknown[] = [];
     const createData = data('CREATE', { maxQuantity: 100, additionalMaterials: [] });

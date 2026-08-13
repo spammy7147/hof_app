@@ -20,6 +20,7 @@ let alertArguments: unknown[] | null = null;
 const focusCalls: unknown[] = [];
 const AUTOMATION_LABELS: Record<AutomationType, string> = {
   QUEST: '퀘스트',
+  HOME_QUEST: '자택 관리',
   BATTLE_MAP: '전투 맵',
   ADVENTURE_MAP: '모험 맵',
   RAID: '레이드',
@@ -319,7 +320,7 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
 
   it('disables the single add trigger when all types exist', async () => {
     const renderer = await renderSettings({
-      entries: [entry(1, 'QUEST'), entry(2, 'BATTLE_MAP'), entry(3, 'ADVENTURE_MAP'), entry(4, 'RAID'), entry(5, 'UNION'), entry(6, 'FISHING')],
+      entries: [entry(1, 'QUEST'), entry(2, 'HOME_QUEST'), entry(3, 'BATTLE_MAP'), entry(4, 'ADVENTURE_MAP'), entry(5, 'RAID'), entry(6, 'UNION'), entry(7, 'FISHING')],
     });
     const trigger = renderer.root.findByProps({ accessibilityLabel: '모든 자동화가 추가되었습니다' });
 

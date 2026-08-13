@@ -255,12 +255,38 @@ function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<Fish
         onSelectionChange={setSelectedIds}
         renderItemFooter={(item) => {
           const materials = materialsByItemId.get(item.id) ?? [];
-          return materials.length > 0 ? (
-            <View accessibilityLabel={`${item.label} 교환 재료`} style={styles.exchangeMaterials}>
-              <Text style={styles.exchangeMaterialsTitle}>교환 재료</Text>
-              {materials.map((material) => <Text key={material} style={styles.exchangeMaterial}>{material}</Text>)}
+          const itemSelected = item.id === selected;
+          if (materials.length === 0 && !itemSelected) return null;
+          return (
+            <View style={styles.exchangeItemFooter}>
+              {materials.length > 0 ? (
+                <Pressable
+                  accessibilityLabel={`${item.label} 교환 재료`}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: itemSelected, disabled: !item.selectable || town.status === 'submitting' }}
+                  disabled={!item.selectable || town.status === 'submitting'}
+                  onPress={() => setSelectedIds([item.id])}
+                  style={({ pressed }) => [styles.exchangeMaterials, pressed && styles.pressed]}
+                >
+                  <Text style={styles.exchangeMaterialsTitle}>교환 재료</Text>
+                  {materials.map((material) => <Text key={material} style={styles.exchangeMaterial}>{material}</Text>)}
+                </Pressable>
+              ) : null}
+              {itemSelected ? (
+                <View style={styles.exchangeQuantityField}>
+                  <Text style={styles.exchangeMaterialsTitle}>교환 수량</Text>
+                  <TextInput
+                    accessibilityLabel="교환 수량"
+                    keyboardType="number-pad"
+                    onChangeText={setQuantity}
+                    style={styles.quantityInput}
+                    value={quantity}
+                  />
+                  {quantityError ? <Text accessibilityLiveRegion="polite" style={styles.error}>{quantityError}</Text> : null}
+                </View>
+              ) : null}
             </View>
-          ) : null;
+          );
         }}
         rows={data.items}
         selectedIds={selectedIds}
@@ -271,20 +297,16 @@ function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<Fish
         <Text numberOfLines={1} style={styles.exchangeSelection}>
           {selectedItem ? `선택: ${selectedItem.label}` : '교환할 품목을 선택하세요.'}
         </Text>
-        <View style={styles.exchangeActionRow}>
-          <TextInput accessibilityLabel="교환 수량" keyboardType="number-pad" onChangeText={setQuantity} style={styles.quantityInput} value={quantity} />
-          <Pressable
-            accessibilityLabel="선택한 낚시 품목 교환"
-            accessibilityRole="button"
-            disabled={!canExchange}
-            onPress={() => {
-              if (!canExchange || !selected || parsedQuantity === null || !data.currentCategoryId) return;
-              void town.submit({ candidateId: selected, categoryCandidateId: data.currentCategoryId, quantity: parsedQuantity }).catch(() => undefined);
-            }}
-            style={[styles.exchangeButton, !canExchange && styles.disabled]}
-          ><Text style={styles.primaryText}>교환</Text></Pressable>
-        </View>
-        {quantityError ? <Text accessibilityLiveRegion="polite" style={styles.error}>{quantityError}</Text> : null}
+        <Pressable
+          accessibilityLabel="선택한 낚시 품목 교환"
+          accessibilityRole="button"
+          disabled={!canExchange}
+          onPress={() => {
+            if (!canExchange || !selected || parsedQuantity === null || !data.currentCategoryId) return;
+            void town.submit({ candidateId: selected, categoryCandidateId: data.currentCategoryId, quantity: parsedQuantity }).catch(() => undefined);
+          }}
+          style={[styles.exchangeButton, !canExchange && styles.disabled]}
+        ><Text style={styles.primaryText}>교환</Text></Pressable>
       </View>
     </View>
   );
@@ -355,13 +377,14 @@ const styles = StyleSheet.create({
   exchangeScreen: { flex: 1, gap: theme.spacing.sm, minHeight: 0 },
   exchangeList: { flex: 1, minHeight: 0 },
   exchangeListFooter: { gap: theme.spacing.md, paddingBottom: theme.spacing.sm },
+  exchangeItemFooter: { gap: theme.spacing.sm },
   exchangeMaterials: { gap: theme.spacing.xs },
   exchangeMaterialsTitle: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '800' },
   exchangeMaterial: { color: theme.colors.text, fontSize: 13, lineHeight: 18 },
   exchangeActionBar: { backgroundColor: theme.colors.background, borderTopColor: theme.colors.borderStrong, borderTopWidth: 1, gap: theme.spacing.xs, paddingTop: theme.spacing.sm },
   exchangeSelection: { color: theme.colors.textMuted, fontSize: 12 },
-  exchangeActionRow: { flexDirection: 'row', gap: theme.spacing.sm },
-  exchangeButton: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.sm, flex: 1, justifyContent: 'center', minHeight: 48, paddingHorizontal: theme.spacing.lg },
+  exchangeButton: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.sm, justifyContent: 'center', minHeight: 48, paddingHorizontal: theme.spacing.lg, width: '100%' },
+  exchangeQuantityField: { gap: theme.spacing.xs },
   summary: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md, gap: theme.spacing.xs, padding: theme.spacing.md },
   heading: { color: theme.colors.text, fontSize: 17, fontWeight: '900' },
   info: { color: theme.colors.textMuted, fontSize: 13, lineHeight: 19 },
@@ -400,5 +423,5 @@ const styles = StyleSheet.create({
   categoryDropdownOption: { borderBottomColor: theme.colors.borderStrong, borderBottomWidth: StyleSheet.hairlineWidth, minHeight: 44, justifyContent: 'center', paddingHorizontal: theme.spacing.md },
   categoryDropdownOptionSelected: { backgroundColor: theme.colors.surface },
   categoryText: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
-  quantityInput: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md, width: 96 },
+  quantityInput: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md, width: '100%' },
 });

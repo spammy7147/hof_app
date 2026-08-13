@@ -13,6 +13,7 @@ import type {
   UpdateFishingAutomationRequest,
   UpdateRaidAutomationRequest,
   UpdateUnionAutomationRequest,
+  UpdateHomeQuestAutomationRequest,
   AutomationHistoryPage,
 } from '../types/api';
 
@@ -22,6 +23,7 @@ export type UnifiedAutomationControllerApi = {
   delete: (entryId: number) => Promise<TypedAutomationAggregateResponse>;
   reorder: (entryIds: number[]) => Promise<TypedAutomationAggregateResponse>;
   updateQuest: (request: UpdateQuestAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
+  updateHomeQuest?: (request: UpdateHomeQuestAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
   updateBattle: (request: UpdateBattleMapAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
   updateAdventure: (request: UpdateAdventureMapAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
   updateFishing?: (request: UpdateFishingAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
@@ -189,6 +191,10 @@ export class UnifiedAutomationController {
 
   saveQuestSettings(request: UpdateQuestAutomationRequest): Promise<boolean> {
     return this.saveSettings('QUEST', request, (body) => this.api.updateQuest(body));
+  }
+
+  saveHomeQuestSettings(request: UpdateHomeQuestAutomationRequest): Promise<boolean> {
+    return this.saveSettings('HOME_QUEST', request, (body) => this.requireApi(this.api.updateHomeQuest, '자택 관리')(body));
   }
 
   fetchQuests(): Promise<QuestSnapshot[]> {

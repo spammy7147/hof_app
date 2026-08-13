@@ -10,7 +10,9 @@ const host = (name: string) => (props: Record<string, unknown>) => React.createE
   props.children as React.ReactNode,
 );
 const reactNativeMock = {
+  Modal: host('Modal'),
   Pressable: host('Pressable'),
+  ScrollView: host('ScrollView'),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: host('Text'),
   View: host('View'),
@@ -63,6 +65,44 @@ describe('TownActionResult', () => {
     });
 
     assert.ok(renderer.root.find((node) => node.props.accessibilityLabel === '마을 정보 새로고침'));
+    await act(async () => { renderer.unmount(); });
+  });
+
+  it('shows actionable results in a blocking result notice until the user confirms it', async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(React.createElement(TownActionResult, {
+        result: {
+          status: 'SUCCESS',
+          messages: ['Blank Card와 교환한다.'],
+          items: [],
+          refreshRequired: false,
+        },
+      }));
+    });
+
+    assert.ok(renderer.root.find((node) => node.props.accessibilityLabel === '작업 완료 알림'));
+    const confirm = renderer.root.find((node) => node.props.accessibilityLabel === '결과 확인');
+    await act(async () => { confirm.props.onPress(); });
+    assert.equal(renderer.root.find((node) => String(node.type) === 'Modal').props.visible, false);
+    await act(async () => { renderer.unmount(); });
+  });
+
+  it('keeps informational results inline without opening a blocking notice', async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(React.createElement(TownActionResult, {
+        result: {
+          status: 'INFORMATIONAL',
+          messages: ['목록을 갱신했습니다.'],
+          items: [],
+          refreshRequired: true,
+        },
+      }));
+    });
+
+    assert.equal(renderer.root.findAll((node) => node.props.accessibilityLabel === '작업 안내 알림').length, 0);
+    assert.ok(renderer.root.findAll((node) => node.props.accessibilityLabel === '인라인 작업 결과').length >= 1);
     await act(async () => { renderer.unmount(); });
   });
 });

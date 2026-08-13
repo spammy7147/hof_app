@@ -528,8 +528,8 @@ export type RaidPubResponse = {
 };
 export type RaidPubActionRequest = { action: RaidAction; raidId: string | null };
 
-/** 백엔드가 소유하는 여섯 singleton 자동화 유형. */
-export type AutomationType = 'QUEST' | 'BATTLE_MAP' | 'ADVENTURE_MAP' | 'RAID' | 'UNION' | 'FISHING';
+/** 백엔드가 소유하는 일곱 singleton 자동화 유형. */
+export type AutomationType = 'QUEST' | 'HOME_QUEST' | 'BATTLE_MAP' | 'ADVENTURE_MAP' | 'RAID' | 'UNION' | 'FISHING';
 
 /** PRIMARY는 ID를 보내지 않고 EXPLICIT은 유효한 preset ID를 반드시 보낸다. */
 export type PresetSelection =
@@ -560,6 +560,15 @@ export type UpdateQuestAutomationRequest = {
   enabled: boolean;
   quests: QuestSelectionRequest[];
 };
+
+export type HomeQuestSelectionRequest = {
+  questId: string;
+  questName: string;
+  enabled: boolean;
+  sourceOrder: number;
+};
+export type HomeQuestSelectionResponse = HomeQuestSelectionRequest;
+export type UpdateHomeQuestAutomationRequest = { enabled: boolean; quests: HomeQuestSelectionRequest[] };
 
 export type BattleMapSettingRequest = PresetSelection & {
   categoryId: string;
@@ -617,6 +626,7 @@ export type TypedAutomationEntryResponse = {
   ready: boolean;
   warnings: string[];
   quests: QuestSelectionResponse[];
+  homeQuests?: HomeQuestSelectionResponse[];
   battleMaps: BattleMapSettingResponse[];
   /** 설정과 별도로 서버가 소유하는 한국 날짜 기준 전투맵 성공 횟수다. */
   battleMapProgress: BattleMapDailyProgressResponse[];
@@ -880,6 +890,48 @@ export type LoadPatternResponse = {
   message: string;
   characterSynchronized: boolean;
   character: HofCharacterDetail | null;
+};
+
+export type CharacterManagementSnapshot = {
+  character: HofCharacterDetail | null;
+  actions: CharacterObservedAction[];
+  messages: string[];
+  characters: HofCharacter[];
+  targetRemoved: boolean;
+};
+
+export type CharacterObservedAction = {
+  actionId: string;
+  source: string;
+  label: string;
+  candidates: CharacterActionCandidate[];
+  fields: CharacterActionField[];
+};
+
+export type CharacterActionCandidate = {
+  id: string;
+  groupId: string;
+  label: string;
+  selectionType: 'RADIO' | 'CHECKBOX' | 'SELECT';
+  minQuantity: number;
+  maxQuantity: number | null;
+  selected: boolean;
+};
+
+export type CharacterActionField = {
+  id: string;
+  label: string;
+  value: string;
+  inputType: 'TEXT' | 'NUMBER';
+  maxLength: number | null;
+};
+
+export type CharacterManagementActionRequest = {
+  action: {
+    actionId: string;
+    selections?: Array<{ candidateId: string; quantity?: number }>;
+    values?: Array<{ fieldId: string; value: string }>;
+  };
 };
 
 export type CharacterSyncJobStatus = 'pending' | 'running' | 'completed' | 'failed';
