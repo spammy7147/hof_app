@@ -118,8 +118,7 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
   </View>;
   const footer = <View style={styles.section}>
     {needsQuantity ? <QuantityInput value={quantityText} onChange={setQuantityText} min={data.minQuantity} max={data.maxQuantity} valid={quantityValid} /> : null}
-    {mode === 'refine' ? <View style={styles.section}><Text style={styles.label}>제련 횟수</Text><View style={styles.chips}>{data.allowedRefineCounts.map((count) => <Pressable key={count} accessibilityLabel={`제련 ${count}회 선택`} accessibilityRole="radio" accessibilityState={{ checked: refineCount === count }} onPress={() => setRefineCount(count)} style={[styles.chip, refineCount === count && styles.chipSelected]}><Text style={styles.chipText}>{count}회</Text></Pressable>)}</View></View> : mode === 'veteran' ? <View style={styles.fixedValue}><Text style={styles.label}>제련 횟수</Text><Text style={styles.fixedValueText}>1회 고정</Text></View> : null}
-    <ActionButton label={mode === 'refine' || mode === 'veteran' ? '제련' : mode === 'workbase' ? '작업 시작' : mode === 'claris' ? '교환' : '제작'} disabled={!canSubmit || town.status === 'submitting'} onPress={() => request && submit({ kind: 'item', request })} />
+    <ActionButton label={mode === 'workbase' ? '작업 시작' : mode === 'claris' ? '교환' : '제작'} disabled={!canSubmit || town.status === 'submitting'} onPress={() => request && submit({ kind: 'item', request })} />
     {resultFooter}
   </View>;
   const createControls = mode === 'create' ? <View accessibilityLabel="제작 설정 고정 영역" style={styles.fixedControls}>
@@ -133,11 +132,17 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
     />
     <ActionButton label="제작" disabled={!canSubmit || town.status === 'submitting'} onPress={() => request && submit({ kind: 'item', request })} />
   </View> : null;
+  const refineControls = mode === 'refine' || mode === 'veteran' ? <View accessibilityLabel="제련 설정 고정 영역" style={styles.fixedControls}>
+    {mode === 'refine'
+      ? <RefineCountDropdown counts={data.allowedRefineCounts} disabled={town.status === 'submitting'} selected={refineCount} onSelect={setRefineCount} />
+      : <View style={styles.fixedValue}><Text style={styles.label}>제련 횟수</Text><Text style={styles.fixedValueText}>1회 고정</Text></View>}
+    <ActionButton label="제련" disabled={!canSubmit || town.status === 'submitting'} onPress={() => request && submit({ kind: 'item', request })} />
+  </View> : null;
 
   if (historyScreenOpen) return <CraftingHistoryScreen rows={historyRows} onBack={() => setHistoryScreenOpen(false)} />;
 
   return <View style={styles.container}>
-    <TownItemList rows={rows} selectionMode="single" selectedIds={selectedIds.map((id) => `recipe:${id}`)}
+    <View style={styles.listArea}><TownItemList rows={rows} selectionMode="single" selectedIds={selectedIds.map((id) => `recipe:${id}`)}
       labelTextStyle={(row) => row.id.startsWith('recipe:') ? styles.itemHeadline : undefined}
       renderSelectedFooter={(row) => mode === 'create' && row.id.startsWith('recipe:')
         ? <QuantityInput value={quantityText} onChange={setQuantityText} min={data.minQuantity} max={data.maxQuantity} valid={quantityValid} compact />
@@ -145,9 +150,10 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
       onSelectionChange={(ids) => {
         setSelectedIds(ids.filter((id) => id.startsWith('recipe:')).map((id) => id.slice('recipe:'.length)).slice(0, 1));
       }}
-      header={<View style={styles.section}><Text style={styles.title}>{title}</Text><CategoryDropdown data={data} disabled={town.status === 'submitting'} onSelect={setRequestedCategoryId} />{mode === 'create' ? <CraftingSearch value={searchQuery} onChange={setSearchQuery} resultCount={visibleItems.length} /> : null}{town.status === 'loading' ? <Text accessibilityLiveRegion="polite" style={styles.hint}>선택한 종류의 제작품을 불러오는 중...</Text> : null}{data.activeJob ? <View accessibilityLiveRegion="polite" style={styles.job}><Text style={styles.label}>{data.activeJob.label}</Text><Text style={styles.warning}>{remaining == null ? '남은 시간 확인 불가' : remaining > 0 ? `${remaining.toLocaleString()}초 후 확인 가능` : '제작 결과를 확인할 수 있습니다.'}</Text>{data.activeJob.completionAvailable ? <ActionButton label="제작 완료" disabled={town.status === 'submitting'} onPress={() => submit({ kind: 'complete' })} /> : remaining === 0 ? <ActionButton label="제작 상태 확인" disabled={town.status === 'loading' || town.status === 'submitting'} onPress={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}</View> : null}</View>}
-      footer={mode === 'create' ? resultFooter : footer} emptyMessage={town.status === 'loading' ? null : normalizedQuery ? '검색 결과가 없습니다.' : '현재 분류에 표시할 품목이 없습니다.'} />
+      header={<View style={styles.section}><Text style={styles.title}>{title}</Text><CategoryDropdown data={data} disabled={town.status === 'submitting'} onSelect={setRequestedCategoryId} />{mode === 'create' || mode === 'refine' || mode === 'veteran' ? <CraftingSearch value={searchQuery} onChange={setSearchQuery} resultCount={visibleItems.length} subject={mode === 'create' ? '제작물품' : '제련 아이템'} /> : null}{town.status === 'loading' ? <Text accessibilityLiveRegion="polite" style={styles.hint}>선택한 종류의 제작품을 불러오는 중...</Text> : null}{data.activeJob ? <View accessibilityLiveRegion="polite" style={styles.job}><Text style={styles.label}>{data.activeJob.label}</Text><Text style={styles.warning}>{remaining == null ? '남은 시간 확인 불가' : remaining > 0 ? `${remaining.toLocaleString()}초 후 확인 가능` : '제작 결과를 확인할 수 있습니다.'}</Text>{data.activeJob.completionAvailable ? <ActionButton label="제작 완료" disabled={town.status === 'submitting'} onPress={() => submit({ kind: 'complete' })} /> : remaining === 0 ? <ActionButton label="제작 상태 확인" disabled={town.status === 'loading' || town.status === 'submitting'} onPress={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}</View> : null}</View>}
+      footer={mode === 'create' || mode === 'refine' || mode === 'veteran' ? resultFooter : footer} emptyMessage={town.status === 'loading' ? null : normalizedQuery ? '검색 결과가 없습니다.' : '현재 분류에 표시할 품목이 없습니다.'} /></View>
     {createControls}
+    {refineControls}
   </View>;
 }
 
@@ -219,20 +225,45 @@ function CategoryDropdown({ data, disabled, onSelect }: { data: CraftingResponse
     </Modal>
   </View>;
 }
-function CategoryOption({ checked, label, onPress }: { checked: boolean; label: string; onPress: () => void }) {
-  return <Pressable accessibilityLabel={`${label} 분류`} accessibilityRole="radio" accessibilityState={{ checked }} onPress={onPress} style={[styles.materialOption, checked && styles.materialOptionSelected]}>
+function CategoryOption({ checked, label, accessibilityLabel = `${label} 분류`, onPress }: { checked: boolean; label: string; accessibilityLabel?: string; onPress: () => void }) {
+  return <Pressable accessibilityLabel={accessibilityLabel} accessibilityRole="radio" accessibilityState={{ checked }} onPress={onPress} style={[styles.materialOption, checked && styles.materialOptionSelected]}>
     <View style={[styles.radio, checked && styles.radioSelected]}>{checked ? <View style={styles.radioDot} /> : null}</View>
     <Text style={styles.optionLabel}>{label}</Text>
   </Pressable>;
 }
-function CraftingSearch({ value, onChange, resultCount }: { value: string; onChange: (value: string) => void; resultCount: number }) {
+function CraftingSearch({ value, onChange, resultCount, subject }: { value: string; onChange: (value: string) => void; resultCount: number; subject: string }) {
   return <View>
     <View style={styles.searchField}>
       <Text accessibilityElementsHidden importantForAccessibility="no" style={styles.searchIcon}>⌕</Text>
-      <TextInput accessibilityLabel="제작물품 검색" autoCapitalize="none" autoCorrect={false} onChangeText={onChange} placeholder="제작물품 검색" placeholderTextColor={theme.colors.textMuted} returnKeyType="search" style={styles.searchInput} value={value} />
-      {value ? <Pressable accessibilityLabel="제작물품 검색어 지우기" accessibilityRole="button" onPress={() => onChange('')} style={styles.clearButton}><Text style={styles.clearText}>×</Text></Pressable> : null}
+      <TextInput accessibilityLabel={`${subject} 검색`} autoCapitalize="none" autoCorrect={false} onChangeText={onChange} placeholder={`${subject} 검색`} placeholderTextColor={theme.colors.textMuted} returnKeyType="search" style={styles.searchInput} value={value} />
+      {value ? <Pressable accessibilityLabel={`${subject} 검색어 지우기`} accessibilityRole="button" onPress={() => onChange('')} style={styles.clearButton}><Text style={styles.clearText}>×</Text></Pressable> : null}
     </View>
     {value ? <Text accessibilityLiveRegion="polite" style={styles.searchResult}>{resultCount.toLocaleString()}개 검색됨</Text> : null}
+  </View>;
+}
+function RefineCountDropdown({ counts, disabled, selected, onSelect }: { counts: number[]; disabled: boolean; selected: number | null; onSelect: (count: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const close = () => setOpen(false);
+  return <View style={styles.materialField}>
+    <Text style={styles.label}>제련 횟수</Text>
+    <Pressable accessibilityLabel="제련 횟수 선택" accessibilityRole="button" accessibilityState={{ disabled, expanded: open }} disabled={disabled || counts.length === 0} onPress={() => setOpen(true)} style={({ pressed }) => [styles.dropdown, (disabled || counts.length === 0) && styles.disabled, pressed && styles.pressed]}>
+      <Text numberOfLines={1} style={[styles.dropdownText, selected == null && styles.dropdownPlaceholder]}>{selected == null ? '횟수를 선택하세요' : `${selected.toLocaleString()}회`}</Text>
+      <Text style={styles.chevron}>⌄</Text>
+    </Pressable>
+    <Modal animationType="fade" onRequestClose={close} transparent visible={open}>
+      <View accessibilityViewIsModal style={styles.modalRoot}>
+        <Pressable accessibilityLabel="제련 횟수 선택 닫기" accessibilityRole="button" onPress={close} style={styles.modalBackdrop} />
+        <View style={styles.dropdownSheet}>
+          <View style={styles.dropdownHeader}>
+            <Text style={styles.dropdownTitle}>제련 횟수 선택</Text>
+            <Pressable accessibilityLabel="제련 횟수 선택 닫기" accessibilityRole="button" onPress={close} style={styles.closeButton}><Text style={styles.closeText}>×</Text></Pressable>
+          </View>
+          <ScrollView accessibilityRole="radiogroup" keyboardShouldPersistTaps="handled" style={styles.materialOptions}>
+            {counts.map((count) => <CategoryOption key={count} checked={count === selected} label={`${count.toLocaleString()}회`} accessibilityLabel={`제련 ${count.toLocaleString()}회`} onPress={() => { onSelect(count); close(); }} />)}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
   </View>;
 }
 function MaterialDropdown({ materials, open, selectedId, onOpen, onClose, onSelect }: {
@@ -288,6 +319,7 @@ function identifyApi(api: TownApi): number { const object = api as object; const
 
 const styles = StyleSheet.create({
   container: { flex: 1, gap: theme.spacing.sm },
+  listArea: { flex: 1, minHeight: 0 },
   section: { gap: theme.spacing.sm, paddingVertical: theme.spacing.sm },
   compactSection: { gap: theme.spacing.xs },
   title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' },
@@ -296,12 +328,8 @@ const styles = StyleSheet.create({
   hint: { color: theme.colors.textMuted, fontSize: 13, lineHeight: 18 },
   warning: { color: theme.colors.accentAmber, lineHeight: 20 },
   error: { color: theme.colors.danger, lineHeight: 20 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs },
   fixedValue: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', minHeight: 48, paddingHorizontal: theme.spacing.md },
   fixedValueText: { color: theme.colors.accentGreen, fontWeight: '900' },
-  chip: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, minHeight: 40, justifyContent: 'center', paddingHorizontal: theme.spacing.md },
-  chipSelected: { borderColor: theme.colors.accentGreen },
-  chipText: { color: theme.colors.text, fontWeight: '700' },
   job: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md, gap: theme.spacing.sm, padding: theme.spacing.md },
   input: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md },
   invalid: { borderColor: theme.colors.danger },

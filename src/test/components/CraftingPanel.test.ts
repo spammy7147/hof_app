@@ -53,6 +53,34 @@ describe('CraftingPanel', () => {
     assert.equal(text().includes('$ 113,500 +9 Shattered'), false);
   });
 
+  it('제련공방은 검색과 횟수 드롭다운을 제공하고 활성 품목만 고정 영역에서 제출한다', async () => {
+    const calls: unknown[] = [];
+    const refine = data('REFINE', {
+      rows: [
+        { id: 'header', label: '제련가능 Item', selectable: false, detail: null, cost: null, owned: null, workSeconds: null },
+        { id: 'soul', label: 'Soul Sword x5', selectable: true, detail: 'Atk:10', cost: 50, owned: 5, workSeconds: null },
+        { id: 'moon', label: 'Moon Axe x1', selectable: true, detail: 'Atk:20', cost: 100, owned: 1, workSeconds: null },
+      ],
+      allowedRefineCounts: [1, 2, 100],
+    });
+    await render(React.createElement(CraftingPanel, { api: api(async () => refine, async (_path, request) => { calls.push(request); return { ...refine, result: result() }; }), mode: 'refine' }));
+
+    assert.equal(button('제련가능 Item 선택 불가').props.disabled, true);
+    await change('제련 아이템 검색', 'soul');
+    const list = mounted!.root.find((node) => String(node.type) === 'FlatList');
+    assert.deepEqual((list.props.data as Array<{ id: string }>).map((row) => row.id), ['recipe:soul']);
+    const fixedArea = button('제련 설정 고정 영역');
+    assert.equal(fixedArea.findAll((node) => String(node.type) === 'Pressable' && node.props.accessibilityLabel === '제련').length, 1);
+    assert.equal(list.findAll((node) => String(node.type) === 'Pressable' && node.props.accessibilityLabel === '제련').length, 0);
+
+    await press('Soul Sword x5 선택');
+    await press('제련 횟수 선택');
+    await press('제련 100회');
+    assert.equal(text().includes('100회'), true);
+    await press('제련');
+    assert.deepEqual(calls, [{ candidateId: 'soul', categoryCandidateId: 'category', refineCount: 100 }]);
+  });
+
   it('radio 없는 품목은 표시하되 선택할 수 없고 작업장은 수량 10을 제한한다', async () => {
     await render(React.createElement(CraftingPanel, { api: api(async () => data('WORKBASE', { maxQuantity: 10 })), mode: 'workbase' }));
 
