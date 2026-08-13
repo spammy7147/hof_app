@@ -6,6 +6,7 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'rea
 
 const host = (name: string) => (props: Record<string, unknown>) => React.createElement(name, props, props.children as React.ReactNode);
 const reactNativeMock = {
+  BackHandler: { addEventListener: () => ({ remove: () => undefined }) },
   ActivityIndicator: host('ActivityIndicator'),
   FlatList: (props: Record<string, unknown>) => React.createElement('FlatList', props, props.ListHeaderComponent as React.ReactNode, (props.data as Array<{ id: string }>).map((item) => React.createElement(React.Fragment, { key: item.id }, (props.renderItem as Function)({ item }))), props.ListFooterComponent as React.ReactNode),
   Modal: host('Modal'), Pressable: host('Pressable'), ScrollView: host('ScrollView'), StyleSheet: { create: <T,>(styles: T) => styles }, Text: host('Text'), TextInput: host('TextInput'), View: host('View'),
@@ -84,13 +85,15 @@ describe('CraftingPanel', () => {
     assert.equal(text().includes('추가 소재 없이 제작했습니다.'), true);
   });
 
-  it('장로대장간은 서버가 허용한 제련 횟수만 선택해 보낸다', async () => {
+  it('장로대장간은 횟수 선택 없이 항상 1회로 제련한다', async () => {
     const calls: unknown[] = [];
     const veteran = data('VETERAN', { allowedRefineCounts: [1, 2, 3] });
     await render(React.createElement(CraftingPanel, { api: api(async () => veteran, async (_path, request) => { calls.push(request); return { ...veteran, result: result() }; }), mode: 'veteran' }));
 
-    await press('제작품 선택'); await press('제련 3회 선택'); await press('제련');
-    assert.deepEqual(calls, [{ candidateId: 'item', categoryCandidateId: 'category', refineCount: 3 }]);
+    assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === '제련 2회 선택').length, 0);
+    assert.equal(text().includes('1회 고정'), true);
+    await press('제작품 선택'); await press('제련');
+    assert.deepEqual(calls, [{ candidateId: 'item', categoryCandidateId: 'category', refineCount: 1 }]);
   });
 
   it('분류 GET을 URL encoding하고 늦게 끝난 이전 분류 응답은 표시하지 않는다', async () => {
@@ -130,7 +133,7 @@ describe('CraftingPanel', () => {
     assert.equal(text().includes('외투 제작품'), true);
   });
 
-  it('추가 소재를 목록에서 분리하고 긴 제작 기록만 제작품 FlatList에서 가상화한다', async () => {
+  it('Hall of Pain 버튼은 제작 목록을 펼치지 않고 별도 기록 화면을 연다', async () => {
     const createData = data('CREATE', {
       additionalMaterials: [{ id: 'material', label: 'Power Sphere', selectable: true, owned: 3, detail: '성공률 증가' }],
       history: Array.from({ length: 200 }, (_, index) => `제작 기록 ${index + 1}`),
@@ -139,12 +142,16 @@ describe('CraftingPanel', () => {
 
     assert.equal(mounted!.root.findAll((node) => String(node.type) === 'FlatList').length, 1);
     assert.equal(button('제작 설정 고정 영역').props.accessibilityLabel, '제작 설정 고정 영역');
-    await press('Hall of Pain 기록 펼치기');
+    assert.equal((mounted!.root.find((node) => String(node.type) === 'FlatList').props.data as unknown[]).length, 2);
+    await press('Hall of Pain 기록 보기');
+    assert.equal(text().includes('Hall of Pain 기록'), true);
     const list = mounted!.root.find((node) => String(node.type) === 'FlatList');
-    assert.equal(list.props.data.length, 202);
+    assert.equal(list.props.data.length, 200);
     assert.equal((list.props.data as Array<{ id: string }>).some((row) => row.id.startsWith('additional:')), false);
     assert.equal(mounted!.root.findAll((node) => String(node.type) === 'FlatList').length, 1);
     assert.equal(button('제작 기록 200').props.accessibilityRole, 'text');
+    await press('제작 화면으로 돌아가기');
+    assert.equal((mounted!.root.find((node) => String(node.type) === 'FlatList').props.data as unknown[]).length, 2);
   });
 
   it('제작물품을 검색하고 추가 소재 드롭다운에서는 하나만 선택해 제출한다', async () => {
