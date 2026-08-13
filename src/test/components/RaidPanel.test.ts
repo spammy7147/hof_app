@@ -33,6 +33,17 @@ describe('RaidPanel', () => {
   it('공통 버튼 3개와 선택한 맵의 버튼 4개를 항상 표시하고 실행 가능 여부만 비활성화한다', async () => {
     await render(React.createElement(RaidPanel, { api: api(async () => raidData()) }));
 
+    const globalActions = mounted!.root.findByProps({ testID: 'raid-global-actions' });
+    const selectedActions = mounted!.root.findByProps({ testID: 'raid-selected-actions' });
+    assert.equal(styleOf(globalActions).flexWrap, 'nowrap');
+    assert.equal(styleOf(selectedActions).flexWrap, 'nowrap');
+    assert.equal(globalActions.findAll((node) => String(node.type) === 'Pressable').length, 3);
+    assert.equal(selectedActions.findAll((node) => String(node.type) === 'Pressable').length, 4);
+    for (const action of [...globalActions.findAll((node) => String(node.type) === 'Pressable'), ...selectedActions.findAll((node) => String(node.type) === 'Pressable')]) {
+      assert.equal(styleOf(action).flex, 1);
+      assert.equal(styleOf(action).minWidth, 0);
+    }
+
     for (const label of ['갱신', '보상 확인', '대기 리셋']) assert.equal(button(label).length, 1);
     assert.equal(button('갱신')[0]!.props.accessibilityState.disabled, false);
     assert.equal(button('보상 확인')[0]!.props.accessibilityState.disabled, true);
@@ -211,6 +222,11 @@ describe('RaidPanel', () => {
     assert.equal(text().includes('레이드 요청 실패'), true);
   });
 });
+
+function styleOf(node: ReactTestInstance): Record<string, unknown> {
+  const values = Array.isArray(node.props.style) ? node.props.style : [node.props.style];
+  return Object.assign({}, ...values.filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === 'object'));
+}
 
 function raidData(applyWaitSeconds: number | null = null, applyWait = applyWaitSeconds != null): RaidPubResponse { return { raids: [{ id: 'RaidGoblin', name: '고블린 전투 마차', playable: true, difficulty: '평범 레벨 40', maxPartySize: 6, rewardDamage: '100000+', status: 'RECRUITING', statusText: '모집 중', waitSeconds: null, applicants: [], joined: false, actions: ['REGISTER', 'LEAVE'], battleTarget: { categoryId: 'raid', mapCode: 'RaidGoblin', cooldownRemainingSeconds: null } }, { id: 'RaidTest', name: '시험 레이드', playable: false, difficulty: null, maxPartySize: null, rewardDamage: null, status: 'TESTING', statusText: '신청 안됨', waitSeconds: null, applicants: [], joined: false, actions: [], battleTarget: null }], applied: false, applyWait, applyWaitSeconds, myStatus: null, globalActions: ['REFRESH', 'REWARD'], result: null }; }
 function result(message = '완료') { return { status: 'SUCCESS' as const, messages: [message], items: [], refreshRequired: true }; }

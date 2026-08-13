@@ -116,12 +116,12 @@ export function RaidPanel({ api, resolveCaptcha, onOpenBattle }: Props) {
       header={<View style={styles.section}><Text style={styles.title}>전투 정보실</Text><Text style={styles.hint}>레이드 모집 상태를 확인하고 기존 RAID 전투 화면으로 연결합니다.</Text>
         {data.myStatus ? <Text accessibilityLiveRegion="polite" style={styles.status}>{data.myStatus}</Text> : null}
         {applyWaitMessage ? <Text accessibilityLiveRegion="polite" style={styles.wait}>{applyWaitMessage}</Text> : null}
-        <View style={styles.actions}>{GLOBAL_ACTIONS.map((action) => <ActionButton key={action} label={ACTION_LABEL[action]}
+        <View testID="raid-global-actions" style={styles.actions}>{GLOBAL_ACTIONS.map((action) => <ActionButton key={action} label={ACTION_LABEL[action]} grouped
           disabled={busy || !canUseGlobalAction(data, action)} onPress={action === 'REFRESH' ? refresh : () => perform(action, null)} />)}</View>
       </View>}
       footer={<View style={styles.section}>
-        {selected ? <><Text style={styles.selectedTitle}>{selected.name}</Text><View style={styles.actions}>
-          {RAID_ACTIONS.map((action) => <ActionButton key={action} label={ACTION_LABEL[action]}
+        {selected ? <><Text style={styles.selectedTitle}>{selected.name}</Text><View testID="raid-selected-actions" style={styles.actions}>
+          {RAID_ACTIONS.map((action) => <ActionButton key={action} label={ACTION_LABEL[action]} grouped
             disabled={busy || !canUseRaidAction(selected, action, registerBlocked, data.applyWait)}
             onPress={() => perform(action, selected.id)} />)}
         </View>{battleTarget && onOpenBattle ? <ActionButton label="RAID 전투 화면 열기" disabled={busy} onPress={() => onOpenBattle(battleTarget)} /> : null}</> : null}
@@ -130,7 +130,7 @@ export function RaidPanel({ api, resolveCaptcha, onOpenBattle }: Props) {
   </View>;
 }
 
-function ActionButton({ label, disabled, onPress }: { label: string; disabled: boolean; onPress: () => void }) { return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}><Text style={styles.buttonText}>{label}</Text></Pressable>; }
+function ActionButton({ label, disabled, onPress, grouped = false }: { label: string; disabled: boolean; onPress: () => void; grouped?: boolean }) { return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={[styles.button, grouped && styles.groupedButton, disabled && styles.disabled]}><Text numberOfLines={1} adjustsFontSizeToFit={grouped} minimumFontScale={0.75} style={[styles.buttonText, grouped && styles.groupedButtonText]}>{label}</Text></Pressable>; }
 function LoadState({ loading, error, reload }: { loading: boolean; error: string | null; reload: () => Promise<unknown> }) { return <View style={styles.container}><Text accessibilityRole={error ? 'alert' : undefined} style={error ? styles.error : styles.hint}>{loading ? '전투 정보실을 불러오는 중...' : error ?? '전투 정보실 정보가 없습니다.'}</Text>{!loading ? <ActionButton label="다시 시도" disabled={false} onPress={() => void reload().catch(() => undefined)} /> : null}</View>; }
 function positive(value: number | null): value is number { return value != null && value > 0; }
 function canUseGlobalAction(data: RaidPubResponse, action: RaidAction) {
@@ -150,4 +150,4 @@ function formatDuration(seconds: number) { const safe = Math.max(0, seconds); co
 function info(message: string): TownActionResultResponse { return { status: 'INFORMATIONAL', messages: [message], items: [], refreshRequired: true }; }
 function identifyApi(api: TownApi) { const key = api as object; const old = apiKeys.get(key); if (old != null) return old; const next = nextApiKey++; apiKeys.set(key, next); return next; }
 const ACTION_LABEL: Record<RaidAction, string> = { REGISTER: '등록', LEAVE: '나오기', START: '전투 시작', RESET: '리셋', REWARD: '보상 확인', WAIT_RESET: '대기 리셋', REFRESH: '갱신' };
-const styles = StyleSheet.create({ container: { flex: 1, gap: theme.spacing.md }, section: { gap: theme.spacing.sm, paddingVertical: theme.spacing.sm }, title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' }, hint: { color: theme.colors.textMuted, lineHeight: 20 }, status: { color: theme.colors.accentGreen, fontWeight: '800' }, wait: { color: theme.colors.accentAmber, fontWeight: '800' }, error: { color: theme.colors.danger, lineHeight: 20 }, selectedTitle: { color: theme.colors.text, fontSize: 17, fontWeight: '900' }, actions: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }, button: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, justifyContent: 'center', minHeight: 46, minWidth: 110, paddingHorizontal: theme.spacing.md }, buttonText: { color: theme.colors.background, fontWeight: '900' }, disabled: { opacity: 0.45 } });
+const styles = StyleSheet.create({ container: { flex: 1, gap: theme.spacing.md }, section: { gap: theme.spacing.sm, paddingVertical: theme.spacing.sm }, title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' }, hint: { color: theme.colors.textMuted, lineHeight: 20 }, status: { color: theme.colors.accentGreen, fontWeight: '800' }, wait: { color: theme.colors.accentAmber, fontWeight: '800' }, error: { color: theme.colors.danger, lineHeight: 20 }, selectedTitle: { color: theme.colors.text, fontSize: 17, fontWeight: '900' }, actions: { flexDirection: 'row', flexWrap: 'nowrap', gap: theme.spacing.sm, width: '100%' }, button: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, justifyContent: 'center', minHeight: 46, minWidth: 110, paddingHorizontal: theme.spacing.md }, groupedButton: { flex: 1, minWidth: 0, paddingHorizontal: theme.spacing.xs }, buttonText: { color: theme.colors.background, fontWeight: '900' }, groupedButtonText: { textAlign: 'center' }, disabled: { opacity: 0.45 } });
