@@ -7,6 +7,7 @@ import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist';
 
 import { BattlePartySelector } from './BattlePartySelector';
+import { scrollFocusedInputIntoView } from './keyboardAwareScroll';
 import { PartyPresetFolderEditor } from './PartyPresetFolderEditor';
 import { PartyPresetFolderPicker } from './PartyPresetFolderPicker';
 import { PartyPresetSearchResults } from './PartyPresetSearchResults';
@@ -666,17 +667,21 @@ export function PartyPresetList({
         </View>
       ) : (
         <DraggableFlatList
+          automaticallyAdjustKeyboardInsets
           ref={presetListRef}
           containerStyle={styles.list}
           contentContainerStyle={styles.listContent}
           contentInsetAdjustmentBehavior="automatic"
           data={visiblePresets}
           keyExtractor={({ id }) => id.toString()}
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
           ListHeaderComponent={listHeader}
           onDragBegin={() => {
             closeOpenSwipeable();
             setIsDragging(true);
           }}
+          onFocus={(event) => scrollFocusedInputIntoView(presetListRef.current, event.nativeEvent.target)}
           onDragEnd={({ data, from, to }) => {
             setIsDragging(false);
             if (from === to) return;

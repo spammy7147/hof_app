@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import type { ReactNode } from 'react';
-import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useCallback, useMemo, useState } from 'react';
 
 import {
@@ -345,7 +345,7 @@ function PickerModal({ children, onClose, title }: PickerModalProps) {
     >
       <View style={styles.modalRoot}>
         <Pressable accessibilityRole="button" onPress={onClose} style={styles.modalBackdrop} />
-        <View style={styles.modalSheet}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalSheet}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>{title}</Text>
             <Pressable accessibilityRole="button" onPress={onClose} style={styles.modalCloseButton}>
@@ -353,7 +353,7 @@ function PickerModal({ children, onClose, title }: PickerModalProps) {
             </Pressable>
           </View>
           {children}
-        </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );

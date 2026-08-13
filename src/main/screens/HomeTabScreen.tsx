@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ElementRef } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ArrowLeft, Info } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
@@ -13,6 +13,7 @@ import { UnifiedAutomationSettings } from '../features/automation/components/Uni
 import { NewAutomationEditor } from '../features/automation/components/NewAutomationEditor';
 import { AutomationHistoryScreen } from '../features/automation/components/AutomationHistoryScreen';
 import { theme } from '../styles/theme';
+import { scrollFocusedInputIntoView } from '../components/keyboardAwareScroll';
 import type { TownApi } from '../features/town/api/townApi';
 import type {
   BattleCategoryResponse,
@@ -71,6 +72,7 @@ export function HomeTabScreen({
   const [route, setRoute] = useState<HomeRoute>('dashboard');
   const [typedEditorEntry, setTypedEditorEntry] = useState<TypedAutomationEntryResponse | null>(null);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const scrollRef = useRef<ElementRef<typeof NestableScrollContainer>>(null);
   const {
     aggregate,
     loading,
@@ -269,7 +271,10 @@ export function HomeTabScreen({
     <NestableScrollContainer
       contentContainerStyle={styles.container}
       contentInsetAdjustmentBehavior="automatic"
+      keyboardDismissMode="interactive"
       keyboardShouldPersistTaps="handled"
+      onFocus={(event) => scrollFocusedInputIntoView(scrollRef.current, event.nativeEvent.target)}
+      ref={scrollRef}
       style={styles.scroller}
     >
       {showPageHeader ? (

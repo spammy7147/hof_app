@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
+import { scrollFocusedInputIntoView } from './keyboardAwareScroll';
 import {
   Check,
   ChevronDown,
@@ -656,12 +657,15 @@ export const PartyPresetFolderEditor = memo(function PartyPresetFolderEditor({
   return (
     <View style={styles.container}>
       <FlatList
+        automaticallyAdjustKeyboardInsets
         CellRendererComponent={renderCell}
         contentContainerStyle={styles.listContent}
         data={rows}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
         keyExtractor={({ folderId }) => folderId.toString()}
         ListHeaderComponent={header}
+        onFocus={(event) => scrollFocusedInputIntoView(listRef.current, event.nativeEvent.target)}
         onContentSizeChange={(_width, height) => {
           contentHeightRef.current = height;
         }}

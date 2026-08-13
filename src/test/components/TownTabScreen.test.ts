@@ -6,6 +6,7 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'rea
 
 const focusCalls: Array<Record<string, unknown>> = [];
 const scrollToCalls: Array<{ animated?: boolean; y?: number }> = [];
+const keyboardScrollCalls: unknown[][] = [];
 let hardwareBackHandler: (() => boolean) | null = null;
 const host = (name: string) => React.forwardRef<Record<string, unknown>, Record<string, unknown>>((props, ref) => {
   React.useImperativeHandle(ref, () => ({
@@ -34,6 +35,7 @@ const flatList = React.forwardRef<unknown, Record<string, unknown>>((props, ref)
 const scrollView = React.forwardRef<Record<string, unknown>, Record<string, unknown>>((props, ref) => {
   React.useImperativeHandle(ref, () => ({
     scrollTo: (options: { animated?: boolean; y?: number }) => scrollToCalls.push(options),
+    scrollResponderScrollNativeHandleToKeyboard: (...args: unknown[]) => keyboardScrollCalls.push(args),
   }));
   return React.createElement('ScrollView', props, props.children as React.ReactNode);
 });
@@ -49,6 +51,7 @@ const reactNativeMock = {
     },
   },
   FlatList: flatList,
+  Keyboard: { addListener: () => ({ remove: () => undefined }) },
   Modal: host('Modal'),
   Pressable: host('Pressable'),
   ScrollView: scrollView,
@@ -92,6 +95,7 @@ let mountedRenderer: ReactTestRenderer | null = null;
 afterEach(async () => {
   focusCalls.length = 0;
   scrollToCalls.length = 0;
+  keyboardScrollCalls.length = 0;
   hardwareBackHandler = null;
   if (!mountedRenderer) return;
   const renderer = mountedRenderer;
@@ -226,6 +230,17 @@ describe('TownTabScreen', () => {
     assert.equal(findHosts(renderer.root, 'ScrollView').filter((node) => node.props.accessibilityLabel === '마을 화면 스크롤').length, 1);
     assert.equal(findHosts(renderer.root, 'View').filter((node) => node.props.accessibilityLabel === '마을 가상 목록 화면').length, 0);
     assert.equal(allText(renderer.root).includes('조합 결과 수량'), true);
+  });
+
+  it('일반 마을 화면의 포커스된 입력란을 키보드 위로 스크롤한다', async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(TownTabScrollContainer)); });
+    mountedRenderer = renderer;
+    const scroller = renderer.root.find((node) => node.props.accessibilityLabel === '마을 화면 스크롤');
+
+    await act(async () => scroller.props.onFocus({ nativeEvent: { target: 912 } }));
+
+    assert.deepEqual(keyboardScrollCalls, [[912, 24, true]]);
   });
 
   it('상점 왕복에도 TownTabScreen 인스턴스와 검색 분류 스크롤 포커스를 보존한다', async () => {

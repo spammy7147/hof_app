@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { PrimaryButton } from '../components/PrimaryButton';
+import { scrollFocusedInputIntoView } from '../components/keyboardAwareScroll';
 import { theme } from '../styles/theme';
 
 type LoginScreenProps = {
@@ -17,6 +18,7 @@ export function LoginScreen({ errorMessage, isSubmitting, onSubmit }: LoginScree
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
 
   /**
    * 입력값을 검증한 뒤 부모 App의 로그인 흐름으로 넘긴다.
@@ -39,7 +41,14 @@ export function LoginScreen({ errorMessage, isSubmitting, onSubmit }: LoginScree
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={styles.keyboard}
     >
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        automaticallyAdjustKeyboardInsets
+        contentContainerStyle={styles.container}
+        keyboardDismissMode="interactive"
+        keyboardShouldPersistTaps="handled"
+        onFocus={(event) => scrollFocusedInputIntoView(scrollRef.current, event.nativeEvent.target)}
+        ref={scrollRef}
+      >
         <View style={styles.header}>
           <Text style={styles.appName}>Spammy HOF</Text>
           <Text style={styles.subtitle}>HOF 계정을 확인하고 안전하게 연결합니다.</Text>

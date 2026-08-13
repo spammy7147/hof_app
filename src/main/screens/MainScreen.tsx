@@ -4,6 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomTabBar } from '../components/BottomTabBar';
+import { scrollFocusedInputIntoView } from '../components/keyboardAwareScroll';
 import { CharacterDetail } from '../components/CharacterDetail';
 import { CharacterList } from '../components/CharacterList';
 import { GameStatusBar } from '../components/GameStatusBar';
@@ -803,10 +804,16 @@ function renderSystemMessage(
  * 스크롤이 필요한 탭 화면에 공통 padding과 ScrollView 설정을 적용한다.
  */
 function TabScrollContainer({ children }: { children: ReactNode }) {
+  const scrollRef = useRef<ScrollView>(null);
   return (
     <ScrollView
+      automaticallyAdjustKeyboardInsets
       contentContainerStyle={styles.container}
       contentInsetAdjustmentBehavior="automatic"
+      keyboardDismissMode="interactive"
+      keyboardShouldPersistTaps="handled"
+      onFocus={(event) => scrollFocusedInputIntoView(scrollRef.current, event.nativeEvent.target)}
+      ref={scrollRef}
       style={styles.tabScroller}
     >
       {children}

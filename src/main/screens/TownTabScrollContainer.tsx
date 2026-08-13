@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { ScrollView, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 
 import { theme } from '../styles/theme';
+import { scrollFocusedInputIntoView } from '../components/keyboardAwareScroll';
 import { TownTabScreen } from './TownTabScreen';
 import type { TownApi } from '../features/town/api/townApi';
 import type { FishingBattleTarget } from '../types/api';
@@ -54,8 +55,12 @@ export function TownTabScrollContainer({ townApi, resolveCaptcha, onOpenFishingB
         ) : (
           <ScrollView
             accessibilityLabel="마을 화면 스크롤"
+            automaticallyAdjustKeyboardInsets
             contentContainerStyle={styles.container}
             contentInsetAdjustmentBehavior="automatic"
+            keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
+            onFocus={(event) => scrollFocusedInputIntoView(scrollRef.current, event.nativeEvent.target)}
             onScroll={handleScroll}
             ref={scrollRef}
             scrollEventThrottle={16}

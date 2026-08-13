@@ -4,21 +4,29 @@ import { describe, it } from 'node:test';
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
+const keyboardScrollCalls: unknown[][] = [];
+
 const host = (name: string) => (props: Record<string, unknown>) => React.createElement(
   name,
   props,
   props.children as React.ReactNode,
 );
 const reactNativeMock = {
-  FlatList: (props: Record<string, unknown>) => {
+  FlatList: React.forwardRef<Record<string, unknown>, Record<string, unknown>>((props, ref) => {
     const data = props.data as Array<{ id: string }>;
     const renderItem = props.renderItem as (info: { item: { id: string } }) => React.ReactNode;
+    React.useImperativeHandle(ref, () => ({
+      getScrollResponder: () => ({
+        scrollResponderScrollNativeHandleToKeyboard: (...args: unknown[]) => keyboardScrollCalls.push(args),
+      }),
+    }));
     return React.createElement('FlatList', props, data.map((item) => React.createElement(
       React.Fragment,
       { key: item.id },
       renderItem({ item }),
     )));
-  },
+  }),
+  Keyboard: { addListener: () => ({ remove: () => undefined }) },
   Pressable: host('Pressable'),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: host('Text'),
@@ -40,6 +48,20 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('TownItemList', () => {
+  it('포커스된 입력란을 키보드 위로 스크롤한다', async () => {
+    keyboardScrollCalls.length = 0;
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(React.createElement(TownItemList, { rows: [] }));
+    });
+
+    const list = renderer.root.find((node) => String(node.type) === 'FlatList');
+    await act(async () => list.props.onFocus({ nativeEvent: { target: 731 } }));
+
+    assert.deepEqual(keyboardScrollCalls, [[731, 24, true]]);
+    await act(async () => { renderer.unmount(); });
+  });
+
   it('uses FlatList and keeps rows without a HOF selector visible but disabled', async () => {
     let renderer!: ReactTestRenderer;
     await act(async () => {

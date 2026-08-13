@@ -1,7 +1,8 @@
 import { Image } from 'expo-image';
-import type { ReactElement, ReactNode } from 'react';
+import { useRef, type ReactElement, type ReactNode } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 
+import { scrollFocusedInputIntoView } from '../../../components/keyboardAwareScroll';
 import { theme } from '../../../styles/theme';
 import type { TownRowResponse } from '../../../types/api';
 
@@ -45,13 +46,18 @@ export function TownItemList({
   renderSelectedFooter,
 }: TownItemListProps) {
   const selected = new Set(selectedIds);
+  const listRef = useRef<FlatList<TownRowResponse>>(null);
 
   return (
     <FlatList
+      automaticallyAdjustKeyboardInsets
+      ref={listRef}
+      onFocus={(event) => scrollFocusedInputIntoView(listRef.current, event.nativeEvent.target)}
       style={style}
       data={rows}
       keyExtractor={(row) => row.id}
       keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="interactive"
       nestedScrollEnabled
       initialNumToRender={12}
       windowSize={7}

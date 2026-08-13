@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { ArrowLeft, ChevronRight, Save } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
+import { scrollFocusedInputIntoView } from '../../../components/keyboardAwareScroll';
 
 import {
   battleMapIdentity,
@@ -119,6 +120,7 @@ export function BattleMapAutomationEditor({
   } | null>(null);
   const presetFocusGenerationRef = useRef(0);
   const restorePresetFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollRef = useRef<ElementRef<typeof NestableScrollContainer>>(null);
 
   const updateDraft = useCallback((updater: (current: BattleMapAutomationDraft) => BattleMapAutomationDraft) => {
     const next = updater(draftRef.current);
@@ -549,7 +551,14 @@ export function BattleMapAutomationEditor({
         setQuery(value);
       }} placeholder="추가할 맵 이름, 그룹, 추천 레벨 검색" placeholderTextColor={theme.colors.textMuted} style={styles.search} value={query} /> : null}
 
-      <NestableScrollContainer contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" style={styles.scroller}>
+      <NestableScrollContainer
+        contentContainerStyle={styles.content}
+        keyboardDismissMode="interactive"
+        keyboardShouldPersistTaps="handled"
+        onFocus={(event) => scrollFocusedInputIntoView(scrollRef.current, event.nativeEvent.target)}
+        ref={scrollRef}
+        style={styles.scroller}
+      >
         {(activeTab === 'SELECTED' ? selectedItems : catalogItems)
           .map((item) => <Fragment key={item.key}>{renderListItem({ item })}</Fragment>)}
       </NestableScrollContainer>
