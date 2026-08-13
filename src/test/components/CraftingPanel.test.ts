@@ -18,6 +18,25 @@ const { CraftingPanel } = require('../../main/features/town/panels/CraftingPanel
 let mounted: ReactTestRenderer | null = null; afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; });
 
 describe('CraftingPanel', () => {
+  it('제작공방 카드에서 아이템명과 옵션·필요 재료를 분리한다', async () => {
+    const create = data('CREATE', {
+      rows: [{
+        id: 'short-sword',
+        label: 'Short Sword (Sword) / Atk:10 / h:1 / M:Metal / Steel Ingot x 4(12054) x4',
+        selectable: true,
+        detail: null,
+        cost: 10,
+        owned: null,
+        workSeconds: null,
+      }],
+    });
+    await render(React.createElement(CraftingPanel, { api: api(async () => create), mode: 'create' }));
+
+    const row = (mounted!.root.find((node) => String(node.type) === 'FlatList').props.data as Array<Record<string, unknown>>)[0];
+    assert.equal(row.label, 'Short Sword');
+    assert.equal(row.detail, '(Sword) · Atk:10 · h:1 · M:Metal · Steel Ingot x 4(12054) x4');
+  });
+
   it('강화수치·아이템명·수량만 제목에 두고 타입과 능력치는 상세로 분리한다', async () => {
     const raw = '+9 Shattered Elementium Destroyer (TwoHandSword) x1 / Atk:137 / Matk:59 / Def:15+120';
     const refine = data('REFINE', {

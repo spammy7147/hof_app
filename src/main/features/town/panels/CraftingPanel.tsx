@@ -166,13 +166,15 @@ function toRow(item: CraftingResponse['rows'][number], group: 'recipe'): TownRow
 
 function presentCraftingItem(label: string, detail: string | null, owned: number | null): { label: string; detail: string | null } {
   const normalizedLabel = cleanDisplayText(label);
-  const quantityMatch = normalizedLabel.match(/^(.*?)\s+([x×]\s*[\d,]+)\s*(?:\/\s*(.*))?$/i);
-  const titleWithType = quantityMatch?.[1]?.trim() || normalizedLabel;
+  const [headline, ...optionParts] = normalizedLabel.split(/\s*\/\s*/);
+  // 제작 재료 끝의 `x4`를 제작품 보유 수량으로 오인하지 않도록 수량은 첫 `/` 앞에서만 해석한다.
+  const quantityMatch = headline.match(/^(.*?)\s+([x×]\s*[\d,]+)$/i);
+  const titleWithType = quantityMatch?.[1]?.trim() || headline;
   const quantity = quantityMatch?.[2]?.replace(/\s+/g, '') ?? (owned == null ? null : `x${owned.toLocaleString()}`);
   const typeMatch = titleWithType.match(/^(.*?)\s+(\([^()]+\))$/);
   const itemName = typeMatch?.[1]?.trim() || titleWithType;
   const type = typeMatch?.[2]?.trim() ?? null;
-  const labelRemainder = quantityMatch?.[3]?.trim().replace(/\s*\/\s*/g, ' · ') || null;
+  const labelRemainder = optionParts.map((part) => part.trim()).filter(Boolean).join(' · ') || null;
   const normalizedDetail = cleanDisplayText(detail ?? '').replace(/^[$￦]\s*[\d,]+\s*/, '').trim();
   const distinctDetail = normalizedDetail && normalizedDetail !== normalizedLabel ? normalizedDetail : null;
   return {
