@@ -289,8 +289,10 @@ function FishingExchangePanel({ api, resolveCaptcha, onNavigateMode }: Pick<Fish
           );
         }}
         rows={data.items}
+        selectionDisabled={town.status === 'submitting'}
         selectedIds={selectedIds}
         selectionMode="single"
+        showSelectionAvailability
         style={styles.exchangeList}
       />
       <View accessibilityLabel="낚시 교환 작업" style={styles.exchangeActionBar}>

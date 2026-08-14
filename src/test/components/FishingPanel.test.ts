@@ -130,14 +130,14 @@ describe('FishingPanel', () => {
     assert.deepEqual(runPanel.props.allowedBattleCounts, [1]);
   });
 
-  it('교환소에서 radio 없는 행을 보이되 선택할 수 없게 한다', async () => {
+  it('교환소에서 선택 가능한 행을 먼저 보여주고 상태를 시각적으로 구분한다', async () => {
     const api = fakeApi({
       load: async () => ({
         categories: [{ id: 'type:all', label: '전부', current: true }],
         currentCategoryId: 'type:all',
         items: [
-          { id: 'rank', label: 'Rank Fish', selectable: true, detail: null, imageUrl: null, price: null, quantity: null, materials: [] },
           { id: 'display', label: '교환 불가', selectable: false, detail: null, imageUrl: null, price: null, quantity: null, materials: [] },
+          { id: 'rank', label: 'Rank Fish', selectable: true, detail: null, imageUrl: null, price: null, quantity: null, materials: [] },
         ],
         result: null,
       }),
@@ -145,6 +145,11 @@ describe('FishingPanel', () => {
     await render(React.createElement(FishingPanel, { api, mode: 'exchange' }));
 
     const unavailable = button('교환 불가 선택 불가');
+    const list = mounted!.root.find((node) => String(node.type) === 'FlatList');
+    const statusLabels = mounted!.root.findAll((node) => String(node.type) === 'Text' && ['선택 가능', '선택 불가'].includes(node.children.join('')));
+
+    assert.deepEqual(list.props.data.map((item: { id: string }) => item.id), ['rank', 'display']);
+    assert.deepEqual(statusLabels.map((node) => node.children.join('')), ['선택 가능', '선택 불가']);
     assert.equal(unavailable.props.disabled, true);
     assert.equal(allText().includes('교환 불가'), true);
   });

@@ -163,6 +163,7 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
 
   return <View style={styles.container}>
     <View style={styles.listArea}><TownItemList rows={rows} selectionMode="single" selectedIds={selectedIds.map((id) => `recipe:${id}`)}
+      showSelectionAvailability={mode === 'claris'}
       labelTextStyle={(row) => row.id.startsWith('recipe:') ? styles.itemHeadline : undefined}
       renderSelectedFooter={(row) => mode === 'create' && row.id.startsWith('recipe:')
         ? <QuantityInput value={quantityText} onChange={setQuantityText} min={data.minQuantity} max={data.maxQuantity} valid={quantityValid} compact />

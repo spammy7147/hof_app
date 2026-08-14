@@ -91,6 +91,19 @@ describe('CraftingPanel', () => {
     assert.equal(text().includes('1~10 사이의 정수'), true);
   });
 
+  it('클라리스의 재봉실은 교환 가능한 품목을 먼저 보여주고 상태를 구분한다', async () => {
+    const claris = data('CLARIS', { rows: [
+      { id: 'display', label: '재료 부족', selectable: false, detail: null, cost: 0, owned: null, workSeconds: null },
+      { id: 'item', label: '교환 가능 의상', selectable: true, detail: '천 x1', cost: 100, owned: 1, workSeconds: null },
+    ] });
+    await render(React.createElement(CraftingPanel, { api: api(async () => claris), mode: 'claris' }));
+
+    const list = mounted!.root.find((node) => String(node.type) === 'FlatList');
+    const statuses = mounted!.root.findAll((node) => String(node.type) === 'Text' && ['선택 가능', '선택 불가'].includes(node.children.join('')));
+    assert.deepEqual(list.props.data.map((item: { id: string }) => item.id), ['recipe:item', 'recipe:display']);
+    assert.deepEqual(statuses.map((node) => node.children.join('')), ['선택 가능', '선택 불가']);
+  });
+
   it('작업 완료는 자동 요청하지 않고 사용자가 한 번 누르면 제출한다', async () => {
     const calls: Array<{ path: string; request: unknown }> = [];
     const work = data('WORKBASE', { activeJob: { label: '현재 장비를 제작 중입니다.', remainingSeconds: 2974, completionAvailable: true } });

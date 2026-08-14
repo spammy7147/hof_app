@@ -59,7 +59,11 @@ describe('ColosseumPanel', () => {
 
   it('교환소 radio 없는 행은 표시하되 선택할 수 없다', async () => {
     await render(React.createElement(ColosseumPanel, { api: api(async () => shop()), mode: 'shop' }));
-    assert.equal(button('재료 부족 선택 불가').props.disabled, true); assert.equal(mounted!.root.findAll((n) => String(n.type) === 'FlatList').length, 1);
+    const list = mounted!.root.find((node) => String(node.type) === 'FlatList');
+    const statuses = mounted!.root.findAll((node) => String(node.type) === 'Text' && ['선택 가능', '선택 불가'].includes(node.children.join('')));
+    assert.deepEqual(list.props.data.map((item: { id: string }) => item.id), ['s1', 'x']);
+    assert.deepEqual(statuses.map((node) => node.children.join('')), ['선택 가능', '선택 불가']);
+    assert.equal(button('재료 부족 선택 불가').props.disabled, true);
   });
 
   it('교환은 확인 후 현재 category와 수량을 보낸다', async () => {
@@ -72,7 +76,7 @@ describe('ColosseumPanel', () => {
 
 function battle() { return { fighters: [{ id: 'f1', label: '공민이', detail: 'Lv.60', imageUrl: null, selected: true }, { id: 'f2', label: '카즈', detail: 'Lv.60', imageUrl: null, selected: false }], selectedTeam: ['f1'], minTeamSize: 1, maxTeamSize: 5, opponents: [{ id: 'o1', label: '라이벌', detail: '1위' }], battleResult: null, result: null }; }
 function result() { return { turns: 12, winner: '공민이', summary: '공민이는 승리했다', playerHp: '1/10', opponentHp: '0/10', playerStatus: '5/5', opponentStatus: '0/5', totalDamage: 1936, reward: '승리의 증표 1개', detail: [{ turn: 1, text: '공격했다' }] }; }
-function shop() { return { categories: [{ id: 'all', label: '전부', current: true }], currentCategoryId: 'all', items: [{ id: 's1', label: '검투사의 검', selectable: true, detail: '초록 증표 15개', cost: 0, owned: 1 }, { id: 'x', label: '재료 부족', selectable: false, detail: null, cost: 0, owned: 0 }], currencies: [{ label: '초록 증표', quantity: 250 }], result: null }; }
+function shop() { return { categories: [{ id: 'all', label: '전부', current: true }], currentCategoryId: 'all', items: [{ id: 'x', label: '재료 부족', selectable: false, detail: null, cost: 0, owned: 0 }, { id: 's1', label: '검투사의 검', selectable: true, detail: '초록 증표 15개', cost: 0, owned: 1 }], currencies: [{ label: '초록 증표', quantity: 250 }], result: null }; }
 function api(load: (path: string) => Promise<unknown>, submit: (path: string, request: unknown) => Promise<unknown> = async () => { throw new Error('unexpected'); }) { return { load, submit } as never; }
 async function render(element: React.ReactElement) { await act(async () => { mounted = create(element); await Promise.resolve(); await Promise.resolve(); }); }
 function buttons(label: string) { return mounted!.root.findAll((n) => String(n.type) === 'Pressable' && n.props.accessibilityLabel === label); }

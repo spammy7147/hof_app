@@ -125,6 +125,8 @@ export function ExchangePanel({ api, mode, resolveCaptcha }: Props) {
 
   return <View style={styles.container}>
     <TownItemList rows={rows} selectionMode="grouped-single" selectedIds={selectedIds}
+      selectionDisabled={interactionBusy}
+      showSelectionAvailability
       selectionGroup={(row) => row.id.startsWith('ann:') ? row.id.split(':').slice(0, 2).join(':') : row.id.startsWith('trade:') ? 'trade' : 'display'}
       displayOnlyRow={(row) => row.id.startsWith('history:')}
       onSelectionChange={setSelectedIds}
@@ -133,7 +135,7 @@ export function ExchangePanel({ api, mode, resolveCaptcha }: Props) {
   </View>;
 }
 
-function toTownRow(id: string, row: ExchangeResponse['rows'][number], group: string, interactionBusy: boolean): TownRowResponse { const selectable = row.selectable && !interactionBusy; return { id, label: row.label, accessibilityLabel: `${row.label}${selectable ? ' 선택' : ' 선택 불가'}`, selectable, detail: [group, row.detail].filter(Boolean).join(' · '), imageUrl: null, price: row.cost, quantity: row.owned }; }
+function toTownRow(id: string, row: ExchangeResponse['rows'][number], group: string, interactionBusy: boolean): TownRowResponse { return { id, label: row.label, accessibilityLabel: `${row.label}${row.selectable && !interactionBusy ? ' 선택' : ' 선택 불가'}`, selectable: row.selectable, detail: [group, row.detail].filter(Boolean).join(' · '), imageUrl: null, price: row.cost, quantity: row.owned }; }
 function Categories({ data, disabled, onSelect }: { data: ExchangeResponse; disabled: boolean; onSelect: (id: string) => void }) { return data.categories.length ? <View accessibilityRole="radiogroup" style={styles.chips}>{data.categories.map((category) => <Pressable key={category.id} accessibilityRole="radio" accessibilityLabel={`${category.label} 분류`} accessibilityState={{ checked: category.current, disabled }} disabled={disabled} onPress={() => { if (!category.current) onSelect(category.id); }} style={[styles.chip, category.current && styles.chipSelected, disabled && styles.disabled]}><Text style={styles.chipText}>{category.label}</Text></Pressable>)}</View> : null; }
 function QuantityInput({ value, onChange, valid, min, max, disabled }: { value: string; onChange: (value: string) => void; valid: boolean; min: number; max: number | null; disabled: boolean }) { return <View style={styles.section}><Text style={styles.sectionTitle}>수량</Text><TextInput accessibilityLabel="교환 수량" accessibilityState={{ disabled }} editable={!disabled} keyboardType="number-pad" value={value} onChangeText={onChange} style={[styles.input, !valid && styles.invalid, disabled && styles.disabled]} />{!valid ? <Text accessibilityRole="alert" style={styles.error}>{min}~{effectiveMax(max).toLocaleString()} 사이의 정수를 입력하세요.</Text> : null}</View>; }
 function ActionButton({ label, disabled, onPress }: { label: string; disabled: boolean; onPress: () => void }) { return <Pressable accessibilityLabel={label} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}><Text style={styles.buttonText}>{label}</Text></Pressable>; }
