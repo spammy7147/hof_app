@@ -24,12 +24,44 @@ describe('CardPanel', () => {
     assert.equal(button('Joker Card 선택 불가').props.disabled, true); await press('Bat Card 선택'); await press('선택 카드 감정'); assert.deepEqual(calls, [{ candidateId: 'a' }]);
   });
 
-  for (const mode of ['upgrade', 'change'] as const) it(`${mode}는 base와 material을 구분하고 Create를 한 번만 보낸다`, async () => {
-    const calls: Array<{ path: string; request: unknown }> = []; const materials = [card('same', 'Same'), card('material', 'Material')]; const data = { selectionSlots: [{ id: 'base', label: '베이스 카드' }, { id: 'material', label: '추가 카드' }], baseCards: [card('same', 'Base')], materialCards: [], selectedBaseCandidateId: null, minQuantity: 1, maxQuantity: mode === 'change' ? 10 : 20, history: ['성공'], result: null };
-    await render(React.createElement(CardPanel, { api: api(async () => data, async (path, request) => { if (path.endsWith('/options')) return { ...data, baseCards: [], materialCards: materials, selectedBaseCandidateId: 'same' }; calls.push({ path, request }); return { ...data, result: result('SUCCESS') }; }), mode }));
-    await press('베이스 카드 Base 선택'); await press(`${mode === 'upgrade' ? '추가 카드' : '변화 재료'} Same 선택`); assert.equal(button(mode === 'upgrade' ? '카드 강화' : '카드 변화').props.disabled, true, '같은 서버 card id는 차단');
-    await press(`${mode === 'upgrade' ? '추가 카드' : '변화 재료'} Material 선택`); await change(`${mode === 'upgrade' ? '카드 강화' : '카드 변화'} 수량`, '2'); await press(mode === 'upgrade' ? '카드 강화' : '카드 변화');
-    assert.deepEqual(calls, [{ path: `/api/town/cards/${mode}`, request: { baseCandidateId: 'same', materialCandidateId: 'material', quantity: 2 } }]);
+  it('강화는 하단 버튼 아래의 검색 드롭다운에서 추가 카드를 골라 한 번만 제출한다', async () => {
+    const calls: Array<{ path: string; request: unknown }> = []; const materials = [card('same', 'Same'), card('material', 'Material')]; const data = { selectionSlots: [{ id: 'base', label: '베이스 카드' }, { id: 'material', label: '추가 카드' }], baseCards: [card('same', 'Base')], materialCards: [], selectedBaseCandidateId: null, minQuantity: 1, maxQuantity: 20, history: ['성공'], result: null };
+    await render(React.createElement(CardPanel, { api: api(async () => data, async (path, request) => { if (path.endsWith('/options')) return { ...data, baseCards: [], materialCards: materials, selectedBaseCandidateId: 'same' }; calls.push({ path, request }); return { ...data, result: result('SUCCESS') }; }), mode: 'upgrade' }));
+    await press('베이스 카드 Base 선택');
+    assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === '추가 카드 Same 선택').length, 0, '추가 카드는 베이스 목록에 섞지 않는다');
+    const controls = mounted!.root.findByProps({ testID: 'card-upgrade-controls' });
+    const controlButtons = controls.findAll((node) => node.props.accessibilityRole === 'button').map((node) => node.props.accessibilityLabel);
+    assert.ok(controlButtons.indexOf('카드 강화') < controlButtons.indexOf('추가 카드 선택'), '강화 버튼이 드롭다운보다 위에 있다');
+
+    await press('추가 카드 선택'); await press('추가 카드 Same 선택');
+    assert.equal(button('카드 강화').props.disabled, true, '같은 서버 card id는 차단');
+    await press('추가 카드 선택'); await change('추가 카드 검색', 'material');
+    const filteredChoices = mounted!.root.findByProps({ accessibilityRole: 'radiogroup' });
+    assert.equal(filteredChoices.findAll((node) => node.props.accessibilityLabel === '추가 카드 Same 선택').length, 0);
+    assert.ok(filteredChoices.findAll((node) => node.props.accessibilityLabel === '추가 카드 Material 선택').length > 0);
+    await press('추가 카드 Material 선택'); await change('카드 강화 수량', '2'); await press('카드 강화');
+    assert.deepEqual(calls, [{ path: '/api/town/cards/upgrade', request: { baseCandidateId: 'same', materialCandidateId: 'material', quantity: 2 } }]);
+  });
+
+  it('카드 합성은 검색 가능한 합성 재료와 버튼을 목록 밖 하단에 고정한다', async () => {
+    const calls: Array<{ path: string; request: unknown }> = []; const materials = [card('same', 'Same'), card('material', 'Material')]; const data = { selectionSlots: [{ id: 'base', label: '베이스 카드' }, { id: 'material', label: '추가 카드' }], baseCards: [card('same', 'Base')], materialCards: [], selectedBaseCandidateId: null, minQuantity: 1, maxQuantity: 10, history: ['성공'], result: null };
+    await render(React.createElement(CardPanel, { api: api(async () => data, async (path, request) => { if (path.endsWith('/options')) return { ...data, baseCards: [], materialCards: materials, selectedBaseCandidateId: 'same' }; calls.push({ path, request }); return { ...data, result: result('SUCCESS') }; }), mode: 'change' }));
+    await press('베이스 카드 Base 선택');
+    assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === '합성 재료 Same 선택').length, 0, '합성 재료는 베이스 목록에 섞지 않는다');
+    const listArea = mounted!.root.findByProps({ testID: 'card-change-list' });
+    const controls = mounted!.root.findByProps({ testID: 'card-change-controls' });
+    assert.equal(listArea.parent, controls.parent, '목록과 하단 고정 영역을 분리한다');
+    assert.equal(listArea.findAll((node) => node.props.accessibilityLabel === '카드 변화').length, 0);
+    const controlButtons = controls.findAll((node) => node.props.accessibilityRole === 'button').map((node) => node.props.accessibilityLabel);
+    assert.ok(controlButtons.indexOf('합성 재료 선택') < controlButtons.indexOf('카드 변화'), '합성 재료 드롭다운이 합성 버튼보다 위에 있다');
+
+    await press('합성 재료 선택'); await press('합성 재료 Same 선택'); assert.equal(button('카드 변화').props.disabled, true, '같은 서버 card id는 차단');
+    await press('합성 재료 선택'); await change('합성 재료 검색', 'material');
+    const filteredChoices = mounted!.root.findByProps({ accessibilityRole: 'radiogroup' });
+    assert.equal(filteredChoices.findAll((node) => node.props.accessibilityLabel === '합성 재료 Same 선택').length, 0);
+    assert.ok(filteredChoices.findAll((node) => node.props.accessibilityLabel === '합성 재료 Material 선택').length > 0);
+    await press('합성 재료 Material 선택'); await change('카드 변화 수량', '2'); await press('카드 변화');
+    assert.deepEqual(calls, [{ path: '/api/town/cards/change', request: { baseCandidateId: 'same', materialCandidateId: 'material', quantity: 2 } }]);
   });
 
   it('카드 판매는 여러 수량과 Blank Card 예상량을 한 요청으로 보낸다', async () => {
@@ -69,9 +101,9 @@ describe('CardPanel', () => {
     await render(React.createElement(CardPanel, { api: api(async () => data, async (path) => path.endsWith('/options') ? (++optionCall === 1 ? first.promise : second.promise) : Promise.reject(new Error('unexpected'))), mode: 'upgrade' }));
     await press('베이스 카드 A 선택'); await press('베이스 카드 B 선택');
     await act(async () => second.resolve({ ...data, baseCards: [], materialCards: [card('b-material', 'B 재료')], selectedBaseCandidateId: 'b' }));
-    assert.equal(text().includes('B 재료'), true);
+    await press('추가 카드 선택'); assert.equal(text().includes('B 재료'), true); await press('추가 카드 선택 닫기');
     await act(async () => first.resolve({ ...data, baseCards: [], materialCards: [card('a-material', 'A 재료')], selectedBaseCandidateId: 'a' }));
-    assert.equal(text().includes('B 재료'), true); assert.equal(text().includes('A 재료'), false);
+    await press('추가 카드 선택'); assert.equal(text().includes('B 재료'), true); assert.equal(text().includes('A 재료'), false);
   });
 
   it('추가 카드 후보 조회 실패 시 베이스를 보존하고 명시적으로 재시도한다', async () => {
@@ -79,7 +111,7 @@ describe('CardPanel', () => {
     let attempts = 0;
     await render(React.createElement(CardPanel, { api: api(async () => data, async (path) => { if (!path.endsWith('/options')) throw new Error('unexpected'); attempts += 1; if (attempts === 1) throw new Error('Network request failed'); return { ...data, baseCards: [], materialCards: [card('material', '재료')], selectedBaseCandidateId: 'a' }; }), mode: 'upgrade' }));
     await press('베이스 카드 A 선택'); assert.equal(text().includes('서비스에 연결할 수 없습니다.'), true); assert.equal(button('베이스 카드 A 선택').props.accessibilityState.checked, true);
-    await press('추가 카드 다시 불러오기'); assert.equal(text().includes('재료'), true); assert.equal(attempts, 2);
+    await press('추가 카드 다시 불러오기'); await press('추가 카드 선택'); assert.equal(text().includes('재료'), true); assert.equal(attempts, 2);
   });
 });
 

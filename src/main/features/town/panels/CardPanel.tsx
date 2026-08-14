@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { theme } from '../../../styles/theme';
 import { toUserFacingErrorMessage } from '../../../domain/userFacingErrors';
@@ -34,16 +34,17 @@ function IdentifyPanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
 }
 
 function PairPanel({ api, mode, resolveCaptcha }: Props & { mode: 'upgrade' | 'change' }) {
-  const [selected, setSelected] = useState<string[]>([]); const [quantityText, setQuantityText] = useState('1'); const [response, setResponse] = useState<CardPairResponse | null>(null); const [options, setOptions] = useState<CardPairResponse | null>(null); const [optionsLoading, setOptionsLoading] = useState(false); const [optionsError, setOptionsError] = useState<string | null>(null); const optionsSequence = useRef(0); const mounted = useRef(true);
+  const [selected, setSelected] = useState<string[]>([]); const [quantityText, setQuantityText] = useState('1'); const [response, setResponse] = useState<CardPairResponse | null>(null); const [options, setOptions] = useState<CardPairResponse | null>(null); const [optionsLoading, setOptionsLoading] = useState(false); const [optionsError, setOptionsError] = useState<string | null>(null); const [materialPickerOpen, setMaterialPickerOpen] = useState(false); const optionsSequence = useRef(0); const mounted = useRef(true);
   const path = `/api/town/cards/${mode}` as const; const title = mode === 'upgrade' ? '카드 강화' : '카드 변화';
   const load = useCallback(() => api.load<CardPairResponse>(path), [api, path]);
-  const submitAction = useCallback(async (request: CardUpgradeRequest | CardChangeRequest) => { const next = await api.submit<typeof request, CardPairResponse>(path, request); setResponse(next); if (next.result?.status === 'SUCCESS') { setSelected([]); setOptions(null); } return next.result ?? info(`${title} 결과를 갱신했습니다.`); }, [api, path, title]);
+  const submitAction = useCallback(async (request: CardUpgradeRequest | CardChangeRequest) => { const next = await api.submit<typeof request, CardPairResponse>(path, request); setResponse(next); if (next.result?.status === 'SUCCESS') { setSelected([]); setOptions(null); setMaterialPickerOpen(false); } return next.result ?? info(`${title} 결과를 갱신했습니다.`); }, [api, path, title]);
   const town = useTownFeature({ load, submitAction, resolveCaptcha, featureKey: `card-${mode}` }); const data = response ?? town.data;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; optionsSequence.current += 1; }; }, []);
   if (!data) return <LoadState loading={town.status === 'loading'} error={town.error} retry={town.reload} />;
+  const materialLabel = mode === 'upgrade' ? '추가 카드' : '합성 재료';
   const baseCards = data.baseCards.length ? data.baseCards : town.data?.baseCards ?? [];
   const materialCards = options?.materialCards ?? [];
-  const rows = [...baseCards.map((it) => row(it, `base:${it.id}`, '베이스 카드')), ...materialCards.map((it) => row(it, `material:${it.id}`, mode === 'upgrade' ? '추가 카드' : '변화 재료'))];
+  const baseRows = baseCards.map((it) => row(it, `base:${it.id}`, '베이스 카드'));
   const base = selected.find((id) => id.startsWith('base:')); const material = selected.find((id) => id.startsWith('material:'));
   const baseCard = baseCards.find((it) => `base:${it.id}` === base); const materialCard = materialCards.find((it) => `material:${it.id}` === material);
   const limit = options ?? data; const selectedMaxQuantity = Math.min(limit.maxQuantity, baseCard?.owned ?? limit.maxQuantity, materialCard?.owned ?? limit.maxQuantity);
@@ -55,23 +56,48 @@ function PairPanel({ api, mode, resolveCaptcha }: Props & { mode: 'upgrade' | 'c
     void executeWithCaptchaRetry(() => api.submit<CardPairOptionsRequest, CardPairResponse>(`${path}/options`, { baseCandidateId: candidateId }), resolveCaptcha, { isCancelled: () => !mounted.current || sequence !== optionsSequence.current })
       .then((next) => {
         if (!mounted.current || sequence !== optionsSequence.current) return;
-        if (next.selectedBaseCandidateId !== candidateId) { setOptionsError('선택한 베이스 카드의 추가 후보를 확인하지 못했습니다. 다시 시도해 주세요.'); return; }
+        if (next.selectedBaseCandidateId !== candidateId) { setOptionsError(`선택한 베이스 카드의 ${materialLabel} 후보를 확인하지 못했습니다. 다시 시도해 주세요.`); return; }
         setOptions(next);
+        setSelected((current) => current.filter((id) => !id.startsWith('material:') || next.materialCards.some((card) => `material:${card.id}` === id)));
       })
       .catch((error: unknown) => { if (!mounted.current || sequence !== optionsSequence.current) return; setOptionsError(toUserFacingErrorMessage(error)); })
       .finally(() => { if (mounted.current && sequence === optionsSequence.current) setOptionsLoading(false); });
   };
   const changeSelection = (ids: string[]) => {
     const nextBase = ids.find((id) => id.startsWith('base:'));
-    if (nextBase === base) { setSelected(ids); return; }
+    if (nextBase === base) { setSelected([base, material].filter((id): id is string => id != null)); return; }
     const candidateId = nextBase?.slice('base:'.length); optionsSequence.current += 1;
     setSelected(nextBase ? [nextBase] : []); setOptions(null); setOptionsError(null); setQuantityText('1');
+    setMaterialPickerOpen(false);
     if (!candidateId) { setOptionsLoading(false); return; }
     loadOptions(candidateId);
   };
-  return <PanelList rows={rows} selectedIds={selected} selectionMode="grouped-single" selectionGroup={(it) => it.id.startsWith('base:') ? 'base' : 'material'} onSelectionChange={changeSelection}
-    header={<View style={styles.section}><Text style={styles.muted}>베이스 카드 1장과 {mode === 'upgrade' ? '추가 카드' : '변화 재료'} 1장을 각각 선택하세요.</Text>{data.history.length ? <History lines={data.history} /> : null}</View>}
-    footer={<View style={styles.section}>{optionsLoading ? <Text accessibilityLiveRegion="polite" style={styles.muted}>추가 카드 후보를 불러오는 중...</Text> : null}{optionsError ? <><Text accessibilityRole="alert" style={styles.error}>{optionsError}</Text>{baseCard ? <ActionButton label="추가 카드 다시 불러오기" disabled={optionsLoading} onPress={() => loadOptions(baseCard.id)} /> : null}</> : null}{baseCard && !optionsLoading && options && options.materialCards.length === 0 ? <Text style={styles.muted}>추가 카드 후보가 없습니다.</Text> : null}<QuantityInput label={`${title} 수량`} value={quantityText} onChange={setQuantityText} min={data.minQuantity} max={selectedMaxQuantity} valid={validQuantity} />{sameCard ? <Text accessibilityRole="alert" style={styles.error}>베이스 카드와 재료 카드는 서로 달라야 합니다.</Text> : null}<ActionButton label={title} disabled={!baseCard || !materialCard || sameCard || !validQuantity || optionsLoading || town.status === 'submitting'} onPress={() => baseCard && materialCard && validQuantity && void town.submit({ baseCandidateId: baseCard.id, materialCandidateId: materialCard.id, quantity }).catch(() => undefined)} />{data.result ?? town.result ? <TownActionResult result={(data.result ?? town.result)!} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}</View>} />;
+  const action = <ActionButton label={title} disabled={!baseCard || !materialCard || sameCard || !validQuantity || optionsLoading || town.status === 'submitting'} onPress={() => baseCard && materialCard && validQuantity && void town.submit({ baseCandidateId: baseCard.id, materialCandidateId: materialCard.id, quantity }).catch(() => undefined)} />;
+  const feedback = <>{data.result ?? town.result ? <TownActionResult result={(data.result ?? town.result)!} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}</>;
+  const optionState = <>{optionsLoading ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{materialLabel} 후보를 불러오는 중...</Text> : null}{optionsError ? <><Text accessibilityRole="alert" style={styles.error}>{optionsError}</Text>{baseCard ? <ActionButton label={`${materialLabel} 다시 불러오기`} disabled={optionsLoading} onPress={() => loadOptions(baseCard.id)} /> : null}</> : null}{baseCard && !optionsLoading && options && options.materialCards.length === 0 ? <Text style={styles.muted}>{materialLabel} 후보가 없습니다.</Text> : null}</>;
+  const upgradeFooter = <View style={styles.pairActionBar} testID="card-upgrade-controls">
+    {action}
+    {optionState}
+    <MaterialSelectField disabled={!baseCard || optionsLoading || !!optionsError || materialCards.length === 0} label={materialLabel} open={materialPickerOpen} placeholder={!baseCard ? '베이스 카드를 먼저 선택하세요.' : optionsLoading ? `${materialLabel} 후보를 불러오는 중...` : materialCards.length === 0 ? `선택 가능한 ${materialLabel}가 없습니다.` : `${materialLabel}를 선택하세요.`} selected={materialCard} onOpen={() => setMaterialPickerOpen(true)} />
+    <QuantityInput label={`${title} 수량`} value={quantityText} onChange={setQuantityText} min={data.minQuantity} max={selectedMaxQuantity} valid={validQuantity} />
+    {sameCard ? <Text accessibilityRole="alert" style={styles.error}>베이스 카드와 재료 카드는 서로 달라야 합니다.</Text> : null}
+    {feedback}
+  </View>;
+  const changeActionBar = <View style={styles.pairActionBar} testID="card-change-controls">
+    {optionState}
+    <QuantityInput label={`${title} 수량`} value={quantityText} onChange={setQuantityText} min={data.minQuantity} max={selectedMaxQuantity} valid={validQuantity} />
+    <MaterialSelectField disabled={!baseCard || optionsLoading || !!optionsError || materialCards.length === 0} label={materialLabel} open={materialPickerOpen} placeholder={!baseCard ? '베이스 카드를 먼저 선택하세요.' : optionsLoading ? `${materialLabel} 후보를 불러오는 중...` : materialCards.length === 0 ? `선택 가능한 ${materialLabel}가 없습니다.` : `${materialLabel}를 선택하세요.`} selected={materialCard} onOpen={() => setMaterialPickerOpen(true)} />
+    {sameCard ? <Text accessibilityRole="alert" style={styles.error}>베이스 카드와 재료 카드는 서로 달라야 합니다.</Text> : null}
+    {action}
+    {feedback}
+  </View>;
+  const list = <PanelList rows={baseRows} selectedIds={selected.filter((id) => id.startsWith('base:'))} selectionMode="single" onSelectionChange={changeSelection}
+    header={<View style={styles.section}><Text style={styles.muted}>베이스 카드 1장을 선택한 뒤 하단에서 {materialLabel}를 검색해 선택하세요.</Text>{data.history.length ? <History lines={data.history} /> : null}</View>}
+    footer={mode === 'upgrade' ? upgradeFooter : null} />;
+  return <>
+    {mode === 'upgrade' ? list : <View style={styles.container}><View style={styles.listArea} testID="card-change-list">{list}</View>{changeActionBar}</View>}
+    {materialPickerOpen ? <SearchableMaterialSelect cards={materialCards} label={materialLabel} selectedId={materialCard?.id ?? null} onClose={() => setMaterialPickerOpen(false)} onSelect={(candidateId) => { setSelected([base, candidateId ? `material:${candidateId}` : null].filter((id): id is string => id != null)); setMaterialPickerOpen(false); }} /> : null}
+  </>;
 }
 
 function SellPanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
@@ -115,10 +141,42 @@ function SoulEchoPanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
 
 function PanelList({ rows, ...props }: { rows: CardItemResponse[] | TownRowResponse[] } & Omit<ComponentProps<typeof TownItemList>, 'rows'>) { return <View style={styles.container}><TownItemList rows={rows.map((it) => 'imageUrl' in it ? it : row(it))} {...props} /></View>; }
 function row(item: CardItemResponse, id = item.id, prefix?: string): TownRowResponse { const detail = [prefix, item.rarity, ...item.restrictions, item.detail].filter(Boolean).join(' · '); return { id, label: item.label, accessibilityLabel: prefix ? `${prefix} ${item.label} 선택` : undefined, selectable: item.selectable, detail: detail || null, imageUrl: null, price: item.cost, quantity: item.owned }; }
+function MaterialSelectField({ disabled, label, open, placeholder, selected, onOpen }: { disabled: boolean; label: string; open: boolean; placeholder: string; selected: CardItemResponse | undefined; onOpen: () => void }) {
+  return <View style={styles.materialField}>
+    <Text style={styles.label}>{label}</Text>
+    <Pressable accessibilityLabel={`${label} 선택`} accessibilityRole="button" accessibilityState={{ disabled, expanded: open }} disabled={disabled} onPress={onOpen} style={({ pressed }) => [styles.materialSelect, disabled && styles.disabled, pressed && !disabled && styles.pressed]}>
+      <View style={styles.materialSelectText}>
+        <Text numberOfLines={1} style={selected ? styles.materialValue : styles.materialPlaceholder}>{selected?.label ?? placeholder}</Text>
+        {selected ? <Text style={styles.materialMeta}>{[selected.rarity, selected.owned != null ? `보유 ${selected.owned.toLocaleString()}장` : null].filter(Boolean).join(' · ')}</Text> : null}
+      </View>
+      <Text style={styles.chevron}>⌄</Text>
+    </Pressable>
+  </View>;
+}
+function SearchableMaterialSelect({ cards, label, selectedId, onClose, onSelect }: { cards: CardItemResponse[]; label: string; selectedId: string | null; onClose: () => void; onSelect: (candidateId: string) => void }) {
+  const [query, setQuery] = useState('');
+  const visibleCards = useMemo(() => { const needle = query.trim().toLowerCase(); return cards.filter((card) => card.selectable && (!needle || [card.label, card.rarity, ...card.restrictions, card.detail].filter(Boolean).join(' ').toLowerCase().includes(needle))); }, [cards, query]);
+  return <Modal animationType="slide" onRequestClose={onClose} presentationStyle="overFullScreen" transparent visible>
+    <View accessibilityViewIsModal style={styles.modalRoot}>
+      <Pressable accessibilityLabel={`${label} 선택 배경 닫기`} accessibilityRole="button" onPress={onClose} style={styles.modalBackdrop} />
+      <View style={styles.modalSheet}>
+        <View style={styles.modalHeader}><Text style={styles.modalTitle}>{label} 선택</Text><Pressable accessibilityLabel={`${label} 선택 닫기`} accessibilityRole="button" onPress={onClose} style={styles.modalClose}><Text style={styles.modalCloseText}>닫기</Text></Pressable></View>
+        <TextInput accessibilityLabel={`${label} 검색`} autoFocus value={query} onChangeText={setQuery} placeholder="카드명·등급 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} />
+        <FlatList accessibilityRole="radiogroup" data={visibleCards} keyboardShouldPersistTaps="handled" keyExtractor={(item) => item.id} ListEmptyComponent={<Text style={styles.muted}>검색 결과가 없습니다.</Text>} contentContainerStyle={styles.modalList} renderItem={({ item }) => {
+          const checked = item.id === selectedId;
+          return <Pressable accessibilityLabel={`${label} ${item.label} 선택`} accessibilityRole="radio" accessibilityState={{ checked }} onPress={() => onSelect(item.id)} style={[styles.modalOption, checked && styles.modalOptionSelected]}>
+            <View style={styles.modalOptionText}><Text style={styles.modalOptionLabel}>{item.label}</Text><Text style={styles.modalOptionDetail}>{[item.rarity, ...item.restrictions, item.detail, item.owned != null ? `보유 ${item.owned.toLocaleString()}장` : null, item.cost != null ? `${item.cost.toLocaleString()} Funds` : null].filter(Boolean).join(' · ')}</Text></View>
+            {checked ? <Text style={styles.selectedMark}>✓</Text> : null}
+          </Pressable>;
+        }} />
+      </View>
+    </View>
+  </Modal>;
+}
 function QuantityInput({ label, inputAccessibilityLabel = label, value, onChange, min, max, valid }: { label: string; inputAccessibilityLabel?: string; value: string; onChange: (value: string) => void; min: number; max: number; valid: boolean }) { return <View style={styles.field}><Text style={styles.label}>{label}</Text><TextInput accessibilityLabel={inputAccessibilityLabel} keyboardType="number-pad" value={value} onChangeText={onChange} style={[styles.input, !valid && styles.invalid]} />{!valid ? <Text style={styles.error}>{min}~{max.toLocaleString()} 사이의 정수를 입력하세요.</Text> : null}</View>; }
 function History({ lines }: { lines: string[] }) { const [open, setOpen] = useState(false); return <View><Pressable accessibilityLabel="최근 카드 결과 펼치기" accessibilityRole="button" accessibilityState={{ expanded: open }} onPress={() => setOpen((value) => !value)}><Text style={styles.historyTitle}>최근 결과 {open ? '접기' : '펼치기'}</Text></Pressable>{open ? lines.slice(-30).map((line, index) => <Text key={`${line}-${index}`} style={styles.muted}>{line}</Text>) : null}</View>; }
 function ActionButton({ label, disabled, onPress }: { label: string; disabled: boolean; onPress: () => void }) { return <Pressable accessibilityLabel={label} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}><Text style={styles.buttonText}>{label}</Text></Pressable>; }
 function LoadState({ loading, error, retry }: { loading: boolean; error: string | null; retry: () => Promise<unknown> }) { return <View style={styles.container}><Text accessibilityRole={error ? 'alert' : undefined} style={error ? styles.error : styles.muted}>{loading ? '카드 정보를 불러오는 중...' : error ?? '카드 정보가 없습니다.'}</Text>{!loading ? <ActionButton label="다시 시도" disabled={false} onPress={() => void retry().catch(() => undefined)} /> : null}</View>; }
 function info(message: string): TownActionResultResponse { return { status: 'INFORMATIONAL', messages: [message], items: [], refreshRequired: true }; }
 
-const styles = StyleSheet.create({ container: { flex: 1, gap: theme.spacing.md }, listArea: { flex: 1, minHeight: 0 }, sellActionBar: { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.sm }, section: { gap: theme.spacing.sm, paddingVertical: theme.spacing.md }, muted: { color: theme.colors.textMuted, lineHeight: 20 }, owned: { color: theme.colors.text, fontSize: 13 }, total: { color: theme.colors.accentGreen, fontSize: 16, fontWeight: '900' }, error: { color: theme.colors.danger }, field: { gap: theme.spacing.xs }, label: { color: theme.colors.text, fontWeight: '800' }, input: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md }, invalid: { borderColor: theme.colors.danger }, button: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, justifyContent: 'center', minHeight: 52, padding: theme.spacing.md }, buttonText: { color: theme.colors.background, fontWeight: '900' }, disabled: { opacity: 0.45 }, historyTitle: { color: theme.colors.accentBlue, fontWeight: '800', paddingVertical: theme.spacing.sm } });
+const styles = StyleSheet.create({ container: { flex: 1, gap: theme.spacing.md }, listArea: { flex: 1, minHeight: 0 }, sellActionBar: { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.sm }, pairActionBar: { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.sm, marginTop: theme.spacing.md, padding: theme.spacing.sm }, section: { gap: theme.spacing.sm, paddingVertical: theme.spacing.md }, muted: { color: theme.colors.textMuted, lineHeight: 20 }, owned: { color: theme.colors.text, fontSize: 13 }, total: { color: theme.colors.accentGreen, fontSize: 16, fontWeight: '900' }, error: { color: theme.colors.danger }, field: { gap: theme.spacing.xs }, materialField: { gap: theme.spacing.xs }, label: { color: theme.colors.text, fontWeight: '800' }, materialSelect: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, flexDirection: 'row', minHeight: 56, paddingHorizontal: theme.spacing.md }, materialSelectText: { flex: 1, gap: 2 }, materialValue: { color: theme.colors.text, fontWeight: '800' }, materialPlaceholder: { color: theme.colors.textMuted }, materialMeta: { color: theme.colors.textMuted, fontSize: 12 }, chevron: { color: theme.colors.text, fontSize: 20, marginLeft: theme.spacing.sm }, input: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md }, invalid: { borderColor: theme.colors.danger }, button: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, justifyContent: 'center', minHeight: 52, padding: theme.spacing.md }, buttonText: { color: theme.colors.background, fontWeight: '900' }, disabled: { opacity: 0.45 }, pressed: { opacity: 0.75 }, historyTitle: { color: theme.colors.accentBlue, fontWeight: '800', paddingVertical: theme.spacing.sm }, modalRoot: { flex: 1, justifyContent: 'flex-end' }, modalBackdrop: { backgroundColor: 'rgba(0, 0, 0, 0.6)', bottom: 0, left: 0, position: 'absolute', right: 0, top: 0 }, modalSheet: { backgroundColor: theme.colors.surface, borderColor: theme.colors.borderStrong, borderTopLeftRadius: theme.radius.md, borderTopRightRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.sm, maxHeight: '78%', padding: theme.spacing.md }, modalHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, modalTitle: { color: theme.colors.text, fontSize: 18, fontWeight: '900' }, modalClose: { padding: theme.spacing.sm }, modalCloseText: { color: theme.colors.accentBlue, fontWeight: '800' }, modalList: { gap: theme.spacing.xs, paddingBottom: theme.spacing.md }, modalOption: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, flexDirection: 'row', minHeight: 58, padding: theme.spacing.sm }, modalOptionSelected: { borderColor: theme.colors.accentGreen }, modalOptionText: { flex: 1, gap: 3 }, modalOptionLabel: { color: theme.colors.text, fontWeight: '800' }, modalOptionDetail: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 17 }, selectedMark: { color: theme.colors.accentGreen, fontSize: 18, fontWeight: '900', marginLeft: theme.spacing.sm } });
