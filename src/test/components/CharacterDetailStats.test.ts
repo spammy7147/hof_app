@@ -12,7 +12,9 @@ const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>
 const reactNativeMock = {
   ActivityIndicator: host('ActivityIndicator'),
   Alert: { alert: () => undefined },
+  FlatList: host('FlatList'),
   Image: host('Image'),
+  Modal: host('Modal'),
   Pressable: host('Pressable'),
   ScrollView: host('ScrollView'),
   StyleSheet: { create: <T,>(styles: T) => styles },
@@ -73,6 +75,7 @@ describe('CharacterDetail stat allocation', () => {
     assert.ok(text.includes('LUK'));
     assert.ok(text.includes('43'));
     assert.ok(text.includes('남음 25 · 배분 0'));
+    assert.equal(text.some((value) => /^\+\d+$/.test(value)), false);
     assert.equal(text.includes('Increase Status'), false);
     assert.equal(text.includes('현재 상태'), false);
 
@@ -88,6 +91,62 @@ describe('CharacterDetail stat allocation', () => {
 
     assert.equal(requests.length, 1);
     assert.ok(requests[0].action.selections?.some(({ candidateId }) => candidateId === 'upDex-2'));
+  });
+
+  it('shows pattern editing controls immediately without opening a generic accordion', async () => {
+    const requests: CharacterManagementActionRequest[] = [];
+    const action: CharacterObservedAction = {
+      actionId: 'pattern-set',
+      source: 'changepattern',
+      label: 'Set Pattern',
+      candidates: [
+        { id: 'judge-always', groupId: 'judge0', label: '항상', selectionType: 'SELECT', minQuantity: 1, maxQuantity: 1, selected: true },
+        { id: 'judge-hp', groupId: 'judge0', label: 'HP가 낮을 때', selectionType: 'SELECT', minQuantity: 1, maxQuantity: 1, selected: false },
+        { id: 'skill-slash', groupId: 'skill0', label: 'Quick Slash', selectionType: 'SELECT', minQuantity: 1, maxQuantity: 1, selected: true },
+      ],
+      fields: [{ id: 'quantity0', label: '1번 기준값', value: '0', inputType: 'NUMBER', maxLength: 3 }],
+    };
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(CharacterDetail, {
+        character: makeHofCharacter(),
+        detail: makeHofCharacterDetail(),
+        isLoading: false,
+        errorMessage: null,
+        actions: [action],
+        onExecuteAction: async (request: CharacterManagementActionRequest) => {
+          requests.push(request);
+          return { character: makeHofCharacterDetail(), actions: [action], messages: [], characters: [], targetRemoved: false };
+        },
+      }));
+    });
+
+    const patternTab = renderer.root.findAllByProps({ accessibilityRole: 'tab' }).find((node) => (
+      node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '패턴').length > 0
+    ));
+    await act(async () => patternTab?.props.onPress());
+
+    assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '1번 행동 조건 선택' }).length > 0);
+    assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '1번 실행 스킬 선택' }).length > 0);
+    assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '1번 기준값' }).length > 0);
+
+    const conditionSelector = renderer.root.findAllByProps({ accessibilityLabel: '1번 행동 조건 선택' })[0];
+    await act(async () => conditionSelector.props.onPress());
+    const candidateList = renderer.root.findAll((node) => String(node.type) === 'FlatList').at(-1);
+    const hpCandidate = candidateList?.props.data.find((candidate: CharacterObservedAction['candidates'][number]) => candidate.id === 'judge-hp');
+    const hpOption = candidateList?.props.renderItem({ item: hpCandidate });
+    await act(async () => hpOption.props.onPress());
+
+    const quantity = renderer.root.findAllByProps({ accessibilityLabel: '1번 기준값' })[0];
+    await act(async () => quantity.props.onChangeText('35'));
+    const apply = renderer.root.findAllByProps({ accessibilityRole: 'button' }).find((node) => (
+      node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '행동 패턴 적용').length > 0
+    ));
+    await act(async () => apply?.props.onPress());
+
+    assert.equal(requests.length, 1);
+    assert.ok(requests[0].action.selections?.some(({ candidateId }) => candidateId === 'judge-hp'));
+    assert.ok(requests[0].action.values?.some(({ fieldId, value }) => fieldId === 'quantity0' && value === '35'));
   });
 });
 

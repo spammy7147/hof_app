@@ -3,7 +3,9 @@ import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -561,14 +563,23 @@ function ObservedActionCard({ action, onExecute, dangerous }: {
   onExecute: (request: CharacterManagementActionRequest) => Promise<void>;
   dangerous: boolean;
 }) {
+  const candidateGroups = useMemo(() => groupCharacterCandidates(action.candidates), [action.candidates]);
   const [selectedCandidates, setSelectedCandidates] = useState<Record<string, string>>(() => Object.fromEntries(
-    action.candidates.filter((candidate) => candidate.selected).map((candidate) => [candidate.groupId, candidate.id]),
+    candidateGroups.flatMap(([groupId, candidates]) => {
+      const selected = candidates.find((candidate) => candidate.selected) ?? candidates[0];
+      return selected ? [[groupId, selected.id]] : [];
+    }),
   ));
-  const [expanded, setExpanded] = useState(false);
-  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [candidateSearch, setCandidateSearch] = useState('');
   const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(action.fields.map((field) => [field.id, field.value])));
   const [submitting, setSubmitting] = useState(false);
-  const candidateGroups = useMemo(() => groupCharacterCandidates(action.candidates), [action.candidates]);
+  const editingGroup = candidateGroups.find(([groupId]) => groupId === editingGroupId) ?? null;
+  const visibleCandidates = useMemo(() => {
+    const candidates = editingGroup?.[1] ?? [];
+    const query = candidateSearch.trim().toLocaleLowerCase();
+    return query ? candidates.filter((candidate) => candidate.label.toLocaleLowerCase().includes(query)) : candidates;
+  }, [candidateSearch, editingGroup]);
   const request = useMemo<CharacterManagementActionRequest>(() => ({
     action: {
       actionId: action.actionId,
@@ -587,49 +598,41 @@ function ObservedActionCard({ action, onExecute, dangerous }: {
       { text: actionLabel(action), style: 'destructive', onPress: () => void execute() },
     ]);
   };
+  const closeCandidatePicker = () => {
+    setEditingGroupId(null);
+    setCandidateSearch('');
+  };
   return (
     <View style={[styles.actionCard, dangerous && styles.dangerCard]}>
-      <Pressable accessibilityRole="button" onPress={() => setExpanded((current) => !current)} style={styles.actionHeader}>
+      <View style={styles.actionHeader}>
         <Text style={styles.cardTitle}>{actionLabel(action)}</Text>
-        <Text style={styles.chevron}>{expanded ? '⌃' : '⌄'}</Text>
-      </Pressable>
-      {expanded ? <>
+      </View>
       {candidateGroups.length ? <View style={styles.choiceList}>{candidateGroups.map(([groupId, candidates = []]) => {
         const selected = candidates.find((candidate) => candidate.id === selectedCandidates[groupId]);
-        const groupOpen = expandedGroup === groupId;
+        const label = candidateGroupLabel(groupId);
         return <View key={groupId} style={styles.choiceGroup}>
           <Pressable
+            accessibilityLabel={`${label} 선택`}
             accessibilityRole="button"
-            accessibilityState={{ expanded: groupOpen }}
-            onPress={() => setExpandedGroup((current) => current === groupId ? null : groupId)}
+            onPress={() => {
+              setCandidateSearch('');
+              setEditingGroupId(groupId);
+            }}
             style={styles.choiceGroupHeader}
           >
             <View style={styles.flex}>
-              <Text style={styles.fieldLabel}>{candidateGroupLabel(groupId)}</Text>
+              <Text style={styles.fieldLabel}>{label}</Text>
               <Text style={styles.choiceText}>{selected?.label || '선택하세요'}</Text>
             </View>
-            <Text style={styles.chevron}>{groupOpen ? '⌃' : '⌄'}</Text>
+            <Text style={styles.chevron}>›</Text>
           </Pressable>
-          {groupOpen ? candidates.map((candidate) => (
-            <Pressable
-              accessibilityRole="radio"
-              accessibilityState={{ checked: selectedCandidates[groupId] === candidate.id }}
-              key={candidate.id}
-              onPress={() => {
-                setSelectedCandidates((current) => ({ ...current, [groupId]: candidate.id }));
-                setExpandedGroup(null);
-              }}
-              style={[styles.choice, selectedCandidates[groupId] === candidate.id && styles.choiceSelected]}
-            >
-              <Text style={styles.choiceText}>{candidate.label}</Text>
-            </Pressable>
-          )) : null}
         </View>;
       })}</View> : null}
       {action.fields.map((field) => (
         <View key={field.id} style={styles.fieldGroup}>
           <Text style={styles.fieldLabel}>{field.label}</Text>
           <TextInput
+            accessibilityLabel={field.label}
             keyboardType={field.inputType === 'NUMBER' ? 'number-pad' : 'default'}
             maxLength={field.maxLength ?? undefined}
             onChangeText={(value) => setValues((current) => ({ ...current, [field.id]: value }))}
@@ -646,7 +649,62 @@ function ObservedActionCard({ action, onExecute, dangerous }: {
       >
         <Text style={styles.actionButtonText}>{submitting ? '처리 중' : actionLabel(action)}</Text>
       </Pressable>
-      </> : null}
+      <Modal
+        animationType="slide"
+        onRequestClose={closeCandidatePicker}
+        transparent
+        visible={editingGroup != null}
+      >
+        <View style={styles.pickerBackdrop}>
+          <View style={styles.pickerSheet}>
+            <View style={styles.pickerHeader}>
+              <View style={styles.flex}>
+                <Text style={styles.sectionTitle}>{editingGroup ? candidateGroupLabel(editingGroup[0]) : ''}</Text>
+                <Text style={styles.mutedText}>{editingGroup?.[1].length ?? 0}개 선택지</Text>
+              </View>
+              <Pressable accessibilityLabel="선택 닫기" accessibilityRole="button" onPress={closeCandidatePicker} style={styles.pickerClose}>
+                <Text style={styles.pickerCloseText}>닫기</Text>
+              </Pressable>
+            </View>
+            {(editingGroup?.[1].length ?? 0) > 8 ? (
+              <TextInput
+                accessibilityLabel="선택지 검색"
+                onChangeText={setCandidateSearch}
+                placeholder="이름으로 검색"
+                placeholderTextColor={theme.colors.textMuted}
+                style={styles.input}
+                value={candidateSearch}
+              />
+            ) : null}
+            <FlatList
+              data={visibleCandidates}
+              ItemSeparatorComponent={() => <View style={styles.pickerSeparator} />}
+              keyExtractor={(candidate) => candidate.id}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item: candidate }) => {
+                const selected = editingGroup != null && selectedCandidates[editingGroup[0]] === candidate.id;
+                return (
+                  <Pressable
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: selected }}
+                    onPress={() => {
+                      if (editingGroup) {
+                        setSelectedCandidates((current) => ({ ...current, [editingGroup[0]]: candidate.id }));
+                      }
+                      closeCandidatePicker();
+                    }}
+                    style={[styles.pickerOption, selected && styles.pickerOptionSelected]}
+                  >
+                    <Text style={styles.choiceText}>{candidate.label}</Text>
+                    {selected ? <Text style={styles.pickerCheck}>✓</Text> : null}
+                  </Pressable>
+                );
+              }}
+              style={styles.pickerList}
+            />
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -857,6 +915,16 @@ const styles = StyleSheet.create({
   choiceText: { color: theme.colors.text, fontSize: 14 },
   choiceGroup: { gap: theme.spacing.sm },
   choiceGroupHeader: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, paddingHorizontal: theme.spacing.md, borderWidth: 1, borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceAlt },
+  pickerBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: theme.colors.overlay },
+  pickerSheet: { maxHeight: '78%', gap: theme.spacing.md, paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg, paddingBottom: theme.spacing.xl, backgroundColor: theme.colors.surface },
+  pickerHeader: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, paddingBottom: theme.spacing.sm, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  pickerClose: { minHeight: 44, justifyContent: 'center', paddingHorizontal: theme.spacing.sm },
+  pickerCloseText: { color: theme.colors.accentAmber, fontSize: 14, fontWeight: '800' },
+  pickerList: { flexGrow: 0 },
+  pickerOption: { minHeight: 50, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md, paddingHorizontal: theme.spacing.sm },
+  pickerOptionSelected: { borderLeftWidth: 2, borderLeftColor: theme.colors.accentAmber },
+  pickerCheck: { color: theme.colors.accentAmber, fontSize: 16, fontWeight: '800' },
+  pickerSeparator: { height: 1, backgroundColor: theme.colors.border },
   fieldGroup: { gap: theme.spacing.sm },
   fieldLabel: { color: theme.colors.textMuted, fontSize: 13, fontWeight: '700' },
   input: { minHeight: 48, paddingHorizontal: theme.spacing.md, color: theme.colors.text, backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.borderStrong },
