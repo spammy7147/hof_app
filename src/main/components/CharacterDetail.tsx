@@ -37,6 +37,7 @@ type CharacterDetailProps = {
   actions?: CharacterObservedAction[];
   onLoadPattern?: (hofCharacterId: string, slot: number) => Promise<LoadPatternResponse>;
   onExecuteAction?: (request: CharacterManagementActionRequest) => Promise<CharacterManagementSnapshot>;
+  onBack?: () => void;
 };
 
 /** 캐릭터의 요약과 각 관리 기능으로 들어가는 모바일 허브다. */
@@ -48,6 +49,7 @@ export function CharacterDetail({
   actions = [],
   onLoadPattern,
   onExecuteAction,
+  onBack,
 }: CharacterDetailProps) {
   const [view, setView] = useState<CharacterManagementView>('hub');
   const [resultMessage, setResultMessage] = useState<string | null>(null);
@@ -73,6 +75,12 @@ export function CharacterDetail({
 
   return (
     <View style={styles.container}>
+      {onBack ? (
+        <Pressable accessibilityRole="button" onPress={onBack} style={styles.detailBackButton}>
+          <Text style={styles.detailBackIcon}>‹</Text>
+          <Text style={styles.detailBackText}>캐릭터 목록</Text>
+        </Pressable>
+      ) : null}
       <View style={styles.header}>
         <Avatar name={name} imageUrl={detail.imageUrl} />
         <View style={styles.headerText}>
@@ -172,15 +180,126 @@ function StatManagement({ detail, actions, onExecute }: {
   actions: CharacterObservedAction[];
   onExecute: (request: CharacterManagementActionRequest) => Promise<void>;
 }) {
-  const pointLine = detail.statusLines.find((line) => /point\s*:/i.test(line));
+  const availablePoints = extractAvailableStatPoints(detail.statusLines);
   return (
     <>
-      <ScreenHeading title="스탯 배분" description="남은 포인트 안에서 STR·INT·DEX·SPD·LUK를 배분합니다." />
-      <Section title="현재 상태">
-        <Text style={styles.cardTitle}>{pointLine || '남은 스탯 포인트가 없습니다.'}</Text>
-      </Section>
-      <ObservedActions title="포인트 배분" actions={actions} onExecute={onExecute} />
+      <ScreenHeading title="스탯 배분" description="올릴 수치를 바로 선택한 뒤 한 번에 적용합니다." />
+      {actions.length ? (
+        <View style={styles.statActionList}>
+          {actions.map((action) => (
+            <StatAllocationAction
+              key={action.actionId}
+              action={action}
+              availablePoints={availablePoints}
+              onExecute={onExecute}
+            />
+          ))}
+        </View>
+      ) : <EmptyText text="현재 배분할 수 있는 스탯 포인트가 없습니다." />}
     </>
+  );
+}
+
+function StatAllocationAction({ action, availablePoints, onExecute }: {
+  action: CharacterObservedAction;
+  availablePoints: number | null;
+  onExecute: (request: CharacterManagementActionRequest) => Promise<void>;
+}) {
+  const candidateGroups = useMemo(() => groupCharacterCandidates(action.candidates), [action.candidates]);
+  const [selectedCandidates, setSelectedCandidates] = useState<Record<string, string>>(() => Object.fromEntries(
+    candidateGroups.flatMap(([groupId, candidates]) => {
+      const selected = candidates.find((candidate) => candidate.selected) ?? candidates[0];
+      return selected ? [[groupId, selected.id]] : [];
+    }),
+  ));
+  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(
+    action.fields.map((field) => [field.id, field.value]),
+  ));
+  const [submitting, setSubmitting] = useState(false);
+  const allocatedPoints = candidateGroups.reduce((sum, [groupId, candidates]) => {
+    const selected = candidates.find((candidate) => candidate.id === selectedCandidates[groupId]);
+    return sum + parseStatCandidateValue(selected?.label);
+  }, 0);
+  const exceedsAvailablePoints = availablePoints != null && allocatedPoints > availablePoints;
+
+  const execute = async () => {
+    setSubmitting(true);
+    try {
+      await onExecute({
+        action: {
+          actionId: action.actionId,
+          selections: Object.values(selectedCandidates).map((candidateId) => ({ candidateId })),
+          values: action.fields.map((field) => ({ fieldId: field.id, value: values[field.id] ?? '' })),
+        },
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <View style={styles.statCard}>
+      <View style={styles.statSummary}>
+        <Text style={styles.cardTitle}>배분할 포인트</Text>
+        <View style={styles.pointBadge}>
+          <Text style={styles.pointBadgeText}>
+            {availablePoints == null ? `선택 ${allocatedPoints}` : `남음 ${availablePoints} · 선택 ${allocatedPoints}`}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.statRows}>
+        {candidateGroups.map(([groupId, candidates]) => (
+          <View key={groupId} style={styles.statRow}>
+            <Text style={styles.statName}>{statGroupLabel(groupId)}</Text>
+            <View style={styles.statChoices}>
+              {candidates.map((candidate) => {
+                const selected = selectedCandidates[groupId] === candidate.id;
+                return (
+                  <Pressable
+                    accessibilityLabel={`${statGroupLabel(groupId)} ${candidate.label}`}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: selected }}
+                    key={candidate.id}
+                    onPress={() => setSelectedCandidates((current) => ({ ...current, [groupId]: candidate.id }))}
+                    style={({ pressed }) => [
+                      styles.statChoice,
+                      selected && styles.statChoiceSelected,
+                      pressed && styles.statChoicePressed,
+                    ]}
+                  >
+                    <Text style={[styles.statChoiceText, selected && styles.statChoiceTextSelected]}>{candidate.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        ))}
+      </View>
+
+      {action.fields.map((field) => (
+        <View key={field.id} style={styles.fieldGroup}>
+          <Text style={styles.fieldLabel}>{field.label}</Text>
+          <TextInput
+            keyboardType={field.inputType === 'NUMBER' ? 'number-pad' : 'default'}
+            maxLength={field.maxLength ?? undefined}
+            onChangeText={(value) => setValues((current) => ({ ...current, [field.id]: value }))}
+            style={styles.input}
+            value={values[field.id] ?? ''}
+          />
+        </View>
+      ))}
+
+      {exceedsAvailablePoints ? <Text style={styles.statError}>남은 포인트보다 많이 선택했습니다.</Text> : null}
+      <Pressable
+        accessibilityRole="button"
+        disabled={submitting || exceedsAvailablePoints}
+        onPress={() => void execute()}
+        style={[styles.actionButton, (submitting || exceedsAvailablePoints) && styles.disabledCard]}
+      >
+        <Text style={styles.actionButtonText}>{submitting ? '적용 중' : '스탯 적용'}</Text>
+      </Pressable>
+    </View>
   );
 }
 
@@ -485,6 +604,24 @@ function groupCharacterCandidates(candidates: CharacterObservedAction['candidate
   return [...grouped.entries()];
 }
 
+export function extractAvailableStatPoints(statusLines: string[]): number | null {
+  for (const line of statusLines) {
+    const match = /point\s*[:?]?\s*(\d+)/i.exec(line);
+    if (match) return Number(match[1]);
+  }
+  return null;
+}
+
+export function statGroupLabel(groupId: string): string {
+  const withoutPrefix = groupId.replace(/^up/i, '');
+  return withoutPrefix ? withoutPrefix.toUpperCase() : groupId.toUpperCase();
+}
+
+function parseStatCandidateValue(label: string | undefined): number {
+  const value = Number.parseInt(label?.match(/[+-]?\d+/)?.[0] ?? '0', 10);
+  return Number.isNaN(value) ? 0 : Math.max(0, value);
+}
+
 function actionLabel(action: CharacterObservedAction): string {
   const source = normalizedSource(action);
   const target = action.label.includes(' · ') ? ` · ${action.label.split(' · ').slice(1).join(' · ')}` : '';
@@ -524,6 +661,9 @@ function dangerousDescription(action: CharacterObservedAction): string {
 
 const styles = StyleSheet.create({
   container: { gap: theme.spacing.lg, paddingBottom: theme.spacing.xl },
+  detailBackButton: { minHeight: 44, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs, paddingRight: theme.spacing.md },
+  detailBackIcon: { color: theme.colors.accentGreen, fontSize: 30, lineHeight: 32 },
+  detailBackText: { color: theme.colors.accentGreen, fontSize: 15, fontWeight: '800' },
   header: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md },
   headerText: { flex: 1, gap: theme.spacing.xs },
   name: { color: theme.colors.text, fontSize: 24, fontWeight: '800' },
@@ -541,6 +681,21 @@ const styles = StyleSheet.create({
   metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }, metricCard: { width: '31%', minWidth: 90, padding: theme.spacing.md, borderRadius: theme.radius.md, backgroundColor: theme.colors.surface }, metricLabel: { color: theme.colors.textMuted, fontSize: 12 }, metricValue: { color: theme.colors.text, fontSize: 16, fontWeight: '800', marginTop: theme.spacing.xs },
   notice: { borderLeftWidth: 4, borderLeftColor: theme.colors.accentGreen, padding: theme.spacing.lg, gap: theme.spacing.sm, backgroundColor: theme.colors.surface, borderRadius: theme.radius.md }, errorNotice: { borderLeftColor: theme.colors.danger }, noticeTitle: { color: theme.colors.text, fontSize: 17, fontWeight: '800' }, noticeText: { color: theme.colors.textMuted, fontSize: 15, lineHeight: 22 },
   statusLine: { color: theme.colors.textMuted, fontSize: 14, lineHeight: 21, paddingVertical: theme.spacing.xs },
+  statActionList: { gap: theme.spacing.md },
+  statCard: { gap: theme.spacing.lg, padding: theme.spacing.lg, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface, borderRadius: theme.radius.md },
+  statSummary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md },
+  pointBadge: { paddingHorizontal: theme.spacing.sm, paddingVertical: 6, borderRadius: 999, backgroundColor: theme.colors.surfaceAlt },
+  pointBadgeText: { color: theme.colors.accentGreen, fontSize: 12, fontWeight: '800' },
+  statRows: { gap: theme.spacing.lg },
+  statRow: { gap: theme.spacing.sm },
+  statName: { color: theme.colors.text, fontSize: 15, fontWeight: '900', letterSpacing: 0.8 },
+  statChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
+  statChoice: { minWidth: 44, minHeight: 42, flexGrow: 1, flexBasis: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: theme.spacing.sm, borderWidth: 1, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceAlt },
+  statChoiceSelected: { borderColor: theme.colors.accentGreen, backgroundColor: theme.colors.accentGreen },
+  statChoicePressed: { opacity: 0.78 },
+  statChoiceText: { color: theme.colors.textMuted, fontSize: 14, fontWeight: '800' },
+  statChoiceTextSelected: { color: theme.colors.buttonText },
+  statError: { color: theme.colors.danger, fontSize: 13, lineHeight: 19 },
   actionCard: { gap: theme.spacing.md, padding: theme.spacing.lg, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface, borderRadius: theme.radius.md }, dangerCard: { borderColor: theme.colors.danger },
   actionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md },
   choiceList: { gap: theme.spacing.sm }, choice: { padding: theme.spacing.md, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceAlt }, choiceSelected: { borderColor: theme.colors.accentGreen }, choiceText: { color: theme.colors.text, fontSize: 14 },

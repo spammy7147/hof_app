@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import React from 'react';
 import { act, create } from 'react-test-renderer';
 import type { PartyPresetResponse } from '../../main/types/api';
+import { makeHofCharacter } from '../fixtures/api';
 
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => (
   React.createElement(name, { ...props, ref }, props.children as React.ReactNode)
@@ -288,6 +289,25 @@ describe('MainScreen automation editor chrome', () => {
     await act(async () => {
       renderer.root.find((node) => String(node.type) === 'HomeTabScreen').props.onDetailModeChange(false);
     });
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'GameStatusBar').length, 1);
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 1);
+  });
+
+  it('opens character details without the global header, tabs, or a sticky footer', async () => {
+    const character = makeHofCharacter();
+    const props = mainProps({ characters: [character] });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => { renderer = create(React.createElement(MainScreen, props)); });
+
+    await act(async () => renderer.root.find((node) => String(node.type) === 'BottomTabBar').props.onChangeTab('characters'));
+    await act(async () => renderer.root.find((node) => String(node.type) === 'CharacterList').props.onSelectCharacter(character));
+
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'GameStatusBar').length, 0);
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 0);
+    assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '캐릭터 상세 전체 화면' }).length > 0);
+
+    const detail = renderer.root.find((node) => String(node.type) === 'CharacterDetail');
+    await act(async () => detail.props.onBack());
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'GameStatusBar').length, 1);
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 1);
   });

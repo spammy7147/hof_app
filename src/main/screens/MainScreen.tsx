@@ -327,7 +327,7 @@ export function MainScreen({
   const [townDetailOpen, setTownDetailOpen] = useState(false);
   const isCharacterDetailOpen = activeTabId === 'characters' && selectedCharacter != null;
   const townDetailFullScreen = activeTabId === 'town' && townDetailOpen;
-  const showGlobalChrome = !automationEditorOpen && !dataLogOpen && !townDetailFullScreen;
+  const showGlobalChrome = !automationEditorOpen && !dataLogOpen && !townDetailFullScreen && !isCharacterDetailOpen;
 
   /**
    * SSE 동기화로 characters 배열이 갱신되면 현재 선택된 캐릭터 객체도 최신 값으로 교체한다.
@@ -426,8 +426,14 @@ export function MainScreen({
       {showGlobalChrome ? <GameStatusBar status={status} /> : null}
 
       <View
-        accessibilityLabel={townDetailFullScreen ? '마을 상세 전체 화면' : undefined}
-        style={[styles.content, townDetailFullScreen && styles.fullScreenContent]}
+        accessibilityLabel={
+          townDetailFullScreen
+            ? '마을 상세 전체 화면'
+            : isCharacterDetailOpen
+              ? '캐릭터 상세 전체 화면'
+              : undefined
+        }
+        style={[styles.content, (townDetailFullScreen || isCharacterDetailOpen) && styles.fullScreenContent]}
       >
         {renderSystemMessage(session, notice, onOpenLogin)}
         {renderActiveTab({
@@ -468,6 +474,7 @@ export function MainScreen({
           characterSubTabId,
           setCharacterSubTabId,
           setSelectedCharacter,
+          closeCharacterDetail: () => setSelectedCharacter(null),
           onExecuteCharacterAction: handleCharacterAction,
           townApi,
           resolveCaptcha,
@@ -482,16 +489,6 @@ export function MainScreen({
           onTownDetailOpenChange: setTownDetailOpen,
         })}
       </View>
-
-      {isCharacterDetailOpen ? (
-        <View style={styles.stickyBackFooter}>
-          <PrimaryButton
-            label="목록으로"
-            variant="secondary"
-            onPress={() => setSelectedCharacter(null)}
-          />
-        </View>
-      ) : null}
 
       {showGlobalChrome ? <BottomTabBar activeTabId={activeTabId} onChangeTab={setActiveTabId} /> : null}
     </SafeAreaView>
@@ -593,6 +590,7 @@ type RenderActiveTabArgs = {
   characterSubTabId: CharacterSubTabId;
   setCharacterSubTabId: (tabId: CharacterSubTabId) => void;
   setSelectedCharacter: (character: HofCharacter | null) => void;
+  closeCharacterDetail: () => void;
   onExecuteCharacterAction: (request: CharacterManagementActionRequest) => Promise<CharacterManagementSnapshot>;
   onAutomationEditorModeChange: (active: boolean) => void;
   onDataLogModeChange: (active: boolean) => void;
@@ -647,6 +645,7 @@ function renderActiveTab({
   characterSubTabId,
   setCharacterSubTabId,
   setSelectedCharacter,
+  closeCharacterDetail,
   onExecuteCharacterAction,
   onAutomationEditorModeChange,
   onTownDetailOpenChange,
@@ -694,13 +693,7 @@ function renderActiveTab({
       );
     case 'characters':
       return selectedCharacter ? (
-        <View style={styles.tabPanel}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>캐릭터 상세</Text>
-            <View style={styles.sectionActions}>
-              <Text style={styles.sectionMeta}>{characterSyncLabel ?? `${characters.length}명`}</Text>
-            </View>
-          </View>
+        <View style={[styles.tabPanel, styles.detailPanel]}>
           <CharacterDetailScroll>
             <CharacterDetail
               character={selectedCharacter}
@@ -710,6 +703,7 @@ function renderActiveTab({
               onLoadPattern={onLoadPattern}
               actions={characterActions}
               onExecuteAction={onExecuteCharacterAction}
+              onBack={closeCharacterDetail}
             />
           </CharacterDetailScroll>
         </View>
@@ -872,7 +866,7 @@ function CharacterDetailScroll({ children }: { children: ReactNode }) {
   return (
     <ScrollView
       automaticallyAdjustKeyboardInsets
-      contentContainerStyle={[styles.detailContainer, styles.containerWithStickyFooter]}
+      contentContainerStyle={styles.detailContainer}
       contentInsetAdjustmentBehavior="automatic"
       keyboardDismissMode="interactive"
       keyboardShouldPersistTaps="handled"
@@ -905,6 +899,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
     paddingTop: theme.spacing.lg,
   },
+  detailPanel: {
+    paddingTop: theme.spacing.md,
+  },
   container: {
     padding: theme.spacing.lg,
     paddingBottom: theme.spacing.xl,
@@ -914,21 +911,10 @@ const styles = StyleSheet.create({
     gap: theme.spacing.lg,
     paddingBottom: theme.spacing.xl,
   },
-  containerWithStickyFooter: {
-    paddingBottom: 96,
-  },
   systemMessages: {
     gap: theme.spacing.md,
     paddingHorizontal: theme.spacing.lg,
     paddingTop: theme.spacing.lg,
-  },
-  stickyBackFooter: {
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border,
-    backgroundColor: theme.colors.background,
-    paddingHorizontal: theme.spacing.lg,
-    paddingTop: theme.spacing.sm,
-    paddingBottom: theme.spacing.sm,
   },
   notice: {
     color: theme.colors.text,
