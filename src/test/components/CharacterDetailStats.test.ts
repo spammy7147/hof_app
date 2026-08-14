@@ -14,6 +14,7 @@ const reactNativeMock = {
   Alert: { alert: () => undefined },
   Image: host('Image'),
   Pressable: host('Pressable'),
+  ScrollView: host('ScrollView'),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: host('Text'),
   TextInput: host('TextInput'),
@@ -25,7 +26,7 @@ const originalLoad = moduleWithLoader._load;
 moduleWithLoader._load = (request, parent, isMain) => (
   request === 'react-native' ? reactNativeMock : originalLoad(request, parent, isMain)
 );
-const { CharacterDetail, extractAvailableStatPoints, statGroupLabel } = require('../../main/components/CharacterDetail') as typeof import('../../main/components/CharacterDetail');
+const { CharacterDetail, extractAvailableStatPoints, extractPrimaryStatValues, statGroupLabel } = require('../../main/components/CharacterDetail') as typeof import('../../main/components/CharacterDetail');
 moduleWithLoader._load = originalLoad;
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -35,6 +36,10 @@ describe('CharacterDetail stat allocation', () => {
     assert.equal(extractAvailableStatPoints(['Status ?Point : 25']), 25);
     assert.equal(statGroupLabel('upStr'), 'STR');
     assert.equal(statGroupLabel('upLuk'), 'LUK');
+    assert.deepEqual(
+      extractPrimaryStatValues(['STR : 128 + 95 (Real STR +38)', 'LUK : 10 + 77']),
+      { STR: '223', LUK: '87' },
+    );
   });
 
   it('keeps hundreds of server candidates in five compact controls and submits a directly entered value', async () => {
@@ -44,7 +49,7 @@ describe('CharacterDetail stat allocation', () => {
     await act(async () => {
       renderer = create(React.createElement(CharacterDetail, {
         character: makeHofCharacter(),
-        detail: makeHofCharacterDetail(1, { statusLines: ['Status ?Point : 25'] }),
+        detail: makeHofCharacterDetail(1, { statusLines: ['Status ?Point : 25', 'DEX : 34 + 9'] }),
         isLoading: false,
         errorMessage: null,
         actions: [action],
@@ -55,8 +60,8 @@ describe('CharacterDetail stat allocation', () => {
       }));
     });
 
-    const statsNavigation = renderer.root.findAllByProps({ accessibilityRole: 'button' }).find((node) => (
-      node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '스탯 배분').length > 0
+    const statsNavigation = renderer.root.findAllByProps({ accessibilityRole: 'tab' }).find((node) => (
+      node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '능력치').length > 0
     ));
     await act(async () => statsNavigation?.props.onPress());
 
@@ -66,6 +71,7 @@ describe('CharacterDetail stat allocation', () => {
     assert.ok(text.includes('INT'));
     assert.ok(text.includes('SPD'));
     assert.ok(text.includes('LUK'));
+    assert.ok(text.includes('43'));
     assert.ok(text.includes('남음 25 · 배분 0'));
     assert.equal(text.includes('Increase Status'), false);
     assert.equal(text.includes('현재 상태'), false);

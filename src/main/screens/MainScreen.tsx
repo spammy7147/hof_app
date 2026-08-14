@@ -900,7 +900,9 @@ const styles = StyleSheet.create({
     paddingTop: theme.spacing.lg,
   },
   detailPanel: {
-    paddingTop: theme.spacing.md,
+    gap: 0,
+    paddingHorizontal: 0,
+    paddingTop: 0,
   },
   container: {
     padding: theme.spacing.lg,
@@ -908,8 +910,7 @@ const styles = StyleSheet.create({
     gap: theme.spacing.lg,
   },
   detailContainer: {
-    gap: theme.spacing.lg,
-    paddingBottom: theme.spacing.xl,
+    paddingBottom: 0,
   },
   systemMessages: {
     gap: theme.spacing.md,

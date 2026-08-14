@@ -5,6 +5,7 @@ import {
   Alert,
   Image,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -27,7 +28,16 @@ import type {
   LoadPatternResponse,
 } from '../types/api';
 
-type CharacterManagementView = 'hub' | 'stats' | 'patterns' | 'equipment' | 'skills' | 'items' | 'info';
+type CharacterManagementView = 'overview' | 'stats' | 'patterns' | 'equipment' | 'skills' | 'manage';
+
+const CHARACTER_SECTIONS: Array<{ id: CharacterManagementView; label: string }> = [
+  { id: 'overview', label: '개요' },
+  { id: 'stats', label: '능력치' },
+  { id: 'patterns', label: '패턴' },
+  { id: 'equipment', label: '장비' },
+  { id: 'skills', label: '스킬' },
+  { id: 'manage', label: '관리' },
+];
 
 type CharacterDetailProps = {
   character: HofCharacter;
@@ -40,7 +50,7 @@ type CharacterDetailProps = {
   onBack?: () => void;
 };
 
-/** 캐릭터의 요약과 각 관리 기능으로 들어가는 모바일 허브다. */
+/** 캐릭터 정보를 문서처럼 읽고 필요한 구획만 편집하는 전체 화면이다. */
 export function CharacterDetail({
   character,
   detail,
@@ -51,7 +61,7 @@ export function CharacterDetail({
   onExecuteAction,
   onBack,
 }: CharacterDetailProps) {
-  const [view, setView] = useState<CharacterManagementView>('hub');
+  const [view, setView] = useState<CharacterManagementView>('overview');
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const name = displayCharacterName(character);
@@ -75,55 +85,98 @@ export function CharacterDetail({
 
   return (
     <View style={styles.container}>
-      {onBack ? (
-        <Pressable accessibilityRole="button" onPress={onBack} style={styles.detailBackButton}>
-          <Text style={styles.detailBackIcon}>‹</Text>
-          <Text style={styles.detailBackText}>캐릭터 목록</Text>
-        </Pressable>
-      ) : null}
+      <CharacterDocumentHeader character={character} detail={detail} name={name} onBack={onBack} />
+      <CharacterSectionTabs selected={view} onSelect={setView} />
+
+      <View style={styles.documentBody}>
+        {resultMessage ? <ResultNotice tone="success" message={resultMessage} /> : null}
+        {actionError ? <ResultNotice tone="error" message={actionError} /> : null}
+
+        {view === 'overview' ? <CharacterOverview detail={detail} /> : null}
+        {view === 'patterns' ? (
+          <PatternManagement
+            detail={detail}
+            actions={actions.filter(isPatternAction)}
+            characterId={character.hofCharacterId}
+            onExecute={runAction}
+            onLoadPattern={onLoadPattern}
+          />
+        ) : null}
+        {view === 'stats' ? (
+          <StatManagement detail={detail} actions={actions.filter(isStatAction)} onExecute={runAction} />
+        ) : null}
+        {view === 'equipment' ? (
+          <EquipmentManagement detail={detail} actions={actions.filter(isEquipmentAction)} onExecute={runAction} />
+        ) : null}
+        {view === 'skills' ? (
+          <SkillManagement detail={detail} actions={actions.filter(isSkillAction)} onExecute={runAction} />
+        ) : null}
+        {view === 'manage' ? (
+          <>
+            <ScreenHeading title="관리" description="아이템과 기본 작업을 확인합니다." />
+            <ObservedActions title="아이템 사용" actions={actions.filter(isItemAction)} onExecute={runAction} />
+            <FullInformation detail={detail} actions={actions.filter(isIdentityAction)} onExecute={runAction} showHeading={false} />
+          </>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function CharacterDocumentHeader({ character, detail, name, onBack }: {
+  character: HofCharacter;
+  detail: HofCharacterDetail;
+  name: string;
+  onBack?: () => void;
+}) {
+  return (
+    <View style={styles.documentHeader}>
+      <View style={styles.documentToolbar}>
+        {onBack ? (
+          <Pressable accessibilityLabel="캐릭터 목록으로" accessibilityRole="button" onPress={onBack} style={styles.detailBackButton}>
+            <Text style={styles.detailBackIcon}>‹</Text>
+            <Text style={styles.detailBackText}>목록</Text>
+          </Pressable>
+        ) : <View />}
+        <Text style={styles.documentNumber}>CHARACTER FILE · {character.hofCharacterId}</Text>
+      </View>
       <View style={styles.header}>
-        <Avatar name={name} imageUrl={detail.imageUrl} />
         <View style={styles.headerText}>
           <Text style={styles.name}>{name}</Text>
           <Text style={styles.subtitle}>{formatCharacterLevel(character)} · {displayCharacterJob(character)}</Text>
         </View>
+        <Avatar name={name} imageUrl={detail.imageUrl} />
       </View>
-
-      {view !== 'hub' ? (
-        <Pressable accessibilityRole="button" onPress={() => setView('hub')} style={styles.backButton}>
-          <Text style={styles.backButtonText}>‹ 캐릭터 관리</Text>
-        </Pressable>
-      ) : null}
-
-      {resultMessage ? <ResultNotice tone="success" message={resultMessage} /> : null}
-      {actionError ? <ResultNotice tone="error" message={actionError} /> : null}
-
-      {view === 'hub' ? <ManagementHub detail={detail} onOpen={setView} /> : null}
-      {view === 'patterns' ? (
-        <PatternManagement
-          detail={detail}
-          actions={actions.filter(isPatternAction)}
-          characterId={character.hofCharacterId}
-          onExecute={runAction}
-          onLoadPattern={onLoadPattern}
-        />
-      ) : null}
-      {view === 'stats' ? (
-        <StatManagement detail={detail} actions={actions.filter(isStatAction)} onExecute={runAction} />
-      ) : null}
-      {view === 'equipment' ? (
-        <EquipmentManagement detail={detail} actions={actions.filter(isEquipmentAction)} onExecute={runAction} />
-      ) : null}
-      {view === 'skills' ? (
-        <SkillManagement detail={detail} actions={actions.filter(isSkillAction)} onExecute={runAction} />
-      ) : null}
-      {view === 'items' ? (
-        <ObservedActions title="아이템 사용" actions={actions.filter(isItemAction)} onExecute={runAction} />
-      ) : null}
-      {view === 'info' ? (
-        <FullInformation detail={detail} actions={actions.filter(isIdentityAction)} onExecute={runAction} />
-      ) : null}
     </View>
+  );
+}
+
+function CharacterSectionTabs({ selected, onSelect }: {
+  selected: CharacterManagementView;
+  onSelect: (view: CharacterManagementView) => void;
+}) {
+  return (
+    <ScrollView
+      contentContainerStyle={styles.sectionTabsContent}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={styles.sectionTabs}
+    >
+      {CHARACTER_SECTIONS.map((section) => {
+        const active = selected === section.id;
+        return (
+          <Pressable
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active }}
+            key={section.id}
+            onPress={() => onSelect(section.id)}
+            style={[styles.sectionTab, active && styles.sectionTabActive]}
+          >
+            <Text style={[styles.sectionTabText, active && styles.sectionTabTextActive]}>{section.label}</Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
   );
 }
 
@@ -136,42 +189,43 @@ function LoadingPanel() {
   );
 }
 
-function ManagementHub({ detail, onOpen }: { detail: HofCharacterDetail; onOpen: (view: CharacterManagementView) => void }) {
+function CharacterOverview({ detail }: { detail: HofCharacterDetail }) {
   const metrics = buildCharacterDetailMetrics(detail);
-  const cards: Array<{ id: CharacterManagementView; title: string; description: string }> = [
-    { id: 'stats', title: '스탯 배분', description: detail.statusLines.some((line) => /point\s*:/i.test(line)) ? '배분 가능한 포인트 확인' : '남은 포인트 없음' },
-    { id: 'patterns', title: '패턴 관리', description: `행동 패턴 ${detail.actionPatterns.length}개 · 저장 슬롯 ${detail.patternSlots.length}개` },
-    { id: 'equipment', title: '장비 관리', description: `현재 장착 ${detail.equipment.filter((item) => item.checked).length}개` },
-    { id: 'skills', title: '스킬 관리', description: `보유 ${detail.learnedSkills.length}개 · 습득 가능 ${detail.learnableSkills.length}개` },
-    { id: 'items', title: '아이템 사용', description: '사용 가능한 캐릭터 아이템 확인' },
-    { id: 'info', title: '전체 정보 및 기본 관리', description: '추가 효과·이름·순서·삭제 관리' },
-  ];
+  const statusLines = displayStatusLines(detail.statusLines);
   return (
     <>
-      <Section title="핵심 능력치">
-        <View style={styles.metricGrid}>
+      <ScreenHeading title="캐릭터 기록" description="현재 동기화된 능력과 설정을 요약합니다." />
+      <Section title="전투 수치">
+        <View style={styles.metricLedger}>
           {metrics.map((metric) => (
-            <View key={metric.label} style={styles.metricCard}>
+            <View key={metric.label} style={styles.metricRow}>
               <Text style={styles.metricLabel}>{metric.label}</Text>
               <Text style={styles.metricValue}>{metric.value}</Text>
             </View>
           ))}
         </View>
       </Section>
-      <Section title="관리">
-        <View style={styles.list}>
-          {cards.map((card) => (
-            <Pressable key={card.id} accessibilityRole="button" onPress={() => onOpen(card.id)} style={styles.navigationCard}>
-              <View style={styles.flex}>
-                <Text style={styles.cardTitle}>{card.title}</Text>
-                <Text style={styles.mutedText}>{card.description}</Text>
-              </View>
-              <Text style={styles.chevron}>›</Text>
-            </Pressable>
-          ))}
-        </View>
+      <Section title="운용 상태">
+        <DocumentFact label="행동 패턴" value={`${detail.actionPatterns.length}개 · 저장 슬롯 ${detail.patternSlots.length}개`} />
+        <DocumentFact label="장비" value={`${detail.equipment.filter((item) => item.checked).length}부위 장착`} />
+        <DocumentFact label="스킬" value={`보유 ${detail.learnedSkills.length}개 · 습득 가능 ${detail.learnableSkills.length}개`} />
+        <DocumentFact label="위치·호위" value={`${detail.positionGuard.selectedPosition || '-'} · ${detail.positionGuard.guardText || '-'}`} />
+      </Section>
+      <Section title="상태 및 추가 효과">
+        {statusLines.length ? statusLines.map((line, index) => (
+          <Text key={`${line}-${index}`} style={styles.statusLine}>{line}</Text>
+        )) : <EmptyText text="추가 상태 정보가 없습니다." />}
       </Section>
     </>
+  );
+}
+
+function DocumentFact({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.documentFact}>
+      <Text style={styles.documentFactLabel}>{label}</Text>
+      <Text style={styles.documentFactValue}>{value}</Text>
+    </View>
   );
 }
 
@@ -181,6 +235,7 @@ function StatManagement({ detail, actions, onExecute }: {
   onExecute: (request: CharacterManagementActionRequest) => Promise<void>;
 }) {
   const availablePoints = extractAvailableStatPoints(detail.statusLines);
+  const currentStats = extractPrimaryStatValues(detail.statusLines);
   return (
     <>
       <ScreenHeading title="스탯 배분" description="올릴 수치를 바로 선택한 뒤 한 번에 적용합니다." />
@@ -191,6 +246,7 @@ function StatManagement({ detail, actions, onExecute }: {
               key={action.actionId}
               action={action}
               availablePoints={availablePoints}
+              currentStats={currentStats}
               onExecute={onExecute}
             />
           ))}
@@ -200,9 +256,10 @@ function StatManagement({ detail, actions, onExecute }: {
   );
 }
 
-function StatAllocationAction({ action, availablePoints, onExecute }: {
+function StatAllocationAction({ action, availablePoints, currentStats, onExecute }: {
   action: CharacterObservedAction;
   availablePoints: number | null;
+  currentStats: Record<string, string>;
   onExecute: (request: CharacterManagementActionRequest) => Promise<void>;
 }) {
   const candidateGroups = useMemo(() => groupCharacterCandidates(action.candidates), [action.candidates]);
@@ -280,6 +337,7 @@ function StatAllocationAction({ action, availablePoints, onExecute }: {
           return (
             <View key={groupId} style={styles.statRow}>
               <Text style={styles.statName}>{label}</Text>
+              <Text style={styles.statCurrent}>{currentStats[label] ?? '-'}</Text>
               <View style={styles.statStepper}>
                 <Pressable
                   accessibilityLabel={`${label} 1 감소`}
@@ -465,16 +523,18 @@ function SkillList({ skills }: { skills: HofCharacterSkill[] }) {
   ))}</View>;
 }
 
-function FullInformation({ detail, actions, onExecute }: {
+function FullInformation({ detail, actions, onExecute, showHeading = true }: {
   detail: HofCharacterDetail;
   actions: CharacterObservedAction[];
   onExecute: (request: CharacterManagementActionRequest) => Promise<void>;
+  showHeading?: boolean;
 }) {
+  const statusLines = displayStatusLines(detail.statusLines);
   return (
     <>
-      <ScreenHeading title="전체 정보 및 기본 관리" description="HOF에 표시된 캐릭터 상태와 기본 작업을 확인합니다." />
+      {showHeading ? <ScreenHeading title="전체 정보 및 기본 관리" description="HOF에 표시된 캐릭터 상태와 기본 작업을 확인합니다." /> : null}
       <Section title="상태 및 추가 효과">
-        {detail.statusLines.length ? detail.statusLines.map((line, index) => (
+        {statusLines.length ? statusLines.map((line, index) => (
           <Text key={`${line}-${index}`} style={styles.statusLine}>{line}</Text>
         )) : <EmptyText text="추가 상태 정보가 없습니다." />}
       </Section>
@@ -659,9 +719,25 @@ export function extractAvailableStatPoints(statusLines: string[]): number | null
   return null;
 }
 
+function displayStatusLines(statusLines: string[]): string[] {
+  return statusLines.filter((line) => !/status\s*\?*\s*point/i.test(line));
+}
+
 export function statGroupLabel(groupId: string): string {
   const withoutPrefix = groupId.replace(/^up/i, '');
   return withoutPrefix ? withoutPrefix.toUpperCase() : groupId.toUpperCase();
+}
+
+export function extractPrimaryStatValues(statusLines: string[]): Record<string, string> {
+  const values: Record<string, string> = {};
+  for (const line of statusLines) {
+    const match = /^\s*(STR|INT|DEX|SPD|LUK)\s*[:：]\s*([\d,]+)(?:\s*\+\s*([\d,]+))?/i.exec(line);
+    if (!match) continue;
+    const base = Number(match[2].replaceAll(',', ''));
+    const bonus = match[3] ? Number(match[3].replaceAll(',', '')) : 0;
+    values[match[1].toUpperCase()] = Number.isFinite(base + bonus) ? (base + bonus).toLocaleString('en-US') : match[2];
+  }
+  return values;
 }
 
 function parseStatCandidateValue(label: string | undefined): number {
@@ -707,47 +783,85 @@ function dangerousDescription(action: CharacterObservedAction): string {
 }
 
 const styles = StyleSheet.create({
-  container: { gap: theme.spacing.lg, paddingBottom: theme.spacing.xl },
-  detailBackButton: { minHeight: 44, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs, paddingRight: theme.spacing.md },
-  detailBackIcon: { color: theme.colors.accentGreen, fontSize: 30, lineHeight: 32 },
-  detailBackText: { color: theme.colors.accentGreen, fontSize: 15, fontWeight: '800' },
-  header: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md },
+  container: { paddingBottom: theme.spacing.xl },
+  documentHeader: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.lg, backgroundColor: theme.colors.surface },
+  documentToolbar: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md },
+  documentNumber: { flexShrink: 1, color: theme.colors.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 0.8, textAlign: 'right' },
+  detailBackButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs, paddingRight: theme.spacing.md },
+  detailBackIcon: { color: theme.colors.text, fontSize: 28, lineHeight: 30 },
+  detailBackText: { color: theme.colors.text, fontSize: 14, fontWeight: '700' },
+  header: { minHeight: 88, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.lg, borderBottomWidth: 2, borderBottomColor: theme.colors.text },
   headerText: { flex: 1, gap: theme.spacing.xs },
-  name: { color: theme.colors.text, fontSize: 24, fontWeight: '800' },
-  subtitle: { color: theme.colors.textMuted, fontSize: 15 },
-  avatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.borderStrong, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  avatarImage: { width: 58, height: 58 }, avatarText: { color: theme.colors.accentGreen, fontSize: 24, fontWeight: '800' },
+  name: { color: theme.colors.text, fontSize: 28, fontWeight: '800' },
+  subtitle: { color: theme.colors.textMuted, fontSize: 14 },
+  avatar: { width: 58, height: 58, borderRadius: 29, backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.border, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarImage: { width: 54, height: 54 },
+  avatarText: { color: theme.colors.accentAmber, fontSize: 22, fontWeight: '800' },
+  sectionTabs: { flexGrow: 0, backgroundColor: theme.colors.surface, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  sectionTabsContent: { paddingHorizontal: theme.spacing.lg, gap: theme.spacing.lg },
+  sectionTab: { minHeight: 46, justifyContent: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  sectionTabActive: { borderBottomColor: theme.colors.accentAmber },
+  sectionTabText: { color: theme.colors.textMuted, fontSize: 14, fontWeight: '700' },
+  sectionTabTextActive: { color: theme.colors.text },
+  documentBody: { gap: theme.spacing.xl, paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.xl },
   loadingPanel: { minHeight: 180, alignItems: 'center', justifyContent: 'center', gap: theme.spacing.md },
-  errorText: { color: theme.colors.danger, fontSize: 15 }, mutedText: { color: theme.colors.textMuted, fontSize: 14, lineHeight: 21 },
-  backButton: { alignSelf: 'flex-start', paddingVertical: theme.spacing.sm }, backButtonText: { color: theme.colors.accentGreen, fontSize: 16, fontWeight: '700' },
-  section: { gap: theme.spacing.md }, sectionTitle: { color: theme.colors.text, fontSize: 19, fontWeight: '800' }, screenTitle: { color: theme.colors.text, fontSize: 24, fontWeight: '800', marginBottom: theme.spacing.xs },
-  list: { gap: theme.spacing.md }, flex: { flex: 1, gap: theme.spacing.xs },
-  navigationCard: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, padding: theme.spacing.lg, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface, borderRadius: theme.radius.md },
-  card: { gap: theme.spacing.sm, padding: theme.spacing.lg, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface, borderRadius: theme.radius.md },
-  cardTitle: { color: theme.colors.text, fontSize: 16, fontWeight: '800', lineHeight: 22 }, overline: { color: theme.colors.accentAmber, fontSize: 12, fontWeight: '800' }, accentText: { color: theme.colors.accentGreen, fontSize: 14, fontWeight: '700' }, chevron: { color: theme.colors.textMuted, fontSize: 28 }, caption: { color: theme.colors.textMuted, fontSize: 13, marginTop: theme.spacing.sm },
-  metricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }, metricCard: { width: '31%', minWidth: 90, padding: theme.spacing.md, borderRadius: theme.radius.md, backgroundColor: theme.colors.surface }, metricLabel: { color: theme.colors.textMuted, fontSize: 12 }, metricValue: { color: theme.colors.text, fontSize: 16, fontWeight: '800', marginTop: theme.spacing.xs },
-  notice: { borderLeftWidth: 4, borderLeftColor: theme.colors.accentGreen, padding: theme.spacing.lg, gap: theme.spacing.sm, backgroundColor: theme.colors.surface, borderRadius: theme.radius.md }, errorNotice: { borderLeftColor: theme.colors.danger }, noticeTitle: { color: theme.colors.text, fontSize: 17, fontWeight: '800' }, noticeText: { color: theme.colors.textMuted, fontSize: 15, lineHeight: 22 },
-  statusLine: { color: theme.colors.textMuted, fontSize: 14, lineHeight: 21, paddingVertical: theme.spacing.xs },
-  statActionList: { gap: theme.spacing.md },
-  statCard: { gap: theme.spacing.lg, padding: theme.spacing.lg, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface, borderRadius: theme.radius.md },
-  statSummary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md },
-  pointBadge: { paddingHorizontal: theme.spacing.sm, paddingVertical: 6, borderRadius: 999, backgroundColor: theme.colors.surfaceAlt },
-  pointBadgeText: { color: theme.colors.accentGreen, fontSize: 12, fontWeight: '800' },
-  statRows: { gap: theme.spacing.md },
-  statRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md },
-  statName: { width: 42, color: theme.colors.text, fontSize: 15, fontWeight: '900', letterSpacing: 0.8 },
-  statStepper: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm },
-  stepperButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceAlt },
-  stepperButtonText: { color: theme.colors.text, fontSize: 20, fontWeight: '800' },
-  statValueInput: { minWidth: 58, height: 42, flex: 1, paddingHorizontal: theme.spacing.sm, color: theme.colors.text, fontSize: 16, fontWeight: '900', textAlign: 'center', backgroundColor: theme.colors.background, borderWidth: 1, borderColor: theme.colors.accentGreen, borderRadius: theme.radius.md },
-  maxButton: { minWidth: 50, height: 42, alignItems: 'center', justifyContent: 'center', paddingHorizontal: theme.spacing.sm, borderWidth: 1, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceAlt },
-  maxButtonText: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '900' },
+  errorText: { color: theme.colors.danger, fontSize: 15, padding: theme.spacing.lg },
+  mutedText: { color: theme.colors.textMuted, fontSize: 14, lineHeight: 21 },
+  section: { gap: 0, paddingTop: theme.spacing.md, borderTopWidth: 1, borderTopColor: theme.colors.border },
+  sectionTitle: { color: theme.colors.text, fontSize: 17, fontWeight: '800', marginBottom: theme.spacing.sm },
+  screenTitle: { color: theme.colors.text, fontSize: 23, fontWeight: '800', marginBottom: theme.spacing.xs },
+  list: { gap: 0 },
+  flex: { flex: 1, gap: theme.spacing.xs },
+  navigationCard: { minHeight: 62, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, paddingVertical: theme.spacing.md, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  card: { gap: theme.spacing.xs, paddingVertical: theme.spacing.md, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  cardTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '800', lineHeight: 21 },
+  overline: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
+  accentText: { color: theme.colors.accentAmber, fontSize: 14, fontWeight: '700' },
+  chevron: { color: theme.colors.textMuted, fontSize: 24 },
+  caption: { color: theme.colors.textMuted, fontSize: 13, marginTop: theme.spacing.sm },
+  metricLedger: { flexDirection: 'row', flexWrap: 'wrap', borderTopWidth: 1, borderLeftWidth: 1, borderColor: theme.colors.border },
+  metricRow: { width: '50%', minHeight: 62, justifyContent: 'center', gap: theme.spacing.xs, paddingHorizontal: theme.spacing.md, borderRightWidth: 1, borderBottomWidth: 1, borderColor: theme.colors.border },
+  metricLabel: { color: theme.colors.textMuted, fontSize: 12 },
+  metricValue: { color: theme.colors.text, fontSize: 16, fontWeight: '800' },
+  documentFact: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  documentFactLabel: { color: theme.colors.textMuted, fontSize: 13 },
+  documentFactValue: { flex: 1, color: theme.colors.text, fontSize: 14, fontWeight: '700', textAlign: 'right' },
+  notice: { borderLeftWidth: 2, borderLeftColor: theme.colors.accentAmber, paddingLeft: theme.spacing.md, gap: theme.spacing.xs },
+  errorNotice: { borderLeftColor: theme.colors.danger },
+  noticeTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '800' },
+  noticeText: { color: theme.colors.textMuted, fontSize: 14, lineHeight: 21 },
+  statusLine: { color: theme.colors.textMuted, fontSize: 14, lineHeight: 21, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  statActionList: { gap: theme.spacing.xl },
+  statCard: { gap: 0 },
+  statSummary: { minHeight: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  pointBadge: { paddingVertical: theme.spacing.sm },
+  pointBadgeText: { color: theme.colors.accentAmber, fontSize: 13, fontWeight: '800' },
+  statRows: { gap: 0 },
+  statRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  statName: { width: 46, color: theme.colors.text, fontSize: 15, fontWeight: '900', letterSpacing: 0.8 },
+  statCurrent: { width: 52, color: theme.colors.textMuted, fontSize: 14, fontWeight: '700', textAlign: 'right' },
+  statStepper: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end' },
+  stepperButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surface },
+  stepperButtonText: { color: theme.colors.text, fontSize: 19, fontWeight: '700' },
+  statValueInput: { width: 54, height: 38, paddingHorizontal: theme.spacing.xs, color: theme.colors.text, fontSize: 16, fontWeight: '900', textAlign: 'center', backgroundColor: theme.colors.background, borderTopWidth: 1, borderBottomWidth: 1, borderColor: theme.colors.borderStrong },
+  maxButton: { minWidth: 48, height: 38, alignItems: 'center', justifyContent: 'center', paddingHorizontal: theme.spacing.sm, marginLeft: theme.spacing.sm, borderWidth: 1, borderColor: theme.colors.borderStrong, backgroundColor: 'transparent' },
+  maxButtonText: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '800' },
   controlDisabled: { opacity: 0.35 },
   controlPressed: { opacity: 0.72 },
-  actionCard: { gap: theme.spacing.md, padding: theme.spacing.lg, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface, borderRadius: theme.radius.md }, dangerCard: { borderColor: theme.colors.danger },
-  actionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md },
-  choiceList: { gap: theme.spacing.sm }, choice: { padding: theme.spacing.md, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceAlt }, choiceSelected: { borderColor: theme.colors.accentGreen }, choiceText: { color: theme.colors.text, fontSize: 14 },
-  choiceGroup: { gap: theme.spacing.sm }, choiceGroupHeader: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, padding: theme.spacing.md, borderWidth: 1, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceAlt },
-  fieldGroup: { gap: theme.spacing.sm }, fieldLabel: { color: theme.colors.textMuted, fontSize: 13, fontWeight: '700' }, input: { minHeight: 48, paddingHorizontal: theme.spacing.md, color: theme.colors.text, backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md },
-  actionButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.md, backgroundColor: theme.colors.accentGreen }, dangerButton: { backgroundColor: theme.colors.danger }, actionButtonText: { color: theme.colors.buttonText, fontSize: 16, fontWeight: '800' }, disabledCard: { opacity: 0.45 },
+  actionCard: { gap: theme.spacing.md, paddingVertical: theme.spacing.md, borderBottomWidth: 1, borderBottomColor: theme.colors.border },
+  dangerCard: { borderBottomColor: theme.colors.danger },
+  actionHeader: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md },
+  choiceList: { gap: theme.spacing.md },
+  choice: { padding: theme.spacing.md, borderBottomWidth: 1, borderBottomColor: theme.colors.border, backgroundColor: theme.colors.surfaceAlt },
+  choiceSelected: { borderLeftWidth: 2, borderLeftColor: theme.colors.accentAmber },
+  choiceText: { color: theme.colors.text, fontSize: 14 },
+  choiceGroup: { gap: theme.spacing.sm },
+  choiceGroupHeader: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, paddingHorizontal: theme.spacing.md, borderWidth: 1, borderColor: theme.colors.borderStrong, backgroundColor: theme.colors.surfaceAlt },
+  fieldGroup: { gap: theme.spacing.sm },
+  fieldLabel: { color: theme.colors.textMuted, fontSize: 13, fontWeight: '700' },
+  input: { minHeight: 48, paddingHorizontal: theme.spacing.md, color: theme.colors.text, backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.borderStrong },
+  actionButton: { minHeight: 48, alignItems: 'center', justifyContent: 'center', marginTop: theme.spacing.md, backgroundColor: theme.colors.accentAmber },
+  dangerButton: { backgroundColor: theme.colors.danger },
+  actionButtonText: { color: theme.colors.buttonText, fontSize: 15, fontWeight: '800' },
+  disabledCard: { opacity: 0.45 },
 });
