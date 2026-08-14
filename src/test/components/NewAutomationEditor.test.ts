@@ -9,6 +9,9 @@ import type {
   PartyPresetCatalogResponse,
   RaidPubResponse,
   TypedAutomationEntryResponse,
+  UpdateFishingAutomationRequest,
+  UpdateRaidAutomationRequest,
+  UpdateUnionAutomationRequest,
 } from '../../main/types/api';
 
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
@@ -47,6 +50,21 @@ moduleWithLoader._load = (request, parent, isMain) => {
       'NestableScrollContainer', props, props.children as React.ReactNode,
     ),
   };
+  if (request === './AutomationMapOrderList') return {
+    AutomationMapOrderList: (props: {
+      data: unknown[];
+      getId: (item: unknown) => string;
+      renderContent: (item: unknown, context: { disabled: boolean; index: number }) => React.ReactNode;
+    }) => React.createElement(
+      'AutomationMapOrderList',
+      props,
+      props.data.map((item, index) => React.createElement(
+        'AutomationMapOrderRow',
+        { key: props.getId(item) },
+        props.renderContent(item, { disabled: false, index }),
+      )),
+    ),
+  };
   return originalLoad(request, parent, isMain);
 };
 const { NewAutomationEditor } = require(
@@ -76,8 +94,8 @@ describe('NewAutomationEditor', () => {
       maps: [map('union', '0003', '0003'), map('union', '0004', '0004')],
     });
 
-    assert.equal(hasText(renderer.root, '1. 도적소탕'), true);
-    assert.equal(hasText(renderer.root, '1. 0003'), false);
+    assert.equal(hasText(renderer.root, '도적소탕'), true);
+    assert.equal(hasText(renderer.root, '0003'), false);
     const trigger = renderer.root.findByProps({ accessibilityLabel: '도적소탕 프리셋 선택 열기' });
     assert.equal(hasText(trigger, '대표 · 기본 파티'), true);
   });
@@ -91,9 +109,13 @@ describe('NewAutomationEditor', () => {
       ],
     });
 
-    assert.equal(hasText(renderer.root, '전체 유니온 맵'), true);
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '도적소탕 추가' }));
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '사막의 살인적 추가' }));
+    assert.equal(hasText(renderer.root, '선택한 맵 · 실행 순서'), true);
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '맵 추가 탭' }).props.onPress();
+    });
+    assert.equal(hasText(renderer.root, '맵 찾기'), true);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '도적소탕 맵 선택' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '사막의 살인적 맵 선택' }));
   });
 
   it('loads selectable raids from the raid pub instead of the battle map catalog', async () => {
@@ -107,8 +129,63 @@ describe('NewAutomationEditor', () => {
     };
     const renderer = await renderEditor({ entry: entry('RAID'), maps: [], raidPub });
 
+    assert.equal(hasText(renderer.root, '선택한 맵 · 실행 순서'), true);
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '맵 추가 탭' }).props.onPress();
+    });
     assert.equal(hasText(renderer.root, '고블린 전투 마차'), true);
-    assert.ok(renderer.root.findByProps({ accessibilityLabel: '고블린 전투 마차 레이드 추가' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '고블린 전투 마차 레이드 선택' }));
+  });
+
+  it('saves the reordered execution order for union and raid targets', async () => {
+    const saved: Array<UpdateFishingAutomationRequest | UpdateRaidAutomationRequest | UpdateUnionAutomationRequest> = [];
+    const unionRenderer = await renderEditor({
+      entry: entry('UNION', {
+        unionMaps: [
+          { categoryId: 'union', mapCode: '0003', executionOrder: 0, presetMode: 'PRIMARY', partyPresetId: null },
+          { categoryId: 'union', mapCode: '0004', executionOrder: 1, presetMode: 'PRIMARY', partyPresetId: null },
+        ],
+      }),
+      maps: [map('union', '0003', '0003'), map('union', '0004', '0004')],
+      onSave: async (request) => { saved.push(request); return true; },
+    });
+    await act(async () => {
+      findHost(unionRenderer.root, 'AutomationMapOrderList').props.onReorder(['0004', '0003']);
+    });
+    await act(async () => {
+      unionRenderer.root.findByProps({ accessibilityLabel: '유니온 자동화 저장' }).props.onPress();
+      await Promise.resolve();
+    });
+    assert.deepEqual('maps' in saved[0] ? saved[0].maps.map(({ mapCode, executionOrder }) => [mapCode, executionOrder]) : [], [
+      ['0004', 0], ['0003', 1],
+    ]);
+
+    const raidPub: RaidPubResponse = {
+      ...emptyRaidPub(),
+      raids: [raid('RaidGoblin', '고블린 전투 마차'), raid('RaidSeiren', '몽환 해역의 가희')],
+    };
+    const raidRenderer = await renderEditor({
+      entry: entry('RAID', {
+        raidTargets: [
+          { raidId: 'RaidGoblin', displayName: '고블린 전투 마차', executionOrder: 0, presetMode: 'PRIMARY', partyPresetId: null },
+          { raidId: 'RaidSeiren', displayName: '몽환 해역의 가희', executionOrder: 1, presetMode: 'PRIMARY', partyPresetId: null },
+        ],
+      }),
+      maps: [],
+      raidPub,
+      onSave: async (request) => { saved.push(request); return true; },
+    });
+    await act(async () => {
+      findHost(raidRenderer.root, 'AutomationMapOrderList').props.onReorder(['RaidSeiren', 'RaidGoblin']);
+    });
+    await act(async () => {
+      raidRenderer.root.findByProps({ accessibilityLabel: '레이드 자동화 저장' }).props.onPress();
+      await Promise.resolve();
+    });
+    const raidRequest = saved[1];
+    assert.deepEqual('targets' in raidRequest ? raidRequest.targets.map(({ raidId, executionOrder }) => [raidId, executionOrder]) : [], [
+      ['RaidSeiren', 0], ['RaidGoblin', 1],
+    ]);
   });
 });
 
@@ -116,10 +193,12 @@ async function renderEditor({
   entry: value,
   maps,
   raidPub = emptyRaidPub(),
+  onSave = async () => true,
 }: {
   entry: TypedAutomationEntryResponse;
   maps: BattleMapResponse[];
   raidPub?: RaidPubResponse;
+  onSave?: (request: UpdateFishingAutomationRequest | UpdateRaidAutomationRequest | UpdateUnionAutomationRequest) => Promise<boolean>;
 }): Promise<ReactTestRenderer> {
   let renderer!: ReactTestRenderer;
   await act(async () => {
@@ -129,7 +208,7 @@ async function renderEditor({
       onBack: () => undefined,
       onLoadBattleMaps: async () => maps,
       onLoadRaidTargets: async () => raidPub,
-      onSave: async () => true,
+      onSave,
       partyPresetCatalog: { catalog: presets(), loading: false, error: null, retry: () => undefined },
       saving: false,
     } as React.ComponentProps<typeof NewAutomationEditor>));
@@ -179,8 +258,20 @@ function emptyRaidPub(): RaidPubResponse {
   return { raids: [], applied: false, applyWait: false, applyWaitSeconds: null, myStatus: null, globalActions: [], result: null };
 }
 
+function raid(id: string, name: string): RaidPubResponse['raids'][number] {
+  return {
+    id, name, playable: true, difficulty: null, maxPartySize: null, rewardDamage: null,
+    status: 'RECRUITING', statusText: null, waitSeconds: null, applicants: [], joined: false,
+    actions: ['REGISTER'], battleTarget: null,
+  };
+}
+
 function hasText(root: ReactTestInstance, expected: string): boolean {
   return root.findAll((node) => (node.type as unknown) === 'Text' && flattenText(node.props.children) === expected).length > 0;
+}
+
+function findHost(root: ReactTestInstance, type: string): ReactTestInstance {
+  return root.find((node) => (node.type as unknown) === type);
 }
 
 function flattenText(value: unknown): string {
