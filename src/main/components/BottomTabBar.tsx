@@ -39,7 +39,7 @@ export function BottomTabBar({ activeTabId, onChangeTab }: BottomTabBarProps) {
             >
               <Icon
                 color={active ? theme.colors.accentAmber : theme.colors.textMuted}
-                size={23}
+                size={21}
                 strokeWidth={active ? 2.6 : 2}
               />
               <Text style={[styles.label, active && styles.activeLabel]}>{tab.label}</Text>
@@ -47,7 +47,6 @@ export function BottomTabBar({ activeTabId, onChangeTab }: BottomTabBarProps) {
           );
         })}
       </View>
-      <Text style={styles.chatLabel}>채팅</Text>
     </View>
   );
 }
@@ -57,8 +56,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: theme.colors.accentAmberDark,
     backgroundColor: theme.colors.header,
-    paddingBottom: theme.spacing.sm,
-    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.xs,
+    paddingTop: theme.spacing.xs,
   },
   tabRow: {
     flexDirection: 'row',
@@ -67,26 +66,20 @@ const styles = StyleSheet.create({
   },
   tab: {
     width: '16.66%',
-    minHeight: 54,
+    minHeight: 46,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
+    gap: 2,
   },
   pressed: {
     opacity: 0.75,
   },
   label: {
     color: theme.colors.textMuted,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
   },
   activeLabel: {
     color: theme.colors.accentAmber,
-  },
-  chatLabel: {
-    color: theme.colors.textMuted,
-    fontSize: 11,
-    fontWeight: '800',
-    textAlign: 'center',
   },
 });

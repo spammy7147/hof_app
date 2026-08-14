@@ -151,12 +151,14 @@ function CurrentAction({ current }: { current: TypedAutomationCurrentActionRespo
   }
 
   const hasNamedContext = current.questName != null || current.missionLabel != null || current.mapName != null;
-  const actionLabel = current.kind.includes('BATTLE') && !hasNamedContext
-    ? '전투 진행 중'
-    : current.actionLabel.trim() || nextWorkFallback;
+  const actionLabel = current.source === 'UNION'
+    ? automationTypeLabel(current.source)
+    : current.kind.includes('BATTLE') && !hasNamedContext
+      ? '전투 진행 중'
+      : current.actionLabel.trim() || nextWorkFallback;
 
   return (
-    <View style={styles.currentAction}>
+    <View testID="current-automation-action" style={styles.currentAction}>
       <Text style={styles.actionLabel}>{actionLabel}</Text>
       {current.questName ? <Text style={styles.currentTitle}>{current.questName}</Text> : null}
       {current.missionLabel ? (

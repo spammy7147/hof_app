@@ -293,6 +293,29 @@ describe('UnifiedAutomationDashboard', () => {
     assert.equal(text.includes('tnfh1'), false);
   });
 
+  it('labels a union-owned battle as union instead of a generic battle map', async () => {
+    const aggregate = runtimeWithCurrentAction({
+      source: 'UNION',
+      kind: 'BATTLE_MAP',
+      actionLabel: '전투맵',
+      questName: null,
+      missionLabel: null,
+      missionCurrent: null,
+      missionRequired: null,
+      mapName: '도적소탕',
+      battleCount: 1,
+    });
+    aggregate.runtime.lifecycle = 'RUNNING';
+    aggregate.runtime.stopReason = null;
+
+    const renderer = await renderDashboard(aggregate, () => undefined);
+    const currentAction = renderer.root.findByProps({ testID: 'current-automation-action' });
+
+    assert.equal(hasText(currentAction, '유니온'), true);
+    assert.equal(hasText(currentAction, '전투맵'), false);
+    assert.equal(hasText(currentAction, '도적소탕'), true);
+  });
+
   it('uses the next-work fallback when an action label is blank', async () => {
     const aggregate = runtimeWithCurrentAction({
       source: 'QUEST',
