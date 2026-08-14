@@ -37,7 +37,7 @@ describe('CharacterDetail stat allocation', () => {
     assert.equal(statGroupLabel('upLuk'), 'LUK');
   });
 
-  it('shows every stat and numeric option inline and submits the selected values', async () => {
+  it('keeps hundreds of server candidates in five compact controls and submits a directly entered value', async () => {
     const requests: CharacterManagementActionRequest[] = [];
     const action = statAction();
     let renderer!: ReturnType<typeof create>;
@@ -66,11 +66,15 @@ describe('CharacterDetail stat allocation', () => {
     assert.ok(text.includes('INT'));
     assert.ok(text.includes('SPD'));
     assert.ok(text.includes('LUK'));
-    assert.ok(text.includes('남음 25 · 선택 0'));
+    assert.ok(text.includes('남음 25 · 배분 0'));
     assert.equal(text.includes('Increase Status'), false);
     assert.equal(text.includes('현재 상태'), false);
 
-    await act(async () => renderer.root.findByProps({ accessibilityLabel: 'DEX +2' }).props.onPress());
+    assert.equal(renderer.root.findAllByProps({ accessibilityRole: 'radio' }).length, 0);
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'TextInput' && node.props.accessibilityRole === 'spinbutton').length, 5);
+
+    const dexInput = renderer.root.find((node) => String(node.type) === 'TextInput' && node.props.accessibilityLabel === 'DEX 배분량');
+    await act(async () => dexInput.props.onChangeText('2'));
     const apply = renderer.root.findAllByProps({ accessibilityRole: 'button' }).find((node) => (
       node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '스탯 적용').length > 0
     ));
@@ -87,7 +91,7 @@ function statAction(): CharacterObservedAction {
     actionId: 'increase-status',
     source: 'status',
     label: 'Increase Status',
-    candidates: groups.flatMap((groupId) => Array.from({ length: 6 }, (_, value) => ({
+    candidates: groups.flatMap((groupId) => Array.from({ length: 237 }, (_, value) => ({
       id: `${groupId}-${value}`,
       groupId,
       label: `+${value}`,

@@ -220,7 +220,24 @@ function StatAllocationAction({ action, availablePoints, onExecute }: {
     const selected = candidates.find((candidate) => candidate.id === selectedCandidates[groupId]);
     return sum + parseStatCandidateValue(selected?.label);
   }, 0);
-  const exceedsAvailablePoints = availablePoints != null && allocatedPoints > availablePoints;
+
+  const selectStatValue = (
+    groupId: string,
+    candidates: CharacterObservedAction['candidates'],
+    requestedValue: number,
+  ) => {
+    const currentCandidate = candidates.find((candidate) => candidate.id === selectedCandidates[groupId]);
+    const currentValue = parseStatCandidateValue(currentCandidate?.label);
+    const otherAllocatedPoints = allocatedPoints - currentValue;
+    const candidateMaximum = Math.max(0, ...candidates.map((candidate) => parseStatCandidateValue(candidate.label)));
+    const availableMaximum = availablePoints == null
+      ? candidateMaximum
+      : Math.max(0, availablePoints - otherAllocatedPoints);
+    const nextValue = Math.min(Math.max(0, requestedValue), candidateMaximum, availableMaximum);
+    const nextCandidate = candidates.find((candidate) => parseStatCandidateValue(candidate.label) === nextValue);
+    if (!nextCandidate) return;
+    setSelectedCandidates((current) => ({ ...current, [groupId]: nextCandidate.id }));
+  };
 
   const execute = async () => {
     setSubmitting(true);
@@ -243,38 +260,69 @@ function StatAllocationAction({ action, availablePoints, onExecute }: {
         <Text style={styles.cardTitle}>배분할 포인트</Text>
         <View style={styles.pointBadge}>
           <Text style={styles.pointBadgeText}>
-            {availablePoints == null ? `선택 ${allocatedPoints}` : `남음 ${availablePoints} · 선택 ${allocatedPoints}`}
+            {availablePoints == null
+              ? `배분 ${allocatedPoints}`
+              : `남음 ${Math.max(0, availablePoints - allocatedPoints)} · 배분 ${allocatedPoints}`}
           </Text>
         </View>
       </View>
 
       <View style={styles.statRows}>
-        {candidateGroups.map(([groupId, candidates]) => (
-          <View key={groupId} style={styles.statRow}>
-            <Text style={styles.statName}>{statGroupLabel(groupId)}</Text>
-            <View style={styles.statChoices}>
-              {candidates.map((candidate) => {
-                const selected = selectedCandidates[groupId] === candidate.id;
-                return (
-                  <Pressable
-                    accessibilityLabel={`${statGroupLabel(groupId)} ${candidate.label}`}
-                    accessibilityRole="radio"
-                    accessibilityState={{ checked: selected }}
-                    key={candidate.id}
-                    onPress={() => setSelectedCandidates((current) => ({ ...current, [groupId]: candidate.id }))}
-                    style={({ pressed }) => [
-                      styles.statChoice,
-                      selected && styles.statChoiceSelected,
-                      pressed && styles.statChoicePressed,
-                    ]}
-                  >
-                    <Text style={[styles.statChoiceText, selected && styles.statChoiceTextSelected]}>{candidate.label}</Text>
-                  </Pressable>
-                );
-              })}
+        {candidateGroups.map(([groupId, candidates]) => {
+          const selected = candidates.find((candidate) => candidate.id === selectedCandidates[groupId]);
+          const selectedValue = parseStatCandidateValue(selected?.label);
+          const otherAllocatedPoints = allocatedPoints - selectedValue;
+          const candidateMaximum = Math.max(0, ...candidates.map((candidate) => parseStatCandidateValue(candidate.label)));
+          const availableMaximum = availablePoints == null
+            ? candidateMaximum
+            : Math.min(candidateMaximum, Math.max(0, availablePoints - otherAllocatedPoints));
+          const label = statGroupLabel(groupId);
+          return (
+            <View key={groupId} style={styles.statRow}>
+              <Text style={styles.statName}>{label}</Text>
+              <View style={styles.statStepper}>
+                <Pressable
+                  accessibilityLabel={`${label} 1 감소`}
+                  accessibilityRole="button"
+                  disabled={selectedValue <= 0}
+                  onPress={() => selectStatValue(groupId, candidates, selectedValue - 1)}
+                  style={({ pressed }) => [styles.stepperButton, selectedValue <= 0 && styles.controlDisabled, pressed && styles.controlPressed]}
+                >
+                  <Text style={styles.stepperButtonText}>−</Text>
+                </Pressable>
+                <TextInput
+                  accessibilityLabel={`${label} 배분량`}
+                  accessibilityRole="spinbutton"
+                  accessibilityValue={{ min: 0, max: availableMaximum, now: selectedValue }}
+                  keyboardType="number-pad"
+                  maxLength={String(candidateMaximum).length}
+                  onChangeText={(value) => selectStatValue(groupId, candidates, Number.parseInt(value || '0', 10) || 0)}
+                  selectTextOnFocus
+                  style={styles.statValueInput}
+                  value={String(selectedValue)}
+                />
+                <Pressable
+                  accessibilityLabel={`${label} 1 증가`}
+                  accessibilityRole="button"
+                  disabled={selectedValue >= availableMaximum}
+                  onPress={() => selectStatValue(groupId, candidates, selectedValue + 1)}
+                  style={({ pressed }) => [styles.stepperButton, selectedValue >= availableMaximum && styles.controlDisabled, pressed && styles.controlPressed]}
+                >
+                  <Text style={styles.stepperButtonText}>+</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityLabel={`${label} 최대 배분`}
+                  accessibilityRole="button"
+                  disabled={selectedValue >= availableMaximum}
+                  onPress={() => selectStatValue(groupId, candidates, availableMaximum)}
+                  style={({ pressed }) => [styles.maxButton, selectedValue >= availableMaximum && styles.controlDisabled, pressed && styles.controlPressed]}
+                >
+                  <Text style={styles.maxButtonText}>MAX</Text>
+                </Pressable>
+              </View>
             </View>
-          </View>
-        ))}
+          );
+        })}
       </View>
 
       {action.fields.map((field) => (
@@ -290,12 +338,11 @@ function StatAllocationAction({ action, availablePoints, onExecute }: {
         </View>
       ))}
 
-      {exceedsAvailablePoints ? <Text style={styles.statError}>남은 포인트보다 많이 선택했습니다.</Text> : null}
       <Pressable
         accessibilityRole="button"
-        disabled={submitting || exceedsAvailablePoints}
+        disabled={submitting || allocatedPoints === 0}
         onPress={() => void execute()}
-        style={[styles.actionButton, (submitting || exceedsAvailablePoints) && styles.disabledCard]}
+        style={[styles.actionButton, (submitting || allocatedPoints === 0) && styles.disabledCard]}
       >
         <Text style={styles.actionButtonText}>{submitting ? '적용 중' : '스탯 적용'}</Text>
       </Pressable>
@@ -686,16 +733,17 @@ const styles = StyleSheet.create({
   statSummary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md },
   pointBadge: { paddingHorizontal: theme.spacing.sm, paddingVertical: 6, borderRadius: 999, backgroundColor: theme.colors.surfaceAlt },
   pointBadgeText: { color: theme.colors.accentGreen, fontSize: 12, fontWeight: '800' },
-  statRows: { gap: theme.spacing.lg },
-  statRow: { gap: theme.spacing.sm },
-  statName: { color: theme.colors.text, fontSize: 15, fontWeight: '900', letterSpacing: 0.8 },
-  statChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
-  statChoice: { minWidth: 44, minHeight: 42, flexGrow: 1, flexBasis: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: theme.spacing.sm, borderWidth: 1, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceAlt },
-  statChoiceSelected: { borderColor: theme.colors.accentGreen, backgroundColor: theme.colors.accentGreen },
-  statChoicePressed: { opacity: 0.78 },
-  statChoiceText: { color: theme.colors.textMuted, fontSize: 14, fontWeight: '800' },
-  statChoiceTextSelected: { color: theme.colors.buttonText },
-  statError: { color: theme.colors.danger, fontSize: 13, lineHeight: 19 },
+  statRows: { gap: theme.spacing.md },
+  statRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md },
+  statName: { width: 42, color: theme.colors.text, fontSize: 15, fontWeight: '900', letterSpacing: 0.8 },
+  statStepper: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm },
+  stepperButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceAlt },
+  stepperButtonText: { color: theme.colors.text, fontSize: 20, fontWeight: '800' },
+  statValueInput: { minWidth: 58, height: 42, flex: 1, paddingHorizontal: theme.spacing.sm, color: theme.colors.text, fontSize: 16, fontWeight: '900', textAlign: 'center', backgroundColor: theme.colors.background, borderWidth: 1, borderColor: theme.colors.accentGreen, borderRadius: theme.radius.md },
+  maxButton: { minWidth: 50, height: 42, alignItems: 'center', justifyContent: 'center', paddingHorizontal: theme.spacing.sm, borderWidth: 1, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceAlt },
+  maxButtonText: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '900' },
+  controlDisabled: { opacity: 0.35 },
+  controlPressed: { opacity: 0.72 },
   actionCard: { gap: theme.spacing.md, padding: theme.spacing.lg, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface, borderRadius: theme.radius.md }, dangerCard: { borderColor: theme.colors.danger },
   actionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md },
   choiceList: { gap: theme.spacing.sm }, choice: { padding: theme.spacing.md, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceAlt }, choiceSelected: { borderColor: theme.colors.accentGreen }, choiceText: { color: theme.colors.text, fontSize: 14 },
