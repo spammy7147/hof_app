@@ -24,14 +24,18 @@ describe('CardPanel', () => {
     assert.equal(button('Joker Card 선택 불가').props.disabled, true); await press('Bat Card 선택'); await press('선택 카드 감정'); assert.deepEqual(calls, [{ candidateId: 'a' }]);
   });
 
-  it('강화는 하단 버튼 아래의 검색 드롭다운에서 추가 카드를 골라 한 번만 제출한다', async () => {
+  it('강화는 목록 밖 하단에 수량 추가 카드 버튼 순서로 고정하고 한 번만 제출한다', async () => {
     const calls: Array<{ path: string; request: unknown }> = []; const materials = [card('same', 'Same'), card('material', 'Material')]; const data = { selectionSlots: [{ id: 'base', label: '베이스 카드' }, { id: 'material', label: '추가 카드' }], baseCards: [card('same', 'Base')], materialCards: [], selectedBaseCandidateId: null, minQuantity: 1, maxQuantity: 20, history: ['성공'], result: null };
     await render(React.createElement(CardPanel, { api: api(async () => data, async (path, request) => { if (path.endsWith('/options')) return { ...data, baseCards: [], materialCards: materials, selectedBaseCandidateId: 'same' }; calls.push({ path, request }); return { ...data, result: result('SUCCESS') }; }), mode: 'upgrade' }));
     await press('베이스 카드 Base 선택');
     assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === '추가 카드 Same 선택').length, 0, '추가 카드는 베이스 목록에 섞지 않는다');
+    const listArea = mounted!.root.findByProps({ testID: 'card-upgrade-list' });
     const controls = mounted!.root.findByProps({ testID: 'card-upgrade-controls' });
-    const controlButtons = controls.findAll((node) => node.props.accessibilityRole === 'button').map((node) => node.props.accessibilityLabel);
-    assert.ok(controlButtons.indexOf('카드 강화') < controlButtons.indexOf('추가 카드 선택'), '강화 버튼이 드롭다운보다 위에 있다');
+    assert.equal(listArea.parent, controls.parent, '목록과 하단 고정 영역을 분리한다');
+    assert.equal(listArea.findAll((node) => node.props.accessibilityLabel === '카드 강화').length, 0);
+    const orderedControls = controls.findAll((node) => ['카드 강화 수량', '추가 카드 선택', '카드 강화'].includes(node.props.accessibilityLabel)).map((node) => node.props.accessibilityLabel);
+    assert.ok(orderedControls.indexOf('카드 강화 수량') < orderedControls.indexOf('추가 카드 선택'));
+    assert.ok(orderedControls.indexOf('추가 카드 선택') < orderedControls.indexOf('카드 강화'));
 
     await press('추가 카드 선택'); await press('추가 카드 Same 선택');
     assert.equal(button('카드 강화').props.disabled, true, '같은 서버 card id는 차단');
@@ -52,8 +56,9 @@ describe('CardPanel', () => {
     const controls = mounted!.root.findByProps({ testID: 'card-change-controls' });
     assert.equal(listArea.parent, controls.parent, '목록과 하단 고정 영역을 분리한다');
     assert.equal(listArea.findAll((node) => node.props.accessibilityLabel === '카드 변화').length, 0);
-    const controlButtons = controls.findAll((node) => node.props.accessibilityRole === 'button').map((node) => node.props.accessibilityLabel);
-    assert.ok(controlButtons.indexOf('합성 재료 선택') < controlButtons.indexOf('카드 변화'), '합성 재료 드롭다운이 합성 버튼보다 위에 있다');
+    const orderedControls = controls.findAll((node) => ['카드 변화 수량', '합성 재료 선택', '카드 변화'].includes(node.props.accessibilityLabel)).map((node) => node.props.accessibilityLabel);
+    assert.ok(orderedControls.indexOf('카드 변화 수량') < orderedControls.indexOf('합성 재료 선택'), '수량이 합성 재료보다 위에 있다');
+    assert.ok(orderedControls.indexOf('합성 재료 선택') < orderedControls.indexOf('카드 변화'), '합성 재료 드롭다운이 합성 버튼보다 위에 있다');
 
     await press('합성 재료 선택'); await press('합성 재료 Same 선택'); assert.equal(button('카드 변화').props.disabled, true, '같은 서버 card id는 차단');
     await press('합성 재료 선택'); await change('합성 재료 검색', 'material');

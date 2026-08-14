@@ -75,12 +75,12 @@ function PairPanel({ api, mode, resolveCaptcha }: Props & { mode: 'upgrade' | 'c
   const action = <ActionButton label={title} disabled={!baseCard || !materialCard || sameCard || !validQuantity || optionsLoading || town.status === 'submitting'} onPress={() => baseCard && materialCard && validQuantity && void town.submit({ baseCandidateId: baseCard.id, materialCandidateId: materialCard.id, quantity }).catch(() => undefined)} />;
   const feedback = <>{data.result ?? town.result ? <TownActionResult result={(data.result ?? town.result)!} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}</>;
   const optionState = <>{optionsLoading ? <Text accessibilityLiveRegion="polite" style={styles.muted}>{materialLabel} 후보를 불러오는 중...</Text> : null}{optionsError ? <><Text accessibilityRole="alert" style={styles.error}>{optionsError}</Text>{baseCard ? <ActionButton label={`${materialLabel} 다시 불러오기`} disabled={optionsLoading} onPress={() => loadOptions(baseCard.id)} /> : null}</> : null}{baseCard && !optionsLoading && options && options.materialCards.length === 0 ? <Text style={styles.muted}>{materialLabel} 후보가 없습니다.</Text> : null}</>;
-  const upgradeFooter = <View style={styles.pairActionBar} testID="card-upgrade-controls">
-    {action}
+  const upgradeActionBar = <View style={styles.pairActionBar} testID="card-upgrade-controls">
     {optionState}
-    <MaterialSelectField disabled={!baseCard || optionsLoading || !!optionsError || materialCards.length === 0} label={materialLabel} open={materialPickerOpen} placeholder={!baseCard ? '베이스 카드를 먼저 선택하세요.' : optionsLoading ? `${materialLabel} 후보를 불러오는 중...` : materialCards.length === 0 ? `선택 가능한 ${materialLabel}가 없습니다.` : `${materialLabel}를 선택하세요.`} selected={materialCard} onOpen={() => setMaterialPickerOpen(true)} />
     <QuantityInput label={`${title} 수량`} value={quantityText} onChange={setQuantityText} min={data.minQuantity} max={selectedMaxQuantity} valid={validQuantity} />
+    <MaterialSelectField disabled={!baseCard || optionsLoading || !!optionsError || materialCards.length === 0} label={materialLabel} open={materialPickerOpen} placeholder={!baseCard ? '베이스 카드를 먼저 선택하세요.' : optionsLoading ? `${materialLabel} 후보를 불러오는 중...` : materialCards.length === 0 ? `선택 가능한 ${materialLabel}가 없습니다.` : `${materialLabel}를 선택하세요.`} selected={materialCard} onOpen={() => setMaterialPickerOpen(true)} />
     {sameCard ? <Text accessibilityRole="alert" style={styles.error}>베이스 카드와 재료 카드는 서로 달라야 합니다.</Text> : null}
+    {action}
     {feedback}
   </View>;
   const changeActionBar = <View style={styles.pairActionBar} testID="card-change-controls">
@@ -93,9 +93,12 @@ function PairPanel({ api, mode, resolveCaptcha }: Props & { mode: 'upgrade' | 'c
   </View>;
   const list = <PanelList rows={baseRows} selectedIds={selected.filter((id) => id.startsWith('base:'))} selectionMode="single" onSelectionChange={changeSelection}
     header={<View style={styles.section}><Text style={styles.muted}>베이스 카드 1장을 선택한 뒤 하단에서 {materialLabel}를 검색해 선택하세요.</Text>{data.history.length ? <History lines={data.history} /> : null}</View>}
-    footer={mode === 'upgrade' ? upgradeFooter : null} />;
+    footer={null} />;
   return <>
-    {mode === 'upgrade' ? list : <View style={styles.container}><View style={styles.listArea} testID="card-change-list">{list}</View>{changeActionBar}</View>}
+    <View style={styles.container}>
+      <View style={styles.listArea} testID={mode === 'upgrade' ? 'card-upgrade-list' : 'card-change-list'}>{list}</View>
+      {mode === 'upgrade' ? upgradeActionBar : changeActionBar}
+    </View>
     {materialPickerOpen ? <SearchableMaterialSelect cards={materialCards} label={materialLabel} selectedId={materialCard?.id ?? null} onClose={() => setMaterialPickerOpen(false)} onSelect={(candidateId) => { setSelected([base, candidateId ? `material:${candidateId}` : null].filter((id): id is string => id != null)); setMaterialPickerOpen(false); }} /> : null}
   </>;
 }
