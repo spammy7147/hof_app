@@ -21,10 +21,19 @@ const STATE_LABEL: Record<HomeQuestResponse['state'], string> = {
   AVAILABLE: '수락 가능', ACTIVE: '진행 중', CLAIMABLE: '완료 가능', COMPLETED: '완료', WAITING: '대기 중',
 };
 
+const TABS: readonly { state: HomeQuestResponse['state']; label: string; empty: string }[] = [
+  { state: 'ACTIVE', label: '진행 중', empty: '진행 중인 자택 퀘스트가 없습니다.' },
+  { state: 'CLAIMABLE', label: '완료 가능', empty: '완료 가능한 자택 퀘스트가 없습니다.' },
+  { state: 'AVAILABLE', label: '수락 가능', empty: '수락 가능한 자택 퀘스트가 없습니다.' },
+  { state: 'WAITING', label: '대기 중', empty: '대기 중인 자택 퀘스트가 없습니다.' },
+  { state: 'COMPLETED', label: '완료', empty: '완료한 자택 퀘스트가 없습니다.' },
+];
+
 export function HomeQuestAutomationEditor({ entry, saving, mutationMessage, loadHome, onBack, onDelete, onSave }: Props) {
   const [enabled, setEnabled] = useState(entry.enabled);
   const [quests, setQuests] = useState<HomeQuestResponse[]>([]);
   const [selected, setSelected] = useState(() => new Set((entry.homeQuests ?? []).filter((quest) => quest.enabled).map((quest) => quest.questId)));
+  const [tab, setTab] = useState<HomeQuestResponse['state']>('ACTIVE');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,8 +57,14 @@ export function HomeQuestAutomationEditor({ entry, saving, mutationMessage, load
       ...(entry.homeQuests ?? []).filter((quest) => !liveIds.has(quest.questId)).map((quest) => ({
         id: quest.questId, name: quest.questName, state: 'WAITING' as const, mission: null, reward: null, details: [], actionId: null,
       })),
-    ].filter((quest) => `${quest.name} ${quest.mission ?? ''} ${quest.reward ?? ''}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
-  }, [entry.homeQuests, query, quests]);
+    ];
+  }, [entry.homeQuests, quests]);
+  const visibleQuests = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    return allQuests.filter((quest) => quest.state === tab
+      && `${quest.name} ${quest.mission ?? ''} ${quest.reward ?? ''}`.toLocaleLowerCase().includes(normalizedQuery));
+  }, [allQuests, query, tab]);
+  const activeTab = TABS.find(({ state }) => state === tab)!;
 
   function toggle(id: string) {
     setSelected((current) => {
@@ -60,8 +75,7 @@ export function HomeQuestAutomationEditor({ entry, saving, mutationMessage, load
   }
 
   async function save() {
-    const source = [...quests, ...allQuests.filter((quest) => !quests.some((live) => live.id === quest.id))];
-    const configured = source.filter((quest) => selected.has(quest.id)).map((quest, sourceOrder) => ({
+    const configured = allQuests.filter((quest) => selected.has(quest.id)).map((quest, sourceOrder) => ({
       questId: quest.id,
       questName: quest.name || storedById.get(quest.id)?.questName || quest.id,
       enabled: true,
@@ -77,15 +91,28 @@ export function HomeQuestAutomationEditor({ entry, saving, mutationMessage, load
         <View style={styles.headerCopy}><Text style={styles.title}>자택 관리 자동화</Text><Text style={styles.subtitle}>수락·완료 가능한 자택 퀘스트를 화면 순서대로 처리합니다.</Text></View>
       </View>
       <View style={styles.enabledRow}><Text style={styles.enabledLabel}>자동화 사용</Text><Switch disabled={saving} onValueChange={setEnabled} value={enabled} /></View>
+      <View accessibilityRole="tablist" style={styles.tabs}>
+        {TABS.map(({ state, label }) => {
+          const count = allQuests.filter((quest) => quest.state === state).length;
+          return <Pressable
+            key={state}
+            accessibilityLabel={`${label} 탭`}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: tab === state }}
+            onPress={() => setTab(state)}
+            style={[styles.tab, tab === state && styles.tabActive]}
+          ><Text numberOfLines={1} style={[styles.tabText, tab === state && styles.tabTextActive]}>{label} {count}</Text></Pressable>;
+        })}
+      </View>
       <TextInput accessibilityLabel="자택 퀘스트 검색" onChangeText={setQuery} placeholder="작업명·조건·보상 검색" placeholderTextColor={theme.colors.textMuted} style={styles.search} value={query} />
       {mutationMessage || error ? <Text accessibilityLiveRegion="polite" style={styles.message}>{mutationMessage ?? error}</Text> : null}
       {loading ? <ActivityIndicator color={theme.colors.accentGreen} style={styles.loading} /> : (
         <FlatList
           contentContainerStyle={styles.list}
-          data={allQuests}
+          data={visibleQuests}
           keyboardShouldPersistTaps="handled"
           keyExtractor={(quest) => quest.id}
-          ListEmptyComponent={<Text style={styles.empty}>표시할 자택 퀘스트가 없습니다.</Text>}
+          ListEmptyComponent={<Text style={styles.empty}>{activeTab.empty}</Text>}
           renderItem={({ item }) => {
             const active = selected.has(item.id);
             return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: active }} onPress={() => toggle(item.id)} style={[styles.card, active && styles.cardSelected]}>
@@ -113,6 +140,11 @@ const styles = StyleSheet.create({
   subtitle: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18, marginTop: 4 },
   enabledRow: { alignItems: 'center', backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', marginBottom: theme.spacing.md, padding: theme.spacing.md },
   enabledLabel: { color: theme.colors.text, fontSize: 15, fontWeight: '800' },
+  tabs: { flexDirection: 'row', gap: theme.spacing.xs },
+  tab: { alignItems: 'center', borderBottomColor: theme.colors.border, borderBottomWidth: 2, flex: 1, justifyContent: 'center', minHeight: 44, minWidth: 0 },
+  tabActive: { borderBottomColor: theme.colors.accentGreen },
+  tabText: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '800' },
+  tabTextActive: { color: theme.colors.accentGreen },
   search: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, fontSize: 14, marginBottom: theme.spacing.sm, minHeight: 48, paddingHorizontal: theme.spacing.md },
   message: { color: theme.colors.accentAmber, fontSize: 12, marginBottom: theme.spacing.sm }, loading: { flex: 1 },
   list: { gap: theme.spacing.sm, paddingBottom: theme.spacing.lg }, empty: { color: theme.colors.textMuted, padding: theme.spacing.xl, textAlign: 'center' },
