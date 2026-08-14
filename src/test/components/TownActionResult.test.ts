@@ -88,7 +88,7 @@ describe('TownActionResult', () => {
     await act(async () => { renderer.unmount(); });
   });
 
-  it('keeps informational results inline without opening a blocking notice', async () => {
+  it('shows informational results in the same visible notice regardless of their parent scroll position', async () => {
     let renderer!: ReactTestRenderer;
     await act(async () => {
       renderer = create(React.createElement(TownActionResult, {
@@ -101,8 +101,9 @@ describe('TownActionResult', () => {
       }));
     });
 
-    assert.equal(renderer.root.findAll((node) => node.props.accessibilityLabel === '작업 안내 알림').length, 0);
-    assert.ok(renderer.root.findAll((node) => node.props.accessibilityLabel === '인라인 작업 결과').length >= 1);
+    assert.ok(renderer.root.find((node) => node.props.accessibilityLabel === '작업 안내 알림'));
+    assert.equal(renderer.root.find((node) => String(node.type) === 'Modal').props.visible, true);
+    assert.equal(renderer.root.findAll((node) => node.props.accessibilityLabel === '인라인 작업 결과').length, 0);
     await act(async () => { renderer.unmount(); });
   });
 });

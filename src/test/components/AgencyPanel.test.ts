@@ -111,6 +111,28 @@ describe('AgencyPanel', () => {
     assert.deepEqual(calls, ['A']);
   });
 
+  it('긴 목록에서도 퀘스트 완료 처리 결과를 현재 화면에 즉시 표시한다', async () => {
+    const data = Array.from({ length: 30 }, (_, index) => quest(
+      `quest-${index}`,
+      `${index + 1}번 퀘스트`,
+      'CLAIMABLE',
+      'ACTIVE',
+      `action-${index}`,
+    ));
+    await render(React.createElement(AgencyPanel, { api: {
+      loadQuests: async () => data,
+      acceptQuest: async () => data,
+      claimQuest: async () => data,
+    } as never }));
+
+    await pressText('완료 가능 30');
+    await press('1번 퀘스트 완료');
+
+    assert.equal(hosts('Modal').length, 1);
+    assert.equal(hosts('Modal')[0].props.visible, true);
+    assert.match(text(), /퀘스트 완료 요청 후 목록을 갱신했습니다/);
+  });
+
   it('직업 이름과 성별을 입력하고 모집을 한 번 요청한다', async () => {
     const calls: unknown[] = [];
     const data = recruitment();
