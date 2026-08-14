@@ -113,7 +113,7 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
   const resultFooter = <View style={styles.section}>
     {data.warningCode === 'NO_ADDITIONAL_MATERIAL' ? <Text accessibilityRole="alert" style={styles.warning}>추가 소재 없이 제작했습니다.</Text> : null}
     {data.history.length ? <History count={data.history.length} onOpen={() => setHistoryScreenOpen(true)} /> : null}
-    {displayedResult ? <TownActionResult result={displayedResult} onRefresh={() => { setResponse(null); setActionResult(null); void town.reload().catch(() => undefined); }} /> : null}
+    {displayedResult ? <TownActionResult result={displayedResult} successNoticeTitle={mode === 'workbase' ? '제작 진행 상태' : undefined} onRefresh={() => { setResponse(null); setActionResult(null); void town.reload().catch(() => undefined); }} /> : null}
     {town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}
   </View>;
   const footer = <View style={styles.section}>
@@ -148,9 +148,9 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
         <View accessibilityLabel="현재 작업장 작업" accessibilityLiveRegion="polite" style={styles.job}>
           <Text style={styles.jobTitle}>진행 중인 작업</Text>
           <Text style={styles.label}>{data.activeJob.label}</Text>
-          <Text style={styles.warning}>{remaining == null ? '남은 시간 확인 불가' : remaining > 0 ? `${remaining.toLocaleString()}초 후 확인 가능` : '제작 결과를 확인할 수 있습니다.'}</Text>
+          <Text style={styles.warning}>{remainingTimeLabel(remaining)}</Text>
           {data.activeJob.completionAvailable
-            ? <ActionButton label="제작 완료" disabled={town.status === 'submitting'} onPress={() => submit({ kind: 'complete' })} />
+            ? <ActionButton label={remaining != null && remaining > 0 ? '제작 상태 확인' : '제작 결과 확인'} disabled={town.status === 'submitting'} onPress={() => submit({ kind: 'complete' })} />
             : remaining === 0
               ? <ActionButton label="제작 상태 확인" disabled={town.status === 'loading' || town.status === 'submitting'} onPress={() => { setResponse(null); void town.reload().catch(() => undefined); }} />
               : null}
@@ -171,7 +171,7 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
       onSelectionChange={(ids) => {
         setSelectedIds(ids.filter((id) => id.startsWith('recipe:')).map((id) => id.slice('recipe:'.length)).slice(0, 1));
       }}
-      header={<View style={styles.section}><Text style={styles.title}>{title}</Text><CategoryDropdown data={data} disabled={town.status === 'submitting'} onSelect={setRequestedCategoryId} />{mode === 'create' || mode === 'refine' || mode === 'veteran' ? <CraftingSearch value={searchQuery} onChange={setSearchQuery} resultCount={visibleItems.length} subject={mode === 'create' ? '제작물품' : '제련 아이템'} /> : null}{town.status === 'loading' ? <Text accessibilityLiveRegion="polite" style={styles.hint}>선택한 종류의 제작품을 불러오는 중...</Text> : null}{data.activeJob ? <View accessibilityLiveRegion="polite" style={styles.job}><Text style={styles.label}>{data.activeJob.label}</Text><Text style={styles.warning}>{remaining == null ? '남은 시간 확인 불가' : remaining > 0 ? `${remaining.toLocaleString()}초 후 확인 가능` : '제작 결과를 확인할 수 있습니다.'}</Text>{data.activeJob.completionAvailable ? <ActionButton label="제작 완료" disabled={town.status === 'submitting'} onPress={() => submit({ kind: 'complete' })} /> : remaining === 0 ? <ActionButton label="제작 상태 확인" disabled={town.status === 'loading' || town.status === 'submitting'} onPress={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}</View> : null}</View>}
+      header={<View style={styles.section}><Text style={styles.title}>{title}</Text><CategoryDropdown data={data} disabled={town.status === 'submitting'} onSelect={setRequestedCategoryId} />{mode === 'create' || mode === 'refine' || mode === 'veteran' ? <CraftingSearch value={searchQuery} onChange={setSearchQuery} resultCount={visibleItems.length} subject={mode === 'create' ? '제작물품' : '제련 아이템'} /> : null}{town.status === 'loading' ? <Text accessibilityLiveRegion="polite" style={styles.hint}>선택한 종류의 제작품을 불러오는 중...</Text> : null}{data.activeJob ? <View accessibilityLiveRegion="polite" style={styles.job}><Text style={styles.label}>{data.activeJob.label}</Text><Text style={styles.warning}>{remainingTimeLabel(remaining)}</Text>{data.activeJob.completionAvailable ? <ActionButton label={remaining != null && remaining > 0 ? '제작 상태 확인' : '제작 결과 확인'} disabled={town.status === 'submitting'} onPress={() => submit({ kind: 'complete' })} /> : remaining === 0 ? <ActionButton label="제작 상태 확인" disabled={town.status === 'loading' || town.status === 'submitting'} onPress={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}</View> : null}</View>}
       footer={mode === 'create' || mode === 'refine' || mode === 'veteran' ? resultFooter : footer} emptyMessage={town.status === 'loading' ? null : normalizedQuery ? '검색 결과가 없습니다.' : '현재 분류에 표시할 품목이 없습니다.'} /></View>
     {createControls}
     {refineControls}
@@ -218,6 +218,22 @@ function presentCraftingItem(label: string, detail: string | null, owned: number
 }
 
 function cleanDisplayText(value: string): string { return value.replace(/\s+/g, ' ').trim(); }
+function remainingTimeLabel(remainingSeconds: number | null): string {
+  if (remainingSeconds == null) return '남은 시간 확인 불가';
+  if (remainingSeconds <= 0) return '제작 결과를 확인할 수 있습니다.';
+  if (remainingSeconds < 60) return `${Math.ceil(remainingSeconds)}초 후 제작 결과 확인 가능`;
+
+  const totalMinutes = Math.ceil(remainingSeconds / 60);
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor(totalMinutes % (24 * 60) / 60);
+  const minutes = totalMinutes % 60;
+  const duration = [
+    days > 0 ? `${days}일` : null,
+    hours > 0 ? `${hours}시간` : null,
+    minutes > 0 ? `${minutes}분` : null,
+  ].filter(Boolean).join(' ');
+  return `약 ${duration} 후 제작 결과 확인 가능`;
+}
 function CategoryDropdown({ data, disabled, onSelect }: { data: CraftingResponse; disabled: boolean; onSelect: (id: string) => void }) {
   const [open, setOpen] = useState(false);
   const selected = data.categories.find((category) => category.id === data.currentCategoryId)

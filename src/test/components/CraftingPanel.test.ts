@@ -104,15 +104,18 @@ describe('CraftingPanel', () => {
     assert.deepEqual(statuses.map((node) => node.children.join('')), ['선택 가능', '선택 불가']);
   });
 
-  it('작업 완료는 자동 요청하지 않고 사용자가 한 번 누르면 제출한다', async () => {
+  it('제작 중에는 완료로 표현하지 않고 읽기 쉬운 남은 시간을 표시한다', async () => {
     const calls: Array<{ path: string; request: unknown }> = [];
-    const work = data('WORKBASE', { activeJob: { label: '현재 장비를 제작 중입니다.', remainingSeconds: 2974, completionAvailable: true } });
+    const work = data('WORKBASE', { activeJob: { label: '현재 장비를 제작 중입니다.', remainingSeconds: 60_925, completionAvailable: true } });
     await render(React.createElement(CraftingPanel, { api: api(async () => work, async (path, request) => { calls.push({ path, request }); return { ...work, activeJob: null, result: result() }; }), mode: 'workbase' }));
 
     assert.deepEqual(calls, []);
-    assert.equal(text().includes('2,974초 후 확인 가능'), true);
-    await press('제작 완료');
+    assert.equal(text().includes('약 16시간 56분 후 제작 결과 확인 가능'), true);
+    assert.equal(text().includes('60,925초'), false);
+    assert.equal(text().includes('작업 완료'), false);
+    await press('제작 상태 확인');
     assert.deepEqual(calls, [{ path: '/api/town/crafting/workbase/complete', request: {} }]);
+    assert.ok(mounted!.root.find((node) => node.props.accessibilityLabel === '제작 진행 상태 알림'));
   });
 
   it('작업 중에는 빈 종류 선택기와 새 작업 목록을 숨기고 현재 작업만 표시한다', async () => {
@@ -126,7 +129,7 @@ describe('CraftingPanel', () => {
     assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === '제작 종류 선택').length, 0);
     assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === '제작품 선택').length, 0);
     assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === '작업 시작').length, 0);
-    assert.equal(button('제작 완료').props.disabled, false);
+    assert.equal(button('제작 결과 확인').props.disabled, false);
     assert.equal(text().includes('현재 작업이 끝난 뒤 새 작업을 선택할 수 있습니다.'), true);
   });
 

@@ -10,10 +10,11 @@ type TownActionResultProps = {
   result: TownActionResultResponse;
   onRefresh?: () => void;
   showStatusLabel?: boolean;
+  successNoticeTitle?: string;
 };
 
 /** backend가 추출한 문구와 item만 표시하며 HOF HTML을 받을 prop 자체를 제공하지 않는다. */
-export function TownActionResult({ result, onRefresh, showStatusLabel = true }: TownActionResultProps) {
+export function TownActionResult({ result, onRefresh, showStatusLabel = true, successNoticeTitle }: TownActionResultProps) {
   const displayResult = normalizeTownResult(result);
   const actionable = displayResult.status !== 'INFORMATIONAL';
   const [noticeVisible, setNoticeVisible] = useState(actionable);
@@ -35,7 +36,7 @@ export function TownActionResult({ result, onRefresh, showStatusLabel = true }: 
       >
         <View style={styles.modalRoot}>
           <View
-            accessibilityLabel={noticeAccessibilityLabel(displayResult.status)}
+            accessibilityLabel={noticeAccessibilityLabel(displayResult.status, successNoticeTitle)}
             accessibilityRole="alert"
             accessibilityViewIsModal
             style={[styles.notice, statusStyle(displayResult.status)]}
@@ -44,7 +45,7 @@ export function TownActionResult({ result, onRefresh, showStatusLabel = true }: 
               <Text style={[styles.statusMark, statusTextStyle(displayResult.status)]}>
                 {statusMark(displayResult.status)}
               </Text>
-              <Text style={styles.noticeTitle}>{noticeTitle(displayResult.status)}</Text>
+              <Text style={styles.noticeTitle}>{noticeTitle(displayResult.status, successNoticeTitle)}</Text>
             </View>
             <ScrollView contentContainerStyle={styles.noticeContent}>
               <ResultContent emptyUnknown={emptyUnknown} result={displayResult} />
@@ -116,14 +117,14 @@ function ResultContent({ emptyUnknown, result }: { emptyUnknown: boolean; result
   </>;
 }
 
-function noticeTitle(status: TownResultStatus): string {
-  if (status === 'SUCCESS') return '작업 완료';
+function noticeTitle(status: TownResultStatus, successTitle?: string): string {
+  if (status === 'SUCCESS') return successTitle ?? '작업 완료';
   if (status === 'FAILURE') return '작업 실패';
   return '결과 확인 필요';
 }
 
-function noticeAccessibilityLabel(status: TownResultStatus): string {
-  if (status === 'SUCCESS') return '작업 완료 알림';
+function noticeAccessibilityLabel(status: TownResultStatus, successTitle?: string): string {
+  if (status === 'SUCCESS') return `${successTitle ?? '작업 완료'} 알림`;
   if (status === 'FAILURE') return '작업 실패 알림';
   return '결과 확인 필요 알림';
 }
