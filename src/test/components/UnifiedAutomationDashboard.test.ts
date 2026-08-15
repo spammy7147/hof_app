@@ -101,6 +101,39 @@ describe('UnifiedAutomationDashboard', () => {
     assert.deepEqual(actions, []);
   });
 
+  it('expands configuration warning reasons and opens the relevant settings', async () => {
+    let openedModule: number | null = null;
+    let openedSettings = 0;
+    const renderer = await renderDashboard(
+      networkStopped(),
+      () => undefined,
+      undefined,
+      undefined,
+      (entryId) => { openedModule = entryId; },
+      () => { openedSettings += 1; },
+    );
+
+    assert.equal(hasText(renderer.root, 'another'), false);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투맵 설정 경고: missing' }).length, 0);
+
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '설정 경고 2개, 자세히 보기' }).props.onPress();
+    });
+
+    assert.equal(hasText(renderer.root, 'another'), true);
+    assert.equal(hasText(renderer.root, '해당 설정 열기'), true);
+    assert.equal(hasText(renderer.root, '자동화 설정 확인'), true);
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '전투맵 설정 경고: missing' }).props.onPress();
+    });
+    assert.equal(openedModule, 2);
+
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '자동화 실행 설정 경고: another' }).props.onPress();
+    });
+    assert.equal(openedSettings, 1);
+  });
+
   it('keeps captcha waiting separate from network stop', async () => {
     let opened = 0;
     const aggregate = networkStopped();
@@ -340,6 +373,8 @@ async function renderDashboard(
   onChangeState: (action: UnifiedAutomationAction) => void,
   onOpenCaptcha = () => undefined,
   nowMs?: number,
+  onOpenModule: (entryId: number) => void = () => undefined,
+  onOpenSettings = () => undefined,
 ): Promise<ReactTestRenderer> {
   let renderer!: ReactTestRenderer;
   await act(async () => {
@@ -348,8 +383,8 @@ async function renderDashboard(
       busy: false,
       onChangeState,
       onOpenCaptcha,
-      onOpenModule: () => undefined,
-      onOpenSettings: () => undefined,
+      onOpenModule,
+      onOpenSettings,
       nowMs,
     }));
   });

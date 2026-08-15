@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ChevronRight, History, Pause, Play, Settings, Square } from 'lucide-react-native';
 
@@ -55,6 +56,7 @@ export function UnifiedAutomationDashboard({
   onOpenHistory,
   nowMs,
 }: Props) {
+  const [warningsExpanded, setWarningsExpanded] = useState(false);
   const { runtime } = aggregate;
   const current = runtime.currentAction;
   const running = runtime.lifecycle === 'RUNNING' || runtime.lifecycle === 'DRAINING';
@@ -67,7 +69,8 @@ export function UnifiedAutomationDashboard({
   const waitingLogin = automaticRetry && runtime.stopReason === 'AUTHENTICATION';
   const waitingForHof = waiting && !automaticRetry && runtime.waitReason === 'HOF_CONNECTION';
   const waitingForWork = waiting && !waitingForHof;
-  const warningCount = new Set(runtime.warnings).size;
+  const warnings = [...new Set(runtime.warnings)];
+  const warningCount = warnings.length;
 
   return (
     <View style={styles.stack}>
@@ -111,7 +114,41 @@ export function UnifiedAutomationDashboard({
 
         <View style={styles.runtimeMeta}>
           <Text style={styles.metaText}>오늘 모험맵 {formatAdventureDailyRefresh(runtime.dailyRefresh).replace(/^오늘 /, '')}</Text>
-          <Text style={warningCount > 0 ? styles.warningText : styles.metaText}>설정 경고 {warningCount}개</Text>
+          {warningCount > 0 ? (
+            <>
+              <Pressable
+                accessibilityHint="경고 원인과 관련 자동화 설정을 확인합니다"
+                accessibilityLabel={`설정 경고 ${warningCount}개, ${warningsExpanded ? '접기' : '자세히 보기'}`}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: warningsExpanded }}
+                onPress={() => setWarningsExpanded((expanded) => !expanded)}
+                style={({ pressed }) => [styles.warningToggle, pressed && styles.pressed]}
+              >
+                <Text style={styles.warningText}>설정 경고 {warningCount}개</Text>
+                <Text style={styles.warningToggleHint}>{warningsExpanded ? '접기' : '자세히 보기'}</Text>
+                <ChevronRight
+                  color={theme.colors.accentAmber}
+                  size={15}
+                  style={warningsExpanded ? styles.warningChevronExpanded : undefined}
+                />
+              </Pressable>
+              {warningsExpanded ? (
+                <View style={styles.warningList}>
+                  {warnings.map((warning) => (
+                    <WarningRow
+                      key={warning}
+                      entries={aggregate.entries.filter((entry) => entry.warnings.includes(warning))}
+                      onOpenModule={onOpenModule}
+                      onOpenSettings={onOpenSettings}
+                      warning={warning}
+                    />
+                  ))}
+                </View>
+              ) : null}
+            </>
+          ) : (
+            <Text style={styles.metaText}>설정 경고 0개</Text>
+          )}
         </View>
         {running && current != null ? <Text style={styles.reevaluate}>현재 행동이 끝나면 전체 우선순위를 다시 확인합니다.</Text> : null}
       </View>
@@ -141,6 +178,45 @@ export function UnifiedAutomationDashboard({
         ))}
       </View>
     </View>
+  );
+}
+
+function WarningRow({
+  entries,
+  onOpenModule,
+  onOpenSettings,
+  warning,
+}: {
+  entries: TypedAutomationEntryResponse[];
+  onOpenModule: (entryId: number) => void;
+  onOpenSettings: () => void;
+  warning: string;
+}) {
+  const sourceLabels = [...new Set(entries.map((entry) => automationTypeLabel(entry.type)))];
+  const sourceLabel = sourceLabels.length > 0 ? sourceLabels.join(', ') : '자동화 실행';
+  const openWarningSettings = () => {
+    if (entries.length === 1) {
+      onOpenModule(entries[0].id);
+      return;
+    }
+    onOpenSettings();
+  };
+
+  return (
+    <Pressable
+      accessibilityHint="관련 설정 화면을 엽니다"
+      accessibilityLabel={`${sourceLabel} 설정 경고: ${warning}`}
+      accessibilityRole="button"
+      onPress={openWarningSettings}
+      style={({ pressed }) => [styles.warningRow, pressed && styles.pressed]}
+    >
+      <View style={styles.warningCopy}>
+        <Text style={styles.warningSource}>{sourceLabel}</Text>
+        <Text style={styles.warningMessage}>{warning}</Text>
+        <Text style={styles.warningAction}>{entries.length === 1 ? '해당 설정 열기' : '자동화 설정 확인'}</Text>
+      </View>
+      <ChevronRight color={theme.colors.accentAmber} size={16} />
+    </Pressable>
   );
 }
 
@@ -294,6 +370,15 @@ const styles = StyleSheet.create({
   stopReason: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18 },
   runtimeMeta: { borderTopColor: theme.colors.border, borderTopWidth: StyleSheet.hairlineWidth, gap: 4, marginTop: 5, paddingTop: 9 },
   metaText: { color: theme.colors.textMuted, fontSize: 12 },
+  warningToggle: { alignItems: 'center', flexDirection: 'row', gap: 5, minHeight: 28 },
+  warningToggleHint: { color: theme.colors.textMuted, flex: 1, fontSize: 11, textAlign: 'right' },
+  warningChevronExpanded: { transform: [{ rotate: '90deg' }] },
+  warningList: { borderLeftColor: theme.colors.accentAmberDark, borderLeftWidth: 2, gap: 4, marginTop: 2, paddingLeft: 9 },
+  warningRow: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.sm, flexDirection: 'row', gap: 8, paddingHorizontal: 10, paddingVertical: 9 },
+  warningCopy: { flex: 1, gap: 2 },
+  warningSource: { color: theme.colors.accentAmber, fontSize: 11, fontWeight: '800' },
+  warningMessage: { color: theme.colors.text, fontSize: 12, lineHeight: 17 },
+  warningAction: { color: theme.colors.textMuted, fontSize: 10, marginTop: 2 },
   reevaluate: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
   captchaButton: { alignItems: 'center', backgroundColor: theme.colors.accentAmber, borderRadius: theme.radius.sm, marginTop: 8, padding: 11 },
   captchaButtonText: { color: theme.colors.buttonText, fontWeight: '800' },
