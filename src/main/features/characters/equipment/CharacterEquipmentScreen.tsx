@@ -29,22 +29,22 @@ export function CharacterEquipmentScreen({
   const [part, setPart] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const revision = detail.revision;
-  const [expandedSlot, setExpandedSlot] = useState<string | null>(null);
   const [chosen, setChosen] = useState<HofCharacterEquipmentCandidate | null>(
     null,
   );
   const listRef = useRef<FlatList<HofCharacterEquipmentCandidate>>(null);
   const scrollOffset = useRef(0);
+  const candidateType = part === "shield" ? "armor" : part;
   const candidates = useMemo(
     () =>
       (detail.equipmentCandidates ?? []).filter(
         (item) =>
-          (!part || item.typeCode === part) &&
+          (!candidateType || item.typeCode === candidateType) &&
           `${item.name} ${item.description}`
             .toLowerCase()
             .includes(query.toLowerCase()),
       ),
-    [detail.equipmentCandidates, part, query],
+    [candidateType, detail.equipmentCandidates, query],
   );
   const command = (value: CharacterCommand) => onCommand?.(value);
   return (
@@ -88,12 +88,11 @@ export function CharacterEquipmentScreen({
       </View>
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>현재 장비</Text>
-        <Text style={styles.sectionHint}>부위를 눌러 변경</Text>
+        <Text style={styles.sectionHint}>카드를 눌러 변경</Text>
       </View>
       <View style={styles.list}>
         {detail.equipment.map((item) => {
           const partLabel = item.part || item.slot;
-          const expanded = expandedSlot === item.slot;
           return (
             <Pressable
               key={item.slot}
@@ -115,34 +114,17 @@ export function CharacterEquipmentScreen({
                 ) : null}
               </View>
               <View style={styles.body}>
-                <Text style={styles.part}>{partLabel}</Text>
-                <Text style={styles.name}>{item.name || "비어 있음"}</Text>
+                <View style={styles.slotHeader}>
+                  <View style={styles.slotIdentity}>
+                    <Text style={styles.part}>{partLabel}</Text>
+                    <Text style={styles.name}>{item.name || "비어 있음"}</Text>
+                  </View>
+                  <Text style={styles.slotAction}>변경 ›</Text>
+                </View>
                 {item.description ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`${partLabel} 장비 설명 ${expanded ? "접기" : "전체 보기"}`}
-                    hitSlop={4}
-                    onPress={(event) => {
-                      event.stopPropagation();
-                      setExpandedSlot((current) =>
-                        current === item.slot ? null : item.slot,
-                      );
-                    }}
-                    style={styles.descriptionToggle}
-                  >
-                    <Text
-                      style={styles.description}
-                      numberOfLines={expanded ? undefined : 2}
-                    >
-                      {item.description}
-                    </Text>
-                    <Text style={styles.descriptionAction}>
-                      {expanded ? "접기" : "전체 보기"}
-                    </Text>
-                  </Pressable>
+                  <Text style={styles.description}>{item.description}</Text>
                 ) : null}
               </View>
-              <Text style={styles.chevron}>›</Text>
             </Pressable>
           );
         })}
@@ -420,7 +402,7 @@ const styles = StyleSheet.create({
   slot: {
     minHeight: 64,
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 10,
     padding: 8,
@@ -434,27 +416,25 @@ const styles = StyleSheet.create({
   },
   image: { width: 44, height: 44 },
   body: { flex: 1, gap: 2 },
+  slotHeader: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  slotIdentity: { flex: 1, gap: 2 },
   part: { color: theme.colors.accentGreen, fontSize: 10, fontWeight: "900" },
   name: { color: theme.colors.text, fontWeight: "900" },
-  descriptionToggle: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 4,
+  slotAction: {
+    color: theme.colors.accentGreen,
+    fontSize: 12,
+    fontWeight: "900",
   },
   description: {
-    flex: 1,
+    flexShrink: 1,
     color: theme.colors.textMuted,
     lineHeight: 18,
   },
-  descriptionAction: {
-    width: 50,
-    color: theme.colors.accentGreen,
-    fontSize: 10,
-    lineHeight: 18,
-    fontWeight: "900",
-    textAlign: "right",
-  },
-  chevron: { color: theme.colors.textMuted, fontSize: 25 },
   modal: {
     flex: 1,
     backgroundColor: theme.colors.background,

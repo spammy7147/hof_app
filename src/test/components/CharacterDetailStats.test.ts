@@ -24,8 +24,8 @@ const reactNativeMock = {
   TextInput: host('TextInput'),
   View: host('View'),
 };
-const draggableFlatList = (props: Record<string, unknown>) => React.createElement(
-  'DraggableFlatList',
+const draggableFlatList = (hostName: string) => (props: Record<string, unknown>) => React.createElement(
+  hostName,
   props,
   (props.data as unknown[]).map((item, index) => React.createElement(
     React.Fragment,
@@ -42,11 +42,16 @@ const lucideMock = Object.fromEntries(
 );
 moduleWithLoader._load = (request, parent, isMain) => (
   request === 'react-native' ? reactNativeMock
-    : request === 'react-native-draggable-flatlist' ? { __esModule: true, default: draggableFlatList }
+    : request === 'react-native-draggable-flatlist' ? {
+      __esModule: true,
+      default: draggableFlatList('DraggableFlatList'),
+      NestableDraggableFlatList: draggableFlatList('NestableDraggableFlatList'),
+    }
       : request === 'lucide-react-native' ? lucideMock
       : originalLoad(request, parent, isMain)
 );
 const { CharacterDetail, extractAvailableStatPoints, extractPrimaryStatValues, statGroupLabel } = require('../../main/components/CharacterDetail') as typeof import('../../main/components/CharacterDetail');
+const { CharacterEquipmentScreen } = require('../../main/features/characters/equipment/CharacterEquipmentScreen') as typeof import('../../main/features/characters/equipment/CharacterEquipmentScreen');
 const { CharacterManagementScreen } = require('../../main/features/characters/management/CharacterManagementScreen') as typeof import('../../main/features/characters/management/CharacterManagementScreen');
 const { CharacterItemsScreen, buildItemCommand } = require('../../main/features/characters/items/CharacterItemsScreen') as typeof import('../../main/features/characters/items/CharacterItemsScreen');
 const { CharacterSkillsScreen } = require('../../main/features/characters/skills/CharacterSkillsScreen') as typeof import('../../main/features/characters/skills/CharacterSkillsScreen');
@@ -263,6 +268,84 @@ describe('CharacterDetail stat allocation', () => {
     assert.equal(pauseRequests, 1);
   });
 
+  it('lets the outer character scroller own vertical gestures that start on pattern rows', async () => {
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(CharacterDetail, {
+        character: makeHofCharacter(),
+        detail: makeHofCharacterDetail(1, {
+          actionPatterns: [{ index: 0, judge: 'always', judgeText: '반드시', quantity: '0', quantityText: '', skill: 'attack', skillText: 'Attack' }],
+          patternOptions: [{ type: 'CONDITION', value: 'always', label: '반드시', category: null }, { type: 'SKILL', value: 'attack', label: 'Attack', category: null }],
+          positionGuard: { positions: [{ value: 'front', checked: true }], selectedPosition: 'front', guardValue: 'always', guardText: '반드시 지킨다' },
+        }),
+        isLoading: false,
+        errorMessage: null,
+      }));
+    });
+    const patternTab = renderer.root.findAllByProps({ accessibilityRole: 'tab' }).find((node) => (
+      node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '패턴').length > 0
+    ));
+    await act(async () => patternTab?.props.onPress());
+
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'DraggableFlatList').length, 0);
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'NestableDraggableFlatList').length, 1);
+    const mainScreenSource = readFileSync(resolve(process.cwd(), 'src/main/screens/MainScreen.tsx'), 'utf8');
+    assert.match(
+      mainScreenSource,
+      /function CharacterDetailScroll[\s\S]*?<NestableScrollContainer/,
+      '캐릭터 상세 바깥 스크롤도 중첩 드래그 목록과 같은 스크롤 컨테이너를 사용해야 한다',
+    );
+  });
+
+  it('shows armor candidates when changing the shield slot', async () => {
+    const armorCandidate = {
+      value: 'shield-2',
+      typeCode: 'armor',
+      name: 'Rare Gold Shield',
+      iconUrl: '',
+      description: '희귀한 방패',
+      quantity: null,
+    };
+    const detail = makeHofCharacterDetail(1, {
+      equipment: [{ slot: 'shield', part: 'Shield', name: 'Wood Shield', iconUrl: '', description: '', checked: true }],
+      equipmentCandidates: [armorCandidate],
+    });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(CharacterEquipmentScreen, { detail }));
+    });
+
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: 'Shield 장비 변경' }).props.onPress();
+    });
+
+    assert.deepEqual(renderer.root.find((node) => String(node.type) === 'FlatList').props.data, [armorCandidate]);
+  });
+
+  it('uses the whole equipment card for changes and always shows the full description', async () => {
+    const detail = makeHofCharacterDetail(1, {
+      equipment: [{
+        slot: 'weapon',
+        part: 'Weapon',
+        name: 'Soulcollector Sword',
+        iconUrl: '',
+        description: '상대방의 무기를 부러뜨리는 검. 물리 방어 무시가 증가한다.',
+        checked: true,
+      }],
+    });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(CharacterEquipmentScreen, { detail }));
+    });
+
+    const change = renderer.root.findByProps({ accessibilityLabel: 'Weapon 장비 변경' });
+    const description = change.find((node) => (
+      String(node.type) === 'Text' && node.children.join('') === '상대방의 무기를 부러뜨리는 검. 물리 방어 무시가 증가한다.'
+    ));
+    assert.equal(description.props.numberOfLines, undefined);
+    assert.equal(renderer.root.findAll((node) => String(node.props.accessibilityLabel).includes('장비 설명')).length, 0);
+  });
+
   it('renders the dedicated equipment skill and management screens from one character API snapshot', async () => {
     const equipmentDescription = 'Atk +96 · 상대방의 무기를 부러뜨리는 검. 물리 방어 무시 +44, 크리티컬 확률과 완전 방어가 증가한다.';
     const detail = makeHofCharacterDetail(1, {
@@ -296,15 +379,9 @@ describe('CharacterDetail stat allocation', () => {
     ['장비 1 불러오기', '장비 1 저장', '장비 2 불러오기', '장비 2 저장', '전체 장비 해제'].forEach((label) => {
       assert.ok(renderer.root.findAllByProps({ accessibilityRole: 'button', accessibilityLabel: label }).length > 0);
     });
-    const compactDescription = renderer.root.find((node) => String(node.type) === 'Text' && node.children.join('') === equipmentDescription);
-    assert.equal(compactDescription.props.numberOfLines, 2);
-    const expandDescription = renderer.root.findAllByProps({ accessibilityLabel: 'Weapon 장비 설명 전체 보기' })[0];
-    let propagationStopped = false;
-    await act(async () => expandDescription.props.onPress({ stopPropagation: () => { propagationStopped = true; } }));
-    assert.equal(propagationStopped, true);
     const fullDescription = renderer.root.find((node) => String(node.type) === 'Text' && node.children.join('') === equipmentDescription);
     assert.equal(fullDescription.props.numberOfLines, undefined);
-    assert.ok(renderer.root.findAllByProps({ accessibilityLabel: 'Weapon 장비 설명 접기' }).length > 0);
+    assert.equal(renderer.root.findAll((node) => String(node.props.accessibilityLabel).includes('장비 설명')).length, 0);
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'Image' && node.props.source?.uri === 'https://hof.test/sword.gif').length, 1);
 
     await openTab('스킬');

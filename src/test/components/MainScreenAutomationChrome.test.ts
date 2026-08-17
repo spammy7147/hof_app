@@ -26,6 +26,9 @@ const originalLoad = moduleWithLoader._load;
 moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') return reactNativeMock;
   if (request === 'react-native-safe-area-context') return { SafeAreaView: host('SafeAreaView') };
+  if (request === 'react-native-draggable-flatlist') return {
+    NestableScrollContainer: host('NestableScrollContainer'),
+  };
   if (request === 'lucide-react-native') return iconsMock;
   if (request.endsWith('/BottomTabBar')) return { BottomTabBar: host('BottomTabBar') };
   if (request.endsWith('/CharacterDetail')) return { CharacterDetail: host('CharacterDetail') };

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ElementRef, ReactNode } from "react";
 import {
   useCallback,
   useEffect,
@@ -9,6 +9,7 @@ import {
 } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { NestableScrollContainer } from "react-native-draggable-flatlist";
 
 import { BottomTabBar } from "../components/BottomTabBar";
 import { scrollFocusedInputIntoView } from "../components/keyboardAwareScroll";
@@ -1274,9 +1275,9 @@ function TabScrollContainer({ children }: { children: ReactNode }) {
 }
 
 function CharacterDetailScroll({ children }: { children: ReactNode }) {
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ElementRef<typeof NestableScrollContainer>>(null);
   return (
-    <ScrollView
+    <NestableScrollContainer
       automaticallyAdjustKeyboardInsets
       contentContainerStyle={styles.detailContainer}
       contentInsetAdjustmentBehavior="automatic"
@@ -1289,7 +1290,7 @@ function CharacterDetailScroll({ children }: { children: ReactNode }) {
       style={styles.tabScroller}
     >
       {children}
-    </ScrollView>
+    </NestableScrollContainer>
   );
 }
 

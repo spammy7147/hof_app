@@ -9,7 +9,8 @@ import {
   TextInput,
   View,
 } from "react-native";
-import DraggableFlatList, {
+import {
+  NestableDraggableFlatList,
   type RenderItemParams,
 } from "react-native-draggable-flatlist";
 import type {
@@ -235,7 +236,7 @@ export function CharacterPatternScreen({
           패턴 편집을 시작해 자동화를 일시 정지했습니다. 자동화 화면에서 직접 재개해 주세요.
         </Text>
       )}
-      <DraggableFlatList
+      <NestableDraggableFlatList
         scrollEnabled={false}
         data={rows}
         keyExtractor={(row) => row.key}
