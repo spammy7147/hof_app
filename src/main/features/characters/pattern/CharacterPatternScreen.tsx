@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Alert,
   FlatList,
   Modal,
   Pressable,
@@ -25,12 +26,23 @@ type PendingApply = {
   targetSlotCode?: string;
   name?: string;
 };
+const GUARD_OPTIONS = [
+  "always",
+  "never",
+  "life25",
+  "life50",
+  "life75",
+  "prob25",
+  "prpb50",
+  "prob75",
+];
 export function CharacterPatternScreen({
   detail,
   onApply,
   onLoadSaved,
   onDeleteSaved,
   onBeginEdit,
+  onImportSettings,
 }: {
   detail: HofCharacterDetail;
   onApply?: (
@@ -45,6 +57,7 @@ export function CharacterPatternScreen({
     slotCode: string,
   ) => Promise<CharacterPatternOperationResult>;
   onBeginEdit?: () => Promise<void>;
+  onImportSettings?: () => void;
 }) {
   const initial = useMemo<Row[]>(
     () =>
@@ -67,6 +80,10 @@ export function CharacterPatternScreen({
   );
   const [guard, setGuard] = useState(detail.positionGuard.guardValue);
   const [slotsOpen, setSlotsOpen] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [commitOpen, setCommitOpen] = useState(false);
+  const [standaloneSaveOpen, setStandaloneSaveOpen] = useState(false);
+  const [alsoSave, setAlsoSave] = useState(false);
   const [slotName, setSlotName] = useState("");
   const [pendingSlot, setPendingSlot] = useState<string | null>(null);
   const [conflict, setConflict] =
@@ -85,6 +102,10 @@ export function CharacterPatternScreen({
     setGuard(detail.positionGuard.guardValue);
     setPendingSlot(null);
     setSlotName("");
+    setSetupOpen(false);
+    setCommitOpen(false);
+    setStandaloneSaveOpen(false);
+    setAlsoSave(false);
     setAutomationPauseNotice(false);
     pauseRequested.current = false;
   }, [detail.revision]);
@@ -184,20 +205,29 @@ export function CharacterPatternScreen({
       JSON.stringify(settingRows(initial)) ||
     position !== detail.positionGuard.selectedPosition ||
     guard !== detail.positionGuard.guardValue;
+  const loadedSlotCount = detail.patternSlots.filter((slot) => slot.canLoad).length;
+  const emptySlotCount = detail.patternSlots.length - loadedSlotCount;
   return (
     <View style={styles.screen}>
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => setSlotsOpen(true)}
-        style={styles.savedBar}
-      >
-        <Text style={styles.savedTitle}>저장 패턴</Text>
-        <Text style={styles.savedValue}>
-          {detail.patternSlots
-            .filter((slot) => slot.canLoad)
-            .map((slot) => slot.label)
-            .join(" · ") || "빈 슬롯"}
-        </Text>
+      <View style={styles.quickRow}>
+        <Pressable accessibilityRole="button" onPress={() => setSlotsOpen(true)} style={styles.savedBar}>
+          <View style={styles.savedCopy}>
+            <Text style={styles.savedTitle}>저장 패턴</Text>
+            <Text style={styles.savedValue}>{loadedSlotCount}개{emptySlotCount > 0 ? ` · 빈 슬롯 ${emptySlotCount}개` : ""}</Text>
+          </View>
+          <Text style={styles.chevron}>›</Text>
+        </Pressable>
+        {onImportSettings && (
+          <Pressable accessibilityRole="button" onPress={onImportSettings} style={styles.importButton}>
+            <Text style={styles.importText}>다른 캐릭터{`\n`}가져오기</Text>
+          </Pressable>
+        )}
+      </View>
+      <Pressable accessibilityRole="button" onPress={() => setSetupOpen(true)} style={styles.setupBar}>
+        <Text style={styles.setupLabel}>위치</Text>
+        <Text style={styles.setupValue}>{positionText(position)}</Text>
+        <Text style={styles.setupLabel}>호위</Text>
+        <Text style={[styles.setupValue, styles.guardValue]} numberOfLines={1}>{guardText(guard)}</Text>
         <Text style={styles.chevron}>›</Text>
       </Pressable>
       {automationPauseNotice && (
@@ -288,78 +318,18 @@ export function CharacterPatternScreen({
           <Text style={styles.deleteText}>삭제</Text>
         </Pressable>
       </View>
-      <View style={styles.setting}>
-        <Text style={styles.settingTitle}>위치</Text>
-        <View style={styles.pills}>
-          {detail.positionGuard.positions.map((item) => (
-            <Pill
-              key={item.value}
-              label={item.value}
-              active={position === item.value}
-              onPress={() => {
-                beginEdit();
-                setPosition(item.value);
-              }}
-            />
-          ))}
-        </View>
-        <Text style={styles.settingTitle}>호위</Text>
-        <View style={styles.pills}>
-          {[
-            "always",
-            "never",
-            "life25",
-            "life50",
-            "life75",
-            "prob25",
-            "prpb50",
-            "prob75",
-          ].map((value) => (
-            <Pill
-              key={value}
-              label={value}
-              active={guard === value}
-              onPress={() => {
-                beginEdit();
-                setGuard(value);
-              }}
-            />
-          ))}
-        </View>
-      </View>
-      {pendingSlot && (
-        <TextInput
-          accessibilityLabel="패턴 저장 이름"
-          maxLength={6}
-          value={slotName}
-          onChangeText={setSlotName}
-          placeholder="이름"
-          placeholderTextColor={theme.colors.textMuted}
-          style={styles.slotNameInput}
-        />
-      )}
       <Pressable
         accessibilityRole="button"
-        disabled={
-          rows.length !== capacity || (pendingSlot != null && !slotName.trim())
-        }
-        onPress={() =>
-          void apply(
-            pendingSlot ? "SAVE_EMPTY" : "NONE",
-            pendingSlot ?? undefined,
-            slotName.trim() || undefined,
-          )
-        }
-        style={[
-          styles.save,
-          (rows.length !== capacity ||
-            (pendingSlot != null && !slotName.trim())) &&
-            styles.disabled,
-        ]}
+        disabled={rows.length !== capacity}
+        onPress={() => {
+          setAlsoSave(false);
+          setPendingSlot(null);
+          setSlotName("");
+          setCommitOpen(true);
+        }}
+        style={[styles.save, rows.length !== capacity && styles.disabled]}
       >
-        <Text style={styles.saveText}>
-          {pendingSlot ? "저장 후 슬롯에 보관" : "저장"}
-        </Text>
+        <Text style={styles.saveText}>저장</Text>
       </Pressable>
       <PatternPicker
         visible={picker !== null}
@@ -375,6 +345,147 @@ export function CharacterPatternScreen({
           setPicker(null);
         }}
       />
+      <Modal visible={setupOpen} transparent animationType="slide" onRequestClose={() => setSetupOpen(false)}>
+        <View style={styles.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setSetupOpen(false)} />
+          <View style={styles.sheet}>
+            <View style={styles.grip} />
+            <Text style={styles.sheetTitle}>위치·호위 선택</Text>
+            <Text style={styles.sheetNote}>선택한 위치·호위는 하단 저장 버튼을 누를 때 HOF 서버에 반영됩니다.</Text>
+            <Text style={styles.sheetLabel}>위치</Text>
+            <View style={styles.segmentRow}>
+              {detail.positionGuard.positions.map((item) => (
+                <Pill
+                  key={item.value}
+                  label={positionText(item.value)}
+                  active={position === item.value}
+                  onPress={() => { beginEdit(); setPosition(item.value); }}
+                />
+              ))}
+            </View>
+            <Text style={styles.sheetLabel}>호위</Text>
+            <View style={styles.guardOptions}>
+              {GUARD_OPTIONS.map((value) => (
+                <Pill
+                  key={value}
+                  label={guardText(value)}
+                  active={guard === value}
+                  onPress={() => { beginEdit(); setGuard(value); }}
+                />
+              ))}
+            </View>
+            <View style={styles.selectionSummary}>
+              <Text style={styles.sheetLabel}>선택됨</Text>
+              <Text style={styles.selectionValue}>{positionText(position)} · {guardText(guard)}</Text>
+            </View>
+            <Pressable onPress={() => setSetupOpen(false)} style={styles.primarySheetButton}>
+              <Text style={styles.primarySheetButtonText}>완료</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={commitOpen} transparent animationType="slide" onRequestClose={() => setCommitOpen(false)}>
+        <View style={styles.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setCommitOpen(false)} />
+          <View style={styles.sheet}>
+            <View style={styles.grip} />
+            <Text style={styles.sheetTitle}>저장</Text>
+            <Text style={styles.sheetNote}>패턴 {rows.length}행을 저장한 뒤 위치·호위를 저장하고 전체 설정을 확인합니다.</Text>
+            {emptySlotCount > 0 && (
+              <Pressable
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: alsoSave }}
+                onPress={() => {
+                  const next = !alsoSave;
+                  setAlsoSave(next);
+                  if (next && !pendingSlot) setPendingSlot(detail.patternSlots.find((slot) => !slot.canLoad)?.slot ?? null);
+                }}
+                style={[styles.saveOption, alsoSave && styles.saveOptionActive]}
+              >
+                <View style={[styles.checkbox, alsoSave && styles.checkboxActive]}>
+                  <Text style={styles.checkboxText}>{alsoSave ? "✓" : ""}</Text>
+                </View>
+                <View style={styles.savedCopy}>
+                  <Text style={styles.slotName}>현재 설정 저장 후 빈 슬롯에도 보관</Text>
+                  <Text style={styles.sheetNote}>현재 설정을 검증한 다음 선택한 슬롯에 저장합니다.</Text>
+                </View>
+              </Pressable>
+            )}
+            {alsoSave && (
+              <>
+                <Text style={styles.sheetLabel}>저장할 빈 슬롯</Text>
+                <View style={styles.segmentRow}>
+                  {detail.patternSlots.filter((slot) => !slot.canLoad).map((slot) => (
+                    <Pill
+                      key={slot.slot}
+                      label={`빈 슬롯 ${Number(slot.slot) + 1}`}
+                      active={pendingSlot === slot.slot}
+                      onPress={() => setPendingSlot(slot.slot)}
+                    />
+                  ))}
+                </View>
+                <TextInput
+                  accessibilityLabel="패턴 저장 이름"
+                  maxLength={6}
+                  value={slotName}
+                  onChangeText={setSlotName}
+                  placeholder="이름 · 최대 6자"
+                  placeholderTextColor={theme.colors.textMuted}
+                  style={styles.slotNameInput}
+                />
+              </>
+            )}
+            <View style={styles.controls}>
+              <Pressable onPress={() => setCommitOpen(false)} style={styles.control}><Text style={styles.controlText}>취소</Text></Pressable>
+              <Pressable
+                accessibilityRole="button"
+                disabled={alsoSave && (!pendingSlot || !slotName.trim())}
+                onPress={() => {
+                  setCommitOpen(false);
+                  void apply(alsoSave ? "SAVE_EMPTY" : "NONE", pendingSlot ?? undefined, slotName.trim() || undefined);
+                }}
+                style={[styles.primarySheetButton, alsoSave && (!pendingSlot || !slotName.trim()) && styles.disabled]}
+              >
+                <Text style={styles.primarySheetButtonText}>{alsoSave ? "저장하고 슬롯에도 보관" : "현재 설정 저장"}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={standaloneSaveOpen} transparent animationType="slide" onRequestClose={() => setStandaloneSaveOpen(false)}>
+        <View style={styles.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setStandaloneSaveOpen(false)} />
+          <View style={styles.sheet}>
+            <View style={styles.grip} />
+            <Text style={styles.sheetTitle}>빈 슬롯</Text>
+            <TextInput
+              accessibilityLabel="패턴 저장 이름"
+              maxLength={6}
+              value={slotName}
+              onChangeText={setSlotName}
+              placeholder="이름 · 최대 6자"
+              placeholderTextColor={theme.colors.textMuted}
+              style={styles.slotNameInput}
+            />
+            <View style={styles.controls}>
+              <Pressable onPress={() => setStandaloneSaveOpen(false)} style={styles.control}><Text style={styles.controlText}>취소</Text></Pressable>
+              <Pressable
+                accessibilityRole="button"
+                disabled={!slotName.trim() || !pendingSlot}
+                onPress={() => {
+                  setStandaloneSaveOpen(false);
+                  void apply("SAVE_EMPTY", pendingSlot ?? undefined, slotName.trim());
+                }}
+                style={[styles.primarySheetButton, (!slotName.trim() || !pendingSlot) && styles.disabled]}
+              >
+                <Text style={styles.primarySheetButtonText}>저장</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <Modal
         visible={slotsOpen}
         transparent
@@ -399,12 +510,21 @@ export function CharacterPatternScreen({
                       <SlotAction
                         label="불러오기"
                         onPress={() => {
-                          setSlotsOpen(false);
-                          void onLoadSaved?.(detail.id, slot.slot);
+                          const load = () => {
+                            setSlotsOpen(false);
+                            void onLoadSaved?.(detail.id, slot.slot);
+                          };
+                          if (dirty) {
+                            Alert.alert("저장 패턴 불러오기", "적용하지 않은 편집 내용이 있습니다. 저장 패턴을 불러올까요?", [
+                              { text: "취소", style: "cancel" },
+                              { text: "불러오기", onPress: load },
+                            ]);
+                          } else load();
                         }}
                       />
                       <SlotAction
                         label="교체"
+                        disabled={dirty}
                         onPress={() => {
                           setSlotsOpen(false);
                           void apply("REPLACE", slot.slot, slot.label);
@@ -421,10 +541,13 @@ export function CharacterPatternScreen({
                     </>
                   ) : (
                     <SlotAction
-                      label={dirty ? "저장과 함께" : "저장"}
+                      label="저장"
+                      disabled={dirty}
                       onPress={() => {
                         setPendingSlot(slot.slot);
+                        setSlotName("");
                         setSlotsOpen(false);
+                        setStandaloneSaveOpen(true);
                       }}
                     />
                   )}
@@ -498,6 +621,26 @@ function formatPatternRow(
   return row ? `${row.judge} · ${row.quantity} · ${row.skill}` : "행 없음";
 }
 
+function positionText(value: string) {
+  if (value === "front") return "전방";
+  if (value === "back") return "후방";
+  return value;
+}
+
+function guardText(value: string) {
+  return ({
+    always: "반드시 지킨다",
+    never: "지키지 않는다",
+    life25: "체력이 25% 이상이면 지킨다",
+    life50: "체력이 50% 이상이면 지킨다",
+    life75: "체력이 75% 이상이면 지킨다",
+    prob25: "25% 확률로 지킨다",
+    prpb50: "50% 확률로 지킨다",
+    prob50: "50% 확률로 지킨다",
+    prob75: "75% 확률로 지킨다",
+  } as Record<string, string>)[value] ?? value;
+}
+
 function Pill({
   label,
   active,
@@ -522,13 +665,15 @@ function SlotAction({
   label,
   onPress,
   danger = false,
+  disabled = false,
 }: {
   label: string;
   onPress: () => void;
   danger?: boolean;
+  disabled?: boolean;
 }) {
   return (
-    <Pressable onPress={onPress} style={styles.slotTouch}>
+    <Pressable disabled={disabled} onPress={onPress} style={[styles.slotTouch, disabled && styles.disabled]}>
       <Text style={danger ? styles.danger : styles.slotAction}>{label}</Text>
     </Pressable>
   );
@@ -590,36 +735,45 @@ function PatternPicker({
   );
 }
 const styles = StyleSheet.create({
-  screen: { gap: 14 },
+  screen: { gap: 9, paddingHorizontal: 10, paddingTop: 10 },
+  quickRow: { flexDirection: "row", gap: 8 },
   savedBar: {
-    minHeight: 54,
+    minHeight: 50,
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-  },
-  savedTitle: { color: theme.colors.accentGreen, fontWeight: "900" },
-  savedValue: { flex: 1, color: theme.colors.text, fontWeight: "700" },
-  chevron: { color: theme.colors.textMuted, fontSize: 26 },
-  row: {
-    minHeight: 62,
-    flexDirection: "row",
-    alignItems: "stretch",
+    gap: 8,
     backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 10,
+    paddingHorizontal: 12,
+  },
+  savedCopy: { flex: 1, minWidth: 0, gap: 2 },
+  savedTitle: { color: theme.colors.text, fontSize: 13, fontWeight: "900" },
+  savedValue: { color: theme.colors.textMuted, fontSize: 10, fontWeight: "700" },
+  importButton: { width: 86, minHeight: 50, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: theme.colors.border, borderRadius: 10, backgroundColor: "#172130" },
+  importText: { color: theme.colors.text, fontSize: 11, fontWeight: "800", lineHeight: 15, textAlign: "center" },
+  setupBar: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 7, paddingHorizontal: 11, borderRadius: 9, backgroundColor: "#17202b" },
+  setupLabel: { color: theme.colors.textMuted, fontSize: 10, fontWeight: "800" },
+  setupValue: { color: theme.colors.text, fontSize: 11, fontWeight: "900" },
+  guardValue: { flex: 1 },
+  chevron: { color: theme.colors.textMuted, fontSize: 26 },
+  row: {
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "stretch",
+    backgroundColor: "transparent",
+    borderRadius: 7,
     borderWidth: 1,
     borderColor: "transparent",
     overflow: "hidden",
-    marginBottom: 5,
+    marginBottom: 2,
   },
-  rowSelected: { borderColor: theme.colors.accentGreen },
-  dragging: { opacity: 0.8, borderColor: theme.colors.accentGreen },
-  handle: { width: 42, alignItems: "center", justifyContent: "center" },
-  handleText: { color: theme.colors.textMuted, fontSize: 22 },
-  rowMain: { flex: 1, flexDirection: "row", gap: 4, paddingVertical: 5 },
-  choice: { flex: 1, justifyContent: "center", paddingHorizontal: 8 },
+  rowSelected: { backgroundColor: "#193229", borderColor: "#326d5a" },
+  dragging: { opacity: 0.75, borderColor: theme.colors.accentGreen },
+  handle: { width: 34, alignItems: "center", justifyContent: "center" },
+  handleText: { color: theme.colors.textMuted, fontSize: 19 },
+  rowMain: { flex: 1, flexDirection: "row", gap: 3, paddingVertical: 3 },
+  choice: { flex: 1, justifyContent: "center", paddingHorizontal: 5 },
   choiceLabel: {
     color: theme.colors.textMuted,
     fontSize: 10,
@@ -627,12 +781,13 @@ const styles = StyleSheet.create({
   },
   choiceText: {
     color: theme.colors.text,
-    lineHeight: 18,
+    lineHeight: 16,
+    fontSize: 12,
     fontWeight: "700",
     marginTop: 2,
   },
   quantity: {
-    width: 48,
+    width: 42,
     color: theme.colors.text,
     backgroundColor: theme.colors.background,
     textAlign: "center",
@@ -658,12 +813,11 @@ const styles = StyleSheet.create({
   },
   controlText: { color: theme.colors.text, fontWeight: "900" },
   deleteText: { color: theme.colors.danger, fontWeight: "900" },
-  setting: { gap: 8 },
-  settingTitle: { color: theme.colors.text, fontWeight: "900", marginTop: 4 },
-  pills: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  segmentRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  guardOptions: { flexDirection: "row", flexWrap: "wrap", gap: 5 },
   pill: {
-    minHeight: 42,
-    paddingHorizontal: 13,
+    minHeight: 38,
+    paddingHorizontal: 11,
     borderRadius: 9,
     alignItems: "center",
     justifyContent: "center",
@@ -699,10 +853,23 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
-    padding: 18,
+    paddingHorizontal: 14,
+    paddingBottom: 22,
     gap: 7,
   },
+  grip: { width: 36, height: 4, alignSelf: "center", borderRadius: 3, backgroundColor: "#4c596a", marginVertical: 8 },
   sheetTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "900" },
+  sheetNote: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 17 },
+  sheetLabel: { color: theme.colors.textMuted, fontSize: 11, fontWeight: "800", marginTop: 5 },
+  selectionSummary: { gap: 3, padding: 9, borderRadius: 8, backgroundColor: theme.colors.surfaceAlt },
+  selectionValue: { color: theme.colors.text, fontSize: 12, fontWeight: "900" },
+  primarySheetButton: { minHeight: 48, flex: 1, alignItems: "center", justifyContent: "center", borderRadius: 9, backgroundColor: theme.colors.accentGreen },
+  primarySheetButtonText: { color: theme.colors.buttonText, fontWeight: "900", textAlign: "center" },
+  saveOption: { flexDirection: "row", alignItems: "center", gap: 9, padding: 10, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 9, backgroundColor: "#17202b" },
+  saveOptionActive: { borderColor: "#326d5a", backgroundColor: "#18332b" },
+  checkbox: { width: 22, height: 22, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: theme.colors.border, borderRadius: 5 },
+  checkboxActive: { borderColor: theme.colors.accentGreen, backgroundColor: theme.colors.accentGreen },
+  checkboxText: { color: theme.colors.buttonText, fontWeight: "900" },
   slot: {
     minHeight: 62,
     flexDirection: "row",

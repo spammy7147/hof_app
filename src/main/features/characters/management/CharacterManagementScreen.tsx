@@ -8,6 +8,18 @@ import {
   TextInput,
   View,
 } from "react-native";
+import {
+  ChevronRight,
+  ChevronsDown,
+  Copy,
+  GraduationCap,
+  PackageOpen,
+  Pencil,
+  RefreshCw,
+  Sparkles,
+  UserRoundX,
+  type LucideIcon,
+} from "lucide-react-native";
 import type {
   CharacterCommand,
   CharacterCommandResult,
@@ -58,6 +70,8 @@ export function CharacterManagementScreen({
   const [newName, setNewName] = useState("");
   const [renameOpen, setRenameOpen] = useState(false);
   const [kickName, setKickName] = useState("");
+  const [kickOpen, setKickOpen] = useState(false);
+  const [knockbackOpen, setKnockbackOpen] = useState(false);
   const [itemsOpen, setItemsOpen] = useState(false);
   const [classOpen, setClassOpen] = useState(false);
   const [selectedClass, setSelectedClass] = useState<string | null>(null);
@@ -119,18 +133,31 @@ export function CharacterManagementScreen({
     );
   return (
     <View style={styles.screen}>
-      <Text style={styles.heading}>일반 관리</Text>
-      <View style={styles.grid}>
-        <Button
-          label="이름 변경"
+      <SectionHeader title="일반 관리" />
+      <View style={styles.actionList}>
+        <ActionRow
+          icon={Pencil}
+          title="이름 변경"
+          description={`현재 이름 · ${detail.name}`}
           onPress={() => {
             setNewName("");
             setRenameOpen(true);
           }}
         />
-        <Button label="아이템 사용" onPress={() => setItemsOpen(true)} />
-        <Button
-          label="기도"
+        <ActionRow
+          icon={PackageOpen}
+          title="아이템 사용"
+          description="성장·초기화와 기타 아이템을 찾아 사용합니다."
+          onPress={() => setItemsOpen(true)}
+        />
+        <ActionRow
+          icon={Sparkles}
+          title="기도"
+          description={
+            detail.faith
+              ? `${detail.faith.godName} · ${detail.faith.current.toLocaleString()} / ${detail.faith.max.toLocaleString()}`
+              : "현재 캐릭터로 기도합니다."
+          }
           onPress={() =>
             run({
               type: "PRAY",
@@ -139,14 +166,30 @@ export function CharacterManagementScreen({
             })
           }
         />
-        <Button
-          label="전직"
+        <ActionRow
+          icon={GraduationCap}
+          title="전직"
+          description={classOptions.length > 0 ? `전직 가능한 직업 ${classOptions.length}개` : "현재 전직할 수 없습니다."}
           disabled={classOptions.length === 0}
-          onPress={() => setClassOpen(!classOpen)}
+          onPress={() => {
+            setSelectedClass(null);
+            setClassOpen(true);
+          }}
         />
-        <Button label="설정 가져오기" onPress={() => setTransferOpen(true)} />
-        <Button
-          label={deepSyncBusy ? "동기화 중…" : "전체 설정 동기화"}
+      </View>
+
+      <SectionHeader title="설정 도구" />
+      <View style={styles.actionList}>
+        <ActionRow
+          icon={Copy}
+          title="설정 가져오기"
+          description="같은 HOF 계정의 다른 캐릭터 설정을 복사합니다."
+          onPress={() => setTransferOpen(true)}
+        />
+        <ActionRow
+          icon={RefreshCw}
+          title={deepSyncBusy ? "동기화 중…" : "전체 설정 동기화"}
+          description="현재 설정과 저장 패턴·장비 저장 1·2를 다시 확인합니다."
           disabled={deepSyncBusy}
           onPress={() => {
             if (!onDeepSync) return;
@@ -225,47 +268,52 @@ export function CharacterManagementScreen({
           </Pressable>
         </Pressable>
       </Modal>
-      {classOpen && (
-        <View style={styles.card}>
-          <Text style={styles.label}>전직 · 현재 {detail.job}</Text>
-          {classOptions.map((option) => (
-            <Pressable
-              key={option.value}
-              onPress={() => setSelectedClass(option.value)}
-              style={[
-                styles.classChoice,
-                selectedClass === option.value && styles.classSelected,
-              ]}
-            >
-              <Text style={styles.label}>{option.label}</Text>
-            </Pressable>
-          ))}
-          <View style={styles.classCompare}>
-            <Text style={styles.description}>{detail.job}</Text>
-            <Text style={styles.arrow}>→</Text>
-            <Text style={styles.label}>
-              {classOptions.find((option) => option.value === selectedClass)
-                ?.label ?? "선택"}
-            </Text>
+      <Modal visible={classOpen} transparent animationType="slide" onRequestClose={() => setClassOpen(false)}>
+        <View style={styles.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setClassOpen(false)} />
+          <View style={styles.sheet}>
+            <View style={styles.grip} />
+            <Text style={styles.heading}>전직</Text>
+            <Text style={styles.description}>서버에서 현재 가능한 전직 후보만 표시합니다.</Text>
+            {classOptions.map((option) => (
+              <Pressable
+                key={option.value}
+                onPress={() => setSelectedClass(option.value)}
+                style={[styles.classChoice, selectedClass === option.value && styles.classSelected]}
+              >
+                <Text style={styles.label}>{option.label}</Text>
+              </Pressable>
+            ))}
+            <View style={styles.classCompare}>
+              <View style={styles.compareCard}>
+                <Text style={styles.compareLabel}>현재</Text>
+                <Text style={styles.label}>{detail.job}</Text>
+              </View>
+              <Text style={styles.arrow}>→</Text>
+              <View style={styles.compareCard}>
+                <Text style={styles.compareLabel}>변경</Text>
+                <Text style={styles.label}>{classOptions.find((option) => option.value === selectedClass)?.label ?? "선택"}</Text>
+              </View>
+            </View>
+            <View style={styles.inline}>
+              <Button label="취소" onPress={() => setClassOpen(false)} />
+              <Button
+                disabled={!selectedClass}
+                label="전직"
+                onPress={() => {
+                  if (!selectedClass) return;
+                  const classValue = selectedClass;
+                  setClassOpen(false);
+                  run(
+                    { type: "CHANGE_CLASS", characterId: detail.id, expectedRevision: revision, classValue },
+                    `${detail.job}에서 ${classOptions.find((option) => option.value === classValue)?.label} 직업으로 전직하시겠습니까?`,
+                  );
+                }}
+              />
+            </View>
           </View>
-          <Button
-            disabled={!selectedClass}
-            label="전직"
-            onPress={() =>
-              selectedClass &&
-              run(
-                {
-                  type: "CHANGE_CLASS",
-                  characterId: detail.id,
-                  expectedRevision: revision,
-                  classValue: selectedClass,
-                },
-                `${detail.job}에서 ${classOptions.find((option) => option.value === selectedClass)?.label} 직업으로 전직하시겠습니까?`,
-              )
-            }
-          />
         </View>
-      )}
+      </Modal>
       {identityResolution && (
         <View style={styles.card}>
           <Text style={styles.label}>새 HOF ID 연결</Text>
@@ -308,60 +356,133 @@ export function CharacterManagementScreen({
             )}
         </View>
       )}
-      <Text style={[styles.heading, styles.dangerHeading]}>위험 작업</Text>
-      <View style={styles.card}>
-        <Text style={styles.description}>
-          Knockback은 HOF ID와 캐릭터 순서를 바꿉니다. 작업 후 새 ID를 자동으로
-          확인합니다.
-        </Text>
-        <Button
-          danger
-          label="Knockback"
-          onPress={() =>
-            run(
-              {
-                type: "KNOCKBACK",
-                characterId: detail.id,
-                expectedRevision: revision,
-                confirmationName: detail.name,
-              },
-              "저장 파티와 팀 연결에 영향을 줄 수 있습니다. 계속하시겠습니까?",
-            )
-          }
-        />
+      <View style={styles.dangerZone}>
+        <SectionHeader title="위험 작업" danger />
+        <View style={[styles.actionList, styles.dangerList]}>
+          <ActionRow
+            icon={ChevronsDown}
+            title="Knockback"
+            description="목록 맨 뒤로 이동하고 변경된 HOF ID를 다시 연결합니다."
+            danger
+            onPress={() => setKnockbackOpen(true)}
+          />
+          <ActionRow
+            icon={UserRoundX}
+            title="Kick"
+            description="HOF 서버에서 캐릭터를 해고하고 앱의 보관함으로 이동합니다."
+            danger
+            onPress={() => {
+              setKickName("");
+              setKickOpen(true);
+            }}
+          />
+        </View>
       </View>
-      <View style={styles.card}>
-        <Text style={styles.description}>
-          Kick은 캐릭터를 삭제하고 앱의 보관함으로 이동합니다.
-        </Text>
-        <TextInput
-          accessibilityLabel="삭제 확인 캐릭터명"
-          value={kickName}
-          onChangeText={setKickName}
-          placeholder={detail.name}
-          placeholderTextColor={theme.colors.textMuted}
-          style={styles.input}
-        />
-        <Button
-          danger
-          label="Kick"
-          disabled={kickName !== detail.name}
-          onPress={() =>
-            run(
-              {
-                type: "KICK",
-                characterId: detail.id,
-                expectedRevision: revision,
-                confirmationName: kickName,
-              },
-              "이 작업은 되돌리기 어렵습니다. 캐릭터를 삭제하시겠습니까?",
-            )
-          }
-        />
-      </View>
+
+      <Modal visible={knockbackOpen} transparent animationType="slide" onRequestClose={() => setKnockbackOpen(false)}>
+        <View style={styles.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setKnockbackOpen(false)} />
+          <View style={styles.sheet}>
+            <View style={styles.grip} />
+            <Text style={styles.heading}>Knockback</Text>
+            <Text style={styles.description}>{detail.name}을 HOF 캐릭터 목록 맨 뒤로 이동합니다.</Text>
+            <View style={styles.warningBox}>
+              <Text style={styles.warningTitle}>실행하면</Text>
+              <Text style={styles.warningText}>• HOF 저장 파티와 콜로세움 팀 연결이 사라질 수 있습니다.</Text>
+              <Text style={styles.warningText}>• 캐릭터의 HOF ID가 변경됩니다.</Text>
+              <Text style={styles.warningText}>• 앱이 새 ID를 찾고 기존 캐릭터와 다시 연결합니다.</Text>
+            </View>
+            <View style={styles.inline}>
+              <Button label="취소" onPress={() => setKnockbackOpen(false)} />
+              <Button
+                danger
+                label="계속"
+                onPress={() => {
+                  setKnockbackOpen(false);
+                  void execute({ type: "KNOCKBACK", characterId: detail.id, expectedRevision: revision, confirmationName: detail.name });
+                }}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={kickOpen} transparent animationType="slide" onRequestClose={() => setKickOpen(false)}>
+        <View style={styles.overlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setKickOpen(false)} />
+          <View style={styles.sheet}>
+            <View style={styles.grip} />
+            <Text style={styles.heading}>Kick</Text>
+            <Text style={styles.description}>캐릭터는 HOF 서버에서 해고되고 앱의 보관함으로 이동합니다.</Text>
+            <View style={styles.dangerNotice}>
+              <Text style={styles.dangerNoticeText}>이 작업은 HOF 서버에서 되돌릴 수 없습니다. 계속하려면 캐릭터명 {detail.name}을 입력해 주세요.</Text>
+            </View>
+            <TextInput
+              accessibilityLabel="삭제 확인 캐릭터명"
+              value={kickName}
+              onChangeText={setKickName}
+              placeholder={`${detail.name} 입력`}
+              placeholderTextColor={theme.colors.textMuted}
+              style={styles.input}
+            />
+            <View style={styles.inline}>
+              <Button label="취소" onPress={() => setKickOpen(false)} />
+              <Button
+                danger
+                label="Kick"
+                disabled={kickName !== detail.name}
+                onPress={() => {
+                  setKickOpen(false);
+                  void execute({ type: "KICK", characterId: detail.id, expectedRevision: revision, confirmationName: kickName });
+                }}
+              />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
+
+function SectionHeader({ title, danger = false }: { title: string; danger?: boolean }) {
+  return <Text style={[styles.heading, danger && styles.dangerHeading]}>{title}</Text>;
+}
+
+function ActionRow({
+  icon: Icon,
+  title,
+  description,
+  onPress,
+  danger = false,
+  disabled = false,
+}: {
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  onPress: () => void;
+  danger?: boolean;
+  disabled?: boolean;
+}) {
+  const color = danger ? theme.colors.danger : theme.colors.accentBlue;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={[styles.actionRow, disabled && styles.disabled]}
+    >
+      <View style={[styles.actionIcon, danger && styles.dangerIcon]}>
+        <Icon color={color} size={18} />
+      </View>
+      <View style={styles.actionBody}>
+        <Text style={[styles.actionTitle, danger && styles.dangerText]}>{title}</Text>
+        <Text style={styles.actionDescription}>{description}</Text>
+      </View>
+      <ChevronRight color={theme.colors.textMuted} size={18} />
+    </Pressable>
+  );
+}
+
 function Button({
   label,
   onPress,
@@ -391,9 +512,36 @@ function Button({
   );
 }
 const styles = StyleSheet.create({
-  screen: { gap: 12 },
-  heading: { color: theme.colors.text, fontSize: 17, fontWeight: "900" },
-  dangerHeading: { color: theme.colors.danger, marginTop: 8 },
+  screen: { gap: 10, paddingHorizontal: 12, paddingTop: 13 },
+  heading: { color: theme.colors.text, fontSize: 14, fontWeight: "900" },
+  dangerHeading: { color: theme.colors.danger },
+  actionList: {
+    overflow: "hidden",
+    borderRadius: 11,
+    backgroundColor: theme.colors.surface,
+  },
+  actionRow: {
+    minHeight: 58,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  actionIcon: {
+    width: 34,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    backgroundColor: "#273344",
+  },
+  dangerIcon: { backgroundColor: "#3b242b" },
+  actionBody: { flex: 1, minWidth: 0 },
+  actionTitle: { color: theme.colors.text, fontSize: 13, fontWeight: "900" },
+  actionDescription: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16, marginTop: 3 },
+  dangerZone: { gap: 7, marginTop: 5, paddingTop: 12, borderTopWidth: 1, borderTopColor: "#38272c" },
+  dangerList: { backgroundColor: "#2a1b20" },
   card: {
     gap: 10,
     backgroundColor: theme.colors.surfaceAlt,
@@ -412,7 +560,6 @@ const styles = StyleSheet.create({
     borderRadius: 9,
     paddingHorizontal: 12,
   },
-  grid: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
   button: {
     minHeight: 48,
     minWidth: 100,
@@ -441,9 +588,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 12,
   },
+  compareCard: { flex: 1, gap: 4, padding: 9, borderRadius: 8, backgroundColor: theme.colors.surfaceAlt },
+  compareLabel: { color: theme.colors.textMuted, fontSize: 10, fontWeight: "800" },
   arrow: { color: theme.colors.accentGreen, fontSize: 20, fontWeight: "900" },
   dangerButton: { backgroundColor: "#3a2229" },
   dangerText: { color: theme.colors.danger },
+  warningBox: { gap: 5, padding: 10, borderRadius: 8, backgroundColor: "#32261c" },
+  warningTitle: { color: theme.colors.accentAmber, fontWeight: "900" },
+  warningText: { color: "#f5d7a1", fontSize: 12, lineHeight: 18 },
+  dangerNotice: { padding: 10, borderRadius: 8, backgroundColor: "#341f26" },
+  dangerNoticeText: { color: "#ffc1c1", fontSize: 12, lineHeight: 18 },
   disabled: { opacity: 0.35 },
   overlay: {
     flex: 1,
@@ -452,12 +606,14 @@ const styles = StyleSheet.create({
   },
   sheet: {
     gap: 13,
-    padding: 20,
+    maxHeight: "86%",
+    paddingHorizontal: 14,
     paddingBottom: 28,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     backgroundColor: theme.colors.surface,
   },
+  grip: { width: 36, height: 4, alignSelf: "center", borderRadius: 3, backgroundColor: "#4c596a", marginTop: 9 },
 });
 
 function deepSyncProgressLabel(

@@ -34,9 +34,14 @@ const draggableFlatList = (props: Record<string, unknown>) => React.createElemen
 type Loader = (request: string, parent: NodeModule | undefined, isMain: boolean) => unknown;
 const moduleWithLoader = Module as unknown as { _load: Loader };
 const originalLoad = moduleWithLoader._load;
+const lucideMock = Object.fromEntries(
+  ['ArrowLeft', 'RefreshCw', 'ChevronRight', 'ChevronsDown', 'Copy', 'GraduationCap', 'PackageOpen', 'Pencil', 'Sparkles', 'UserRoundX']
+    .map((name) => [name, host(name)]),
+);
 moduleWithLoader._load = (request, parent, isMain) => (
   request === 'react-native' ? reactNativeMock
     : request === 'react-native-draggable-flatlist' ? { __esModule: true, default: draggableFlatList }
+      : request === 'lucide-react-native' ? lucideMock
       : originalLoad(request, parent, isMain)
 );
 const { CharacterDetail, extractAvailableStatPoints, extractPrimaryStatValues, statGroupLabel } = require('../../main/components/CharacterDetail') as typeof import('../../main/components/CharacterDetail');
@@ -66,13 +71,10 @@ describe('CharacterDetail stat allocation', () => {
     assert.ok(text().includes('Parrying'));
     assert.ok(text().includes('Quick Slash'));
 
-    const category = renderer.root.findAll((node) => String(node.type) === 'Pressable').find((node) => (
-      node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '전체 분류').length > 0
+    const support = renderer.root.findAll((node) => String(node.type) === 'Pressable').find((node) => (
+      node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === 'Support').length > 0
     ));
-    await act(async () => category?.props.onPress());
-    const picker = renderer.root.findAll((node) => String(node.type) === 'FlatList').at(-1);
-    const support = picker?.props.renderItem({ item: 'Support' });
-    await act(async () => support.props.onPress());
+    await act(async () => support?.props.onPress());
 
     assert.ok(text().includes('Parrying'));
     assert.equal(text().includes('Quick Slash'), false);
@@ -110,7 +112,8 @@ describe('CharacterDetail stat allocation', () => {
     assert.ok(text.includes('SPD'));
     assert.ok(text.includes('LUK'));
     assert.ok(text.includes('34 + 9'));
-    assert.ok(text.includes('Status Point 25'));
+    assert.ok(text.includes('남은 STATUS POINT'));
+    assert.ok(text.includes('25'));
     assert.equal(text.some((value) => /^\+\d+$/.test(value)), false);
     assert.equal(text.includes('Increase Status'), false);
     assert.equal(text.includes('현재 상태'), false);
@@ -121,7 +124,7 @@ describe('CharacterDetail stat allocation', () => {
     const dexInput = renderer.root.find((node) => String(node.type) === 'TextInput' && node.props.accessibilityLabel === 'DEX 추가 포인트');
     await act(async () => dexInput.props.onChangeText('2'));
     const apply = renderer.root.findAllByProps({ accessibilityRole: 'button' }).find((node) => (
-      node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '적용').length > 0
+      node.findAll((child) => String(child.type) === 'Text' && child.children.join('').startsWith('스탯 올리기')).length > 0
     ));
     await act(async () => apply?.props.onPress());
 
@@ -170,6 +173,10 @@ describe('CharacterDetail stat allocation', () => {
       node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '저장').length > 0
     ));
     await act(async () => apply?.props.onPress());
+    const confirm = renderer.root.findAllByProps({ accessibilityRole: 'button' }).find((node) => (
+      node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '현재 설정 저장').length > 0
+    ));
+    await act(async () => confirm?.props.onPress());
 
     assert.equal(requests.length, 1);
     assert.equal(requests[0].draft.rows[0].judge, 'hp');
@@ -210,6 +217,121 @@ describe('CharacterDetail stat allocation', () => {
     await openTab('관리');
     assert.ok(text().includes('이름 변경'));
     assert.ok(text().includes('Knockback'));
+  });
+
+  it('keeps the accepted prototype hierarchy across all five character tabs', async () => {
+    const base = makeHofCharacterDetail();
+    const detail = makeHofCharacterDetail(1, {
+      name: '소셜',
+      stats: {
+        ...base.stats,
+        hpBase: 100,
+        hpBonus: 20,
+        spBase: 30,
+        spBonus: 5,
+        strReal: 10,
+        strBonus: 2,
+        intReal: 15,
+        intBonus: 3,
+        dexReal: 20,
+        dexBonus: 4,
+        spdReal: 25,
+        spdBonus: 5,
+        lukReal: 6,
+        lukBonus: 1,
+        statusPoints: 20,
+        skillPoints: 7,
+      },
+      statusEffects: [{ type: 'SET', name: 'night', valueText: '[SET:밤을 사냥하는 자]', description: 'Atk +10%', active: true }],
+      faith: { godName: 'Marduk', current: 300, max: 500 },
+      patternSlots: [{ slot: '0', label: '빈 슬롯', canLoad: false }],
+      actionPatterns: [{ index: 0, judge: 'always', judgeText: '반드시', quantity: '0', quantityText: '0', skill: 'attack', skillText: 'Attack' }],
+      patternOptions: [{ type: 'CONDITION', value: 'always', label: '반드시', category: null }, { type: 'SKILL', value: 'attack', label: 'Attack', category: null }],
+      positionGuard: { positions: [{ value: 'front', checked: true }, { value: 'back', checked: false }], selectedPosition: 'front', guardValue: 'always', guardText: '반드시 지킨다' },
+      equipment: [{ slot: 'weapon', part: 'Weapon', name: 'Sword', iconUrl: '', description: 'Atk +10', checked: true }],
+      learnedSkills: [{ value: 'guard', name: 'Guard', iconUrl: '', category: '공용', targetText: 'self', scopeText: 'individual', spCost: 0, description: '받는 피해 감소' }],
+    });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(CharacterDetail, {
+        character: makeHofCharacter(1, { name: '소셜' }),
+        detail,
+        isLoading: false,
+        errorMessage: null,
+        onPreviewTransfer: async () => { throw new Error('not called'); },
+        onExecuteTransfer: async () => { throw new Error('not called'); },
+      }));
+    });
+    const text = () => renderer.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join(''));
+    const openTab = async (label: string) => {
+      const tab = renderer.root.findAllByProps({ accessibilityRole: 'tab' }).find((node) => (
+        node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0
+      ));
+      await act(async () => tab?.props.onPress());
+    };
+
+    const statusText = text();
+    assert.ok(statusText.indexOf('정보') < statusText.indexOf('소셜'));
+    assert.ok(statusText.indexOf('상태 효과') < statusText.indexOf('신앙 · Marduk'));
+    assert.ok(statusText.indexOf('신앙 · Marduk') < statusText.indexOf('스탯 배분'));
+
+    await openTab('패턴');
+    assert.ok(text().includes('0개 · 빈 슬롯 1개'));
+    assert.ok(text().includes('다른 캐릭터\n가져오기'));
+    assert.ok(text().includes('전방'));
+    assert.ok(text().includes('반드시 지킨다'));
+
+    await openTab('장비');
+    assert.ok(text().includes('장비 1'));
+    assert.ok(text().includes('장비 2'));
+    assert.ok(text().includes('현재 장비'));
+
+    await openTab('스킬');
+    assert.ok(text().includes('공용'));
+    assert.ok(text().includes('받는 피해 감소'));
+
+    await openTab('관리');
+    assert.ok(text().includes('일반 관리'));
+    assert.ok(text().includes('설정 도구'));
+    assert.ok(text().includes('위험 작업'));
+    assert.ok(text().includes('성장·초기화와 기타 아이템을 찾아 사용합니다.'));
+  });
+
+  it('offers optional empty-slot storage only after the pattern save flow starts', async () => {
+    const requests: CharacterPatternApplyRequest[] = [];
+    const detail = makeHofCharacterDetail(1, {
+      patternSlots: [{ slot: '0', label: '빈 슬롯', canLoad: false }],
+      actionPatterns: [{ index: 0, judge: 'always', judgeText: '반드시', quantity: '0', quantityText: '0', skill: 'attack', skillText: 'Attack' }],
+      patternOptions: [{ type: 'CONDITION', value: 'always', label: '반드시', category: null }, { type: 'SKILL', value: 'attack', label: 'Attack', category: null }],
+      positionGuard: { positions: [{ value: 'front', checked: true }], selectedPosition: 'front', guardValue: 'always', guardText: '반드시 지킨다' },
+    });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(CharacterDetail, {
+        character: makeHofCharacter(), detail, isLoading: false, errorMessage: null,
+        onApplyPattern: async (request: CharacterPatternApplyRequest) => { requests.push(request); return {}; },
+      }));
+    });
+    const findButton = (label: string) => renderer.root.findAllByProps({ accessibilityRole: 'button' }).find((node) => (
+      node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0
+    ));
+    const patternTab = renderer.root.findAllByProps({ accessibilityRole: 'tab' }).find((node) => (
+      node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '패턴').length > 0
+    ));
+    await act(async () => patternTab?.props.onPress());
+    await act(async () => findButton('저장')?.props.onPress());
+
+    const optional = renderer.root.findAllByProps({ accessibilityRole: 'checkbox' })[0];
+    assert.ok(optional);
+    await act(async () => optional.props.onPress());
+    const name = renderer.root.findAllByProps({ accessibilityLabel: '패턴 저장 이름' })[0];
+    await act(async () => name.props.onChangeText('범용'));
+    await act(async () => findButton('저장하고 슬롯에도 보관')?.props.onPress());
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].slotAction, 'SAVE_EMPTY');
+    assert.equal(requests[0].targetSlotCode, '0');
+    assert.equal(requests[0].slotName, '범용');
   });
 
   it('keeps the requested slot replacement when the user confirms a pattern conflict', async () => {

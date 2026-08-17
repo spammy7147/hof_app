@@ -4,6 +4,7 @@ import {
   Image,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -68,62 +69,23 @@ export function CharacterEquipmentScreen({
           value={`${detail.stats.costUsed ?? "-"} / ${detail.stats.costMax ?? "-"}`}
         />
       </View>
-      <View style={styles.actions}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetBox}>
+        <PresetRow slotNumber={1} detail={detail} command={command} />
+        <PresetRow slotNumber={2} detail={detail} command={command} />
         <Action
           label="전체 해제"
           danger
-          onPress={() =>
-            command({
-              type: "REMOVE_ALL_EQUIPMENT",
-              characterId: detail.id,
-              expectedRevision: revision,
-            })
-          }
+          wide
+          onPress={() => command({
+            type: "REMOVE_ALL_EQUIPMENT",
+            characterId: detail.id,
+            expectedRevision: revision,
+          })}
         />
-        <Action
-          label="저장 1"
-          onPress={() =>
-            command({
-              type: "SAVE_EQUIPMENT_PRESET",
-              characterId: detail.id,
-              expectedRevision: revision,
-              slotNumber: 1,
-            })
-          }
-        />
-        <Action
-          label="불러오기 1"
-          onPress={() =>
-            command({
-              type: "LOAD_EQUIPMENT_PRESET",
-              characterId: detail.id,
-              expectedRevision: revision,
-              slotNumber: 1,
-            })
-          }
-        />
-        <Action
-          label="저장 2"
-          onPress={() =>
-            command({
-              type: "SAVE_EQUIPMENT_PRESET",
-              characterId: detail.id,
-              expectedRevision: revision,
-              slotNumber: 2,
-            })
-          }
-        />
-        <Action
-          label="불러오기 2"
-          onPress={() =>
-            command({
-              type: "LOAD_EQUIPMENT_PRESET",
-              characterId: detail.id,
-              expectedRevision: revision,
-              slotNumber: 2,
-            })
-          }
-        />
+      </ScrollView>
+      <View style={styles.sectionHead}>
+        <Text style={styles.sectionTitle}>현재 장비</Text>
+        <Text style={styles.sectionHint}>부위를 눌러 변경</Text>
       </View>
       <View style={styles.list}>
         {detail.equipment.map((item) => (
@@ -276,15 +238,51 @@ function Action({
   label,
   onPress,
   danger = false,
+  wide = false,
 }: {
   label: string;
   onPress: () => void;
   danger?: boolean;
+  wide?: boolean;
 }) {
   return (
-    <Pressable onPress={onPress} style={styles.action}>
+    <Pressable onPress={onPress} style={[styles.action, wide && styles.actionWide]}>
       <Text style={[styles.actionText, danger && styles.danger]}>{label}</Text>
     </Pressable>
+  );
+}
+
+function PresetRow({
+  slotNumber,
+  detail,
+  command,
+}: {
+  slotNumber: 1 | 2;
+  detail: HofCharacterDetail;
+  command: (value: CharacterCommand) => Promise<CharacterCommandResult | void> | undefined;
+}) {
+  return (
+    <View style={styles.presetRow}>
+      <Text style={styles.presetLabel}>장비 {slotNumber}</Text>
+      <Action
+        label="불러오기"
+        onPress={() => command({
+          type: "LOAD_EQUIPMENT_PRESET",
+          characterId: detail.id,
+          expectedRevision: detail.revision,
+          slotNumber,
+        })}
+      />
+      <Action
+        label="저장"
+        onPress={() => command({
+          type: "SAVE_EQUIPMENT_PRESET",
+          characterId: detail.id,
+          expectedRevision: detail.revision,
+          slotNumber,
+        })}
+      />
+    </View>
   );
 }
 function Candidate({
@@ -318,36 +316,51 @@ function Candidate({
   );
 }
 const styles = StyleSheet.create({
-  screen: { gap: 14 },
+  screen: { gap: 12, paddingHorizontal: 12, paddingTop: 12 },
   stats: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   stat: {
     width: "31%",
     flexGrow: 1,
     backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 10,
-    padding: 10,
+    borderRadius: 9,
+    padding: 9,
   },
   statLabel: { color: theme.colors.textMuted, fontSize: 11, fontWeight: "800" },
   statValue: { color: theme.colors.text, fontWeight: "900", marginTop: 3 },
-  actions: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  presetBox: { flexDirection: "row", alignItems: "center", gap: 6 },
+  presetRow: {
+    minHeight: 42,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    padding: 3,
+    borderRadius: 7,
+    backgroundColor: "#111821",
+  },
+  presetLabel: { color: theme.colors.textMuted, fontSize: 10, fontWeight: "900", paddingHorizontal: 4 },
   action: {
-    minHeight: 48,
-    paddingHorizontal: 13,
+    minHeight: 34,
+    minWidth: 58,
+    paddingHorizontal: 7,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 10,
+    borderRadius: 8,
   },
+  actionWide: { minHeight: 42, minWidth: 78, alignSelf: "stretch", borderWidth: 1, borderColor: "#63383f", backgroundColor: "#2b1d22" },
   actionText: { color: theme.colors.accentGreen, fontWeight: "800" },
   danger: { color: theme.colors.danger },
+  sectionHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 2, marginTop: 2 },
+  sectionTitle: { color: theme.colors.text, fontSize: 14, fontWeight: "900" },
+  sectionHint: { color: theme.colors.textMuted, fontSize: 10 },
   list: { gap: 5 },
   slot: {
-    minHeight: 68,
+    minHeight: 64,
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: theme.colors.surfaceAlt,
-    borderRadius: 11,
-    padding: 9,
+    borderRadius: 10,
+    padding: 8,
     gap: 10,
   },
   icon: {

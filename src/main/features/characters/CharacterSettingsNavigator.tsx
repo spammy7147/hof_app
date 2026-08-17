@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { ArrowLeft, RefreshCw } from "lucide-react-native";
 
 import type {
   CharacterCommand,
@@ -19,6 +20,7 @@ import { CharacterPatternScreen } from "./pattern/CharacterPatternScreen";
 import { CharacterEquipmentScreen } from "./equipment/CharacterEquipmentScreen";
 import { CharacterSkillsScreen } from "./skills/CharacterSkillsScreen";
 import { CharacterManagementScreen } from "./management/CharacterManagementScreen";
+import { CharacterSettingsTransferScreen } from "./transfer/CharacterSettingsTransferScreen";
 
 type Tab = "status" | "pattern" | "equipment" | "skills" | "management";
 const tabs: Array<[Tab, string]> = [
@@ -75,6 +77,7 @@ export function CharacterSettingsNavigator(
     props.initialTransferSourceId ? "management" : "status",
   );
   const [statusHelpOpen, setStatusHelpOpen] = useState(false);
+  const [patternTransferOpen, setPatternTransferOpen] = useState(false);
   const common = { detail: props.detail, onCommand: props.onCommand };
   return (
     <View style={styles.root}>
@@ -82,45 +85,22 @@ export function CharacterSettingsNavigator(
         <Pressable
           accessibilityRole="button"
           onPress={props.onBack}
-          style={styles.back}
+          accessibilityLabel="캐릭터 목록으로"
+          style={styles.iconButton}
         >
-          <Text style={styles.backText}>‹ 목록</Text>
+          <ArrowLeft color={theme.colors.text} size={21} />
         </Pressable>
         <Text style={styles.title}>캐릭터 설정</Text>
         <Pressable
           accessibilityRole="button"
           onPress={() => void props.onRefresh?.()}
-          style={styles.sync}
+          accessibilityLabel="캐릭터 동기화"
+          style={styles.iconButton}
         >
-          <Text style={styles.syncText}>동기화</Text>
+          <RefreshCw color={theme.colors.text} size={19} />
         </Pressable>
       </View>
-      <View style={styles.identity}>
-        <View style={styles.identityText}>
-          <Text style={styles.name}>{props.character.name}</Text>
-          <Text style={styles.meta}>
-            Lv.{props.character.level ?? "-"} · {props.character.job}
-          </Text>
-        </View>
-        {tab === "status" && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="스탯 도움말"
-            onPress={() => setStatusHelpOpen(true)}
-            style={styles.help}
-          >
-            <Text style={styles.helpText}>?</Text>
-          </Pressable>
-        )}
-        <Text style={styles.fresh}>
-          {formatFreshness(props.detail.detailSyncedAt ?? null)}
-        </Text>
-      </View>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.tabs}
-      >
+      <View accessibilityRole="tablist" style={styles.tabs}>
         {tabs.map(([id, label]) => (
           <Pressable
             key={id}
@@ -134,21 +114,35 @@ export function CharacterSettingsNavigator(
             </Text>
           </Pressable>
         ))}
-      </ScrollView>
+      </View>
       {tab === "status" && (
         <CharacterStatusScreen
           {...common}
           helpOpen={statusHelpOpen}
           onCloseHelp={() => setStatusHelpOpen(false)}
+          onOpenHelp={() => setStatusHelpOpen(true)}
         />
       )}
-      {tab === "pattern" && (
+      {tab === "pattern" && patternTransferOpen && props.onPreviewTransfer && props.onExecuteTransfer ? (
+        <CharacterSettingsTransferScreen
+          target={props.detail}
+          characters={props.characters ?? []}
+          onBack={() => setPatternTransferOpen(false)}
+          onPreview={props.onPreviewTransfer}
+          onExecute={props.onExecuteTransfer}
+        />
+      ) : tab === "pattern" && (
         <CharacterPatternScreen
           detail={props.detail}
           onBeginEdit={props.onBeginPatternEdit}
           onApply={props.onApplyPattern}
           onLoadSaved={props.onLoadSavedPattern}
           onDeleteSaved={props.onDeleteSavedPattern}
+          onImportSettings={
+            props.onPreviewTransfer && props.onExecuteTransfer
+              ? () => setPatternTransferOpen(true)
+              : undefined
+          }
         />
       )}
       {tab === "equipment" && <CharacterEquipmentScreen {...common} />}
@@ -168,66 +162,41 @@ export function CharacterSettingsNavigator(
   );
 }
 
-function formatFreshness(value: string | null) {
-  if (!value) return "동기화 필요";
-  const minutes = Math.max(
-    0,
-    Math.floor((Date.now() - new Date(value).getTime()) / 60000),
-  );
-  return minutes < 1 ? "방금 동기화" : `${minutes}분 전`;
-}
-
 const styles = StyleSheet.create({
-  root: { gap: 12, paddingBottom: 28 },
+  root: { paddingBottom: 28 },
   top: {
-    minHeight: 48,
+    minHeight: 56,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    paddingHorizontal: 12,
+    backgroundColor: theme.colors.header,
   },
-  back: { minHeight: 48, minWidth: 72, justifyContent: "center" },
-  backText: { color: theme.colors.textMuted, fontSize: 15, fontWeight: "700" },
-  title: { color: theme.colors.text, fontSize: 18, fontWeight: "900" },
-  sync: {
-    minHeight: 48,
-    minWidth: 72,
-    alignItems: "flex-end",
+  iconButton: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
     justifyContent: "center",
-  },
-  syncText: { color: theme.colors.accentGreen, fontWeight: "800" },
-  identity: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    gap: 8,
-  },
-  identityText: { flex: 1 },
-  name: { color: theme.colors.text, fontSize: 26, fontWeight: "900" },
-  meta: { color: theme.colors.textMuted, marginTop: 3 },
-  fresh: { color: theme.colors.textMuted, fontSize: 12 },
-  help: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    borderRadius: 9,
     backgroundColor: theme.colors.surfaceAlt,
-    alignItems: "center",
-    justifyContent: "center",
   },
-  helpText: {
-    color: theme.colors.accentGreen,
-    fontWeight: "900",
-    fontSize: 18,
+  title: { color: theme.colors.text, fontSize: 17, fontWeight: "900" },
+  tabs: {
+    minHeight: 44,
+    flexDirection: "row",
+    backgroundColor: "#111821",
+    borderBottomWidth: 1,
+    borderBottomColor: "#2c3746",
   },
-  tabs: { gap: 4 },
   tab: {
-    minHeight: 48,
-    minWidth: 66,
+    flex: 1,
+    minHeight: 44,
     alignItems: "center",
     justifyContent: "center",
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
   },
   tabActive: { borderBottomColor: theme.colors.accentGreen },
-  tabText: { color: theme.colors.textMuted, fontWeight: "700" },
-  tabTextActive: { color: theme.colors.text },
+  tabText: { color: theme.colors.textMuted, fontSize: 13, fontWeight: "800" },
+  tabTextActive: { color: theme.colors.accentGreen },
 });
