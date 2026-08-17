@@ -4,7 +4,6 @@ import {
   Image,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -30,6 +29,7 @@ export function CharacterEquipmentScreen({
   const [part, setPart] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const revision = detail.revision;
+  const [expandedSlot, setExpandedSlot] = useState<string | null>(null);
   const [chosen, setChosen] = useState<HofCharacterEquipmentCandidate | null>(
     null,
   );
@@ -69,11 +69,14 @@ export function CharacterEquipmentScreen({
           value={`${detail.stats.costUsed ?? "-"} / ${detail.stats.costMax ?? "-"}`}
         />
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.presetBox}>
-        <PresetRow slotNumber={1} detail={detail} command={command} />
-        <PresetRow slotNumber={2} detail={detail} command={command} />
+      <View testID="equipment-preset-controls" style={styles.presetBox}>
+        <View testID="equipment-preset-grid" style={styles.presetGrid}>
+          <PresetCard slotNumber={1} detail={detail} command={command} />
+          <PresetCard slotNumber={2} detail={detail} command={command} />
+        </View>
         <Action
           label="전체 해제"
+          accessibilityLabel="전체 장비 해제"
           danger
           wide
           onPress={() => command({
@@ -82,40 +85,67 @@ export function CharacterEquipmentScreen({
             expectedRevision: revision,
           })}
         />
-      </ScrollView>
+      </View>
       <View style={styles.sectionHead}>
         <Text style={styles.sectionTitle}>현재 장비</Text>
         <Text style={styles.sectionHint}>부위를 눌러 변경</Text>
       </View>
       <View style={styles.list}>
-        {detail.equipment.map((item) => (
-          <Pressable
-            key={item.slot}
-            onPress={() => {
-              setPart(item.slot);
-              setChosen(null);
-            }}
-            style={styles.slot}
-          >
-            <View style={styles.icon}>
-              {item.iconUrl ? (
-                <Image
-                  source={{ uri: item.iconUrl }}
-                  style={styles.image}
-                  resizeMode="contain"
-                />
-              ) : null}
-            </View>
-            <View style={styles.body}>
-              <Text style={styles.part}>{item.part || item.slot}</Text>
-              <Text style={styles.name}>{item.name || "비어 있음"}</Text>
-              <Text style={styles.description} numberOfLines={2}>
-                {item.description}
-              </Text>
-            </View>
-            <Text style={styles.chevron}>›</Text>
-          </Pressable>
-        ))}
+        {detail.equipment.map((item) => {
+          const partLabel = item.part || item.slot;
+          const expanded = expandedSlot === item.slot;
+          return (
+            <Pressable
+              key={item.slot}
+              accessibilityRole="button"
+              accessibilityLabel={`${partLabel} 장비 변경`}
+              onPress={() => {
+                setPart(item.slot);
+                setChosen(null);
+              }}
+              style={styles.slot}
+            >
+              <View style={styles.icon}>
+                {item.iconUrl ? (
+                  <Image
+                    source={{ uri: item.iconUrl }}
+                    style={styles.image}
+                    resizeMode="contain"
+                  />
+                ) : null}
+              </View>
+              <View style={styles.body}>
+                <Text style={styles.part}>{partLabel}</Text>
+                <Text style={styles.name}>{item.name || "비어 있음"}</Text>
+                {item.description ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`${partLabel} 장비 설명 ${expanded ? "접기" : "전체 보기"}`}
+                    hitSlop={4}
+                    onPress={(event) => {
+                      event.stopPropagation();
+                      setExpandedSlot((current) =>
+                        current === item.slot ? null : item.slot,
+                      );
+                    }}
+                    style={styles.descriptionToggle}
+                  >
+                    <Text
+                      style={styles.description}
+                      numberOfLines={expanded ? undefined : 2}
+                    >
+                      {item.description}
+                    </Text>
+                    <Text style={styles.descriptionAction}>
+                      {expanded ? "접기" : "전체 보기"}
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
+              <Text style={styles.chevron}>›</Text>
+            </Pressable>
+          );
+        })}
       </View>
       <Modal
         visible={part !== null}
@@ -236,23 +266,36 @@ function Stat({
 }
 function Action({
   label,
+  accessibilityLabel,
   onPress,
   danger = false,
+  fill = false,
   wide = false,
 }: {
   label: string;
+  accessibilityLabel?: string;
   onPress: () => void;
   danger?: boolean;
+  fill?: boolean;
   wide?: boolean;
 }) {
   return (
-    <Pressable onPress={onPress} style={[styles.action, wide && styles.actionWide]}>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      onPress={onPress}
+      style={[
+        styles.action,
+        fill && styles.actionFill,
+        wide && styles.actionWide,
+      ]}
+    >
       <Text style={[styles.actionText, danger && styles.danger]}>{label}</Text>
     </Pressable>
   );
 }
 
-function PresetRow({
+function PresetCard({
   slotNumber,
   detail,
   command,
@@ -262,10 +305,12 @@ function PresetRow({
   command: (value: CharacterCommand) => Promise<CharacterCommandResult | void> | undefined;
 }) {
   return (
-    <View style={styles.presetRow}>
+    <View testID={`equipment-preset-${slotNumber}`} style={styles.presetCard}>
       <Text style={styles.presetLabel}>장비 {slotNumber}</Text>
       <Action
         label="불러오기"
+        accessibilityLabel={`장비 ${slotNumber} 불러오기`}
+        fill
         onPress={() => command({
           type: "LOAD_EQUIPMENT_PRESET",
           characterId: detail.id,
@@ -275,6 +320,8 @@ function PresetRow({
       />
       <Action
         label="저장"
+        accessibilityLabel={`장비 ${slotNumber} 저장`}
+        fill
         onPress={() => command({
           type: "SAVE_EQUIPMENT_PRESET",
           characterId: detail.id,
@@ -327,27 +374,43 @@ const styles = StyleSheet.create({
   },
   statLabel: { color: theme.colors.textMuted, fontSize: 11, fontWeight: "800" },
   statValue: { color: theme.colors.text, fontWeight: "900", marginTop: 3 },
-  presetBox: { flexDirection: "row", alignItems: "center", gap: 6 },
-  presetRow: {
-    minHeight: 42,
+  presetBox: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-    padding: 3,
-    borderRadius: 7,
+    alignItems: "stretch",
+    gap: 7,
+  },
+  presetGrid: { flex: 1, flexDirection: "row", gap: 7 },
+  presetCard: {
+    flex: 1,
+    gap: 6,
+    padding: 8,
+    borderRadius: 9,
     backgroundColor: "#111821",
   },
-  presetLabel: { color: theme.colors.textMuted, fontSize: 10, fontWeight: "900", paddingHorizontal: 4 },
+  presetLabel: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: "900",
+    textAlign: "center",
+  },
   action: {
-    minHeight: 34,
-    minWidth: 58,
-    paddingHorizontal: 7,
+    minHeight: 40,
+    minWidth: 0,
+    paddingHorizontal: 10,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: theme.colors.surfaceAlt,
     borderRadius: 8,
   },
-  actionWide: { minHeight: 42, minWidth: 78, alignSelf: "stretch", borderWidth: 1, borderColor: "#63383f", backgroundColor: "#2b1d22" },
+  actionFill: { width: "100%" },
+  actionWide: {
+    width: 82,
+    alignSelf: "stretch",
+    paddingHorizontal: 6,
+    borderWidth: 1,
+    borderColor: "#63383f",
+    backgroundColor: "#2b1d22",
+  },
   actionText: { color: theme.colors.accentGreen, fontWeight: "800" },
   danger: { color: theme.colors.danger },
   sectionHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 2, marginTop: 2 },
@@ -373,7 +436,24 @@ const styles = StyleSheet.create({
   body: { flex: 1, gap: 2 },
   part: { color: theme.colors.accentGreen, fontSize: 10, fontWeight: "900" },
   name: { color: theme.colors.text, fontWeight: "900" },
-  description: { color: theme.colors.textMuted, lineHeight: 18 },
+  descriptionToggle: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 4,
+  },
+  description: {
+    flex: 1,
+    color: theme.colors.textMuted,
+    lineHeight: 18,
+  },
+  descriptionAction: {
+    width: 50,
+    color: theme.colors.accentGreen,
+    fontSize: 10,
+    lineHeight: 18,
+    fontWeight: "900",
+    textAlign: "right",
+  },
   chevron: { color: theme.colors.textMuted, fontSize: 25 },
   modal: {
     flex: 1,

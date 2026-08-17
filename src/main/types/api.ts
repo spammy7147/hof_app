@@ -1021,7 +1021,7 @@ export type CharacterStat = 'STR' | 'INT' | 'DEX' | 'SPD' | 'LUK';
 export type CharacterCommand =
   | { type: 'RENAME'; characterId: number; expectedRevision: string; newName: string }
   | { type: 'KICK' | 'KNOCKBACK'; characterId: number; expectedRevision: string; confirmationName: string }
-  | { type: 'PRAY' | 'REMOVE_ALL_EQUIPMENT'; characterId: number; expectedRevision: string }
+  | { type: 'PRAY' | 'PREPARE_ITEMS' | 'REMOVE_ALL_EQUIPMENT'; characterId: number; expectedRevision: string }
   | { type: 'USE_ITEM'; characterId: number; expectedRevision: string; itemValue: string }
   | { type: 'LEARN_SKILL'; characterId: number; expectedRevision: string; skillValue: string }
   | { type: 'CHANGE_CLASS'; characterId: number; expectedRevision: string; classValue: string }

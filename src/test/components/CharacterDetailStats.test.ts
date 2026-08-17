@@ -48,6 +48,7 @@ moduleWithLoader._load = (request, parent, isMain) => (
 );
 const { CharacterDetail, extractAvailableStatPoints, extractPrimaryStatValues, statGroupLabel } = require('../../main/components/CharacterDetail') as typeof import('../../main/components/CharacterDetail');
 const { CharacterManagementScreen } = require('../../main/features/characters/management/CharacterManagementScreen') as typeof import('../../main/features/characters/management/CharacterManagementScreen');
+const { CharacterItemsScreen, buildItemCommand } = require('../../main/features/characters/items/CharacterItemsScreen') as typeof import('../../main/features/characters/items/CharacterItemsScreen');
 const { CharacterSkillsScreen } = require('../../main/features/characters/skills/CharacterSkillsScreen') as typeof import('../../main/features/characters/skills/CharacterSkillsScreen');
 moduleWithLoader._load = originalLoad;
 
@@ -200,7 +201,7 @@ describe('CharacterDetail stat allocation', () => {
     await act(async () => {
       renderer = create(React.createElement(CharacterDetail, {
         character: makeHofCharacter(),
-        detail: makeHofCharacterDetail(1, { actionPatterns: [{ index: 0, judge: 'always', judgeText: '항상', quantity: '0', quantityText: '', skill: 'slash', skillText: 'Quick Slash' }], patternOptions: [{ type: 'CONDITION', value: 'always', label: '항상', category: null }, { type: 'CONDITION', value: 'hp', label: 'HP가 낮을 때', category: 'HP' }, { type: 'SKILL', value: 'slash', label: 'Quick Slash', category: null }], positionGuard: { positions: [{ value: 'front', checked: true }], selectedPosition: 'front', guardValue: 'always', guardText: '항상' } }),
+        detail: makeHofCharacterDetail(1, { actionPatterns: [{ index: 0, judge: 'always', judgeText: '항상', quantity: '0', quantityText: '', skill: 'slash', skillText: 'Quick Slash' }], patternOptions: [{ type: 'CONDITION', value: 'always', label: '항상', category: null }, { type: 'CONDITION', value: '1099', label: 'HP', category: 'HP' }, { type: 'CONDITION', value: 'hp', label: 'HP가 낮을 때', category: null }, { type: 'SKILL', value: 'slash', label: 'Quick Slash', category: null }], positionGuard: { positions: [{ value: 'front', checked: true }], selectedPosition: 'front', guardValue: 'always', guardText: '항상' } }),
         isLoading: false,
         errorMessage: null,
         onApplyPattern: async (request: CharacterPatternApplyRequest) => {
@@ -233,8 +234,15 @@ describe('CharacterDetail stat allocation', () => {
     );
 
     await act(async () => conditionControl.props.onPress());
+    const search = renderer.root.findAllByProps({ accessibilityLabel: '검색' })[0];
+    await act(async () => search.props.onChangeText('HP'));
     const candidateList = renderer.root.findAll((node) => String(node.type) === 'FlatList').at(-1);
-    const hpCandidate = candidateList?.props.data.find((candidate: { value: string }) => candidate.value === 'hp');
+    assert.deepEqual(candidateList?.props.data.map((candidate: { kind: string }) => candidate.kind), ['CATEGORY', 'OPTION']);
+    const hpCategory = candidateList?.props.data.find((candidate: { kind: string; label?: string }) => candidate.kind === 'CATEGORY' && candidate.label === 'HP');
+    const hpCategoryRow = candidateList?.props.renderItem({ item: hpCategory });
+    assert.equal(hpCategoryRow.props.accessibilityRole, 'header');
+    assert.equal(hpCategoryRow.props.onPress, undefined);
+    const hpCandidate = candidateList?.props.data.find((candidate: { kind: string; option?: { value: string } }) => candidate.kind === 'OPTION' && candidate.option?.value === 'hp');
     const hpOption = candidateList?.props.renderItem({ item: hpCandidate });
     await act(async () => hpOption.props.onPress());
 
@@ -256,8 +264,9 @@ describe('CharacterDetail stat allocation', () => {
   });
 
   it('renders the dedicated equipment skill and management screens from one character API snapshot', async () => {
+    const equipmentDescription = 'Atk +96 · 상대방의 무기를 부러뜨리는 검. 물리 방어 무시 +44, 크리티컬 확률과 완전 방어가 증가한다.';
     const detail = makeHofCharacterDetail(1, {
-      equipment: [{ slot: 'weapon', part: 'Weapon', name: 'Soulcollector Sword', iconUrl: 'https://hof.test/sword.gif', description: 'Atk +96', checked: true }],
+      equipment: [{ slot: 'weapon', part: 'Weapon', name: 'Soulcollector Sword', iconUrl: 'https://hof.test/sword.gif', description: equipmentDescription, checked: true }],
       equipmentCandidates: [{ value: 'w-2', typeCode: 'weapon', name: 'Royal Claymore', iconUrl: 'https://hof.test/claymore.gif', description: 'Atk +110', quantity: null }],
       learnedSkills: [{ value: 'p', name: 'Parrying', iconUrl: '', category: 'Support', targetText: 'self', scopeText: 'individual', spCost: 0, description: '데미지 1회 무효화' }],
     });
@@ -278,6 +287,24 @@ describe('CharacterDetail stat allocation', () => {
     await openTab('장비');
     assert.ok(text().includes('Soulcollector Sword'));
     assert.ok(text().includes('전체 해제'));
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'ScrollView' && node.props.horizontal === true).length, 0);
+    assert.equal(renderer.root.findByProps({ testID: 'equipment-preset-controls' }).props.style.flexDirection, 'row');
+    assert.equal(renderer.root.findByProps({ testID: 'equipment-preset-grid' }).props.style.flexDirection, 'row');
+    [1, 2].forEach((slot) => {
+      assert.notEqual(renderer.root.findByProps({ testID: `equipment-preset-${slot}` }).props.style.flexDirection, 'row');
+    });
+    ['장비 1 불러오기', '장비 1 저장', '장비 2 불러오기', '장비 2 저장', '전체 장비 해제'].forEach((label) => {
+      assert.ok(renderer.root.findAllByProps({ accessibilityRole: 'button', accessibilityLabel: label }).length > 0);
+    });
+    const compactDescription = renderer.root.find((node) => String(node.type) === 'Text' && node.children.join('') === equipmentDescription);
+    assert.equal(compactDescription.props.numberOfLines, 2);
+    const expandDescription = renderer.root.findAllByProps({ accessibilityLabel: 'Weapon 장비 설명 전체 보기' })[0];
+    let propagationStopped = false;
+    await act(async () => expandDescription.props.onPress({ stopPropagation: () => { propagationStopped = true; } }));
+    assert.equal(propagationStopped, true);
+    const fullDescription = renderer.root.find((node) => String(node.type) === 'Text' && node.children.join('') === equipmentDescription);
+    assert.equal(fullDescription.props.numberOfLines, undefined);
+    assert.ok(renderer.root.findAllByProps({ accessibilityLabel: 'Weapon 장비 설명 접기' }).length > 0);
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'Image' && node.props.source?.uri === 'https://hof.test/sword.gif').length, 1);
 
     await openTab('스킬');
@@ -364,7 +391,7 @@ describe('CharacterDetail stat allocation', () => {
     assert.ok(text().includes('일반 관리'));
     assert.ok(text().includes('설정 도구'));
     assert.ok(text().includes('위험 작업'));
-    assert.ok(text().includes('성장·초기화와 기타 아이템을 찾아 사용합니다.'));
+    assert.ok(text().includes('성장·초기화, 사용 아이템과 기타 아이템을 찾아 사용합니다.'));
   });
 
   it('offers optional empty-slot storage only after the pattern save flow starts', async () => {
@@ -450,6 +477,74 @@ describe('CharacterDetail stat allocation', () => {
     assert.equal(requests[1].slotAction, 'REPLACE');
     assert.equal(requests[1].targetSlotCode, '2');
     assert.equal(requests[1].slotName, '대회랑');
+  });
+
+  it('opens the HOF growth item selector before showing the item screen', async () => {
+    const commandTypes: string[] = [];
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(CharacterManagementScreen, {
+        detail: makeHofCharacterDetail(),
+        characters: [makeHofCharacter()],
+        onCommand: async (command: CharacterCommand) => {
+          commandTypes.push(command.type);
+          return {
+            type: 'Completed' as const,
+            characterId: command.characterId,
+            revision: '2026-08-17T00:01:00Z',
+            messages: [],
+          };
+        },
+      }));
+    });
+
+    const itemUse = renderer.root.findAll((node) => String(node.type) === 'Pressable').find((node) => (
+      node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '아이템 사용').length > 0
+    ));
+    await act(async () => itemUse?.props.onPress());
+
+    assert.deepEqual(commandTypes, ['PREPARE_ITEMS']);
+    const text = renderer.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join(''));
+    assert.ok(text.includes('성장·초기화'));
+  });
+
+  it('separates equipped use items from character-use items instead of merging them', async () => {
+    const detail = makeHofCharacterDetail(1, {
+      equipmentCandidates: [
+        { value: '7510', typeCode: 'resetitem', name: 'Reset Crystal', iconUrl: '', description: '성장 초기화', quantity: 2 },
+        { value: 'milk', typeCode: 'useitem', name: 'Milk', iconUrl: '', description: '장착 후 사용하는 아이템', quantity: 5 },
+        { value: '8801', typeCode: 'characteritem', name: 'MYpod', iconUrl: '', description: '패턴 저장 슬롯 추가', quantity: 3 },
+      ],
+    });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(CharacterItemsScreen, {
+        detail,
+        onBack: () => undefined,
+      }));
+    });
+    const text = () => renderer.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join(''));
+    const pressTab = async (label: string) => {
+      const tab = renderer.root.findAll((node) => String(node.type) === 'Pressable').find((node) => (
+        node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0
+      ));
+      await act(async () => tab?.props.onPress());
+    };
+
+    assert.ok(text().includes('Reset Crystal'));
+    assert.equal(text().includes('Milk'), false);
+    assert.equal(text().includes('MYpod'), false);
+
+    await pressTab('사용 아이템');
+    assert.ok(text().includes('Milk'));
+    assert.equal(text().includes('MYpod'), false);
+
+    await pressTab('기타 아이템');
+    assert.ok(text().includes('MYpod'));
+    assert.equal(text().includes('Milk'), false);
+
+    assert.equal(buildItemCommand(detail, detail.equipmentCandidates![1]).type, 'EQUIP_ITEM');
+    assert.equal(buildItemCommand(detail, detail.equipmentCandidates![2]).type, 'USE_ITEM');
   });
 
   it('shows recommended Knockback links first and lets the user open the full roster', async () => {

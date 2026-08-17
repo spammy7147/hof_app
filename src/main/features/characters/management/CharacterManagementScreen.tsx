@@ -73,6 +73,7 @@ export function CharacterManagementScreen({
   const [kickOpen, setKickOpen] = useState(false);
   const [knockbackOpen, setKnockbackOpen] = useState(false);
   const [itemsOpen, setItemsOpen] = useState(false);
+  const [itemsBusy, setItemsBusy] = useState(false);
   const [classOpen, setClassOpen] = useState(false);
   const [selectedClass, setSelectedClass] = useState<string | null>(null);
   const [transferOpen, setTransferOpen] = useState(
@@ -146,9 +147,24 @@ export function CharacterManagementScreen({
         />
         <ActionRow
           icon={PackageOpen}
-          title="아이템 사용"
-          description="성장·초기화와 기타 아이템을 찾아 사용합니다."
-          onPress={() => setItemsOpen(true)}
+          title={itemsBusy ? "아이템 확인 중…" : "아이템 사용"}
+          description="성장·초기화, 사용 아이템과 기타 아이템을 찾아 사용합니다."
+          disabled={itemsBusy}
+          onPress={() => {
+            if (!onCommand) {
+              setItemsOpen(true);
+              return;
+            }
+            setItemsBusy(true);
+            void execute({
+              type: "PREPARE_ITEMS",
+              characterId: detail.id,
+              expectedRevision: revision,
+            })
+              .then(() => setItemsOpen(true))
+              .catch((error) => Alert.alert("아이템 확인 실패", toUserFacingErrorMessage(error)))
+              .finally(() => setItemsBusy(false));
+          }}
         />
         <ActionRow
           icon={Sparkles}

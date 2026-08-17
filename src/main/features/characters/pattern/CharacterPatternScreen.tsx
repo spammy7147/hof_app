@@ -678,6 +678,64 @@ function SlotAction({
     </Pressable>
   );
 }
+
+type PatternPickerEntry =
+  | { kind: "CATEGORY"; key: string; label: string }
+  | {
+      kind: "OPTION";
+      key: string;
+      option: HofCharacterPatternOption;
+      categoryKey: string | null;
+      categoryLabel: string | null;
+    };
+
+function buildPatternPickerEntries(
+  type: "CONDITION" | "SKILL",
+  options: HofCharacterPatternOption[],
+  query: string,
+): PatternPickerEntry[] {
+  let categoryKey: string | null = null;
+  let categoryLabel: string | null = null;
+  const entries = options.map<PatternPickerEntry>((option, index) => {
+    if (type === "CONDITION" && option.category?.trim()) {
+      categoryKey = `category-${index}-${option.value}`;
+      categoryLabel = option.label;
+      return {
+        kind: "CATEGORY",
+        key: categoryKey,
+        label: categoryLabel,
+      };
+    }
+    return {
+      kind: "OPTION",
+      key: `option-${index}-${option.value}`,
+      option,
+      categoryKey,
+      categoryLabel,
+    };
+  });
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return entries;
+  const matchingOptions = entries.filter(
+    (entry): entry is Extract<PatternPickerEntry, { kind: "OPTION" }> =>
+      entry.kind === "OPTION" &&
+      `${entry.option.label} ${entry.categoryLabel ?? ""}`
+        .toLowerCase()
+        .includes(normalizedQuery),
+  );
+  const matchingKeys = new Set(matchingOptions.map((entry) => entry.key));
+  const matchingCategories = new Set(
+    matchingOptions.flatMap((entry) =>
+      entry.categoryKey ? [entry.categoryKey] : [],
+    ),
+  );
+  return entries.filter((entry) =>
+    entry.kind === "CATEGORY"
+      ? matchingCategories.has(entry.key)
+      : matchingKeys.has(entry.key),
+  );
+}
+
 function PatternPicker({
   visible,
   type,
@@ -692,10 +750,9 @@ function PatternPicker({
   onSelect: (value: string) => void;
 }) {
   const [query, setQuery] = useState("");
-  const filtered = options.filter((option) =>
-    `${option.label} ${option.category ?? ""}`
-      .toLowerCase()
-      .includes(query.toLowerCase()),
+  const filtered = useMemo(
+    () => buildPatternPickerEntries(type, options, query),
+    [options, query, type],
   );
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -719,16 +776,25 @@ function PatternPicker({
         />
         <FlatList
           data={filtered}
-          keyExtractor={(item, index) => `${item.value}-${index}`}
-          renderItem={({ item }) => (
-            <Pressable
-              onPress={() => onSelect(item.value)}
-              style={styles.option}
-            >
-              <Text style={styles.optionCategory}>{item.category}</Text>
-              <Text style={styles.optionText}>{item.label}</Text>
-            </Pressable>
-          )}
+          keyExtractor={(item) => item.key}
+          renderItem={({ item }) => {
+            if (item.kind === "CATEGORY") {
+              return (
+                <View accessibilityRole="header" style={styles.optionCategory}>
+                  <Text style={styles.optionCategoryText}>{item.label}</Text>
+                </View>
+              );
+            }
+            return (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => onSelect(item.option.value)}
+                style={styles.option}
+              >
+                <Text style={styles.optionText}>{item.option.label}</Text>
+              </Pressable>
+            );
+          }}
         />
       </View>
     </Modal>
@@ -930,11 +996,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     marginVertical: 10,
   },
-  option: { paddingVertical: 10, gap: 2 },
+  option: {
+    minHeight: 48,
+    justifyContent: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
   optionCategory: {
+    minHeight: 34,
+    justifyContent: "center",
+    backgroundColor: "#1c1a16",
+    borderRadius: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginTop: 8,
+    marginBottom: 2,
+  },
+  optionCategoryText: {
     color: theme.colors.accentAmber,
-    fontSize: 11,
-    fontWeight: "800",
+    fontSize: 12,
+    fontWeight: "900",
   },
   optionText: { color: theme.colors.text, fontSize: 15, lineHeight: 20 },
 });
