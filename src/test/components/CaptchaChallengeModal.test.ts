@@ -39,6 +39,6 @@ describe('captcha challenge modal', () => {
     assert.match(modalSource, /automaticallyAdjustKeyboardInsets/);
     assert.match(modalSource, /keyboardShouldPersistTaps="handled"/);
     assert.match(modalSource, /maxHeight:\s*'90%'/);
-    assert.match(appConfig, /"softwareKeyboardLayoutMode"\s*:\s*"resize"/);
+    assert.match(appConfig, /"softwareKeyboardLayoutMode"\s*:\s*"pan"/);
   });
 });

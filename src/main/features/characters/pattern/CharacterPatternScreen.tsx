@@ -270,7 +270,7 @@ export function CharacterPatternScreen({
               >
                 <Text style={styles.handleText}>≡</Text>
               </Pressable>
-              <View style={styles.rowMain}>
+              <View testID={`pattern-row-controls-${index + 1}`} style={styles.rowMain}>
                 <Pressable
                   accessibilityLabel={`${index + 1}번 행동 조건 선택`}
                   onPress={() => setPicker({ index, type: "CONDITION" })}
@@ -281,6 +281,15 @@ export function CharacterPatternScreen({
                     {label("CONDITION", row.judge)}
                   </Text>
                 </Pressable>
+                <TextInput
+                  accessibilityLabel={`${index + 1}번 기준값`}
+                  keyboardType="number-pad"
+                  value={row.quantity}
+                  onChangeText={(value) =>
+                    update(index, { quantity: value.replace(/[^\d-]/g, "") })
+                  }
+                  style={styles.quantity}
+                />
                 <Pressable
                   accessibilityLabel={`${index + 1}번 실행 스킬 선택`}
                   onPress={() => setPicker({ index, type: "SKILL" })}
@@ -292,15 +301,6 @@ export function CharacterPatternScreen({
                   </Text>
                 </Pressable>
               </View>
-              <TextInput
-                accessibilityLabel={`${index + 1}번 기준값`}
-                keyboardType="number-pad"
-                value={row.quantity}
-                onChangeText={(value) =>
-                  update(index, { quantity: value.replace(/[^\d-]/g, "") })
-                }
-                style={styles.quantity}
-              />
             </Pressable>
           );
         }}
@@ -673,7 +673,7 @@ function SlotAction({
   disabled?: boolean;
 }) {
   return (
-    <Pressable disabled={disabled} onPress={onPress} style={[styles.slotTouch, disabled && styles.disabled]}>
+    <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.slotTouch, disabled && styles.disabled]}>
       <Text style={danger ? styles.danger : styles.slotAction}>{label}</Text>
     </Pressable>
   );
@@ -772,7 +772,7 @@ const styles = StyleSheet.create({
   dragging: { opacity: 0.75, borderColor: theme.colors.accentGreen },
   handle: { width: 34, alignItems: "center", justifyContent: "center" },
   handleText: { color: theme.colors.textMuted, fontSize: 19 },
-  rowMain: { flex: 1, flexDirection: "row", gap: 3, paddingVertical: 3 },
+  rowMain: { flex: 1, flexDirection: "row", gap: 4, paddingVertical: 3 },
   choice: { flex: 1, justifyContent: "center", paddingHorizontal: 5 },
   choiceLabel: {
     color: theme.colors.textMuted,
@@ -787,10 +787,17 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   quantity: {
-    width: 42,
+    width: 48,
+    minHeight: 42,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 6,
     color: theme.colors.text,
     backgroundColor: theme.colors.background,
+    fontSize: 13,
+    paddingVertical: 0,
     textAlign: "center",
+    textAlignVertical: "center",
     fontWeight: "800",
   },
   warning: { color: theme.colors.accentAmber, lineHeight: 19 },
@@ -879,10 +886,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 12,
   },
-  slotName: { color: theme.colors.text, fontWeight: "800" },
-  slotActions: { flexDirection: "row", gap: 4 },
+  slotName: { flex: 1, minWidth: 0, color: theme.colors.text, fontWeight: "800" },
+  slotActions: { flexDirection: "row", flexShrink: 0, gap: 8, marginLeft: 8 },
   slotTouch: {
-    minWidth: 48,
+    width: 64,
     minHeight: 48,
     alignItems: "center",
     justifyContent: "center",

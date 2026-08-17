@@ -20,7 +20,7 @@
       "permissions": [
         "android.permission.REQUEST_INSTALL_PACKAGES"
       ],
-      "softwareKeyboardLayoutMode": "resize",
+      "softwareKeyboardLayoutMode": "pan",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#090D12",

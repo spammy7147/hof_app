@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import Module from 'node:module';
+import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
 import React from 'react';
 import { act, create } from 'react-test-renderer';
@@ -119,7 +121,13 @@ describe('CharacterDetail stat allocation', () => {
     assert.equal(text.includes('현재 상태'), false);
 
     assert.equal(renderer.root.findAllByProps({ accessibilityRole: 'radio' }).length, 0);
-    assert.equal(renderer.root.findAll((node) => String(node.type) === 'TextInput' && node.props.accessibilityRole === 'spinbutton').length, 5);
+    const statInputs = renderer.root.findAll((node) => String(node.type) === 'TextInput' && node.props.accessibilityRole === 'spinbutton');
+    assert.equal(statInputs.length, 5);
+    statInputs.forEach((input) => {
+      assert.ok(input.props.style.minHeight >= 44, '숫자 글리프가 잘리지 않을 만큼 입력란 높이를 확보한다');
+      assert.equal(input.props.style.textAlignVertical, 'center');
+      assert.equal(input.props.style.paddingVertical, 0);
+    });
 
     const dexInput = renderer.root.find((node) => String(node.type) === 'TextInput' && node.props.accessibilityLabel === 'DEX 추가 포인트');
     await act(async () => dexInput.props.onChangeText('2'));
@@ -131,6 +139,58 @@ describe('CharacterDetail stat allocation', () => {
     assert.equal(requests.length, 1);
     assert.equal(requests[0].type, 'ALLOCATE_STATS');
     assert.equal(requests[0].type === 'ALLOCATE_STATS' ? requests[0].amounts.DEX : null, 2);
+  });
+
+  it('uses Android pan mode so the focused field stays above the keyboard throughout the app', () => {
+    const appConfig = readFileSync(resolve(process.cwd(), 'app.json'), 'utf8');
+    assert.match(appConfig, /"softwareKeyboardLayoutMode"\s*:\s*"pan"/);
+  });
+
+  it('does not render a stored faith bar or separator as a status effect before the next sync', async () => {
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(CharacterDetail, {
+        character: makeHofCharacter(),
+        detail: makeHofCharacterDetail(1, {
+          statusEffects: [
+            { type: 'EFFECT', name: 'gauge', valueText: '||||||||', description: '', active: null },
+            { type: 'EFFECT', name: 'separator', valueText: '________________________________ [SET:작은 짐승들의 잔치]', description: '세트 효과', active: false },
+            { type: 'EFFECT', name: 'defence', valueText: '방어숙련 +29%', description: '', active: null },
+          ],
+        }),
+        isLoading: false,
+        errorMessage: null,
+      }));
+    });
+
+    const text = renderer.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join(''));
+    assert.equal(text.includes('||||||||'), false);
+    assert.equal(text.some((value) => value.includes('________')), false);
+    assert.ok(text.includes('[SET:작은 짐승들의 잔치]'));
+    assert.ok(text.includes('방어숙련 +29%'));
+  });
+
+  it('renders the pattern requirement formula without unsupported floor glyphs or one-line clipping', async () => {
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(CharacterDetail, {
+        character: makeHofCharacter(),
+        detail: makeHofCharacterDetail(),
+        isLoading: false,
+        errorMessage: null,
+      }));
+    });
+
+    const help = renderer.root.findByProps({ accessibilityLabel: '스탯 도움말' });
+    await act(async () => help.props.onPress());
+    const textNodes = renderer.root.findAll((node) => String(node.type) === 'Text');
+    const text = textNodes.map((node) => node.children.join(''));
+    assert.ok(text.includes('패턴 요구 수치'));
+    assert.ok(text.includes('Real INT + (Real SPD ÷ 5의 정수 몫)'));
+    assert.equal(text.some((value) => /[⌊⌋]/.test(value)), false);
+    const expression = textNodes.find((node) => node.children.join('') === 'Real INT + (Real SPD ÷ 5의 정수 몫)');
+    assert.equal(expression?.props.numberOfLines, undefined);
+    assert.ok(expression?.props.style.lineHeight >= 20);
   });
 
   it('shows pattern editing controls immediately without opening a generic accordion', async () => {
@@ -156,19 +216,29 @@ describe('CharacterDetail stat allocation', () => {
     ));
     await act(async () => patternTab?.props.onPress());
 
-    assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '1번 행동 조건 선택' }).length > 0);
-    assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '1번 실행 스킬 선택' }).length > 0);
-    assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '1번 기준값' }).length > 0);
+    const conditionControl = renderer.root.findAllByProps({ accessibilityLabel: '1번 행동 조건 선택' })[0];
+    const quantityControl = renderer.root.findAllByProps({ accessibilityLabel: '1번 기준값' })[0];
+    const skillControl = renderer.root.findAllByProps({ accessibilityLabel: '1번 실행 스킬 선택' })[0];
+    assert.ok(conditionControl);
+    assert.ok(quantityControl);
+    assert.ok(skillControl);
+    const patternControls = renderer.root.findByProps({ testID: 'pattern-row-controls-1' });
+    assert.deepEqual(
+      patternControls.findAll((node) => (
+        ['Pressable', 'TextInput'].includes(String(node.type))
+        && node.props.accessibilityLabel
+      ))
+        .map((node) => node.props.accessibilityLabel),
+      ['1번 행동 조건 선택', '1번 기준값', '1번 실행 스킬 선택'],
+    );
 
-    const conditionSelector = renderer.root.findAllByProps({ accessibilityLabel: '1번 행동 조건 선택' })[0];
-    await act(async () => conditionSelector.props.onPress());
+    await act(async () => conditionControl.props.onPress());
     const candidateList = renderer.root.findAll((node) => String(node.type) === 'FlatList').at(-1);
     const hpCandidate = candidateList?.props.data.find((candidate: { value: string }) => candidate.value === 'hp');
     const hpOption = candidateList?.props.renderItem({ item: hpCandidate });
     await act(async () => hpOption.props.onPress());
 
-    const quantity = renderer.root.findAllByProps({ accessibilityLabel: '1번 기준값' })[0];
-    await act(async () => quantity.props.onChangeText('35'));
+    await act(async () => quantityControl.props.onChangeText('35'));
     const apply = renderer.root.findAllByProps({ accessibilityRole: 'button' }).find((node) => (
       node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '저장').length > 0
     ));
@@ -356,7 +426,21 @@ describe('CharacterDetail stat allocation', () => {
     });
     const patternTab = renderer.root.findAllByProps({ accessibilityRole: 'tab' }).find((node) => node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '패턴').length > 0);
     await act(async () => patternTab?.props.onPress());
-    const replace = renderer.root.findAll((node) => String(node.type) === 'Pressable').find((node) => node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '교체').length > 0);
+    const slotActionButtons = renderer.root.findAll((node) => {
+      const style = node.props.style;
+      return String(node.type) === 'Pressable' && (Array.isArray(style) ? style[0] : style)?.width === 64;
+    });
+    const actionByLabel = (label: string) => slotActionButtons.find((node) => node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0);
+    const load = actionByLabel('불러오기');
+    const replace = actionByLabel('교체');
+    const remove = actionByLabel('삭제');
+    const actionWidths = [load, replace, remove].map((action) => {
+      const style = action?.props.style;
+      return (Array.isArray(style) ? style[0] : style)?.width;
+    });
+    assert.deepEqual(actionWidths, [64, 64, 64]);
+    const patternSource = readFileSync(resolve(process.cwd(), 'src/main/features/characters/pattern/CharacterPatternScreen.tsx'), 'utf8');
+    assert.match(patternSource, /slotActions:\s*\{[^}]*gap:\s*8/);
     await act(async () => replace?.props.onPress());
     const overwrite = renderer.root.findAll((node) => String(node.type) === 'Pressable').find((node) => node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '덮어쓰기').length > 0);
     await act(async () => overwrite?.props.onPress());

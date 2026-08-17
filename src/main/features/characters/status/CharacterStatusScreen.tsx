@@ -53,6 +53,14 @@ export function CharacterStatusScreen({
   );
   const recommendations = plans.filter((value) => value != null);
   const recommendation = recommendations.find((value) => value.additionalPatterns === targetPatterns) ?? null;
+  const displayEffects = useMemo(
+    () => (detail.statusEffects ?? []).flatMap((effect) => {
+      const valueText = effect.valueText.replace(/_{8,}/g, " ").replace(/\s+/g, " ").trim();
+      if (!valueText || /^[|｜¦]+$/.test(valueText)) return [];
+      return [{ ...effect, valueText }];
+    }),
+    [detail.statusEffects],
+  );
   const expPercent = stats.expMaxed
     ? 100
     : Math.max(0, Math.min(100, ((stats.expCurrent ?? 0) / Math.max(1, stats.expMax ?? 1)) * 100));
@@ -104,11 +112,11 @@ export function CharacterStatusScreen({
         ))}
       </View>
 
-      {(detail.statusEffects?.length ?? 0) > 0 && (
+      {displayEffects.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>상태 효과</Text>
           <View style={styles.effects}>
-            {detail.statusEffects?.map((effect, index) => (
+            {displayEffects.map((effect, index) => (
               <Pressable
                 key={`${effect.name}-${index}`}
                 accessibilityRole={effect.description ? "button" : undefined}
@@ -194,7 +202,8 @@ export function CharacterStatusScreen({
                 </View>
               ))}
               <View style={styles.formula}>
-                <Text style={styles.formulaText}>패턴 요구 수치 = Real INT + ⌊Real SPD ÷ 5⌋</Text>
+                <Text style={styles.formulaLabel}>패턴 요구 수치</Text>
+                <Text style={styles.formulaText}>Real INT + (Real SPD ÷ 5의 정수 몫)</Text>
               </View>
               <Pressable accessibilityRole="button" onPress={() => setTargetOpen(true)} style={styles.targetSelect}>
                 <Text style={styles.targetLabel}>원하는 추가 패턴 수</Text>
@@ -366,13 +375,17 @@ const styles = StyleSheet.create({
   allocateValue: { flex: 1, color: theme.colors.textMuted, fontSize: 12 },
   pointInput: {
     width: 92,
-    height: 32,
+    minHeight: 44,
     borderWidth: 1,
     borderColor: theme.colors.border,
     borderRadius: 7,
     backgroundColor: theme.colors.surfaceAlt,
     color: theme.colors.text,
+    fontSize: 16,
+    lineHeight: 20,
+    paddingVertical: 0,
     textAlign: "center",
+    textAlignVertical: "center",
     fontWeight: "900",
   },
   apply: { minHeight: 42, alignItems: "center", justifyContent: "center", borderRadius: 8, backgroundColor: theme.colors.accentGreen },
@@ -402,8 +415,9 @@ const styles = StyleSheet.create({
   guideRow: { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#2c3746" },
   guideName: { color: theme.colors.accentBlue, fontSize: 12, fontWeight: "900" },
   guideText: { color: "#d4dde8", fontSize: 11, lineHeight: 17, marginTop: 3 },
-  formula: { marginTop: 10, padding: 10, borderRadius: 8, backgroundColor: "#121923" },
-  formulaText: { color: theme.colors.text, fontSize: 12, fontWeight: "800" },
+  formula: { gap: 4, marginTop: 10, padding: 12, borderRadius: 8, backgroundColor: "#121923" },
+  formulaLabel: { color: theme.colors.textMuted, fontSize: 11, fontWeight: "800" },
+  formulaText: { color: theme.colors.text, fontSize: 15, fontWeight: "900", lineHeight: 22 },
   targetSelect: { marginTop: 10, padding: 10, borderRadius: 8, backgroundColor: theme.colors.surfaceAlt },
   targetLabel: { color: theme.colors.textMuted, fontSize: 11, fontWeight: "800" },
   targetValueRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 4 },
