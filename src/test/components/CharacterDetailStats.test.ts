@@ -468,7 +468,7 @@ describe('CharacterDetail stat allocation', () => {
     assert.ok(text().includes('일반 관리'));
     assert.ok(text().includes('설정 도구'));
     assert.ok(text().includes('위험 작업'));
-    assert.ok(text().includes('성장·초기화, 사용 아이템과 기타 아이템을 찾아 사용합니다.'));
+    assert.ok(text().includes('성장·초기화와 기타 아이템을 찾아 사용합니다.'));
   });
 
   it('offers optional empty-slot storage only after the pattern save flow starts', async () => {
@@ -585,7 +585,7 @@ describe('CharacterDetail stat allocation', () => {
     assert.ok(text.includes('성장·초기화'));
   });
 
-  it('separates equipped use items from character-use items instead of merging them', async () => {
+  it('keeps U Item equipment candidates out of the direct-use management screen', async () => {
     const detail = makeHofCharacterDetail(1, {
       equipmentCandidates: [
         { value: '7510', typeCode: 'resetitem', name: 'Reset Crystal', iconUrl: '', description: '성장 초기화', quantity: 2 },
@@ -612,16 +612,38 @@ describe('CharacterDetail stat allocation', () => {
     assert.equal(text().includes('Milk'), false);
     assert.equal(text().includes('MYpod'), false);
 
-    await pressTab('사용 아이템');
-    assert.ok(text().includes('Milk'));
-    assert.equal(text().includes('MYpod'), false);
+    assert.equal(text().includes('사용 아이템'), false);
 
     await pressTab('기타 아이템');
     assert.ok(text().includes('MYpod'));
     assert.equal(text().includes('Milk'), false);
 
-    assert.equal(buildItemCommand(detail, detail.equipmentCandidates![1]).type, 'EQUIP_ITEM');
     assert.equal(buildItemCommand(detail, detail.equipmentCandidates![2]).type, 'USE_ITEM');
+  });
+
+  it('shows use item candidates when changing the U Item equipment slot', async () => {
+    const useItemCandidate = {
+      value: 'milk',
+      typeCode: 'useitem',
+      name: 'Milk',
+      iconUrl: '',
+      description: '장착 후 사용하는 아이템',
+      quantity: 5,
+    };
+    const detail = makeHofCharacterDetail(1, {
+      equipment: [{ slot: 'useitem', part: 'U.Item', name: '', iconUrl: '', description: '', checked: true }],
+      equipmentCandidates: [useItemCandidate],
+    });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(CharacterEquipmentScreen, { detail }));
+    });
+
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: 'U.Item 장비 변경' }).props.onPress();
+    });
+
+    assert.deepEqual(renderer.root.find((node) => String(node.type) === 'FlatList').props.data, [useItemCandidate]);
   });
 
   it('shows recommended Knockback links first and lets the user open the full roster', async () => {

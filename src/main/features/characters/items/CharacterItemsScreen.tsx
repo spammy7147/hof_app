@@ -27,7 +27,7 @@ export function CharacterItemsScreen({
     command: CharacterCommand,
   ) => Promise<CharacterCommandResult | void>;
 }) {
-  const [tab, setTab] = useState<"growth" | "usable" | "other">("growth");
+  const [tab, setTab] = useState<"growth" | "other">("growth");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [lastUse, setLastUse] = useState<{
@@ -35,12 +35,11 @@ export function CharacterItemsScreen({
     name: string;
     before: number | null;
     revision: string;
-    operation: "equip" | "use";
   } | null>(null);
   const [outcome, setOutcome] = useState<string | null>(null);
   const allItems = useMemo(
     () => (detail.equipmentCandidates ?? []).filter((item) =>
-      ["resetitem", "useitem", "characteritem"].includes(item.typeCode)),
+      ["resetitem", "characteritem"].includes(item.typeCode)),
     [detail.equipmentCandidates],
   );
   const items = useMemo(
@@ -49,9 +48,7 @@ export function CharacterItemsScreen({
         ? true
         : tab === "growth"
           ? item.typeCode === "resetitem"
-          : tab === "usable"
-            ? item.typeCode === "useitem"
-            : item.typeCode === "characteritem";
+          : item.typeCode === "characteritem";
       return matchesTab && `${item.name} ${item.description}`
         .toLowerCase()
         .includes(query.toLowerCase());
@@ -63,9 +60,7 @@ export function CharacterItemsScreen({
     if (!lastUse || detail.revision === lastUse.revision) return;
     const after = allItems.find((item) => item.value === lastUse.value)?.quantity ?? 0;
     setOutcome(
-      lastUse.operation === "equip"
-        ? `${lastUse.name}을(를) U.Item 슬롯에 장착했습니다.`
-        : lastUse.before == null
+      lastUse.before == null
         ? `${lastUse.name} 사용 후 캐릭터 정보를 갱신했습니다.`
         : `${lastUse.name} 수량 ${lastUse.before} → ${after}`,
     );
@@ -91,14 +86,6 @@ export function CharacterItemsScreen({
           }}
         />
         <Tab
-          label="사용 아이템"
-          active={tab === "usable"}
-          onPress={() => {
-            setTab("usable");
-            setSelected(null);
-          }}
-        />
-        <Tab
           label="기타 아이템"
           active={tab === "other"}
           onPress={() => {
@@ -117,7 +104,7 @@ export function CharacterItemsScreen({
       />
       <View style={styles.list}>
         {query.trim() ? (
-          <Text style={styles.searchSummary}>세 종류의 아이템을 함께 검색합니다.</Text>
+          <Text style={styles.searchSummary}>성장·초기화와 기타 아이템을 함께 검색합니다.</Text>
         ) : null}
         {items.map((item, index) => (
           <Pressable
@@ -153,21 +140,17 @@ export function CharacterItemsScreen({
           <View style={styles.body}>
             <Text style={styles.name}>{chosen.name}</Text>
             <Text style={styles.description}>
-              {chosen.typeCode === "useitem"
-                ? `${detail.name}의 U.Item 슬롯에 장착합니다.`
-                : `${detail.name}에게 사용합니다.`}
+              {detail.name}에게 사용합니다.
             </Text>
           </View>
           <Pressable
             onPress={() => Alert.alert(
-              chosen.typeCode === "useitem" ? "사용 아이템 장착" : "아이템 사용",
-              chosen.typeCode === "useitem"
-                ? `${chosen.name}${chosen.quantity != null ? ` x${chosen.quantity}` : ""}을(를) ${detail.name}의 U.Item 슬롯에 장착하시겠습니까?\n${chosen.description}`
-                : `${detail.name}에게 ${chosen.name}${chosen.quantity != null ? ` x${chosen.quantity}` : ""}을(를) 사용하시겠습니까?\n${chosen.description}`,
+              "아이템 사용",
+              `${detail.name}에게 ${chosen.name}${chosen.quantity != null ? ` x${chosen.quantity}` : ""}을(를) 사용하시겠습니까?\n${chosen.description}`,
               [
                 { text: "취소", style: "cancel" },
                 {
-                  text: chosen.typeCode === "useitem" ? "장착" : "사용",
+                  text: "사용",
                   onPress: () => {
                     setOutcome(null);
                     setLastUse({
@@ -175,7 +158,6 @@ export function CharacterItemsScreen({
                       name: chosen.name,
                       before: chosen.quantity ?? null,
                       revision: detail.revision,
-                      operation: chosen.typeCode === "useitem" ? "equip" : "use",
                     });
                     void onCommand?.(buildItemCommand(detail, chosen));
                   },
@@ -185,7 +167,7 @@ export function CharacterItemsScreen({
             style={styles.use}
           >
             <Text style={styles.useText}>
-              {chosen.typeCode === "useitem" ? "장착" : "사용"}
+              사용
             </Text>
           </Pressable>
         </View>
@@ -198,24 +180,19 @@ export function buildItemCommand(
   detail: HofCharacterDetail,
   item: HofCharacterEquipmentCandidate,
 ): CharacterCommand {
-  return item.typeCode === "useitem"
-    ? {
-        type: "EQUIP_ITEM",
-        characterId: detail.id,
-        expectedRevision: detail.revision,
-        itemValue: item.value,
-      }
-    : {
-        type: "USE_ITEM",
-        characterId: detail.id,
-        expectedRevision: detail.revision,
-        itemValue: item.value,
-      };
+  if (!["resetitem", "characteritem"].includes(item.typeCode)) {
+    throw new Error("관리 화면에서 직접 사용할 수 없는 아이템 유형입니다.");
+  }
+  return {
+    type: "USE_ITEM",
+    characterId: detail.id,
+    expectedRevision: detail.revision,
+    itemValue: item.value,
+  };
 }
 
 function itemCategoryLabel(typeCode: string): string {
   if (typeCode === "resetitem") return "성장·초기화";
-  if (typeCode === "useitem") return "사용 아이템";
   return "기타 아이템";
 }
 

@@ -148,7 +148,7 @@ export function CharacterManagementScreen({
         <ActionRow
           icon={PackageOpen}
           title={itemsBusy ? "아이템 확인 중…" : "아이템 사용"}
-          description="성장·초기화, 사용 아이템과 기타 아이템을 찾아 사용합니다."
+          description="성장·초기화와 기타 아이템을 찾아 사용합니다."
           disabled={itemsBusy}
           onPress={() => {
             if (!onCommand) {
