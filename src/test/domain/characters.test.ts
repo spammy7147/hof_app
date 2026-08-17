@@ -14,6 +14,16 @@ describe('character utilities', () => {
     assert.deepEqual(sortCharactersByRosterOrder(characters).map((item) => item.id), [2, 3, 1]);
   });
 
+  it('keeps the server response order when legacy records do not have a roster order yet', () => {
+    const characters = [
+      { id: 1, hofCharacterId: '1', name: '소셜', job: 'Social Knight', level: 60, patternSlotCount: 0, revision: '2026-08-17T00:00:00Z' },
+      { id: 2, hofCharacterId: '2', name: '사제', job: 'Cardinal', level: 60, patternSlotCount: 0, revision: '2026-08-17T00:00:00Z' },
+      { id: 3, hofCharacterId: '3', name: '춘장이', job: 'Desperado', level: 60, patternSlotCount: 0, revision: '2026-08-17T00:00:00Z' },
+    ];
+
+    assert.deepEqual(sortCharactersByRosterOrder(characters).map((item) => item.name), ['소셜', '사제', '춘장이']);
+  });
+
   it('groups characters by job and sorts each job by level descending then name', () => {
     const grouped = groupCharactersByJob([
       {

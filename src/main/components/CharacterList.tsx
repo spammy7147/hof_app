@@ -5,7 +5,6 @@ import {
   Image,
   Modal,
   Pressable,
-  SectionList,
   StyleSheet,
   Text,
   TextInput,
@@ -15,8 +14,6 @@ import {
 import {
   displayCharacterName,
   formatCharacterLevel,
-  type CharacterGroup,
-  groupCharactersByJob,
   sortCharactersByRosterOrder,
 } from "../domain/characters";
 import { normalizeHofAssetUrl } from "../domain/hofAssets";
@@ -36,12 +33,8 @@ type CharacterListProps = {
   onCopySettings?: (source: HofCharacter, target: HofCharacter) => void;
 };
 
-type CharacterSection = CharacterGroup & {
-  data: HofCharacter[];
-};
-
 /**
- * 동기화된 캐릭터 목록을 직업별 섹션으로 보여주는 화면 조각이다.
+ * 동기화된 캐릭터 목록을 HOF roster 원본 순서로 보여주는 화면 조각이다.
  */
 export function CharacterList({
   characters,
@@ -56,7 +49,6 @@ export function CharacterList({
     "ACTIVE",
   );
   const [query, setQuery] = useState("");
-  const [viewMode, setViewMode] = useState<"ALL" | "JOB">("ALL");
   const [linkTarget, setLinkTarget] = useState<HofCharacter | null>(null);
   const [copySource, setCopySource] = useState<HofCharacter | null>(null);
   const [copyQuery, setCopyQuery] = useState("");
@@ -75,16 +67,10 @@ export function CharacterList({
       ),
     [characters, lifecycle, query],
   );
-  const sections = useMemo<CharacterSection[]>(() => {
-    if (viewMode === "ALL") {
-      const ordered = sortCharactersByRosterOrder(visibleCharacters);
-      return [{ job: "", headerText: "", characters: ordered, data: ordered }];
-    }
-    return groupCharactersByJob(visibleCharacters).map((group) => ({
-      ...group,
-      data: group.characters,
-    }));
-  }, [viewMode, visibleCharacters]);
+  const orderedCharacters = useMemo(
+    () => sortCharactersByRosterOrder(visibleCharacters),
+    [visibleCharacters],
+  );
   const copyTargets = useMemo(
     () =>
       characters.filter(
@@ -180,15 +166,6 @@ export function CharacterList({
       restoringCharacterId,
     ],
   );
-  /**
-   * 직업별 그룹 제목을 렌더링한다.
-   */
-  const renderSectionHeader = useCallback(
-    ({ section }: { section: CharacterSection }) =>
-      section.headerText ? <Text style={styles.groupTitle}>{section.headerText}</Text> : null,
-    [],
-  );
-
   if (characters.length === 0) {
     return (
       <View style={styles.empty}>
@@ -232,23 +209,6 @@ export function CharacterList({
           </Pressable>
         ))}
       </View>
-      {lifecycle === "ACTIVE" && (
-        <View style={styles.viewModes}>
-          {(["ALL", "JOB"] as const).map((mode) => (
-            <Pressable
-              key={mode}
-              accessibilityRole="button"
-              accessibilityState={{ selected: viewMode === mode }}
-              onPress={() => setViewMode(mode)}
-              style={[styles.viewMode, viewMode === mode && styles.viewModeActive]}
-            >
-              <Text style={[styles.viewModeText, viewMode === mode && styles.viewModeTextActive]}>
-                {mode === "ALL" ? "전체" : "직업별"}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      )}
       <TextInput
         accessibilityLabel="캐릭터 검색"
         value={query}
@@ -257,16 +217,13 @@ export function CharacterList({
         placeholderTextColor={theme.colors.textMuted}
         style={styles.search}
       />
-      <SectionList
+      <FlatList
         contentContainerStyle={styles.listContent}
         contentInsetAdjustmentBehavior="automatic"
+        data={orderedCharacters}
         ItemSeparatorComponent={ListItemSeparator}
         keyExtractor={(item) => String(item.id)}
         renderItem={renderItem}
-        renderSectionHeader={renderSectionHeader}
-        SectionSeparatorComponent={SectionSeparator}
-        sections={sections}
-        stickySectionHeadersEnabled={false}
         style={styles.list}
         ListEmptyComponent={
           <View style={styles.empty}>
@@ -517,13 +474,6 @@ function ListItemSeparator() {
   return <View style={styles.itemSeparator} />;
 }
 
-/**
- * 직업 섹션 사이 간격을 책임지는 작은 컴포넌트다.
- */
-function SectionSeparator() {
-  return <View style={styles.sectionSeparator} />;
-}
-
 const styles = StyleSheet.create({
   list: {
     flex: 1,
@@ -543,25 +493,6 @@ const styles = StyleSheet.create({
   lifecycleTabActive: { backgroundColor: "#22483d" },
   lifecycleText: { color: theme.colors.textMuted, fontWeight: "800" },
   lifecycleTextActive: { color: theme.colors.accentGreen },
-  viewModes: {
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    gap: 4,
-    marginBottom: 8,
-    padding: 3,
-    borderRadius: 9,
-    backgroundColor: theme.colors.surfaceAlt,
-  },
-  viewMode: {
-    minHeight: 40,
-    minWidth: 72,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 7,
-  },
-  viewModeActive: { backgroundColor: theme.colors.surface },
-  viewModeText: { color: theme.colors.textMuted, fontWeight: "800" },
-  viewModeTextActive: { color: theme.colors.accentGreen },
   search: {
     minHeight: 48,
     backgroundColor: theme.colors.surfaceAlt,
@@ -570,17 +501,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
     marginBottom: 10,
   },
-  groupTitle: {
-    color: theme.colors.accentGreen,
-    fontSize: 14,
-    fontWeight: "900",
-    paddingBottom: 4,
-  },
   itemSeparator: {
     height: 4,
-  },
-  sectionSeparator: {
-    height: 8,
   },
   row: {
     minHeight: 44,

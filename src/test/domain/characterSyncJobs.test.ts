@@ -26,7 +26,20 @@ describe('character sync job utilities', () => {
   it('adds a character when a characterSynced SSE event arrives', () => {
     const next = upsertCharacterFromSyncEvent([existing], event('characterSynced', incoming));
 
-    assert.deepEqual(next.map((character) => character.hofCharacterId), ['222', '111']);
+    assert.deepEqual(next.map((character) => character.hofCharacterId), ['111', '222']);
+  });
+
+  it('keeps incoming sync events in HOF roster order instead of job order', () => {
+    const first = makeHofCharacter(10, { name: '소셜', job: 'Social Knight', rosterOrder: 0 });
+    const third = makeHofCharacter(30, { name: '춘장이', job: 'Desperado', rosterOrder: 2 });
+    const second = makeHofCharacter(20, { name: '사제', job: 'Cardinal', rosterOrder: 1 });
+
+    const next = upsertCharacterFromSyncEvent(
+      [first, third],
+      event('characterSynced', second),
+    );
+
+    assert.deepEqual(next.map((character) => character.name), ['소셜', '사제', '춘장이']);
   });
 
   it('replaces an existing character with the same HOF character id', () => {
