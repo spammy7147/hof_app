@@ -15,6 +15,7 @@ describe('character detail utilities', () => {
     job: 'Social Knight',
     level: 60,
     patternSlotCount: 1,
+    revision: '2026-08-17T00:00:00Z',
     imageUrl: 'http://sic.zerosic.com/ZeroHOF/image/char/sknight02.gif',
     statusLines: ['HP : 5628 + 5033'],
     patternSlots: [{ slot: '0', label: '범용', canLoad: true }],

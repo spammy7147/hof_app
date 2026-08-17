@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { after, afterEach, describe, it } from 'node:test';
 
-import type { PartyPresetResponse } from '../../main/types/api';
+import type { CharacterDeepSyncResponse, PartyPresetResponse } from '../../main/types/api';
 import { makeCaptchaChallenge, makeHofCharacter, makeHofCharacterDetail } from '../fixtures/api';
 
 const partyPresetFolderIdIsRequired: (
@@ -439,7 +439,7 @@ describe('BackendApiClient', () => {
     const client = new BackendApiClient('http://backend.test');
 
     mockFetch(makeHofCharacterDetail(1, { imageUrl: '/ZeroHOF/image/social-knight.png' }));
-    const detail = await client.fetchCharacterDetail('char-1');
+    const detail = await client.fetchCharacterDetail(1);
 
     assert.equal(detail.imageUrl, 'http://sic.zerosic.com/ZeroHOF/image/social-knight.png');
 
@@ -461,22 +461,82 @@ describe('BackendApiClient', () => {
     assert.equal(job.characters[0]?.imageUrl, 'http://sic.zerosic.com/ZeroHOF/image/char/sknight02.gif');
   });
 
-  it('normalizes the refreshed character returned by pattern load', async () => {
+  it('loads a saved pattern through the stable character record contract', async () => {
     const { BackendApiClient } = await loadBackendApi();
-    mockFetch({
-      accountId: 1,
-      hofCharacterId: 'char-1',
-      slot: 0,
-      loaded: true,
-      message: '패턴 로드 완료',
-      characterSynchronized: true,
-      character: makeHofCharacterDetail(1, { imageUrl: 'image/char/sknight02.gif' }),
-    });
+    const requests: CapturedRequest[] = [];
+    mockFetchWithCapture({}, requests);
 
-    const response = await new BackendApiClient('http://backend.test').loadCharacterPattern('char-1', 0);
+    await new BackendApiClient('http://backend.test').loadSavedCharacterPattern(7, '0');
 
-    assert.equal(response.characterSynchronized, true);
-    assert.equal(response.character?.imageUrl, 'http://sic.zerosic.com/ZeroHOF/image/char/sknight02.gif');
+    assert.equal(requests[0]?.url, 'http://backend.test/api/characters/patterns/load');
+    assert.deepEqual(JSON.parse(String(requests[0]?.init?.body)), { characterId: 7, slotCode: '0' });
+  });
+
+  it('starts long character work as a durable job instead of a blocking action', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const requests: CapturedRequest[] = [];
+    const progress: CharacterDeepSyncResponse = { characterId: 7, progress: [{
+      phase: 'COMPLETED' as const,
+      completedSteps: 4,
+      totalSteps: 4,
+      patternSlotCode: null,
+      equipmentSlotNumber: null,
+    }] };
+    mockFetchWithCapture({
+      id: 91,
+      operationType: 'DEEP_SYNC',
+      status: 'COMPLETED',
+      sourceCharacterId: null,
+      targetCharacterId: 7,
+      deepSync: progress,
+      transfer: null,
+      message: null,
+      updatedAt: '2026-08-17T00:00:00Z',
+      finishedAt: '2026-08-17T00:00:00Z',
+    }, requests);
+
+    const observed: typeof progress[] = [];
+    const result = await new BackendApiClient('http://backend.test')
+      .deepSyncCharacter(7, (value) => observed.push(value));
+
+    assert.equal(requests[0]?.url, 'http://backend.test/api/characters/records/7/deep-sync-jobs');
+    assert.equal(requests[0]?.init.method, 'POST');
+    assert.deepEqual(result, progress);
+    assert.deepEqual(observed, [progress]);
+  });
+
+  it('restores an archived character through a durable deep-sync job before reloading the roster', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const requests: CapturedRequest[] = [];
+    const restored = makeHofCharacter(0);
+    const responses: unknown[] = [
+      {
+        id: 92,
+        operationType: 'RESTORE',
+        status: 'COMPLETED',
+        sourceCharacterId: null,
+        targetCharacterId: restored.id,
+        deepSync: { characterId: restored.id, progress: [] },
+        transfer: null,
+        message: null,
+        updatedAt: '2026-08-17T00:00:00Z',
+        finishedAt: '2026-08-17T00:00:00Z',
+      },
+      [restored],
+    ];
+    globalThis.fetch = (async (url: RequestInfo | URL, init: RequestInit = {}) => {
+      requests.push({ url: String(url), init });
+      return mockResponse(responses.shift());
+    }) as unknown as typeof fetch;
+
+    const result = await new BackendApiClient('http://backend.test').restoreCharacter(restored.id);
+
+    assert.deepEqual(requests.map((request) => request.url), [
+      'http://backend.test/api/characters/restore-jobs',
+      'http://backend.test/api/characters',
+    ]);
+    assert.equal(requests[0]?.init.method, 'POST');
+    assert.deepEqual(result, [restored]);
   });
 
   it('uses the exact typed automation aggregate, settings, lifecycle, and quest endpoints', async () => {

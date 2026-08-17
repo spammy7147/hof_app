@@ -811,18 +811,47 @@ export type HofCharacter = {
   patternSlotCount: number;
   imageUrl?: string | null;
   patternSlots?: HofCharacterPatternSlot[];
+  lifecycle?: 'ACTIVE' | 'MISSING' | 'ARCHIVED';
+  lastSeenAt?: string | null;
+  missingSince?: string | null;
+  archivedAt?: string | null;
+  rosterOrder?: number | null;
+  revision: string;
+  detailSyncedAt?: string | null;
+  sectionStates?: CharacterSectionState[];
+};
+
+export type CharacterSectionState = {
+  section: string;
+  status: 'SUCCESS' | 'FAILED';
+  lastAttemptedAt: string;
+  lastSucceededAt: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
 };
 
 export type HofCharacterDetail = HofCharacter & {
   imageUrl: string | null;
   statusLines: string[];
+  statusEffects?: HofCharacterStatusEffect[];
+  faith?: HofCharacterFaith | null;
   patternSlots: HofCharacterPatternSlot[];
   stats: HofCharacterStats;
   actionPatterns: HofCharacterActionPattern[];
+  patternOptions?: HofCharacterPatternOption[];
   positionGuard: HofCharacterPositionGuard;
   equipment: HofCharacterEquipment[];
+  equipmentCandidates?: HofCharacterEquipmentCandidate[];
   learnedSkills: HofCharacterSkill[];
   learnableSkills: HofCharacterSkill[];
+  /** 관리·복구 감사용이며 일반 캐릭터 화면에는 표시하지 않는다. */
+  hofIdHistory?: Array<{
+    hofCharacterId: string;
+    validFrom: string;
+    validTo: string | null;
+    linkReason: string;
+    userConfirmed: boolean;
+  }>;
 };
 
 export type HofCharacterPatternSlot = {
@@ -832,6 +861,8 @@ export type HofCharacterPatternSlot = {
 };
 
 export type HofCharacterStats = {
+  statusPoints?: number | null;
+  skillPoints?: number | null;
   atk: number | null;
   matk: number | null;
   defBase: number | null;
@@ -842,7 +873,17 @@ export type HofCharacterStats = {
   handleMax: number | null;
   costUsed: number | null;
   costMax: number | null;
+  expCurrent?: number | null; expMax?: number | null; expMaxed?: boolean | null;
+  hpBase?: number | null; hpBonus?: number | null; spBase?: number | null; spBonus?: number | null;
+  strReal?: number | null; strBonus?: number | null; intReal?: number | null; intBonus?: number | null;
+  dexReal?: number | null; dexBonus?: number | null; spdReal?: number | null; spdBonus?: number | null;
+  lukReal?: number | null; lukBonus?: number | null; descriptions?: Record<string, string>;
 };
+
+export type HofCharacterStatusEffect = { type: string; name: string; valueText: string; description: string; active: boolean | null };
+export type HofCharacterFaith = { godName: string; current: number; max: number };
+export type HofCharacterPatternOption = { type: 'CONDITION' | 'SKILL' | 'CLASS'; value: string; label: string; category: string | null };
+export type HofCharacterEquipmentCandidate = { value: string; typeCode: string; name: string; iconUrl: string; description: string; quantity?: number | null };
 
 export type HofCharacterActionPattern = {
   index: number;
@@ -880,6 +921,7 @@ export type HofCharacterSkill = {
   name: string;
   iconUrl: string;
   category: string;
+  targetText?: string; scopeText?: string; spCost?: number | null; multiplierText?: string; description?: string;
 };
 
 export type LoadPatternResponse = {
@@ -892,49 +934,62 @@ export type LoadPatternResponse = {
   character: HofCharacterDetail | null;
 };
 
-export type CharacterManagementSnapshot = {
-  character: HofCharacterDetail | null;
-  actions: CharacterObservedAction[];
-  messages: string[];
-  characters: HofCharacter[];
-  targetRemoved: boolean;
+export type CharacterSavedPatternMapping = { sourceSlot: string; targetSlot: string };
+export type CharacterTransferRequest = {
+  includeCurrentPattern: boolean;
+  savedPatternMappings: CharacterSavedPatternMapping[];
+  includeStats: boolean;
+  includeSkills: boolean;
+  includeEquipment: boolean;
 };
-
-export type CharacterObservedAction = {
-  actionId: string;
-  source: string;
-  label: string;
-  candidates: CharacterActionCandidate[];
-  fields: CharacterActionField[];
+export type CharacterTransferPreviewRequest = {
+  sourceCharacterId: number;
+  targetCharacterId: number;
+  transfer: CharacterTransferRequest;
 };
-
-export type CharacterActionCandidate = {
+export type CharacterTransferIssue = {
+  code: string;
+  itemKey: string;
+  message: string;
+  severity: 'WARNING' | 'NEEDS_SELECTION' | 'BLOCKING';
+};
+export type CharacterTransferStep = {
   id: string;
-  groupId: string;
-  label: string;
-  selectionType: 'RADIO' | 'CHECKBOX' | 'SELECT';
-  minQuantity: number;
-  maxQuantity: number | null;
-  selected: boolean;
+  dependsOn: string[];
+  sourceSlot?: string;
+  targetSlot?: string;
+  name?: string;
+  replacesExisting?: boolean;
+  amounts?: Record<string, number>;
+  skillValue?: string;
+  equipmentPart?: string;
+  itemValue?: string;
+};
+export type CharacterTransferPreview = {
+  sourceCharacterId: number;
+  targetCharacterId: number;
+  steps: CharacterTransferStep[];
+  issues: CharacterTransferIssue[];
+  executable: boolean;
+};
+export type CharacterTransferStepResult = { stepId: string; status: 'COMPLETED' | 'FAILED' | 'SKIPPED'; message: string };
+export type CharacterTransferExecutionResult = { targetCharacterId: number; results: CharacterTransferStepResult[]; nextStepIndex: number };
+export type CharacterDeepSyncProgress = { phase: 'CURRENT' | 'SAVED_PATTERN' | 'EQUIPMENT_PRESET' | 'RESTORE' | 'COMPLETED'; completedSteps: number; totalSteps: number; patternSlotCode: string | null; equipmentSlotNumber: number | null };
+export type CharacterDeepSyncResponse = { characterId: number; progress: CharacterDeepSyncProgress[] };
+export type CharacterOperationJob = {
+  id: number;
+  operationType: 'DEEP_SYNC' | 'RESTORE' | 'TRANSFER';
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'STOPPED';
+  sourceCharacterId: number | null;
+  targetCharacterId: number;
+  deepSync: CharacterDeepSyncResponse | null;
+  transfer: CharacterTransferExecutionResult | null;
+  message: string | null;
+  updatedAt: string;
+  finishedAt: string | null;
 };
 
-export type CharacterActionField = {
-  id: string;
-  label: string;
-  value: string;
-  inputType: 'TEXT' | 'NUMBER';
-  maxLength: number | null;
-};
-
-export type CharacterManagementActionRequest = {
-  action: {
-    actionId: string;
-    selections?: Array<{ candidateId: string; quantity?: number }>;
-    values?: Array<{ fieldId: string; value: string }>;
-  };
-};
-
-export type CharacterSyncJobStatus = 'pending' | 'running' | 'completed' | 'failed';
+export type CharacterSyncJobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'stopped';
 
 export type CharacterSyncEventType =
   | 'started'
@@ -943,6 +998,7 @@ export type CharacterSyncEventType =
   | 'characterFailed'
   | 'completed'
   | 'failed'
+  | 'stopped'
   | 'heartbeat';
 
 export type CharacterSyncJobResponse = {
@@ -956,7 +1012,54 @@ export type CharacterSyncJobResponse = {
   message: string | null;
   startedAt: string;
   finishedAt: string | null;
+  stopRequested: boolean;
+  lastCompletedRosterIndex: number;
+  currentHofCharacterId: string | null;
 };
+
+export type CharacterStat = 'STR' | 'INT' | 'DEX' | 'SPD' | 'LUK';
+export type CharacterCommand =
+  | { type: 'RENAME'; characterId: number; expectedRevision: string; newName: string }
+  | { type: 'KICK' | 'KNOCKBACK'; characterId: number; expectedRevision: string; confirmationName: string }
+  | { type: 'PRAY' | 'REMOVE_ALL_EQUIPMENT'; characterId: number; expectedRevision: string }
+  | { type: 'USE_ITEM'; characterId: number; expectedRevision: string; itemValue: string }
+  | { type: 'LEARN_SKILL'; characterId: number; expectedRevision: string; skillValue: string }
+  | { type: 'CHANGE_CLASS'; characterId: number; expectedRevision: string; classValue: string }
+  | { type: 'ALLOCATE_STATS'; characterId: number; expectedRevision: string; amounts: Partial<Record<CharacterStat, number>> }
+  | { type: 'EQUIP_ITEM'; characterId: number; expectedRevision: string; itemValue: string }
+  | { type: 'REMOVE_EQUIPMENT'; characterId: number; expectedRevision: string; equipmentPart: string }
+  | { type: 'SAVE_EQUIPMENT_PRESET' | 'LOAD_EQUIPMENT_PRESET'; characterId: number; expectedRevision: string; slotNumber: 1 | 2 };
+
+export type CharacterCommandResult =
+  | { type?: 'Completed'; characterId: number; revision: string; messages: string[] }
+  | { type?: 'Conflict'; characterId: number; expectedRevision: string; currentRevision: string }
+  | { type?: 'PartiallyApplied'; characterId: number; completedSteps: number; nextStep: string; message: string }
+  | { type?: 'RefreshRequired'; characterId: number; message: string }
+  | { type?: 'IdentityResolutionRequired'; characterId: number; candidates: CharacterIdentityCandidate[]; message: string }
+  | { type?: 'Rejected'; characterId: number; code: string; message: string };
+
+export type CharacterIdentityCandidate = {
+  hofCharacterId: string;
+  name: string;
+  job: string;
+  level: number | null;
+  matchingFields: string[];
+};
+
+export type CharacterPatternSetting = { rows: Array<{ judge: string; quantity: string; skill: string }>; position: string; guard: string };
+export type CharacterPatternDraft = CharacterPatternSetting & { baseRevision: string };
+export type CharacterPatternApplyRequest = {
+  characterId: number; baseRevision: string; base: CharacterPatternSetting; draft: CharacterPatternDraft;
+  slotAction?: 'NONE' | 'SAVE_EMPTY' | 'REPLACE'; targetSlotCode?: string; slotName?: string;
+  force?: boolean;
+};
+export type CharacterPatternRowValue = { judge: string; quantity: string; skill: string };
+export type CharacterPatternRowDiff = {
+  rowNumber: number;
+  before: CharacterPatternRowValue | null;
+  current: CharacterPatternRowValue | null;
+};
+export type CharacterPatternOperationResult = { revision?: string; currentRevision?: string; rowDiffs?: CharacterPatternRowDiff[]; code?: string; message?: string; messages?: string[] };
 
 export type CharacterSyncEventResponse = {
   eventId: number;

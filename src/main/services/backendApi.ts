@@ -13,8 +13,15 @@ import type {
   CharacterSyncEventResponse,
   CharacterSyncEventType,
   CharacterSyncJobResponse,
-  CharacterManagementActionRequest,
-  CharacterManagementSnapshot,
+  CharacterCommand,
+  CharacterCommandResult,
+  CharacterPatternApplyRequest,
+  CharacterPatternOperationResult,
+  CharacterTransferPreviewRequest,
+  CharacterTransferPreview,
+  CharacterTransferExecutionResult,
+  CharacterDeepSyncResponse,
+  CharacterOperationJob,
   CreateAutomationEntryRequest,
   CreatePartyPresetFolderRequest,
   CreatePartyPresetRequest,
@@ -24,7 +31,6 @@ import type {
   LatestAndroidReleaseResponse,
   TokenResponse,
   HofStatusResponse,
-  LoadPatternResponse,
   QuestSnapshot,
   MovePartyPresetFolderRequest,
   PartyPresetCatalogResponse,
@@ -575,54 +581,143 @@ export class BackendApiClient {
   /**
    * 선택한 캐릭터의 상세 스냅샷을 조회한다.
    */
-  async fetchCharacterDetail(hofCharacterId: string): Promise<HofCharacterDetail> {
+  async fetchCharacterDetail(characterId: number): Promise<HofCharacterDetail> {
     const detail = await this.request<HofCharacterDetail>(
-      `/api/characters/${encodeURIComponent(hofCharacterId)}`,
+      `/api/characters/records/${characterId}`,
     );
     return normalizeCharacter(detail);
   }
 
-  /**
-   * 캐릭터의 저장 패턴 슬롯을 HOF 원본 세션에 로드한다.
-   */
-  async loadCharacterPattern(
-    hofCharacterId: string,
-    slot: number,
-  ): Promise<LoadPatternResponse> {
-    const response = await this.runManualAction(() => this.request<LoadPatternResponse>(
-      `/api/characters/${encodeURIComponent(hofCharacterId)}/patterns/${slot}/load`,
-      { method: 'POST' },
-    ));
-    return {
-      ...response,
-      character: response.character ? normalizeCharacter(response.character) : null,
-    };
+  async refreshCharacterDetail(characterId: number): Promise<HofCharacterDetail> {
+    return normalizeCharacter(await this.runManualAction(() => this.request<HofCharacterDetail>(
+      `/api/characters/records/${characterId}/refresh`, { method: 'POST' },
+    )));
   }
 
-  async fetchCharacterManagement(hofCharacterId: string): Promise<CharacterManagementSnapshot> {
-    const response = await this.request<CharacterManagementSnapshot>(
-      `/api/characters/${encodeURIComponent(hofCharacterId)}/management`,
-    );
-    return {
-      ...response,
-      character: response.character ? normalizeCharacter(response.character) : null,
-      characters: response.characters.map(normalizeCharacter),
-    };
+  async deepSyncCharacter(
+    characterId: number,
+    onProgress?: (progress: CharacterDeepSyncResponse) => void,
+  ): Promise<CharacterDeepSyncResponse> {
+    return this.runManualAction(async () => {
+      const started = await this.request<CharacterOperationJob>(
+        `/api/characters/records/${characterId}/deep-sync-jobs`, { method: 'POST' },
+      );
+      const completed = await this.pollCharacterOperation(started, (job) => {
+        if (job.deepSync) onProgress?.(job.deepSync);
+      });
+      if (!completed.deepSync) throw new Error('전체 설정 동기화 결과를 확인하지 못했습니다.');
+      return completed.deepSync;
+    });
   }
 
-  async executeCharacterManagementAction(
-    hofCharacterId: string,
-    request: CharacterManagementActionRequest,
-  ): Promise<CharacterManagementSnapshot> {
-    const response = await this.runManualAction(() => this.request<CharacterManagementSnapshot>(
-      `/api/characters/${encodeURIComponent(hofCharacterId)}/management/actions`,
-      { method: 'POST', body: JSON.stringify(request) },
+  async linkCharacter(characterId: number, newHofCharacterId: string): Promise<HofCharacter[]> {
+    return (await this.runManualAction(() => this.request<HofCharacter[]>('/api/characters/identity/link', {
+      method: 'POST', body: JSON.stringify({ characterId, newHofCharacterId }),
+    }))).map(normalizeCharacter);
+  }
+
+  async archiveCharacter(characterId: number): Promise<HofCharacter[]> {
+    return (await this.runManualAction(() => this.request<HofCharacter[]>('/api/characters/archive', {
+      method: 'POST', body: JSON.stringify({ characterId }),
+    }))).map(normalizeCharacter);
+  }
+
+  async restoreCharacter(
+    characterId: number,
+    onProgress?: (progress: CharacterDeepSyncResponse) => void,
+  ): Promise<HofCharacter[]> {
+    return this.runManualAction(async () => {
+      const started = await this.request<CharacterOperationJob>('/api/characters/restore-jobs', {
+        method: 'POST', body: JSON.stringify({ characterId }),
+      });
+      await this.pollCharacterOperation(started, (job) => {
+        if (job.deepSync) onProgress?.(job.deepSync);
+      });
+      return this.listCharacters();
+    });
+  }
+
+  async deleteCharacterPermanently(characterId: number): Promise<HofCharacter[]> {
+    return (await this.runManualAction(() => this.request<HofCharacter[]>('/api/characters/delete-permanently', {
+      method: 'POST', body: JSON.stringify({ characterId }),
+    }))).map(normalizeCharacter);
+  }
+
+  async previewCharacterTransfer(request: CharacterTransferPreviewRequest): Promise<CharacterTransferPreview> {
+    return this.request<CharacterTransferPreview>('/api/characters/transfers/preview', {
+      method: 'POST', body: JSON.stringify(request),
+    });
+  }
+
+  async executeCharacterTransfer(
+    request: CharacterTransferPreviewRequest,
+    completedStepIds: string[] = [],
+    onProgress?: (progress: CharacterTransferExecutionResult) => void,
+  ): Promise<CharacterTransferExecutionResult> {
+    return this.runManualAction(async () => {
+      const started = await this.request<CharacterOperationJob>('/api/characters/transfers/jobs', {
+        method: 'POST', body: JSON.stringify({ ...request, completedStepIds }),
+      });
+      const completed = await this.pollCharacterOperation(started, (job) => {
+        if (job.transfer) onProgress?.(job.transfer);
+      });
+      if (!completed.transfer) throw new Error('설정 가져오기 결과를 확인하지 못했습니다.');
+      return completed.transfer;
+    });
+  }
+
+  private async pollCharacterOperation(
+    initial: CharacterOperationJob,
+    onProgress: (job: CharacterOperationJob) => void,
+  ): Promise<CharacterOperationJob> {
+    let current = initial;
+    for (;;) {
+      onProgress(current);
+      if (current.status === 'COMPLETED') return current;
+      if (current.status === 'FAILED' || current.status === 'STOPPED') {
+        throw new Error(current.message || '캐릭터 작업을 완료하지 못했습니다.');
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      current = await this.request<CharacterOperationJob>(
+        `/api/characters/operation-jobs/${current.id}`,
+      );
+    }
+  }
+
+  async executeCharacterCommand(command: CharacterCommand): Promise<CharacterCommandResult> {
+    return this.runManualAction(() => this.request<CharacterCommandResult>(
+      '/api/characters/commands', { method: 'POST', body: JSON.stringify(command) },
     ));
-    return {
-      ...response,
-      character: response.character ? normalizeCharacter(response.character) : null,
-      characters: response.characters.map(normalizeCharacter),
-    };
+  }
+
+  async applyCharacterPattern(request: CharacterPatternApplyRequest): Promise<CharacterPatternOperationResult> {
+    return this.runManualAction(() => this.request<CharacterPatternOperationResult>(
+      '/api/characters/patterns/apply', { method: 'POST', body: JSON.stringify(request) },
+    ));
+  }
+
+  async loadSavedCharacterPattern(characterId: number, slotCode: string): Promise<CharacterPatternOperationResult> {
+    return this.runManualAction(() => this.request<CharacterPatternOperationResult>('/api/characters/patterns/load', {
+      method: 'POST', body: JSON.stringify({ characterId, slotCode }),
+    }));
+  }
+
+  async deleteSavedCharacterPattern(characterId: number, slotCode: string): Promise<CharacterPatternOperationResult> {
+    return this.runManualAction(() => this.request<CharacterPatternOperationResult>('/api/characters/patterns/delete', {
+      method: 'POST', body: JSON.stringify({ characterId, slotCode }),
+    }));
+  }
+
+  async stopCharacterSyncJob(jobId: number): Promise<CharacterSyncJobResponse> {
+    return normalizeCharacterSyncJob(await this.request<CharacterSyncJobResponse>(
+      `/api/characters/sync-jobs/${jobId}/stop`, { method: 'POST' },
+    ));
+  }
+
+  async resumeCharacterSyncJob(jobId: number): Promise<CharacterSyncJobResponse> {
+    return normalizeCharacterSyncJob(await this.request<CharacterSyncJobResponse>(
+      `/api/characters/sync-jobs/${jobId}/resume`, { method: 'POST' },
+    ));
   }
 
   /**
@@ -894,9 +989,28 @@ function normalizeCaptchaImageUrl(imageUrl: string, baseUrl: string): string {
  * 캐릭터 이미지 URL을 HOF asset 기준 절대 URL로 정규화한다.
  */
 function normalizeCharacter<T extends HofCharacter>(character: T): T {
+  const detail = character as unknown as HofCharacterDetail;
   return {
     ...character,
     imageUrl: normalizeHofAssetUrl(character.imageUrl),
+    ...('equipment' in character ? {
+      equipment: detail.equipment.map((item) => ({
+        ...item,
+        iconUrl: normalizeHofAssetUrl(item.iconUrl) ?? '',
+      })),
+      equipmentCandidates: (detail.equipmentCandidates ?? []).map((item) => ({
+        ...item,
+        iconUrl: normalizeHofAssetUrl(item.iconUrl) ?? '',
+      })),
+      learnedSkills: detail.learnedSkills.map((skill) => ({
+        ...skill,
+        iconUrl: normalizeHofAssetUrl(skill.iconUrl) ?? '',
+      })),
+      learnableSkills: detail.learnableSkills.map((skill) => ({
+        ...skill,
+        iconUrl: normalizeHofAssetUrl(skill.iconUrl) ?? '',
+      })),
+    } : {}),
   };
 }
 

@@ -29,6 +29,7 @@ type UseCharacterSyncOptions = {
 export function useCharacterSync({ api, describeError, onNotice }: UseCharacterSyncOptions) {
   const [characters, setCharacters] = useState<HofCharacter[]>([]);
   const [characterSyncLabel, setCharacterSyncLabel] = useState<string | null>(null);
+  const [characterSyncJob, setCharacterSyncJob] = useState<CharacterSyncJobResponse | null>(null);
   const subscriptionRef = useRef<SseSubscription | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const automaticSyncEvaluatedRef = useRef(false);
@@ -44,12 +45,14 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
   }, []);
 
   const applySnapshot = useCallback((snapshot: CharacterSyncJobResponse) => {
+    setCharacterSyncJob(snapshot);
     setCharacters(snapshot.characters);
     if (snapshot.status === 'running' || snapshot.status === 'pending') {
       const progress = snapshot.rosterCount > 0
         ? `${snapshot.syncedCount.toLocaleString('en-US')}/${snapshot.rosterCount.toLocaleString('en-US')}`
         : '준비 중';
-      setCharacterSyncLabel(`동기화 ${progress}`);
+      const currentName = snapshot.characters.find((item) => item.hofCharacterId === snapshot.currentHofCharacterId)?.name;
+      setCharacterSyncLabel(`동기화 ${progress}${currentName ? ` · ${currentName}` : ''}`);
     } else {
       setCharacterSyncLabel(null);
     }
@@ -62,6 +65,7 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
       ? `동기화 ${formatCharacterSyncProgress(event)}`
       : '동기화 준비 중');
     setCharacters((current) => upsertCharacterFromSyncEvent(current, event));
+    setCharacterSyncJob((current) => current ? { ...current, status: event.eventType === 'stopped' ? 'stopped' : current.status, rosterCount: event.rosterCount, syncedCount: event.syncedCount, message: event.message, characters: event.character ? upsertCharacterFromSyncEvent(current.characters, event) : current.characters } : current);
 
     if (!shouldCloseCharacterSyncSubscription(event)) return;
 
@@ -106,6 +110,7 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
     closeSubscription();
     setCharacterSyncLabel('동기화 준비 중');
     const job = await api.startCharacterSyncJob();
+    setCharacterSyncJob(job);
     openSubscription(job.jobId);
   }, [api, closeSubscription, openSubscription]);
 
@@ -121,7 +126,7 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
 
   const upsertCharacter = useCallback((incoming: HofCharacter) => {
     setCharacters((current) => {
-      const index = current.findIndex((item) => item.hofCharacterId === incoming.hofCharacterId);
+      const index = current.findIndex((item) => item.id === incoming.id);
       if (index < 0) return [...current, incoming];
       return current.map((item, itemIndex) => itemIndex === index ? incoming : item);
     });
@@ -131,11 +136,24 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
     setCharacters(incoming);
   }, []);
 
+  const stopCharacterSync = useCallback(async () => {
+    if (!characterSyncJob) return;
+    applySnapshot(await api.stopCharacterSyncJob(characterSyncJob.jobId));
+  }, [api, applySnapshot, characterSyncJob]);
+
+  const resumeCharacterSync = useCallback(async () => {
+    if (!characterSyncJob) return;
+    const snapshot = await api.resumeCharacterSyncJob(characterSyncJob.jobId);
+    applySnapshot(snapshot);
+    openSubscription(snapshot.jobId);
+  }, [api, applySnapshot, characterSyncJob, openSubscription]);
+
   /** 로그아웃에서 화면 목록, 진행 표시와 연결을 원자적으로 초기화한다. */
   const resetCharacterSync = useCallback(() => {
     closeSubscription();
     setCharacters([]);
     setCharacterSyncLabel(null);
+    setCharacterSyncJob(null);
     automaticSyncEvaluatedRef.current = false;
   }, [closeSubscription]);
 
@@ -144,6 +162,9 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
   return {
     characters,
     characterSyncLabel,
+    characterSyncJob,
+    stopCharacterSync,
+    resumeCharacterSync,
     loadSavedCharacters,
     startAutomaticSyncIfRequired,
     upsertCharacter,

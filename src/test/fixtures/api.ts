@@ -17,6 +17,8 @@ export function makeHofCharacter(
     level: 60,
     patternSlotCount: 5,
     imageUrl: null,
+    lifecycle: 'ACTIVE', lastSeenAt: null, missingSince: null, archivedAt: null,
+    rosterOrder: index, revision: '2026-08-17T00:00:00Z', detailSyncedAt: null, sectionStates: [],
     ...overrides,
   };
 }
@@ -51,6 +53,8 @@ export function makeHofCharacterDetail(
   return {
     ...character,
     statusLines: [],
+    statusEffects: [],
+    faith: null,
     patternSlots: [],
     stats: {
       atk: null,
@@ -65,6 +69,7 @@ export function makeHofCharacterDetail(
       costMax: null,
     },
     actionPatterns: [],
+    patternOptions: [],
     positionGuard: {
       positions: [],
       selectedPosition: '',
@@ -72,6 +77,7 @@ export function makeHofCharacterDetail(
       guardText: '',
     },
     equipment: [],
+    equipmentCandidates: [],
     learnedSkills: [],
     learnableSkills: [],
     ...overrides,

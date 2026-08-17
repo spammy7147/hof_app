@@ -1,20 +1,20 @@
-import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { StatusBar } from "expo-status-bar";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
-import { LoginScreen } from './screens/LoginScreen';
-import { MainScreen } from './screens/MainScreen';
-import { AppProviders } from './components/AppProviders';
-import { CaptchaChallengeModal } from './components/CaptchaChallengeModal';
-import { BackendApiClient } from './services/backendApi';
-import { useCharacterSync } from './features/characters/useCharacterSync';
-import { useCaptchaGate } from './features/captcha/useCaptchaGate';
-import { useAndroidPushRegistration } from './features/push/useAndroidPushRegistration';
-import { RequiredUpdateGate } from './features/update/RequiredUpdateGate';
-import { isCaptchaRequiredError } from './domain/captchaGate';
-import { mergeObservedHofStatus } from './domain/hofStatus';
-import { UnifiedAutomationController } from './domain/unifiedAutomationController';
-import { toUserFacingErrorMessage } from './domain/userFacingErrors';
+import { LoginScreen } from "./screens/LoginScreen";
+import { MainScreen } from "./screens/MainScreen";
+import { AppProviders } from "./components/AppProviders";
+import { CaptchaChallengeModal } from "./components/CaptchaChallengeModal";
+import { BackendApiClient } from "./services/backendApi";
+import { useCharacterSync } from "./features/characters/useCharacterSync";
+import { useCaptchaGate } from "./features/captcha/useCaptchaGate";
+import { useAndroidPushRegistration } from "./features/push/useAndroidPushRegistration";
+import { RequiredUpdateGate } from "./features/update/RequiredUpdateGate";
+import { isCaptchaRequiredError } from "./domain/captchaGate";
+import { mergeObservedHofStatus } from "./domain/hofStatus";
+import { UnifiedAutomationController } from "./domain/unifiedAutomationController";
+import { toUserFacingErrorMessage } from "./domain/userFacingErrors";
 import type {
   BattleCategoryResponse,
   BattleLogResponse,
@@ -25,12 +25,16 @@ import type {
   AdventureMapStatsPeriod,
   CreatePartyPresetRequest,
   CreatePartyPresetFolderRequest,
-  CharacterManagementActionRequest,
-  CharacterManagementSnapshot,
+  CharacterCommand,
+  CharacterCommandResult,
+  CharacterPatternApplyRequest,
+  CharacterPatternOperationResult,
+  CharacterTransferPreviewRequest,
+  CharacterTransferExecutionResult,
+  CharacterDeepSyncResponse,
   HofCharacterDetail,
   HofStatusResponse,
   HofObservedStatusResponse,
-  LoadPatternResponse,
   MovePartyPresetFolderRequest,
   PartyPresetCatalogResponse,
   PartyPresetResponse,
@@ -39,11 +43,11 @@ import type {
   ReorderPartyPresetsRequest,
   RunBattleRequest,
   UpdatePartyPresetRequest,
-} from './types/api';
-import { theme } from './styles/theme';
-import { createTownApi } from './features/town/api/townApi';
+} from "./types/api";
+import { theme } from "./styles/theme";
+import { createTownApi } from "./features/town/api/townApi";
 
-type ScreenMode = 'boot' | 'login' | 'main';
+type ScreenMode = "boot" | "login" | "main";
 
 type AppSession = {
   loggedIn: boolean;
@@ -68,36 +72,52 @@ export default function App() {
 
 function AppContent({ api }: { api: BackendApiClient }) {
   const townApi = useMemo(() => createTownApi(api), [api]);
-  const automationController = useMemo(() => new UnifiedAutomationController({
-    fetch: () => api.fetchUnifiedAutomation(),
-    create: (request) => api.createAutomationEntry(request),
-    delete: (entryId) => api.deleteAutomationEntry(entryId),
-    reorder: (entryIds) => api.reorderAutomationEntries(entryIds),
-    updateQuest: (request) => api.updateQuestAutomation(request),
-    updateHomeQuest: (request) => api.updateHomeQuestAutomation(request),
-    updateBattle: (request) => api.updateBattleMapAutomation(request),
-    updateAdventure: (request) => api.updateAdventureMapAutomation(request),
-    updateFishing: (request) => api.updateFishingAutomation(request),
-    updateUnion: (request) => api.updateUnionAutomation(request),
-    updateRaid: (request) => api.updateRaidAutomation(request),
-    fetchHistory: (cursor) => api.fetchAutomationHistory(cursor),
-    fetchQuests: () => api.fetchQuests(),
-    changeState: (action) => api.changeUnifiedAutomationState(action),
-  }), [api]);
-  const [mode, setMode] = useState<ScreenMode>('boot');
+  const automationController = useMemo(
+    () =>
+      new UnifiedAutomationController({
+        fetch: () => api.fetchUnifiedAutomation(),
+        create: (request) => api.createAutomationEntry(request),
+        delete: (entryId) => api.deleteAutomationEntry(entryId),
+        reorder: (entryIds) => api.reorderAutomationEntries(entryIds),
+        updateQuest: (request) => api.updateQuestAutomation(request),
+        updateHomeQuest: (request) => api.updateHomeQuestAutomation(request),
+        updateBattle: (request) => api.updateBattleMapAutomation(request),
+        updateAdventure: (request) => api.updateAdventureMapAutomation(request),
+        updateFishing: (request) => api.updateFishingAutomation(request),
+        updateUnion: (request) => api.updateUnionAutomation(request),
+        updateRaid: (request) => api.updateRaidAutomation(request),
+        fetchHistory: (cursor) => api.fetchAutomationHistory(cursor),
+        fetchQuests: () => api.fetchQuests(),
+        changeState: (action) => api.changeUnifiedAutomationState(action),
+      }),
+    [api],
+  );
+  const [mode, setMode] = useState<ScreenMode>("boot");
   const [session, setSession] = useState<AppSession | null>(null);
-  const [battleCategories, setBattleCategories] = useState<BattleCategoryResponse[]>([]);
-  const [areBattleCategoriesLoaded, setAreBattleCategoriesLoaded] = useState(false);
-  const [isBattleCategoriesLoading, setIsBattleCategoriesLoading] = useState(false);
-  const [battleCategoriesError, setBattleCategoriesError] = useState<string | null>(null);
+  const [battleCategories, setBattleCategories] = useState<
+    BattleCategoryResponse[]
+  >([]);
+  const [areBattleCategoriesLoaded, setAreBattleCategoriesLoaded] =
+    useState(false);
+  const [isBattleCategoriesLoading, setIsBattleCategoriesLoading] =
+    useState(false);
+  const [battleCategoriesError, setBattleCategoriesError] = useState<
+    string | null
+  >(null);
   const [status, setStatus] = useState<HofStatusResponse | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [manualActionPending, setManualActionPending] = useState(false);
-  const describeError = useCallback((error: unknown): string => toUserFacingErrorMessage(error), []);
+  const describeError = useCallback(
+    (error: unknown): string => toUserFacingErrorMessage(error),
+    [],
+  );
 
-  useEffect(() => api.subscribeManualActionState(setManualActionPending), [api]);
+  useEffect(
+    () => api.subscribeManualActionState(setManualActionPending),
+    [api],
+  );
 
   /** 전역 안내가 화면을 영구 점유하지 않도록 잠시 보여준 뒤 자동으로 닫는다. */
   useEffect(() => {
@@ -110,6 +130,9 @@ function AppContent({ api }: { api: BackendApiClient }) {
   const {
     characters,
     characterSyncLabel,
+    characterSyncJob,
+    stopCharacterSync,
+    resumeCharacterSync,
     loadSavedCharacters,
     startAutomaticSyncIfRequired,
     upsertCharacter,
@@ -131,7 +154,11 @@ function AppContent({ api }: { api: BackendApiClient }) {
     retryAutomatic: retryGlobalCaptchaAutomatically,
     waitForResolution: waitForCaptchaResolution,
     reset: resetCaptchaGate,
-  } = useCaptchaGate({ authenticated: session?.loggedIn === true, api, describeError });
+  } = useCaptchaGate({
+    authenticated: session?.loggedIn === true,
+    api,
+    describeError,
+  });
   const captchaImageSource = currentCaptcha?.imageUrl
     ? api.getAuthenticatedImageSource(currentCaptcha.imageUrl)
     : null;
@@ -154,9 +181,12 @@ function AppContent({ api }: { api: BackendApiClient }) {
     return nextStatus;
   }, [api]);
 
-  const handleStatusObserved = useCallback((observed: HofObservedStatusResponse) => {
-    setStatus((current) => mergeObservedHofStatus(current, observed));
-  }, []);
+  const handleStatusObserved = useCallback(
+    (observed: HofObservedStatusResponse) => {
+      setStatus((current) => mergeObservedHofStatus(current, observed));
+    },
+    [],
+  );
 
   /**
    * 전투 탭에서 사용할 큰 카테고리 목록을 백엔드에서 불러온다.
@@ -178,97 +208,238 @@ function AppContent({ api }: { api: BackendApiClient }) {
   /**
    * 선택한 전투 카테고리의 맵 목록을 불러온다.
    */
-  const loadBattleMaps = useCallback((categoryId: string): Promise<BattleMapResponse[]> => {
-    return api.fetchBattleMaps(categoryId);
-  }, [api]);
+  const loadBattleMaps = useCallback(
+    (categoryId: string): Promise<BattleMapResponse[]> => {
+      return api.fetchBattleMaps(categoryId);
+    },
+    [api],
+  );
 
   /**
    * 전투 실행 API를 호출하고, 캡차가 필요하면 모달 인증 후 같은 요청을 한 번 재시도한다.
    */
-  const runBattle = useCallback(async (
-    request: RunBattleRequest,
-  ): Promise<BattleResultResponse> => {
-    try {
-      return await api.runBattle(request);
-    } catch (error) {
-      if (!isCaptchaRequiredError(error)) {
-        throw error;
+  const runBattle = useCallback(
+    async (request: RunBattleRequest): Promise<BattleResultResponse> => {
+      try {
+        return await api.runBattle(request);
+      } catch (error) {
+        if (!isCaptchaRequiredError(error)) {
+          throw error;
+        }
+
+        const resumePromise = waitForCaptchaResolution().catch(
+          (resumeError: unknown) => {
+            throw resumeError;
+          },
+        );
+        await resumePromise;
+
+        return await api.runBattle(request);
       }
+    },
+    [api, waitForCaptchaResolution],
+  );
 
-      const resumePromise = waitForCaptchaResolution().catch((resumeError: unknown) => {
-        throw resumeError;
-      });
-      await resumePromise;
+  const loadBattleLogs = useCallback(
+    (query?: BattleLogQuery): Promise<BattleLogResponse[]> =>
+      api.fetchBattleLogs(query),
+    [api],
+  );
 
-      return await api.runBattle(request);
-    }
-  }, [api, waitForCaptchaResolution]);
+  const loadBattleStats = useCallback(
+    (period?: AdventureMapStatsPeriod): Promise<BattleStatsResponse> =>
+      api.fetchBattleStats(period),
+    [api],
+  );
 
-  const loadBattleLogs = useCallback((query?: BattleLogQuery): Promise<BattleLogResponse[]> => (
-    api.fetchBattleLogs(query)
-  ), [api]);
+  const getPartyPresetCatalog = useCallback(
+    (): Promise<PartyPresetCatalogResponse> => api.getPartyPresetCatalog(),
+    [api],
+  );
+  const createPartyPresetFolder = useCallback(
+    (request: CreatePartyPresetFolderRequest) =>
+      api.createPartyPresetFolder(request),
+    [api],
+  );
+  const renamePartyPresetFolder = useCallback(
+    (folderId: number, request: RenamePartyPresetFolderRequest) =>
+      api.renamePartyPresetFolder(folderId, request),
+    [api],
+  );
+  const reorderPartyPresetFolders = useCallback(
+    (request: ReorderPartyPresetFoldersRequest) =>
+      api.reorderPartyPresetFolders(request),
+    [api],
+  );
+  const movePartyPresetFolder = useCallback(
+    (folderId: number, request: MovePartyPresetFolderRequest) =>
+      api.movePartyPresetFolder(folderId, request),
+    [api],
+  );
+  const deletePartyPresetFolder = useCallback(
+    (folderId: number) => api.deletePartyPresetFolder(folderId),
+    [api],
+  );
 
-  const loadBattleStats = useCallback((period?: AdventureMapStatsPeriod): Promise<BattleStatsResponse> => api.fetchBattleStats(period), [api]);
+  const createPartyPreset = useCallback(
+    (request: CreatePartyPresetRequest): Promise<PartyPresetResponse> =>
+      api.createPartyPreset(request),
+    [api],
+  );
 
-  const getPartyPresetCatalog = useCallback((): Promise<PartyPresetCatalogResponse> => api.getPartyPresetCatalog(), [api]);
-  const createPartyPresetFolder = useCallback((request: CreatePartyPresetFolderRequest) => api.createPartyPresetFolder(request), [api]);
-  const renamePartyPresetFolder = useCallback((folderId: number, request: RenamePartyPresetFolderRequest) => api.renamePartyPresetFolder(folderId, request), [api]);
-  const reorderPartyPresetFolders = useCallback((request: ReorderPartyPresetFoldersRequest) => api.reorderPartyPresetFolders(request), [api]);
-  const movePartyPresetFolder = useCallback((folderId: number, request: MovePartyPresetFolderRequest) => api.movePartyPresetFolder(folderId, request), [api]);
-  const deletePartyPresetFolder = useCallback((folderId: number) => api.deletePartyPresetFolder(folderId), [api]);
+  const updatePartyPreset = useCallback(
+    (
+      presetId: number,
+      request: UpdatePartyPresetRequest,
+    ): Promise<PartyPresetResponse> => api.updatePartyPreset(presetId, request),
+    [api],
+  );
 
-  const createPartyPreset = useCallback((
-    request: CreatePartyPresetRequest,
-  ): Promise<PartyPresetResponse> => api.createPartyPreset(request), [api]);
+  const makePartyPresetPrimary = useCallback(
+    (presetId: number): Promise<PartyPresetResponse> =>
+      api.makePartyPresetPrimary(presetId),
+    [api],
+  );
 
-  const updatePartyPreset = useCallback((
-    presetId: number,
-    request: UpdatePartyPresetRequest,
-  ): Promise<PartyPresetResponse> => api.updatePartyPreset(presetId, request), [api]);
+  const reorderPartyPresets = useCallback(
+    (request: ReorderPartyPresetsRequest): Promise<PartyPresetResponse[]> =>
+      api.reorderPartyPresets(request),
+    [api],
+  );
 
-  const makePartyPresetPrimary = useCallback((
-    presetId: number,
-  ): Promise<PartyPresetResponse> => api.makePartyPresetPrimary(presetId), [api]);
+  const deletePartyPreset = useCallback(
+    (presetId: number): Promise<null> => api.deletePartyPreset(presetId),
+    [api],
+  );
 
-  const reorderPartyPresets = useCallback((
-    request: ReorderPartyPresetsRequest,
-  ): Promise<PartyPresetResponse[]> => api.reorderPartyPresets(request), [api]);
+  const loadCharacterDetail = useCallback(
+    (characterId: number): Promise<HofCharacterDetail> =>
+      api.fetchCharacterDetail(characterId),
+    [api],
+  );
 
-  const deletePartyPreset = useCallback((
-    presetId: number,
-  ): Promise<null> => api.deletePartyPreset(presetId), [api]);
+  const executeTypedCharacterCommand = useCallback(
+    async (command: CharacterCommand): Promise<CharacterCommandResult> => {
+      const result = await api.executeCharacterCommand(command);
+      if (result.type === "IdentityResolutionRequired") return result;
+      replaceCharacters(await api.listCharacters());
+      if (result.type && result.type !== "Completed") {
+        if ("message" in result) throw new Error(result.message);
+        throw new Error(
+          "서버에서 캐릭터 설정이 변경되었습니다. 동기화 후 다시 시도해 주세요.",
+        );
+      }
+      return result;
+    },
+    [api, replaceCharacters],
+  );
 
-  const loadCharacterDetail = useCallback((
-    hofCharacterId: string,
-  ): Promise<HofCharacterDetail> => api.fetchCharacterDetail(hofCharacterId), [api]);
+  const applyTypedCharacterPattern = useCallback(
+    async (
+      request: CharacterPatternApplyRequest,
+    ): Promise<CharacterPatternOperationResult> => {
+      const result = await api.applyCharacterPattern(request);
+      // 충돌 시에는 사용자의 로컬 초안을 보존해야 하므로 서버 상세로 덮지 않는다.
+      if (result.revision)
+        upsertCharacter(await api.fetchCharacterDetail(request.characterId));
+      return result;
+    },
+    [api, upsertCharacter],
+  );
+  const loadSavedCharacterPattern = useCallback(
+    async (
+      characterId: number,
+      slotCode: string,
+    ): Promise<CharacterPatternOperationResult> => {
+      const result = await api.loadSavedCharacterPattern(characterId, slotCode);
+      upsertCharacter(await api.fetchCharacterDetail(characterId));
+      return result;
+    },
+    [api, upsertCharacter],
+  );
+  const deleteSavedCharacterPattern = useCallback(
+    (
+      characterId: number,
+      slotCode: string,
+    ): Promise<CharacterPatternOperationResult> =>
+      api.deleteSavedCharacterPattern(characterId, slotCode),
+    [api],
+  );
 
-  const loadCharacterManagement = useCallback((
-    hofCharacterId: string,
-  ): Promise<CharacterManagementSnapshot> => api.fetchCharacterManagement(hofCharacterId), [api]);
+  const refreshCharacterDetail = useCallback(
+    async (characterId: number): Promise<HofCharacterDetail> => {
+      const detail = await api.refreshCharacterDetail(characterId);
+      upsertCharacter(detail);
+      return detail;
+    },
+    [api, upsertCharacter],
+  );
+  const deepSyncCharacter = useCallback(
+    async (
+      characterId: number,
+      onProgress?: (progress: CharacterDeepSyncResponse) => void,
+    ): Promise<CharacterDeepSyncResponse> => {
+      const response = await api.deepSyncCharacter(characterId, onProgress);
+      upsertCharacter(await api.fetchCharacterDetail(characterId));
+      setNotice("저장 패턴과 장비 저장 1·2까지 동기화했습니다.");
+      return response;
+    },
+    [api, upsertCharacter],
+  );
 
-  const executeCharacterAction = useCallback((
-    hofCharacterId: string,
-    request: CharacterManagementActionRequest,
-  ): Promise<CharacterManagementSnapshot> => api.executeCharacterManagementAction(
-    hofCharacterId,
-    request,
-  ).then((snapshot) => {
-    if (snapshot.characters.length > 0 || snapshot.targetRemoved) {
-      replaceCharacters(snapshot.characters);
-    } else if (snapshot.character) {
-      upsertCharacter(snapshot.character);
-    }
-    if (snapshot.messages.length > 0) setNotice(snapshot.messages.join('\n'));
-    return snapshot;
-  }), [api, replaceCharacters, upsertCharacter]);
-
-  const loadCharacterPattern = useCallback((
-    hofCharacterId: string,
-    slot: number,
-  ): Promise<LoadPatternResponse> => api.loadCharacterPattern(hofCharacterId, slot).then((response) => {
-    if (response.character) upsertCharacter(response.character);
-    return response;
-  }), [api, upsertCharacter]);
+  const archiveCharacter = useCallback(
+    async (characterId: number) => {
+      replaceCharacters(await api.archiveCharacter(characterId));
+    },
+    [api, replaceCharacters],
+  );
+  const restoreCharacter = useCallback(
+    async (characterId: number) => {
+      replaceCharacters(await api.restoreCharacter(characterId));
+    },
+    [api, replaceCharacters],
+  );
+  const deleteCharacterPermanently = useCallback(
+    async (characterId: number) => {
+      replaceCharacters(await api.deleteCharacterPermanently(characterId));
+    },
+    [api, replaceCharacters],
+  );
+  const linkCharacter = useCallback(
+    async (characterId: number, newHofCharacterId: string) => {
+      replaceCharacters(
+        await api.linkCharacter(characterId, newHofCharacterId),
+      );
+      upsertCharacter(await api.refreshCharacterDetail(characterId));
+    },
+    [api, replaceCharacters, upsertCharacter],
+  );
+  const previewCharacterTransfer = useCallback(
+    (request: CharacterTransferPreviewRequest) =>
+      api.previewCharacterTransfer(request),
+    [api],
+  );
+  const executeCharacterTransfer = useCallback(
+    async (
+      request: CharacterTransferPreviewRequest,
+      onProgress?: (progress: CharacterTransferExecutionResult) => void,
+    ) => {
+      const result = await api.executeCharacterTransfer(request, [], onProgress);
+      upsertCharacter(
+        await api.fetchCharacterDetail(request.targetCharacterId),
+      );
+      const failures = result.results.filter(
+        (item) => item.status === "FAILED",
+      ).length;
+      setNotice(
+        failures > 0
+          ? `${failures}개 설정을 적용하지 못했습니다. 결과를 확인해 주세요.`
+          : "선택한 캐릭터 설정을 가져왔습니다.",
+      );
+      return result;
+    },
+    [api, upsertCharacter],
+  );
 
   /**
    * 로그인 직후 필요한 초기 데이터들을 병렬로 불러온다.
@@ -279,49 +450,56 @@ function AppContent({ api }: { api: BackendApiClient }) {
       loadSavedCharacters(),
     ]);
 
-    const failed = results.find((result) => result.status === 'rejected');
-    if (failed?.status === 'rejected') {
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed?.status === "rejected") {
       setNotice(describeError(failed.reason));
       return;
     }
     const statusResult = results[0];
-    if (statusResult.status === 'fulfilled') {
-      await startAutomaticSyncIfRequired(statusResult.value.characterSyncRequired);
+    if (statusResult.status === "fulfilled") {
+      await startAutomaticSyncIfRequired(
+        statusResult.value.characterSyncRequired,
+      );
     }
-  }, [describeError, loadSavedCharacters, refreshStatus, startAutomaticSyncIfRequired]);
+  }, [
+    describeError,
+    loadSavedCharacters,
+    refreshStatus,
+    startAutomaticSyncIfRequired,
+  ]);
 
   /**
    * HOF 로그인 요청부터 저장 여부 처리, 초기 데이터 로딩까지 한 번에 수행한다.
    */
-  const loginAndHydrate = useCallback(async (
-    loginId: string,
-    password: string,
-  ) => {
-    setIsLoggingIn(true);
-    setLoginError(null);
+  const loginAndHydrate = useCallback(
+    async (loginId: string, password: string) => {
+      setIsLoggingIn(true);
+      setLoginError(null);
 
-    try {
-      const loginResponse = await api.login({ loginId, password });
-      const nextSession: AppSession = {
-        loggedIn: Boolean(loginResponse.accessToken),
-      };
+      try {
+        const loginResponse = await api.login({ loginId, password });
+        const nextSession: AppSession = {
+          loggedIn: Boolean(loginResponse.accessToken),
+        };
 
-      // 같은 앱 프로세스에서 다른 계정으로 로그인해도 이전 계정의 진행 요청과 snapshot을 넘기지 않는다.
-      automationController.reset();
-      setSession(nextSession);
-      setMode('main');
-      setNotice(null);
+        // 같은 앱 프로세스에서 다른 계정으로 로그인해도 이전 계정의 진행 요청과 snapshot을 넘기지 않는다.
+        automationController.reset();
+        setSession(nextSession);
+        setMode("main");
+        setNotice(null);
 
-      await hydrateAfterLogin();
-    } catch (error) {
-      const message = describeError(error);
-      setLoginError(message);
-      setNotice(message);
-      throw error;
-    } finally {
-      setIsLoggingIn(false);
-    }
-  }, [api, automationController, describeError, hydrateAfterLogin]);
+        await hydrateAfterLogin();
+      } catch (error) {
+        const message = describeError(error);
+        setLoginError(message);
+        setNotice(message);
+        throw error;
+      } finally {
+        setIsLoggingIn(false);
+      }
+    },
+    [api, automationController, describeError, hydrateAfterLogin],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -333,7 +511,7 @@ function AppContent({ api }: { api: BackendApiClient }) {
       try {
         await api.restoreSession();
       } catch {
-        if (!cancelled) setMode('login');
+        if (!cancelled) setMode("login");
         return;
       }
       if (cancelled) return;
@@ -341,7 +519,7 @@ function AppContent({ api }: { api: BackendApiClient }) {
       setSession({
         loggedIn: true,
       });
-      setMode('main');
+      setMode("main");
       setNotice(null);
       await hydrateAfterLogin();
     }
@@ -356,9 +534,12 @@ function AppContent({ api }: { api: BackendApiClient }) {
   /**
    * 로그인 화면에서 직접 입력한 ID/PW로 로그인할 때 호출된다.
    */
-  const handleManualLogin = useCallback(async (loginId: string, password: string) => {
-    await loginAndHydrate(loginId, password);
-  }, [loginAndHydrate]);
+  const handleManualLogin = useCallback(
+    async (loginId: string, password: string) => {
+      await loginAndHydrate(loginId, password);
+    },
+    [loginAndHydrate],
+  );
 
   /**
    * 서버 token family와 앱의 세션 상태를 모두 지우고 로그인 화면으로 돌아간다.
@@ -366,7 +547,7 @@ function AppContent({ api }: { api: BackendApiClient }) {
   const handleLogout = useCallback(async () => {
     await api.logout().catch(() => undefined);
     automationController.reset();
-    resetCaptchaGate(new Error('로그아웃되었습니다.'));
+    resetCaptchaGate(new Error("로그아웃되었습니다."));
     setSession(null);
     resetCharacterSync();
     setBattleCategories([]);
@@ -375,18 +556,18 @@ function AppContent({ api }: { api: BackendApiClient }) {
     setStatus(null);
     setNotice(null);
     setLoginError(null);
-    setMode('login');
+    setMode("login");
   }, [api, automationController, resetCaptchaGate, resetCharacterSync]);
 
   let content;
-  if (mode === 'boot') {
+  if (mode === "boot") {
     content = (
       <View style={styles.bootContainer}>
         <ActivityIndicator color={theme.colors.accentGreen} />
         <Text style={styles.bootText}>앱 준비 중</Text>
       </View>
     );
-  } else if (mode === 'login') {
+  } else if (mode === "login") {
     content = (
       <LoginScreen
         errorMessage={loginError}
@@ -405,6 +586,9 @@ function AppContent({ api }: { api: BackendApiClient }) {
         battleCategoriesError={battleCategoriesError}
         characters={characters}
         characterSyncLabel={characterSyncLabel}
+        characterSyncJob={characterSyncJob}
+        onStopCharacterSync={stopCharacterSync}
+        onResumeCharacterSync={resumeCharacterSync}
         notice={notice}
         onLoadBattleCategories={loadBattleCategories}
         onLoadBattleMaps={loadBattleMaps}
@@ -426,11 +610,20 @@ function AppContent({ api }: { api: BackendApiClient }) {
         onReorderPartyPresets={reorderPartyPresets}
         onDeletePartyPreset={deletePartyPreset}
         onLoadCharacterDetail={loadCharacterDetail}
-        onLoadCharacterManagement={loadCharacterManagement}
-        onExecuteCharacterAction={executeCharacterAction}
-        onLoadPattern={loadCharacterPattern}
+        onExecuteCharacterCommand={executeTypedCharacterCommand}
+        onApplyCharacterPattern={applyTypedCharacterPattern}
+        onLoadSavedCharacterPattern={loadSavedCharacterPattern}
+        onDeleteSavedCharacterPattern={deleteSavedCharacterPattern}
+        onRefreshCharacterDetail={refreshCharacterDetail}
+        onDeepSyncCharacter={deepSyncCharacter}
+        onArchiveCharacter={archiveCharacter}
+        onRestoreCharacter={restoreCharacter}
+        onDeleteCharacterPermanently={deleteCharacterPermanently}
+        onLinkCharacter={linkCharacter}
+        onPreviewCharacterTransfer={previewCharacterTransfer}
+        onExecuteCharacterTransfer={executeCharacterTransfer}
         onLogout={handleLogout}
-        onOpenLogin={() => setMode('login')}
+        onOpenLogin={() => setMode("login")}
         townApi={townApi}
         resolveCaptcha={waitForCaptchaResolution}
       />
@@ -439,40 +632,40 @@ function AppContent({ api }: { api: BackendApiClient }) {
 
   return (
     <View style={styles.container}>
-        {content}
-        {manualActionPending ? (
-          <View
-            accessibilityLabel="요청 처리 중"
-            accessibilityLiveRegion="polite"
-            accessibilityRole="progressbar"
-            style={styles.manualActionOverlay}
-          >
-            <View style={styles.manualActionCard}>
-              <ActivityIndicator color={theme.colors.accentGreen} />
-              <Text style={styles.manualActionText}>요청 처리 중</Text>
-            </View>
+      {content}
+      {manualActionPending ? (
+        <View
+          accessibilityLabel="요청 처리 중"
+          accessibilityLiveRegion="polite"
+          accessibilityRole="progressbar"
+          style={styles.manualActionOverlay}
+        >
+          <View style={styles.manualActionCard}>
+            <ActivityIndicator color={theme.colors.accentGreen} />
+            <Text style={styles.manualActionText}>요청 처리 중</Text>
           </View>
-        ) : null}
-        <CaptchaChallengeModal
-          visible={captchaModalVisible}
-          captcha={currentCaptcha}
-          imageSource={captchaImageSource}
-          isLoading={isCaptchaLoading}
-          isSubmitting={isCaptchaSubmitting}
-          isAutoSolving={isCaptchaAutoSolving}
-          message={captchaMessage}
-          errorMessage={captchaErrorMessage}
-          blocking={captchaModalBlocking}
-          onRefresh={() => {
-            void openCaptchaModal({ blocking: captchaModalBlocking });
-          }}
-          onAutoRetry={() => {
-            void retryGlobalCaptchaAutomatically();
-          }}
-          onSubmit={submitGlobalCaptchaAnswer}
-          onRequestClose={closeCaptchaModal}
-        />
-        <StatusBar style="light" />
+        </View>
+      ) : null}
+      <CaptchaChallengeModal
+        visible={captchaModalVisible}
+        captcha={currentCaptcha}
+        imageSource={captchaImageSource}
+        isLoading={isCaptchaLoading}
+        isSubmitting={isCaptchaSubmitting}
+        isAutoSolving={isCaptchaAutoSolving}
+        message={captchaMessage}
+        errorMessage={captchaErrorMessage}
+        blocking={captchaModalBlocking}
+        onRefresh={() => {
+          void openCaptchaModal({ blocking: captchaModalBlocking });
+        }}
+        onAutoRetry={() => {
+          void retryGlobalCaptchaAutomatically();
+        }}
+        onSubmit={submitGlobalCaptchaAnswer}
+        onRequestClose={closeCaptchaModal}
+      />
+      <StatusBar style="light" />
     </View>
   );
 }
@@ -486,8 +679,8 @@ const styles = StyleSheet.create({
   },
   bootContainer: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     gap: theme.spacing.sm,
   },
   bootText: {
@@ -496,17 +689,17 @@ const styles = StyleSheet.create({
   },
   manualActionOverlay: {
     ...StyleSheet.absoluteFill,
-    alignItems: 'center',
+    alignItems: "center",
     backgroundColor: theme.colors.overlay,
-    justifyContent: 'center',
+    justifyContent: "center",
   },
   manualActionCard: {
-    alignItems: 'center',
+    alignItems: "center",
     backgroundColor: theme.colors.surface,
     borderColor: theme.colors.borderStrong,
     borderRadius: theme.radius.md,
     borderWidth: 1,
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: theme.spacing.sm,
     paddingHorizontal: theme.spacing.xl,
     paddingVertical: theme.spacing.lg,
@@ -514,6 +707,6 @@ const styles = StyleSheet.create({
   manualActionText: {
     color: theme.colors.text,
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: "700",
   },
 });

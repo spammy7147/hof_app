@@ -6,6 +6,16 @@ export type CharacterGroup = {
   characters: HofCharacter[];
 };
 
+/** HOF 원본 목록 순서를 유지하고, 아직 순서를 모르는 기록만 이름순으로 뒤에 둔다. */
+export function sortCharactersByRosterOrder(characters: HofCharacter[]): HofCharacter[] {
+  return [...characters].sort((left, right) => {
+    const leftOrder = left.rosterOrder ?? Number.MAX_SAFE_INTEGER;
+    const rightOrder = right.rosterOrder ?? Number.MAX_SAFE_INTEGER;
+    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+    return displayCharacterName(left).localeCompare(displayCharacterName(right), 'ko-KR');
+  });
+}
+
 /**
  * 캐릭터 목록을 직업별 섹션으로 묶고, 각 섹션 안에서는 레벨 높은 순서로 정렬한다.
  */

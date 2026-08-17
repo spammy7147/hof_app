@@ -1,9 +1,19 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { groupCharactersByJob } from '../../main/domain/characters';
+import { groupCharactersByJob, sortCharactersByRosterOrder } from '../../main/domain/characters';
 
 describe('character utilities', () => {
+  it('keeps the HOF roster order in the ungrouped character list', () => {
+    const characters = [
+      { id: 1, hofCharacterId: '1', name: '셋', job: 'Knight', level: 1, patternSlotCount: 0, rosterOrder: 2, revision: '2026-08-17T00:00:00Z' },
+      { id: 2, hofCharacterId: '2', name: '하나', job: 'Knight', level: 1, patternSlotCount: 0, rosterOrder: 0, revision: '2026-08-17T00:00:00Z' },
+      { id: 3, hofCharacterId: '3', name: '둘', job: 'Knight', level: 1, patternSlotCount: 0, rosterOrder: 1, revision: '2026-08-17T00:00:00Z' },
+    ];
+
+    assert.deepEqual(sortCharactersByRosterOrder(characters).map((item) => item.id), [2, 3, 1]);
+  });
+
   it('groups characters by job and sorts each job by level descending then name', () => {
     const grouped = groupCharactersByJob([
       {
@@ -13,6 +23,7 @@ describe('character utilities', () => {
         job: 'Sage',
         level: 34,
         patternSlotCount: 3,
+        revision: '2026-08-17T00:00:00Z',
       },
       {
         id: 2,
@@ -21,6 +32,7 @@ describe('character utilities', () => {
         job: 'Sage',
         level: 51,
         patternSlotCount: 3,
+        revision: '2026-08-17T00:00:00Z',
       },
       {
         id: 3,
@@ -29,6 +41,7 @@ describe('character utilities', () => {
         job: 'Social Knight',
         level: 60,
         patternSlotCount: 7,
+        revision: '2026-08-17T00:00:00Z',
       },
     ]);
 
@@ -54,6 +67,7 @@ describe('character utilities', () => {
         job: '',
         level: null,
         patternSlotCount: 0,
+        revision: '2026-08-17T00:00:00Z',
       },
     ]);
 

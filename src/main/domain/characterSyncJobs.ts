@@ -13,7 +13,7 @@ export function upsertCharacterFromSyncEvent(
   if (!event.character) return characters;
 
   const withoutCharacter = characters.filter(
-    (character) => character.hofCharacterId !== event.character?.hofCharacterId,
+    (character) => character.id !== event.character?.id,
   );
 
   return [event.character, ...withoutCharacter].sort(compareCharacters);
@@ -23,7 +23,7 @@ export function upsertCharacterFromSyncEvent(
  * SSE 연결을 닫아도 되는 terminal 이벤트인지 판단한다.
  */
 export function shouldCloseCharacterSyncSubscription(event: CharacterSyncEventResponse): boolean {
-  return event.eventType === 'completed' || event.eventType === 'failed';
+  return event.eventType === 'completed' || event.eventType === 'failed' || event.eventType === 'stopped';
 }
 
 /**
