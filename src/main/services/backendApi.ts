@@ -30,6 +30,7 @@ import type {
   HofLoginRequest,
   LatestAndroidReleaseResponse,
   TokenResponse,
+  HofObservedStatusResponse,
   HofStatusResponse,
   QuestSnapshot,
   MovePartyPresetFolderRequest,
@@ -111,6 +112,7 @@ export class BackendApiClient {
   private readonly sessionChannel: BroadcastChannel | null;
   private readonly tokenBroadcastListeners = new Set<(token: string | null) => void>();
   private readonly manualActionListeners = new Set<(pending: boolean) => void>();
+  private readonly hofStatusListeners = new Set<(status: HofObservedStatusResponse) => void>();
   private manualActionPending = false;
 
   constructor(
@@ -180,6 +182,12 @@ export class BackendApiClient {
     this.manualActionListeners.add(listener);
     listener(this.manualActionPending);
     return () => this.manualActionListeners.delete(listener);
+  }
+
+  /** 백엔드 응답에 함께 실린 최신 HOF 상단 상태를 앱 전역에 전달한다. */
+  subscribeHofStatus(listener: (status: HofObservedStatusResponse) => void): () => void {
+    this.hofStatusListeners.add(listener);
+    return () => this.hofStatusListeners.delete(listener);
   }
 
   /** 인증이 필요한 백엔드 이미지를 expo-image가 읽을 수 있는 source로 만든다. */
@@ -847,6 +855,7 @@ export class BackendApiClient {
   }
 
   private async readResponse<T>(response: Response): Promise<T> {
+    this.publishObservedHofStatus(response.headers?.get(HOF_STATUS_HEADER));
     const text = await response.text();
     const body = parseJson(text);
 
@@ -859,6 +868,40 @@ export class BackendApiClient {
     }
 
     return body as T;
+  }
+
+  private publishObservedHofStatus(encoded: string | null | undefined): void {
+    const status = parseObservedHofStatusHeader(encoded);
+    if (!status) return;
+    for (const listener of this.hofStatusListeners) listener(status);
+  }
+}
+
+const HOF_STATUS_HEADER = 'X-HOF-Observed-Status';
+
+/** URL 인코딩된 응답 헤더를 검증된 상단 상태 계약으로 복원한다. */
+export function parseObservedHofStatusHeader(
+  encoded: string | null | undefined,
+): HofObservedStatusResponse | null {
+  if (!encoded) return null;
+  try {
+    const value: unknown = JSON.parse(decodeURIComponent(encoded));
+    if (!value || typeof value !== 'object') return null;
+    const status = value as Record<string, unknown>;
+    if (
+      typeof status.playerName !== 'string' ||
+      typeof status.funds !== 'number' ||
+      typeof status.timeCurrent !== 'number' ||
+      typeof status.timeMax !== 'number' ||
+      typeof status.work !== 'string' ||
+      typeof status.auction !== 'string' ||
+      typeof status.observedAt !== 'string'
+    ) {
+      return null;
+    }
+    return status as HofObservedStatusResponse;
+  } catch {
+    return null;
   }
 }
 

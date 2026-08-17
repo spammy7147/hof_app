@@ -188,6 +188,11 @@ function AppContent({ api }: { api: BackendApiClient }) {
     [],
   );
 
+  useEffect(
+    () => api.subscribeHofStatus?.(handleStatusObserved),
+    [api, handleStatusObserved],
+  );
+
   /**
    * 전투 탭에서 사용할 큰 카테고리 목록을 백엔드에서 불러온다.
    */

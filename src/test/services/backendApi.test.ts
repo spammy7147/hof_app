@@ -136,6 +136,47 @@ describe('BackendApiClient', () => {
     assert.equal(readHeader(requests[1]?.init.headers, 'Authorization'), 'Bearer access-1');
   });
 
+  it('publishes the latest HOF status carried by a backend response header', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const observed = {
+      playerName: '《얼어붙은 손길》공민이',
+      funds: 844_370_206,
+      timeCurrent: 223,
+      timeMax: 6000,
+      work: 'Nothing',
+      auction: 'Nothing',
+      observedAt: '2026-08-17T00:00:00Z',
+    };
+    globalThis.fetch = (async () => mockResponse(
+      { folders: [], presets: [] },
+      200,
+      { 'X-HOF-Observed-Status': encodeURIComponent(JSON.stringify(observed)) },
+    )) as unknown as typeof fetch;
+    const client = new BackendApiClient('http://backend.test');
+    const received: unknown[] = [];
+    client.subscribeHofStatus((status) => received.push(status));
+
+    await client.getPartyPresetCatalog();
+
+    assert.deepEqual(received, [observed]);
+  });
+
+  it('ignores a malformed HOF status response header', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    globalThis.fetch = (async () => mockResponse(
+      { folders: [], presets: [] },
+      200,
+      { 'X-HOF-Observed-Status': '%not-json' },
+    )) as unknown as typeof fetch;
+    const client = new BackendApiClient('http://backend.test');
+    const received: unknown[] = [];
+    client.subscribeHofStatus((status) => received.push(status));
+
+    await client.getPartyPresetCatalog();
+
+    assert.deepEqual(received, []);
+  });
+
   it('uses one refresh request for concurrent 401 responses and retries each request once', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const storage = memoryTokenStorage('refresh-old');
@@ -890,10 +931,11 @@ function tokenResponse(accessToken: string, refreshToken?: string) {
   };
 }
 
-function mockResponse(body: unknown, status = 200) {
+function mockResponse(body: unknown, status = 200, headers: Record<string, string> = {}) {
   return {
     ok: status >= 200 && status < 300,
     status,
+    headers: new Headers(headers),
     text: async () => (body == null ? '' : JSON.stringify(body)),
   } as Response;
 }
