@@ -117,6 +117,38 @@ describe('TownItemList', () => {
     await act(async () => { renderer.unmount(); });
   });
 
+  it('선택된 행만 초록 테두리로 표시하고 선택 불가 행은 더 흐리게 표시한다', async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(React.createElement(TownItemList, {
+        rows: [
+          { id: 'selected', label: '선택됨', selectable: true, detail: null, imageUrl: null, price: null, quantity: null },
+          { id: 'available', label: '선택 가능함', selectable: true, detail: null, imageUrl: null, price: null, quantity: null },
+          { id: 'unavailable', label: '선택 못함', selectable: false, detail: null, imageUrl: null, price: null, quantity: null },
+        ],
+        selectionMode: 'single',
+        selectedIds: ['selected'],
+        onSelectionChange: () => undefined,
+        showSelectionAvailability: true,
+      }));
+    });
+
+    const selectedRow = renderer.root.find((node) => node.props.accessibilityLabel === '선택됨 선택');
+    const availableRow = renderer.root.find((node) => node.props.accessibilityLabel === '선택 가능함 선택');
+    const unavailableRow = renderer.root.find((node) => node.props.accessibilityLabel === '선택 못함 선택 불가');
+
+    assert.deepEqual(resolveStyle(selectedRow), {
+      ...resolveStyle(availableRow),
+      borderColor: '#7ce0b5',
+      borderWidth: 2,
+    });
+    assert.equal(resolveStyle(availableRow).borderColor, '#354153');
+    assert.equal(resolveStyle(availableRow).borderWidth, 1);
+    assert.equal(resolveStyle(unavailableRow).opacity, 0.5);
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'Text' && ['선택 가능', '선택 불가'].includes(node.children.join(''))).length, 0);
+    await act(async () => { renderer.unmount(); });
+  });
+
   it('uses text semantics instead of checkbox semantics in display-only mode', async () => {
     let renderer!: ReactTestRenderer;
     await act(async () => {
@@ -156,3 +188,11 @@ describe('TownItemList', () => {
     await act(async () => { renderer.unmount(); });
   });
 });
+
+function resolveStyle(node: { props: { style?: unknown } }): Record<string, unknown> {
+  const value = typeof node.props.style === 'function'
+    ? (node.props.style as (state: { pressed: boolean }) => unknown)({ pressed: false })
+    : node.props.style;
+  const styles = (Array.isArray(value) ? value : [value]).filter(Boolean) as Array<Record<string, unknown>>;
+  return Object.assign({}, ...styles);
+}

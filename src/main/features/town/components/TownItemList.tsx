@@ -121,17 +121,12 @@ export function TownItemList({
           <View style={styles.content}>
             <Text style={[styles.label, resolvedLabelTextStyle]}>{item.label}</Text>
             {item.detail ? <Text style={styles.detail}>{item.detail}</Text> : null}
-            <View style={styles.metadata}>
-              {item.price !== null ? <Text style={styles.meta}>${item.price.toLocaleString()}</Text> : null}
-              {item.quantity !== null ? <Text style={styles.meta}>보유 {item.quantity.toLocaleString()}</Text> : null}
-              {showSelectionAvailability && !displayOnly ? (
-                <View style={[styles.availabilityBadge, item.selectable ? styles.availableBadge : styles.unavailableBadge]}>
-                  <Text style={[styles.availabilityText, item.selectable ? styles.availableText : styles.unavailableText]}>
-                    {item.selectable ? '선택 가능' : '선택 불가'}
-                  </Text>
-                </View>
-              ) : !displayOnly && !item.selectable ? <Text style={styles.unavailable}>선택 불가</Text> : null}
-            </View>
+            {item.price !== null || item.quantity !== null ? (
+              <View style={styles.metadata}>
+                {item.price !== null ? <Text style={styles.meta}>${item.price.toLocaleString()}</Text> : null}
+                {item.quantity !== null ? <Text style={styles.meta}>보유 {item.quantity.toLocaleString()}</Text> : null}
+              </View>
+            ) : null}
           </View>
         </>;
         const card = (
@@ -144,7 +139,7 @@ export function TownItemList({
             style={({ pressed }) => [
               styles.row,
               trailing != null && styles.inlineRow,
-              showSelectionAvailability && !displayOnly && (item.selectable ? styles.availableRow : styles.unavailableRow),
+              showSelectionAvailability && !displayOnly && !item.selectable && styles.unavailableRow,
               isSelected && styles.selectedRow,
               disabled && !displayOnly && styles.disabledRow,
               pressed && !disabled && styles.pressedRow,
@@ -156,7 +151,7 @@ export function TownItemList({
         if (itemFooter != null) {
           return <View style={[
             styles.expandedRow,
-            showSelectionAvailability && !displayOnly && (item.selectable ? styles.availableRow : styles.unavailableRow),
+            showSelectionAvailability && !displayOnly && !item.selectable && styles.unavailableRow,
             isSelected && styles.selectedRow,
             disabled && !displayOnly && styles.disabledRow,
           ]}>
@@ -218,9 +213,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   selectedRow: { borderColor: theme.colors.accentGreen, borderWidth: 2 },
-  availableRow: { backgroundColor: 'rgba(124, 224, 181, 0.06)', borderColor: theme.colors.accentGreen },
   unavailableRow: { backgroundColor: theme.colors.background, borderColor: theme.colors.border },
-  disabledRow: { opacity: 0.68 },
+  disabledRow: { opacity: 0.5 },
   pressedRow: { opacity: 0.82 },
   image: { borderRadius: theme.radius.sm, height: 44, width: 44 },
   content: { flex: 1, gap: theme.spacing.xs },
@@ -228,12 +222,5 @@ const styles = StyleSheet.create({
   detail: { color: theme.colors.textMuted, fontSize: 13, lineHeight: 18 },
   metadata: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
   meta: { color: theme.colors.accentAmber, fontSize: 12 },
-  availabilityBadge: { borderRadius: 999, borderWidth: 1, paddingHorizontal: theme.spacing.sm, paddingVertical: 2 },
-  availableBadge: { backgroundColor: 'rgba(124, 224, 181, 0.12)', borderColor: theme.colors.accentGreen },
-  unavailableBadge: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong },
-  availabilityText: { fontSize: 11, fontWeight: '800' },
-  availableText: { color: theme.colors.accentGreen },
-  unavailableText: { color: theme.colors.textMuted },
-  unavailable: { color: theme.colors.textMuted, fontSize: 12 },
   empty: { color: theme.colors.textMuted, padding: theme.spacing.xl, textAlign: 'center' },
 });

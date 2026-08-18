@@ -25,7 +25,7 @@ describe('ExchangePanel', () => {
     const statuses = mounted!.root.findAll((node) => String(node.type) === 'Text' && ['선택 가능', '선택 불가'].includes(node.children.join('')));
 
     assert.deepEqual(list.props.data.map((item: { id: string }) => item.id), ['trade:trade', 'trade:display']);
-    assert.deepEqual(statuses.map((node) => node.children.join('')), ['선택 가능', '선택 불가']);
+    assert.equal(statuses.length, 0);
     assert.equal(button('재료 부족 선택 불가').props.disabled, true);
     assert.equal(mounted!.root.findAll((node) => String(node.type) === 'FlatList').length, 1);
   });

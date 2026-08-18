@@ -130,7 +130,7 @@ describe('FishingPanel', () => {
     assert.deepEqual(runPanel.props.allowedBattleCounts, [1]);
   });
 
-  it('교환소에서 선택 가능한 행을 먼저 보여주고 상태를 시각적으로 구분한다', async () => {
+  it('교환소에서 선택 가능한 행을 먼저 보여주고 상태 문구는 표시하지 않는다', async () => {
     const api = fakeApi({
       load: async () => ({
         categories: [{ id: 'type:all', label: '전부', current: true }],
@@ -149,7 +149,7 @@ describe('FishingPanel', () => {
     const statusLabels = mounted!.root.findAll((node) => String(node.type) === 'Text' && ['선택 가능', '선택 불가'].includes(node.children.join('')));
 
     assert.deepEqual(list.props.data.map((item: { id: string }) => item.id), ['rank', 'display']);
-    assert.deepEqual(statusLabels.map((node) => node.children.join('')), ['선택 가능', '선택 불가']);
+    assert.equal(statusLabels.length, 0);
     assert.equal(unavailable.props.disabled, true);
     assert.equal(allText().includes('교환 불가'), true);
   });

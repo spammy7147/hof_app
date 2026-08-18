@@ -91,7 +91,7 @@ describe('CraftingPanel', () => {
     assert.equal(text().includes('1~10 사이의 정수'), true);
   });
 
-  it('클라리스의 재봉실은 교환 가능한 품목을 먼저 보여주고 상태를 구분한다', async () => {
+  it('클라리스의 재봉실은 교환 가능한 품목을 먼저 보여주고 상태 문구는 표시하지 않는다', async () => {
     const claris = data('CLARIS', { rows: [
       { id: 'display', label: '재료 부족', selectable: false, detail: null, cost: 0, owned: null, workSeconds: null },
       { id: 'item', label: '교환 가능 의상', selectable: true, detail: '천 x1', cost: 100, owned: 1, workSeconds: null },
@@ -101,7 +101,7 @@ describe('CraftingPanel', () => {
     const list = mounted!.root.find((node) => String(node.type) === 'FlatList');
     const statuses = mounted!.root.findAll((node) => String(node.type) === 'Text' && ['선택 가능', '선택 불가'].includes(node.children.join('')));
     assert.deepEqual(list.props.data.map((item: { id: string }) => item.id), ['recipe:item', 'recipe:display']);
-    assert.deepEqual(statuses.map((node) => node.children.join('')), ['선택 가능', '선택 불가']);
+    assert.equal(statuses.length, 0);
   });
 
   it('제작 중에는 완료로 표현하지 않고 읽기 쉬운 남은 시간을 표시한다', async () => {
