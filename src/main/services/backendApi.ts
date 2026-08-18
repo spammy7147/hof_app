@@ -895,7 +895,11 @@ export function parseObservedHofStatusHeader(
       typeof status.timeMax !== 'number' ||
       typeof status.work !== 'string' ||
       typeof status.auction !== 'string' ||
-      typeof status.observedAt !== 'string'
+      typeof status.observedAt !== 'string' ||
+      (
+        status.characterRosterObservedAt != null &&
+        typeof status.characterRosterObservedAt !== 'string'
+      )
     ) {
       return null;
     }

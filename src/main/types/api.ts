@@ -52,7 +52,9 @@ export type HofStatusResponse = {
 export type HofObservedStatusResponse = Pick<
   HofStatusResponse,
   'playerName' | 'funds' | 'timeCurrent' | 'timeMax' | 'work' | 'auction' | 'observedAt'
->;
+> & {
+  characterRosterObservedAt?: string | null;
+};
 
 export type BattleCategoryResponse = {
   id: string;

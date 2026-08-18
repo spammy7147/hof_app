@@ -11,6 +11,7 @@ import type {
   CharacterSyncEventResponse,
   CharacterSyncJobResponse,
   HofCharacter,
+  HofObservedStatusResponse,
 } from '../../types/api';
 import { shouldStartAutomaticCharacterSync } from '../../domain/characterSyncPolicy';
 
@@ -33,6 +34,8 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
   const subscriptionRef = useRef<SseSubscription | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const automaticSyncEvaluatedRef = useRef(false);
+  const latestRosterObservationRef = useRef<number | null>(null);
+  const characterListRequestRef = useRef(0);
 
   /** 현재 SSE와 예약된 재연결을 함께 닫아 로그아웃·unmount 이후 event 반영을 막는다. */
   const closeSubscription = useCallback(() => {
@@ -115,8 +118,32 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
   }, [api, closeSubscription, openSubscription]);
 
   const loadSavedCharacters = useCallback(async () => {
-    setCharacters(await api.listCharacters());
+    const requestId = ++characterListRequestRef.current;
+    const incoming = await api.listCharacters();
+    if (requestId === characterListRequestRef.current) setCharacters(incoming);
   }, [api]);
+
+  /** 새 로그인 홈 roster가 관측되면 같은 응답 헤더로 인한 재귀 호출 없이 저장 목록을 다시 읽는다. */
+  const handleRosterObservation = useCallback((status: HofObservedStatusResponse) => {
+    if (!status.characterRosterObservedAt) return;
+    const observedAt = Date.parse(status.characterRosterObservedAt);
+    if (Number.isNaN(observedAt)) return;
+    const latest = latestRosterObservationRef.current;
+    if (latest != null && observedAt <= latest) return;
+
+    latestRosterObservationRef.current = observedAt;
+    void loadSavedCharacters().catch((error: unknown) => {
+      if (latestRosterObservationRef.current === observedAt) {
+        latestRosterObservationRef.current = null;
+      }
+      onNotice(describeError(error));
+    });
+  }, [describeError, loadSavedCharacters, onNotice]);
+
+  useEffect(
+    () => api.subscribeHofStatus(handleRosterObservation),
+    [api, handleRosterObservation],
+  );
 
   const startAutomaticSyncIfRequired = useCallback(async (required: boolean) => {
     if (!shouldStartAutomaticCharacterSync(required, automaticSyncEvaluatedRef.current)) return;
@@ -155,6 +182,8 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
     setCharacterSyncLabel(null);
     setCharacterSyncJob(null);
     automaticSyncEvaluatedRef.current = false;
+    latestRosterObservationRef.current = null;
+    characterListRequestRef.current += 1;
   }, [closeSubscription]);
 
   useEffect(() => closeSubscription, [closeSubscription]);

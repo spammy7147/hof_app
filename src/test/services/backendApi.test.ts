@@ -146,6 +146,7 @@ describe('BackendApiClient', () => {
       work: 'Nothing',
       auction: 'Nothing',
       observedAt: '2026-08-17T00:00:00Z',
+      characterRosterObservedAt: '2026-08-17T00:00:01Z',
     };
     globalThis.fetch = (async () => mockResponse(
       { folders: [], presets: [] },
