@@ -38,6 +38,15 @@ describe('AuctionPanel', () => {
     assert.equal(mounted!.root.find((node) => String(node.type) === 'FlatList').props.ListEmptyComponent, null);
   });
 
+  it('검색 버튼 없이 입력한 검색어를 즉시 URL encoding해 조회한다', async () => {
+    const paths: string[] = [];
+    await render(React.createElement(AuctionPanel, { api: api(async (path) => { paths.push(path); return auction(); }), mode: 'auction' }));
+    assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === '옥션 검색').length, 0);
+    await change('옥션 검색어', 'Magic Sword');
+    assert.equal(paths.at(-1), '/api/town/auction?query=Magic%20Sword');
+    assert.equal(button('옥션 검색어').props.value, 'Magic Sword');
+  });
+
   it('입찰 번호와 사용자가 입력한 입찰가만 typed endpoint로 제출한다', async () => {
     const submissions: Array<{ path: string; request: unknown }> = [];
     await render(React.createElement(AuctionPanel, { api: api(async () => auction(), async (path, request) => { submissions.push({ path, request }); return { ...auction(), result: result() }; }), mode: 'auction' }));
@@ -62,6 +71,10 @@ describe('AuctionPanel', () => {
   it('아이템 수령과 Funds 수령은 서로 다른 typed endpoint를 사용한다', async () => {
     const submissions: Array<{ path: string; request: unknown }> = [];
     await render(React.createElement(AuctionPanel, { api: api(async () => auction(), async (path, request) => { submissions.push({ path, request }); return { ...auction(), result: result() }; }), mode: 'auction' }));
+    const claimItemButton = button('낙찰 아이템 수령');
+    const claimFundsButton = button('Funds 수령');
+    assert.equal(claimItemButton.parent!.parent, claimFundsButton.parent!.parent);
+    assert.equal(claimItemButton.parent!.parent!.props.style.flexDirection, 'row');
     await press('낙찰 아이템 수령');
     await press('Funds 수령');
     assert.deepEqual(submissions, [
@@ -95,7 +108,8 @@ describe('AuctionPanel', () => {
   it('검색은 URL encoding하고 시세 가격 차트와 통계를 표시한다', async () => {
     const paths: string[] = [];
     await render(React.createElement(AuctionPanel, { api: api(async (path) => { paths.push(path); return path.includes('auction-market') ? market() : auction(); }), mode: 'market' }));
-    await change('낙찰 시세 검색어', 'Magic Sword'); await press('낙찰 시세 검색');
+    assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === '낙찰 시세 검색').length, 0);
+    await change('낙찰 시세 검색어', 'Magic Sword');
     assert.equal(paths.at(-1), '/api/town/auction-market?query=Magic%20Sword');
     await press('Potion 시세 이력 열기. 최근 총액 $1,000 · 최근 단가 $1,000 · 평균 $900 · 최저 $800 · 최고 $1,000 · 총 거래량 3개 · 2건');
     assert.ok(mounted!.root.find((node) => String(node.props.accessibilityLabel ?? '').startsWith('Potion 가격 차트')));
@@ -108,7 +122,7 @@ describe('AuctionPanel', () => {
     await render(React.createElement(AuctionPanel, { api: api(async () => auction(), async () => exhibit), mode: 'auction' }));
     await press('출품 준비'); await press(EXHIBIT_LABEL);
     assert.equal(button('출품 기간 24시간').props.accessibilityState.checked, true);
-    assert.equal(button('옥션 검색').props.accessibilityState.disabled, true);
+    assert.equal(button('옥션 검색어').props.editable, false);
     await change('개시가', '0'); await change('출품 수량', '100001');
     assert.equal(button('출품').props.accessibilityState.disabled, true);
     await change('개시가', '1'); await change('출품 수량', '100000'); await change('출품 설명', 'x'.repeat(301));

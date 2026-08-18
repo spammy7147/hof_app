@@ -24,7 +24,7 @@ export function AuctionPanel({ api, mode, resolveCaptcha }: Props) {
 }
 
 function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
-  const [query, setQuery] = useState(''); const [appliedQuery, setAppliedQuery] = useState('');
+  const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<string[]>([]); const [bidPrice, setBidPrice] = useState('');
   const [response, setResponse] = useState<AuctionResponse | null>(null);
   const [exhibit, setExhibit] = useState<AuctionExhibitResponse | null>(null); const [exhibitSelected, setExhibitSelected] = useState<string[]>([]);
@@ -35,8 +35,9 @@ function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
       ? current
       : exhibit?.durations[0]?.value ?? '');
   }, [exhibit]);
-  const liveRef = useRef(0); useEffect(() => { liveRef.current += 1; return () => { liveRef.current += 1; }; }, [appliedQuery]);
-  const load = useCallback(() => api.load<AuctionResponse>(`/api/town/auction${appliedQuery ? `?query=${encodeURIComponent(appliedQuery)}` : ''}`), [api, appliedQuery]);
+  const searchQuery = query.trim();
+  const liveRef = useRef(0); useEffect(() => { liveRef.current += 1; return () => { liveRef.current += 1; }; }, [searchQuery]);
+  const load = useCallback(() => api.load<AuctionResponse>(`/api/town/auction${searchQuery ? `?query=${encodeURIComponent(searchQuery)}` : ''}`), [api, searchQuery]);
   const submitAction = useCallback(async (request: TradeRequest) => {
     const generation = liveRef.current;
     const path = request.kind === 'BID' ? '/api/town/auction/bid' : request.kind === 'OPEN_EXHIBIT' ? '/api/town/auction/exhibit/open'
@@ -49,7 +50,13 @@ function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
     }
     return next.result ?? info('옥션 결과를 갱신했습니다.');
   }, [api, resetExhibitDraft]);
-  const town = useTownFeature<AuctionResponse, TradeRequest>({ load, submitAction, resolveCaptcha, featureKey: `auction-${appliedQuery}` });
+  const town = useTownFeature<AuctionResponse, TradeRequest>({ load, submitAction, resolveCaptcha, autoLoad: false, featureKey: 'auction' });
+  const reload = town.reload;
+  useEffect(() => {
+    setResponse(null);
+    setSelected([]);
+    void reload().catch(() => undefined);
+  }, [reload, searchQuery]);
   const data = response ?? town.data; const busy = town.status === 'submitting';
   const chosen = data?.listings.find((item) => key(item) === selected[0]) ?? null;
   const exhibitItem = exhibit?.items.find((item) => key(item) === exhibitSelected[0]) ?? null;
@@ -72,10 +79,11 @@ function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
       onSelectionChange={(ids) => { if (!busy) (exhibit ? setExhibitSelected : setSelected)(ids); }}
       header={<View style={styles.section}>
         <TextInput accessibilityLabel="옥션 검색어" editable={!busy && !exhibit} value={query} onChangeText={setQuery} placeholder="품목명 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} />
-        <ActionButton label="옥션 검색" disabled={busy || town.status === 'loading' || exhibit != null} onPress={() => { setResponse(null); setSelected([]); setAppliedQuery(query.trim()); }} />
         {!exhibit && data.capabilities.exhibitEntryActionId ? <ActionButton label="출품 준비" disabled={busy} onPress={() => { resetExhibitDraft(); town.resetOutcome(); void town.submit({ kind: 'OPEN_EXHIBIT', body: { actionId: data.capabilities.exhibitEntryActionId! } }).then(() => town.resetOutcome()).catch(() => undefined); }} /> : null}
-        {!exhibit && data.capabilities.claimItemActionId ? <ActionButton label="낙찰 아이템 수령" disabled={busy} onPress={() => void town.submit({ kind: 'CLAIM_ITEM', body: { actionId: data.capabilities.claimItemActionId! } }).catch(() => undefined)} /> : null}
-        {!exhibit && data.capabilities.claimFundsActionId ? <ActionButton label="Funds 수령" disabled={busy} onPress={() => void town.submit({ kind: 'CLAIM_FUNDS', body: { actionId: data.capabilities.claimFundsActionId! } }).catch(() => undefined)} /> : null}
+        {!exhibit && (data.capabilities.claimItemActionId || data.capabilities.claimFundsActionId) ? <View style={styles.claimActions}>
+          {data.capabilities.claimItemActionId ? <ActionButton grouped label="낙찰 아이템 수령" disabled={busy} onPress={() => void town.submit({ kind: 'CLAIM_ITEM', body: { actionId: data.capabilities.claimItemActionId! } }).catch(() => undefined)} /> : null}
+          {data.capabilities.claimFundsActionId ? <ActionButton grouped label="Funds 수령" disabled={busy} onPress={() => void town.submit({ kind: 'CLAIM_FUNDS', body: { actionId: data.capabilities.claimFundsActionId! } }).catch(() => undefined)} /> : null}
+        </View> : null}
         {exhibit ? <ActionButton label="옥션 목록으로" disabled={busy} onPress={() => { setExhibit(null); resetExhibitDraft(); town.resetOutcome(); }} /> : null}
       </View>}
       footer={<View style={styles.section}>
@@ -92,15 +100,21 @@ function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
 }
 
 function AuctionMarketPanel({ api }: Pick<Props, 'api'>) {
-  const [query, setQuery] = useState(''); const [appliedQuery, setAppliedQuery] = useState('');
+  const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
-  const load = useCallback(() => api.load<AuctionMarketResponse>(`/api/town/auction-market${appliedQuery ? `?query=${encodeURIComponent(appliedQuery)}` : ''}`), [api, appliedQuery]);
-  const town = useTownFeature<AuctionMarketResponse>({ load, featureKey: `auction-market-${appliedQuery}` });
+  const searchQuery = query.trim();
+  const load = useCallback(() => api.load<AuctionMarketResponse>(`/api/town/auction-market${searchQuery ? `?query=${encodeURIComponent(searchQuery)}` : ''}`), [api, searchQuery]);
+  const town = useTownFeature<AuctionMarketResponse>({ load, autoLoad: false, featureKey: 'auction-market' });
+  const reload = town.reload;
+  useEffect(() => {
+    setSelected([]);
+    void reload().catch(() => undefined);
+  }, [reload, searchQuery]);
   const rows = town.data?.items.map(marketRow) ?? [];
   if (!town.data) return <LoadState loading={town.status === 'loading'} error={town.error} retry={town.reload} />;
   const selectedItem = town.data.items.find((item) => item.itemKey === selected[0]) ?? null;
   return <View style={styles.container}><TownItemList rows={rows} selectionMode="single" selectedIds={selected} onSelectionChange={setSelected} emptyMessage={null}
-    header={<View style={styles.section}><TextInput accessibilityLabel="낙찰 시세 검색어" value={query} onChangeText={setQuery} placeholder="품목명 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} /><ActionButton label="낙찰 시세 검색" disabled={town.status === 'loading'} onPress={() => { setSelected([]); setAppliedQuery(query.trim()); }} /></View>}
+    header={<View style={styles.section}><TextInput accessibilityLabel="낙찰 시세 검색어" value={query} onChangeText={setQuery} placeholder="품목명 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} /></View>}
     footer={selectedItem ? <PriceChart item={selectedItem} /> : null} />
   </View>;
 }
@@ -125,14 +139,15 @@ function marketRow(item: AuctionMarketItem): TownRowResponse {
 function key(item: AuctionListingResponse) { return item.rowKey; }
 function validWhole(value: string, min: number, max = Number.MAX_SAFE_INTEGER) { return /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) >= min && Number(value) <= max; }
 function Field({ label, value, setValue, disabled, numeric }: { label: string; value: string; setValue: (value: string) => void; disabled: boolean; numeric?: boolean }) { return <TextInput accessibilityLabel={label} editable={!disabled} keyboardType={numeric ? 'number-pad' : 'default'} value={value} onChangeText={setValue} placeholder={label} placeholderTextColor={theme.colors.textMuted} style={styles.input} />; }
-function ActionButton({ label, disabled, onPress }: { label: string; disabled: boolean; onPress: () => void }) { return <Pressable accessibilityLabel={label} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}><Text style={styles.buttonText}>{label}</Text></Pressable>; }
+function ActionButton({ label, disabled, onPress, grouped = false }: { label: string; disabled: boolean; onPress: () => void; grouped?: boolean }) { return <Pressable accessibilityLabel={label} accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={[styles.button, grouped && styles.groupedButton, disabled && styles.disabled]}><Text adjustsFontSizeToFit={grouped} minimumFontScale={0.75} numberOfLines={grouped ? 1 : undefined} style={styles.buttonText}>{label}</Text></Pressable>; }
 function LoadState({ loading, error, retry }: { loading: boolean; error: string | null; retry: () => Promise<unknown> }) { return <View style={styles.container}><Text accessibilityRole={error ? 'alert' : undefined} style={error ? styles.error : styles.muted}>{loading ? '옥션을 불러오는 중...' : error ?? '표시할 항목이 없습니다.'}</Text>{!loading ? <ActionButton label="다시 시도" disabled={false} onPress={() => void retry().catch(() => undefined)} /> : null}</View>; }
 function info(message: string): TownActionResultResponse { return { status: 'INFORMATIONAL', messages: [message], items: [], refreshRequired: true }; }
 
 const styles = StyleSheet.create({
   container: { flex: 1, gap: theme.spacing.md }, section: { gap: theme.spacing.md, paddingVertical: theme.spacing.md }, muted: { color: theme.colors.textMuted }, error: { color: theme.colors.danger },
   input: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md },
-  button: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, justifyContent: 'center', minHeight: 48, padding: theme.spacing.md }, buttonText: { color: theme.colors.background, fontWeight: '900' }, disabled: { opacity: 0.45 },
+  button: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, justifyContent: 'center', minHeight: 48, padding: theme.spacing.md }, groupedButton: { flex: 1, minWidth: 0, paddingHorizontal: theme.spacing.xs }, buttonText: { color: theme.colors.background, fontWeight: '900' }, disabled: { opacity: 0.45 },
+  claimActions: { flexDirection: 'row', gap: theme.spacing.sm, width: '100%' },
   fieldLabel: { color: theme.colors.text, fontWeight: '800' }, durationOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }, durationOption: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.sm, borderWidth: 1, minHeight: 44, paddingHorizontal: theme.spacing.md, justifyContent: 'center' }, durationSelected: { borderColor: theme.colors.accentGreen, borderWidth: 2 }, durationText: { color: theme.colors.text, fontWeight: '700' },
   chart: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.sm, gap: theme.spacing.sm, padding: theme.spacing.md }, chartTitle: { color: theme.colors.text, fontWeight: '800' }, bars: { alignItems: 'flex-end', flexDirection: 'row', gap: 3, height: 52 }, bar: { backgroundColor: theme.colors.accentBlue, flex: 1, minWidth: 3 },
 });
