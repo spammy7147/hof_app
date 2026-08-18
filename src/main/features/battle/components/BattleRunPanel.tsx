@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { BattlePartySelector } from '../../../components/BattlePartySelector';
 import { PrimaryButton } from '../../../components/PrimaryButton';
+import { FixedBottomAction } from '../../../components/FixedBottomAction';
 import {
   type BattlePartyMember,
   isBattlePartyReady,
@@ -140,27 +141,29 @@ export function BattleRunPanel({
                 onPartyChange={handlePartyChange}
               />
               <Text style={styles.sortieCountText}>{sortieCount}명 출정 예정</Text>
-              <View style={styles.actionRow}>
-                {allowedBattleCounts.includes(1) ? (
-                  <PrimaryButton
-                    label="1회 전투"
-                    loading={isRunning}
-                    disabled={isRunning || !ready}
-                    onPress={() => onRunBattle(party, 1)}
-                    style={styles.actionButton}
-                  />
-                ) : null}
-                {allowedBattleCounts.includes(3) ? (
-                  <PrimaryButton
-                    label="3회 전투"
-                    variant="secondary"
-                    loading={isRunning}
-                    disabled={isRunning || !ready}
-                    onPress={() => onRunBattle(party, 3)}
-                    style={styles.actionButton}
-                  />
-                ) : null}
-              </View>
+              <FixedBottomAction>
+                <View style={styles.actionRow}>
+                  {allowedBattleCounts.includes(1) ? (
+                    <PrimaryButton
+                      label="1회 전투"
+                      loading={isRunning}
+                      disabled={isRunning || !ready}
+                      onPress={() => onRunBattle(party, 1)}
+                      style={styles.actionButton}
+                    />
+                  ) : null}
+                  {allowedBattleCounts.includes(3) ? (
+                    <PrimaryButton
+                      label="3회 전투"
+                      variant="secondary"
+                      loading={isRunning}
+                      disabled={isRunning || !ready}
+                      onPress={() => onRunBattle(party, 3)}
+                      style={styles.actionButton}
+                    />
+                  ) : null}
+                </View>
+              </FixedBottomAction>
             </>
           ) : null}
           {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
+  FlatList,
   Image,
   Pressable,
   StyleSheet,
@@ -102,13 +103,19 @@ export function CharacterItemsScreen({
         placeholderTextColor={theme.colors.textMuted}
         style={styles.search}
       />
-      <View style={styles.list}>
-        {query.trim() ? (
+      <FlatList
+        accessibilityLabel="사용 가능한 아이템"
+        contentContainerStyle={styles.listContent}
+        data={items}
+        extraData={selected}
+        keyboardShouldPersistTaps="handled"
+        keyExtractor={(item, index) => `${item.value}-${index}`}
+        ListHeaderComponent={query.trim() ? (
           <Text style={styles.searchSummary}>성장·초기화와 기타 아이템을 함께 검색합니다.</Text>
         ) : null}
-        {items.map((item, index) => (
+        ListFooterComponent={outcome ? <Text style={styles.outcome}>{outcome}</Text> : null}
+        renderItem={({ item }) => (
           <Pressable
-            key={`${item.value}-${index}`}
             onPress={() => setSelected(item.value)}
             style={[styles.item, selected === item.value && styles.selected]}
           >
@@ -132,11 +139,11 @@ export function CharacterItemsScreen({
               <Text style={styles.description}>{item.description}</Text>
             </View>
           </Pressable>
-        ))}
-      </View>
-      {outcome ? <Text style={styles.outcome}>{outcome}</Text> : null}
+        )}
+        style={styles.list}
+      />
       {chosen && (
-        <View style={styles.bottom}>
+        <View testID="item-use-footer" style={styles.bottom}>
           <View style={styles.body}>
             <Text style={styles.name}>{chosen.name}</Text>
             <Text style={styles.description}>
@@ -144,6 +151,7 @@ export function CharacterItemsScreen({
             </Text>
           </View>
           <Pressable
+            accessibilityRole="button"
             onPress={() => Alert.alert(
               "아이템 사용",
               `${detail.name}에게 ${chosen.name}${chosen.quantity != null ? ` x${chosen.quantity}` : ""}을(를) 사용하시겠습니까?\n${chosen.description}`,
@@ -217,7 +225,11 @@ function Tab({
   );
 }
 const styles = StyleSheet.create({
-  screen: { gap: 11 },
+  screen: {
+    flex: 1,
+    gap: 11,
+    backgroundColor: theme.colors.background,
+  },
   head: {
     flexDirection: "row",
     alignItems: "center",
@@ -245,7 +257,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 13,
   },
-  list: { gap: 5 },
+  list: { flex: 1 },
+  listContent: { gap: 5 },
   searchSummary: { color: theme.colors.textMuted, lineHeight: 19, paddingVertical: 4 },
   item: {
     minHeight: 72,

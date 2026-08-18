@@ -42,6 +42,7 @@ const lucideMock = Object.fromEntries(
 );
 moduleWithLoader._load = (request, parent, isMain) => (
   request === 'react-native' ? reactNativeMock
+    : request === 'react-native-safe-area-context' ? { SafeAreaView: host('SafeAreaView') }
     : request === 'react-native-draggable-flatlist' ? {
       __esModule: true,
       default: draggableFlatList('DraggableFlatList'),
@@ -145,6 +146,27 @@ describe('CharacterDetail stat allocation', () => {
     assert.equal(requests.length, 1);
     assert.equal(requests[0].type, 'ALLOCATE_STATS');
     assert.equal(requests[0].type === 'ALLOCATE_STATS' ? requests[0].amounts.DEX : null, 2);
+  });
+
+  it('lets the nested character scroller take vertical gestures from numeric inputs', async () => {
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(CharacterDetail, {
+        character: makeHofCharacter(),
+        detail: makeHofCharacterDetail(1, {
+          stats: { ...makeHofCharacterDetail().stats, statusPoints: 25 },
+        }),
+        isLoading: false,
+        errorMessage: null,
+      }));
+    });
+
+    const statInputs = renderer.root.findAll((node) => String(node.type) === 'TextInput' && node.props.accessibilityRole === 'spinbutton');
+    assert.equal(statInputs.length, 5);
+    statInputs.forEach((input) => {
+      assert.equal(input.props.multiline, true);
+      assert.equal(input.props.numberOfLines, 1);
+    });
   });
 
   it('uses Android pan mode so the focused field stays above the keyboard throughout the app', () => {
@@ -581,6 +603,7 @@ describe('CharacterDetail stat allocation', () => {
     await act(async () => itemUse?.props.onPress());
 
     assert.deepEqual(commandTypes, ['PREPARE_ITEMS']);
+    assert.equal(renderer.root.findByProps({ testID: 'character-items-modal' }).props.visible, true);
     const text = renderer.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join(''));
     assert.ok(text.includes('성장·초기화'));
   });
@@ -601,6 +624,9 @@ describe('CharacterDetail stat allocation', () => {
       }));
     });
     const text = () => renderer.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join(''));
+    const visibleItemNames = () => renderer.root
+      .findByProps({ accessibilityLabel: '사용 가능한 아이템' })
+      .props.data.map((item: { name: string }) => item.name);
     const pressTab = async (label: string) => {
       const tab = renderer.root.findAll((node) => String(node.type) === 'Pressable').find((node) => (
         node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0
@@ -608,17 +634,37 @@ describe('CharacterDetail stat allocation', () => {
       await act(async () => tab?.props.onPress());
     };
 
-    assert.ok(text().includes('Reset Crystal'));
-    assert.equal(text().includes('Milk'), false);
-    assert.equal(text().includes('MYpod'), false);
+    assert.deepEqual(visibleItemNames(), ['Reset Crystal']);
 
     assert.equal(text().includes('사용 아이템'), false);
 
     await pressTab('기타 아이템');
-    assert.ok(text().includes('MYpod'));
-    assert.equal(text().includes('Milk'), false);
+    assert.deepEqual(visibleItemNames(), ['MYpod']);
 
     assert.equal(buildItemCommand(detail, detail.equipmentCandidates![2]).type, 'USE_ITEM');
+  });
+
+  it('keeps the item use action outside the scrolling item list', async () => {
+    const detail = makeHofCharacterDetail(1, {
+      equipmentCandidates: [
+        { value: '7510', typeCode: 'resetitem', name: 'Reset Crystal', iconUrl: '', description: '성장 초기화', quantity: 2 },
+      ],
+    });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(CharacterItemsScreen, {
+        detail,
+        onBack: () => undefined,
+      }));
+    });
+
+    const list = renderer.root.findByProps({ accessibilityLabel: '사용 가능한 아이템' });
+    const item = list.props.renderItem({ item: list.props.data[0], index: 0 });
+    await act(async () => item.props.onPress());
+
+    const footer = renderer.root.findByProps({ testID: 'item-use-footer' });
+    assert.equal(footer.parent, list.parent);
+    assert.equal(footer.parent?.props.style.flex, 1);
   });
 
   it('shows use item candidates when changing the U Item equipment slot', async () => {

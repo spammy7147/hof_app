@@ -33,6 +33,7 @@ moduleWithLoader._load = (request, parent, isMain) => request === 'react-native'
       ? { Image: host('Image') }
       : originalLoad(request, parent, isMain);
 const { HomePanel } = require('../../main/features/town/panels/HomePanel') as typeof import('../../main/features/town/panels/HomePanel');
+const { FixedBottomActionHost } = require('../../main/components/FixedBottomAction') as typeof import('../../main/components/FixedBottomAction');
 moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let mounted: ReactTestRenderer | null = null;
@@ -131,7 +132,12 @@ describe('HomePanel', () => {
     assert.match(text(), /10개/);
     assert.equal(mounted!.root.findAllByProps({ accessibilityLabel: '보유 시설 펼치기' }).length, 0);
     const initialText = mounted!.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join(''));
-    assert.ok(initialText.indexOf('휴식을 취한다') < initialText.indexOf('Sleep Wear (Housing)'));
+    assert.ok(initialText.indexOf('휴식을 취한다') > initialText.indexOf('Sleep Wear (Housing)'));
+    assert.equal(
+      mounted!.root.findByProps({ accessibilityLabel: '고정 하단 작업' })
+        .findAll((node) => String(node.type) === 'Pressable' && node.props.accessibilityLabel === '휴식을 취한다').length,
+      1,
+    );
     await press('휴식을 취한다');
     assert.deepEqual(calls, [{ path: '/api/town/rest/restore', body: { actionId: 'restore' } }]);
     assert.match(text(), /Time 6,000 \/ 6,000/);
@@ -172,7 +178,9 @@ describe('HomePanel', () => {
 });
 
 async function render(node: React.ReactElement) {
-  await act(async () => { mounted = create(node); });
+  await act(async () => {
+    mounted = create(React.createElement(FixedBottomActionHost, null, node));
+  });
   await act(async () => { await Promise.resolve(); });
 }
 

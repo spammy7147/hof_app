@@ -185,43 +185,47 @@ export function CaptchaChallengeModal({
                   style={styles.input}
                   value={answer}
                 />
-                <View style={styles.actionRow}>
-                  <PrimaryButton
-                    label="새로고침"
-                    variant="secondary"
-                    loading={isLoading}
-                    disabled={isAutoSolving}
-                    onPress={onRefresh}
-                    style={styles.actionButton}
-                  />
-                  <PrimaryButton
-                    label="제출"
-                    loading={isSubmitting}
-                    disabled={trimmedAnswer.length === 0 || isAutoSolving}
-                    onPress={() => {
-                      void submit();
-                    }}
-                    style={styles.actionButton}
-                  />
-                </View>
               </View>
             ) : null}
 
             {!isLoading && !captcha ? (
               <View style={styles.statePanel}>
                 <Text style={styles.mutedText}>{message ?? fallbackMessage}</Text>
-                <PrimaryButton
-                  label="다시 확인"
-                  variant="secondary"
-                  loading={isLoading}
-                  onPress={onRefresh}
-                />
               </View>
             ) : null}
 
             {message && captcha ? <Text style={styles.messageText}>{message}</Text> : null}
             {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
           </ScrollView>
+          {!isLoading && captcha ? (
+            <View style={styles.actionRow}>
+              <PrimaryButton
+                label="새로고침"
+                variant="secondary"
+                loading={isLoading}
+                disabled={isAutoSolving}
+                onPress={onRefresh}
+                style={styles.actionButton}
+              />
+              <PrimaryButton
+                label="제출"
+                loading={isSubmitting}
+                disabled={trimmedAnswer.length === 0 || isAutoSolving}
+                onPress={() => {
+                  void submit();
+                }}
+                style={styles.actionButton}
+              />
+            </View>
+          ) : null}
+          {!isLoading && !captcha ? (
+            <PrimaryButton
+              label="다시 확인"
+              variant="secondary"
+              loading={isLoading}
+              onPress={onRefresh}
+            />
+          ) : null}
           </View>
         </View>
       </KeyboardAvoidingView>

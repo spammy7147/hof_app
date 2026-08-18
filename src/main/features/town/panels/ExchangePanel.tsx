@@ -106,7 +106,6 @@ export function ExchangePanel({ api, mode, resolveCaptcha }: Props) {
   };
   const footer = <View style={styles.section}>
     {quantityRow ? <QuantityInput value={quantityText} onChange={setQuantityText} valid={quantityValid} min={min} max={quantityRow.maxQuantity} disabled={interactionBusy} /> : null}
-    {mode !== 'ann' ? <ActionButton label={mode === 'legacy' ? '선택 품목 교환' : '교환'} disabled={!selectedTrade || !quantityValid || interactionBusy} onPress={() => { if (selectedTrade) submit({ kind: 'trade', request: { candidateId: selectedTrade.id, categoryCandidateId: data.currentCategoryId, quantity } }); }} /> : null}
     {data.gradeActions.length ? <View style={styles.section}><Text style={styles.sectionTitle}>등급 즉시 교환</Text>{data.warning ? <Text accessibilityRole="alert" style={styles.warning}>{data.warning}</Text> : null}{data.gradeActions.map((action) => <ActionButton key={action.id} label={action.label} disabled={interactionBusy} onPress={() => submit({ kind: 'grade', request: { gradeActionId: action.id } })} />)}</View> : null}
     {data.annActions.map((action) => {
       const selected = selectedAnn(action.type);
@@ -125,6 +124,7 @@ export function ExchangePanel({ api, mode, resolveCaptcha }: Props) {
 
   return <View style={styles.container}>
     <TownItemList rows={rows} selectionMode="grouped-single" selectedIds={selectedIds}
+      fixedAction={mode !== 'ann' ? <ActionButton label={mode === 'legacy' ? '선택 품목 교환' : '교환'} disabled={!selectedTrade || !quantityValid || interactionBusy} onPress={() => { if (selectedTrade) submit({ kind: 'trade', request: { candidateId: selectedTrade.id, categoryCandidateId: data.currentCategoryId, quantity } }); }} /> : null}
       selectionDisabled={interactionBusy}
       showSelectionAvailability
       selectionGroup={(row) => row.id.startsWith('ann:') ? row.id.split(':').slice(0, 2).join(':') : row.id.startsWith('trade:') ? 'trade' : 'display'}

@@ -30,7 +30,9 @@ function IdentifyPanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
   useEffect(() => { if (!data) return; const live = new Set(data.cards.map((it) => it.id)); setSelected((current) => current.filter((id) => live.has(id))); }, [data]);
   if (!data) return <LoadState loading={town.status === 'loading'} error={town.error} retry={town.reload} />;
   const card = data.cards.find((it) => it.id === selected[0]);
-  return <PanelList rows={data.cards} selectedIds={selected} selectionMode="single" onSelectionChange={setSelected} header={<Text style={styles.muted}>감정할 카드 1장을 선택하세요.</Text>} footer={<View style={styles.section}><ActionButton label="선택 카드 감정" disabled={!card || town.status === 'submitting'} onPress={() => card && void town.submit({ candidateId: card.id }).catch(() => undefined)} />{data.result ?? town.result ? <TownActionResult result={(data.result ?? town.result)!} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}</View>} />;
+  return <PanelList rows={data.cards} selectedIds={selected} selectionMode="single" onSelectionChange={setSelected} header={<Text style={styles.muted}>감정할 카드 1장을 선택하세요.</Text>}
+    fixedAction={<ActionButton label="선택 카드 감정" disabled={!card || town.status === 'submitting'} onPress={() => card && void town.submit({ candidateId: card.id }).catch(() => undefined)} />}
+    footer={<View style={styles.section}>{data.result ?? town.result ? <TownActionResult result={(data.result ?? town.result)!} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}</View>} />;
 }
 
 function PairPanel({ api, mode, resolveCaptcha }: Props & { mode: 'upgrade' | 'change' }) {
@@ -138,8 +140,9 @@ function SoulEchoPanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
   ];
   const categoryId = data.currentCategoryId; const recipeId = selected.find((id) => id.startsWith('recipe:'))?.slice('recipe:'.length); const recipe = data.recipes.find((it) => it.id === recipeId);
   return <PanelList rows={rows} selectedIds={[...(categoryId ? [`category:${categoryId}`] : []), ...selected]} selectionMode="grouped-single" selectionGroup={(it) => it.id.startsWith('category:') ? 'category' : 'recipe'} onSelectionChange={(ids) => setSelected(ids.filter((id) => id.startsWith('recipe:')))}
+    fixedAction={<ActionButton label="소울 에코 융합" disabled={!categoryId || !recipe || town.status === 'submitting'} onPress={() => categoryId && recipe && void town.submit({ categoryCandidateId: categoryId, recipeCandidateId: recipe.id }).catch(() => undefined)} />}
     header={<View style={styles.section}><Text style={styles.muted}>현재 HOF 분류({currentCategory?.label ?? '확인 불가'})의 융합 품목을 선택하세요. 보유 Echo는 지역별 표기로 함께 표시됩니다.</Text><TextInput accessibilityLabel="보유 소울 에코 검색" value={query} onChangeText={setQuery} placeholder="지역·보스 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} />{data.history.length ? <History lines={data.history.map((it) => `${it.success ? '성공' : '실패'} · ${it.text}`)} /> : null}</View>}
-    footer={<View style={styles.section}>{!categoryId ? <Text accessibilityRole="alert" style={styles.error}>현재 품목 분류를 확인하지 못했습니다.</Text> : null}<ActionButton label="소울 에코 융합" disabled={!categoryId || !recipe || town.status === 'submitting'} onPress={() => categoryId && recipe && void town.submit({ categoryCandidateId: categoryId, recipeCandidateId: recipe.id }).catch(() => undefined)} />{data.result ?? town.result ? <TownActionResult result={(data.result ?? town.result)!} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}</View>} />;
+    footer={<View style={styles.section}>{!categoryId ? <Text accessibilityRole="alert" style={styles.error}>현재 품목 분류를 확인하지 못했습니다.</Text> : null}{data.result ?? town.result ? <TownActionResult result={(data.result ?? town.result)!} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}</View>} />;
 }
 
 function PanelList({ rows, ...props }: { rows: CardItemResponse[] | TownRowResponse[] } & Omit<ComponentProps<typeof TownItemList>, 'rows'>) { return <View style={styles.container}><TownItemList rows={rows.map((it) => 'imageUrl' in it ? it : row(it))} {...props} /></View>; }

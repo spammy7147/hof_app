@@ -12,7 +12,9 @@ const reactNativeMock = {
 type Loader = (request: string, parent: NodeModule | undefined, isMain: boolean) => unknown;
 const loader = Module as unknown as { _load: Loader }; const original = loader._load;
 loader._load = (request, parent, isMain) => { if (request === 'react-native') return reactNativeMock; if (request === 'react-native-safe-area-context') return { useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) }; if (request === 'expo-image') return { Image: host('Image') }; if (request.endsWith('/BattlePartyPresetPicker')) return { BattlePartyPresetPicker: host('BattlePartyPresetPicker') }; return original(request, parent, isMain); };
-const { ColosseumPanel } = require('../../main/features/town/panels/ColosseumPanel') as typeof import('../../main/features/town/panels/ColosseumPanel'); loader._load = original;
+const { ColosseumPanel } = require('../../main/features/town/panels/ColosseumPanel') as typeof import('../../main/features/town/panels/ColosseumPanel');
+const { FixedBottomActionHost } = require('../../main/components/FixedBottomAction') as typeof import('../../main/components/FixedBottomAction');
+loader._load = original;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let mounted: ReactTestRenderer | null = null; afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; });
 
@@ -51,7 +53,12 @@ describe('ColosseumPanel', () => {
     assert.equal(button('라이벌 선택').props.accessibilityRole, 'radio');
     await press('라이벌 선택');
     await act(async () => presetPicker().props.onSelectDirect());
-    assert.ok(text().indexOf('Challenge') < text().indexOf('콜로세움 팀'));
+    assert.ok(text().indexOf('Challenge') > text().indexOf('콜로세움 팀'));
+    assert.equal(
+      mounted!.root.findByProps({ accessibilityLabel: '고정 하단 작업' })
+        .findAll((node) => String(node.type) === 'Pressable' && node.props.accessibilityLabel === 'Challenge').length,
+      1,
+    );
     await press('Challenge');
     assert.deepEqual(calls, [{ path: '/api/town/pvp/colosseum/challenge', request: { opponentCandidateId: 'o1' } }]);
     assert.equal(text().includes('공민이는 승리했다'), true); assert.equal(text().includes('내 상태 5/5 · 상대 상태 0/5'), true); assert.equal(text().includes('전투 상세 펼치기'), true);
@@ -78,7 +85,7 @@ function battle() { return { fighters: [{ id: 'f1', label: '공민이', detail: 
 function result() { return { turns: 12, winner: '공민이', summary: '공민이는 승리했다', playerHp: '1/10', opponentHp: '0/10', playerStatus: '5/5', opponentStatus: '0/5', totalDamage: 1936, reward: '승리의 증표 1개', detail: [{ turn: 1, text: '공격했다' }] }; }
 function shop() { return { categories: [{ id: 'all', label: '전부', current: true }], currentCategoryId: 'all', items: [{ id: 'x', label: '재료 부족', selectable: false, detail: null, cost: 0, owned: 0 }, { id: 's1', label: '검투사의 검', selectable: true, detail: '초록 증표 15개', cost: 0, owned: 1 }], currencies: [{ label: '초록 증표', quantity: 250 }], result: null }; }
 function api(load: (path: string) => Promise<unknown>, submit: (path: string, request: unknown) => Promise<unknown> = async () => { throw new Error('unexpected'); }) { return { load, submit } as never; }
-async function render(element: React.ReactElement) { await act(async () => { mounted = create(element); await Promise.resolve(); await Promise.resolve(); }); }
+async function render(element: React.ReactElement) { await act(async () => { mounted = create(React.createElement(FixedBottomActionHost, null, element)); await Promise.resolve(); await Promise.resolve(); }); }
 function buttons(label: string) { return mounted!.root.findAll((n) => String(n.type) === 'Pressable' && n.props.accessibilityLabel === label); }
 function button(label: string) { const found = buttons(label); assert.ok(found.length); return found[0]; }
 function presetPicker() { return mounted!.root.find((node) => String(node.type) === 'BattlePartyPresetPicker'); }

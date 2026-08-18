@@ -158,10 +158,13 @@ export function CharacterStatusScreen({
               <View key={name} style={styles.allocateRow}>
                 <Text style={styles.allocateName}>{name}</Text>
                 <Text style={styles.allocateValue}>{real ?? "-"}{added > 0 ? ` → ${(real ?? 0) + added}` : ""}</Text>
+                {/* Android 단일 행 입력창이 부모의 세로 제스처를 막지 않도록 시각적으로만 한 줄을 유지한다. */}
                 <TextInput
                   accessibilityRole="spinbutton"
                   accessibilityLabel={`${name} 추가 포인트`}
                   keyboardType="number-pad"
+                  multiline
+                  numberOfLines={1}
                   value={amounts[name] ?? ""}
                   onChangeText={(value) => setAmounts((current) => ({ ...current, [name]: value.replace(/\D/g, "") }))}
                   placeholder="0"

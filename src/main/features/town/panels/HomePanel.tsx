@@ -60,9 +60,10 @@ export function HomePanel({ api, mode, resolveCaptcha }: { api: TownApi; mode: M
     {mode === 'home' ? <Text style={styles.hint}>자택 퀘스트는 수락 → 조건 달성 → 완료 순서로 표시됩니다.</Text> : null}
     {mode === 'home' ? <HomeQuestTabs quests={data.quests} selected={homeTab} onSelect={(tab) => { setHomeTab(tab); setSelectedId(null); }} /> : null}
     <TownItemList rows={rows} selectionMode={mode === 'home' ? 'single' : 'none'} selectedIds={selectedId ? [selectedId] : []} onSelectionChange={mode === 'home' ? (ids) => setSelectedId(ids[0] ?? null) : undefined} emptyMessage={mode === 'home' ? `${homeTabLabel(homeTab)} 자택 퀘스트가 없습니다.` : null}
+      fixedAction={mutation ? <ActionButton label={mutation.actionLabel} disabled={town.status === 'submitting'} onPress={submit} /> : null}
       header={mode === 'rest' && data.restStatus ? <RestStatusCard status={data.restStatus} result={result} error={town.error} /> : null}
       footer={<View style={styles.footer}>
-        {mutation ? <ActionButton label={mutation.actionLabel} disabled={town.status === 'submitting'} onPress={submit} /> : mode === 'home' ? <Text style={styles.hint}>수락 또는 완료 가능한 퀘스트를 선택하세요.</Text> : !restCompleted ? <Text style={styles.hint}>현재 휴식을 이용할 수 없습니다.</Text> : null}
+        {!mutation && mode === 'home' ? <Text style={styles.hint}>수락 또는 완료 가능한 퀘스트를 선택하세요.</Text> : !mutation && !restCompleted ? <Text style={styles.hint}>현재 휴식을 이용할 수 없습니다.</Text> : null}
         {mode === 'rest' && data.restStatus?.facilities.length ? <RestFacilities facilities={data.restStatus.facilities} /> : null}
         {mode === 'home' && result ? <TownActionResult result={result} onRefresh={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}
         {mode === 'home' && town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}

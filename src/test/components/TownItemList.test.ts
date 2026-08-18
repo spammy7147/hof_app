@@ -43,11 +43,38 @@ moduleWithLoader._load = (request, parent, isMain) => {
 const { TownItemList } = require(
   '../../main/features/town/components/TownItemList',
 ) as typeof import('../../main/features/town/components/TownItemList');
+const { FixedBottomActionHost } = require(
+  '../../main/components/FixedBottomAction',
+) as typeof import('../../main/components/FixedBottomAction');
 moduleWithLoader._load = originalLoad;
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('TownItemList', () => {
+  it('keeps a final action outside the virtualized scrolling list', async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(React.createElement(
+        FixedBottomActionHost,
+        null,
+        React.createElement(TownItemList, {
+          rows: [],
+          fixedAction: React.createElement(
+            'Pressable',
+            { accessibilityLabel: '선택 확인' },
+            React.createElement('Text', null, '확인'),
+          ),
+        }),
+      ));
+    });
+
+    const list = renderer.root.find((node) => String(node.type) === 'FlatList');
+    const actionBar = renderer.root.findByProps({ accessibilityLabel: '고정 하단 작업' });
+    assert.equal(list.findAllByProps({ accessibilityLabel: '선택 확인' }).length, 0);
+    assert.equal(actionBar.findAllByProps({ accessibilityLabel: '선택 확인' }).length, 1);
+    await act(async () => { renderer.unmount(); });
+  });
+
   it('포커스된 입력란을 키보드 위로 스크롤한다', async () => {
     keyboardScrollCalls.length = 0;
     let renderer!: ReactTestRenderer;

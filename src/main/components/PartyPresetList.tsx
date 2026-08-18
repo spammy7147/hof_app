@@ -23,6 +23,7 @@ import { toUserFacingErrorMessage } from '../domain/userFacingErrors';
 import type { PartyPresetCatalogResource } from '../domain/partyPresetCatalogLoader';
 import { getPartyPresetFolderPath, indexPartyPresetCatalog, searchPartyPresetCatalog } from '../domain/partyPresetCatalog';
 import { theme } from '../styles/theme';
+import { FixedBottomAction } from './FixedBottomAction';
 import type {
   CreatePartyPresetRequest,
   CreatePartyPresetFolderRequest,
@@ -927,34 +928,36 @@ function renderEditor({
         onPartyChange={onPartyChange}
         party={draftParty}
       />
-      <View style={styles.editorActions}>
-        <Pressable
-          accessibilityRole="button"
-          disabled={isSaving}
-          onPress={onDelete}
-          style={({ pressed }) => [
-            styles.secondaryActionButton,
-            isSaving && styles.disabledButton,
-            pressed && !isSaving && styles.pressed,
-          ]}
-        >
-          <Trash2 color={theme.colors.danger} size={16} strokeWidth={2.5} />
-          <Text style={styles.secondaryActionText}>삭제</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          disabled={isSaving}
-          onPress={onSave}
-          style={({ pressed }) => [
-            styles.primaryActionButton,
-            isSaving && styles.disabledButton,
-            pressed && !isSaving && styles.pressed,
-          ]}
-        >
-          <Save color={theme.colors.background} size={16} strokeWidth={2.5} />
-          <Text style={styles.primaryActionText}>{isSaving ? '저장 중' : '저장'}</Text>
-        </Pressable>
-      </View>
+      <FixedBottomAction>
+        <View style={styles.editorActions}>
+          <Pressable
+            accessibilityRole="button"
+            disabled={isSaving}
+            onPress={onDelete}
+            style={({ pressed }) => [
+              styles.secondaryActionButton,
+              isSaving && styles.disabledButton,
+              pressed && !isSaving && styles.pressed,
+            ]}
+          >
+            <Trash2 color={theme.colors.danger} size={16} strokeWidth={2.5} />
+            <Text style={styles.secondaryActionText}>삭제</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            disabled={isSaving}
+            onPress={onSave}
+            style={({ pressed }) => [
+              styles.primaryActionButton,
+              isSaving && styles.disabledButton,
+              pressed && !isSaving && styles.pressed,
+            ]}
+          >
+            <Save color={theme.colors.background} size={16} strokeWidth={2.5} />
+            <Text style={styles.primaryActionText}>{isSaving ? '저장 중' : '저장'}</Text>
+          </Pressable>
+        </View>
+      </FixedBottomAction>
     </View>
   );
 }

@@ -18,6 +18,7 @@ import type {
 } from "../../../types/api";
 import { theme } from "../../../styles/theme";
 import { toUserFacingErrorMessage } from "../../../domain/userFacingErrors";
+import { FixedBottomAction } from "../../../components/FixedBottomAction";
 
 type Props = {
   target: HofCharacterDetail;
@@ -314,15 +315,6 @@ export function CharacterSettingsTransferScreen({
               </Pressable>
             );
           })}
-          <Pressable
-            disabled={busy}
-            onPress={() => void previewTransfer()}
-            style={[styles.primary, busy && styles.disabled]}
-          >
-            <Text style={styles.primaryText}>
-              {busy ? "확인 중…" : "가져오기 확인"}
-            </Text>
-          </Pressable>
         </>
       )}
       {preview && (
@@ -349,16 +341,6 @@ export function CharacterSettingsTransferScreen({
               <Text style={styles.stepText}>{transferStepLabel(step)}</Text>
             </View>
           ))}
-          <Pressable
-            disabled={!preview.executable || busy}
-            onPress={() => void executeTransfer()}
-            style={[
-              styles.primary,
-              (!preview.executable || busy) && styles.disabled,
-            ]}
-          >
-            <Text style={styles.primaryText}>가져오기</Text>
-          </Pressable>
         </View>
       )}
       {result && (
@@ -381,6 +363,36 @@ export function CharacterSettingsTransferScreen({
         </View>
       )}
       {error && <Text style={styles.error}>{error}</Text>}
+      {source ? (
+        <FixedBottomAction>
+          <View style={styles.fixedActions}>
+            {preview ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={busy}
+                onPress={() => void previewTransfer()}
+                style={[styles.secondary, busy && styles.disabled]}
+              >
+                <Text style={styles.secondaryText}>다시 확인</Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              disabled={busy || (preview != null && !preview.executable)}
+              onPress={() => void (preview ? executeTransfer() : previewTransfer())}
+              style={[
+                styles.primary,
+                styles.fixedActionButton,
+                (busy || (preview != null && !preview.executable)) && styles.disabled,
+              ]}
+            >
+              <Text style={styles.primaryText}>
+                {busy ? "확인 중…" : preview ? "가져오기" : "가져오기 확인"}
+              </Text>
+            </Pressable>
+          </View>
+        </FixedBottomAction>
+      ) : null}
     </View>
   );
 }
@@ -494,6 +506,19 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     backgroundColor: theme.colors.accentGreen,
   },
+  fixedActions: { flexDirection: "row", gap: 8 },
+  fixedActionButton: { flex: 1 },
+  secondary: {
+    minHeight: 52,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 11,
+    paddingHorizontal: 16,
+    backgroundColor: theme.colors.surfaceAlt,
+  },
+  secondaryText: { color: theme.colors.text, fontWeight: "900" },
   primaryText: { color: theme.colors.buttonText, fontWeight: "900" },
   disabled: { opacity: 0.35 },
   preview: {

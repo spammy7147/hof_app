@@ -20,6 +20,7 @@ import type {
   HofCharacterPatternOption,
 } from "../../../types/api";
 import { theme } from "../../../styles/theme";
+import { FixedBottomAction } from "../../../components/FixedBottomAction";
 
 type Row = { key: string; judge: string; quantity: string; skill: string };
 type PendingApply = {
@@ -319,19 +320,21 @@ export function CharacterPatternScreen({
           <Text style={styles.deleteText}>삭제</Text>
         </Pressable>
       </View>
-      <Pressable
-        accessibilityRole="button"
-        disabled={rows.length !== capacity}
-        onPress={() => {
-          setAlsoSave(false);
-          setPendingSlot(null);
-          setSlotName("");
-          setCommitOpen(true);
-        }}
-        style={[styles.save, rows.length !== capacity && styles.disabled]}
-      >
-        <Text style={styles.saveText}>저장</Text>
-      </Pressable>
+      <FixedBottomAction>
+        <Pressable
+          accessibilityRole="button"
+          disabled={rows.length !== capacity}
+          onPress={() => {
+            setAlsoSave(false);
+            setPendingSlot(null);
+            setSlotName("");
+            setCommitOpen(true);
+          }}
+          style={[styles.save, rows.length !== capacity && styles.disabled]}
+        >
+          <Text style={styles.saveText}>저장</Text>
+        </Pressable>
+      </FixedBottomAction>
       <PatternPicker
         visible={picker !== null}
         type={picker?.type ?? "CONDITION"}

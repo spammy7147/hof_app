@@ -8,6 +8,7 @@ import type {
   HofCharacterSkill,
 } from "../../../types/api";
 import { theme } from "../../../styles/theme";
+import { FixedBottomAction } from "../../../components/FixedBottomAction";
 
 export function CharacterSkillsScreen({
   detail,
@@ -110,25 +111,27 @@ export function CharacterSkillsScreen({
       </View>
 
       {mode === "learn" && selected ? (
-        <View style={styles.learnBar}>
-          <View style={styles.learnSummary}>
-            <Text style={styles.learnLabel}>선택한 스킬</Text>
-            <Text style={styles.learnName}>{selected.name}</Text>
-            <Text style={styles.learnCost}>필요 {selected.spCost ?? 0} point</Text>
+        <FixedBottomAction>
+          <View style={styles.learnBar}>
+            <View style={styles.learnSummary}>
+              <Text style={styles.learnLabel}>선택한 스킬</Text>
+              <Text style={styles.learnName}>{selected.name}</Text>
+              <Text style={styles.learnCost}>필요 {selected.spCost ?? 0} point</Text>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => onCommand?.({
+                type: "LEARN_SKILL",
+                characterId: detail.id,
+                expectedRevision: detail.revision,
+                skillValue: selected.value,
+              })}
+              style={styles.learn}
+            >
+              <Text style={styles.learnText}>배우기</Text>
+            </Pressable>
           </View>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => onCommand?.({
-              type: "LEARN_SKILL",
-              characterId: detail.id,
-              expectedRevision: detail.revision,
-              skillValue: selected.value,
-            })}
-            style={styles.learn}
-          >
-            <Text style={styles.learnText}>배우기</Text>
-          </Pressable>
-        </View>
+        </FixedBottomAction>
       ) : null}
     </View>
   );

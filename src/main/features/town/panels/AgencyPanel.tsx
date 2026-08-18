@@ -129,6 +129,10 @@ function RecruitmentAgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolve
       })
       .catch(() => undefined);
   };
+  const recruit = () => {
+    if (!selectedJob || !selectedGender || !canRecruit) return;
+    submit({ jobId: selectedJob.id, name: normalizedName, genderId: selectedGender.id });
+  };
 
   const footer = <View style={styles.footer}>
     <Text style={styles.sectionLabel}>새 캐릭터 이름</Text>
@@ -165,10 +169,6 @@ function RecruitmentAgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolve
     ><Text style={styles.tabText}>{gender.label}</Text></Pressable>)}</View>
     {!data.recruitmentAvailable ? <Text accessibilityRole="alert" style={styles.error}>HOF 모집 폼을 안전하게 확인하지 못해 모집할 수 없습니다.</Text> : null}
     {full ? <Text accessibilityRole="alert" style={styles.error}>캐릭터 정원이 가득 찼습니다.</Text> : null}
-    <ActionButton label="모집하기" disabled={!canRecruit} onPress={() => {
-      if (!selectedJob || !selectedGender || !canRecruit) return;
-      submit({ jobId: selectedJob.id, name: normalizedName, genderId: selectedGender.id });
-    }} />
     {town.result ? <TownActionResult result={town.result} onRefresh={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}
     {town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}
   </View>;
@@ -177,7 +177,8 @@ function RecruitmentAgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolve
     <Text style={styles.title}>인재 알선소</Text>
     <Text accessibilityLabel="캐릭터 정원" style={styles.capacity}>현재 {data.currentCharacters ?? '-'} / 최대 {data.capacity ?? '-'}</Text>
     <Text style={styles.hint}>직업을 선택하고 이름과 성별을 입력해 수동으로 모집합니다.</Text>
-    <TownItemList rows={rows} selectionMode="single" selectedIds={selectedJobId ? [selectedJobId] : []} onSelectionChange={(ids) => setSelectedJobId(ids[0] ?? null)} emptyMessage="모집 가능한 직업이 없습니다." footer={footer} />
+    <TownItemList rows={rows} selectionMode="single" selectedIds={selectedJobId ? [selectedJobId] : []} onSelectionChange={(ids) => setSelectedJobId(ids[0] ?? null)} emptyMessage="모집 가능한 직업이 없습니다." footer={footer}
+      fixedAction={<ActionButton label="모집하기" disabled={!canRecruit} onPress={recruit} />} />
   </View>;
 }
 

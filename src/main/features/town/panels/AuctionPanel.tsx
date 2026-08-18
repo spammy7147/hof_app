@@ -61,8 +61,14 @@ function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
   const exhibitRequest = exhibitItem?.candidateId && exhibit?.actionId && validWhole(amount, 1, 100_000)
     && validWhole(startPrice, 1) && durationAllowed && comment.length <= 300
     ? { kind: 'EXHIBIT', body: { entryActionId: exhibit.entryActionId, actionId: exhibit.actionId, candidateId: exhibitItem.candidateId, amount: Number(amount), exhibitTime: duration, startPrice: Number(startPrice), comment } } as const : null;
+  const fixedAction = !exhibit && chosen
+    ? <ActionButton label="입찰" disabled={busy || !bid} onPress={() => bid && void town.submit(bid).catch(() => undefined)} />
+    : exhibit && exhibitItem
+      ? <ActionButton label="출품" disabled={busy || !exhibitRequest} onPress={() => exhibitRequest && void town.submit(exhibitRequest).catch(() => undefined)} />
+      : null;
   return <View style={styles.container}>
     <TownItemList rows={exhibit ? exhibitRows : rows} selectionMode="single" selectedIds={exhibit ? exhibitSelected : selected}
+      fixedAction={fixedAction}
       onSelectionChange={(ids) => { if (!busy) (exhibit ? setExhibitSelected : setSelected)(ids); }}
       header={<View style={styles.section}>
         <TextInput accessibilityLabel="옥션 검색어" editable={!busy && !exhibit} value={query} onChangeText={setQuery} placeholder="품목명 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} />
@@ -73,13 +79,12 @@ function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
         {exhibit ? <ActionButton label="옥션 목록으로" disabled={busy} onPress={() => { setExhibit(null); resetExhibitDraft(); town.resetOutcome(); }} /> : null}
       </View>}
       footer={<View style={styles.section}>
-        {!exhibit && chosen ? <><Field label="입찰가" value={bidPrice} setValue={setBidPrice} disabled={busy} numeric /><ActionButton label="입찰" disabled={busy || !bid} onPress={() => bid && void town.submit(bid).catch(() => undefined)} /></> : null}
+        {!exhibit && chosen ? <Field label="입찰가" value={bidPrice} setValue={setBidPrice} disabled={busy} numeric /> : null}
         {exhibit && exhibitItem ? <>
           <Field label="출품 수량" value={amount} setValue={setAmount} disabled={busy} numeric /><Field label="개시가" value={startPrice} setValue={setStartPrice} disabled={busy} numeric />
           <Text style={styles.fieldLabel}>출품 기간</Text>
           <View style={styles.durationOptions}>{exhibit.durations.map((option) => <Pressable key={option.value} accessibilityLabel={`출품 기간 ${option.label}`} accessibilityRole="radio" accessibilityState={{ checked: duration === option.value, disabled: busy }} disabled={busy} onPress={() => setDuration(option.value)} style={[styles.durationOption, duration === option.value && styles.durationSelected]}><Text style={styles.durationText}>{option.label}</Text></Pressable>)}</View>
           <TextInput accessibilityLabel="출품 설명" editable={!busy} maxLength={300} value={comment} onChangeText={setComment} placeholder="코멘트(선택, 최대 300자)" placeholderTextColor={theme.colors.textMuted} style={styles.input} />
-          <ActionButton label="출품" disabled={busy || !exhibitRequest} onPress={() => exhibitRequest && void town.submit(exhibitRequest).catch(() => undefined)} />
         </> : null}
         {town.result ? <TownActionResult result={town.result} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}
       </View>} />

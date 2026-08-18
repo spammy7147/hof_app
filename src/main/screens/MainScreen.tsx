@@ -12,6 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
 
 import { BottomTabBar } from "../components/BottomTabBar";
+import { FixedBottomActionHost } from "../components/FixedBottomAction";
 import { scrollFocusedInputIntoView } from "../components/keyboardAwareScroll";
 import { CharacterDetail } from "../components/CharacterDetail";
 import { CharacterList } from "../components/CharacterList";
@@ -685,8 +686,9 @@ export function MainScreen({
             styles.fullScreenContent,
         ]}
       >
-        {renderSystemMessage(session, notice, onOpenLogin)}
-        {renderActiveTab({
+        <FixedBottomActionHost>
+          {renderSystemMessage(session, notice, onOpenLogin)}
+          {renderActiveTab({
           activeTabId,
           authenticated: session?.loggedIn === true,
           battleCategories,
@@ -770,7 +772,8 @@ export function MainScreen({
           onAutomationEditorModeChange: setAutomationEditorOpen,
           onDataLogModeChange: setDataLogOpen,
           onTownDetailOpenChange: setTownDetailOpen,
-        })}
+          })}
+        </FixedBottomActionHost>
       </View>
 
       {showGlobalChrome ? (

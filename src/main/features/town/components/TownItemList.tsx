@@ -3,6 +3,7 @@ import { useRef, type ReactElement, type ReactNode } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 
 import { scrollFocusedInputIntoView } from '../../../components/keyboardAwareScroll';
+import { FixedBottomAction } from '../../../components/FixedBottomAction';
 import { theme } from '../../../styles/theme';
 import type { TownRowResponse } from '../../../types/api';
 
@@ -19,6 +20,7 @@ type TownItemListProps = {
   header?: ReactElement | null;
   stickyHeader?: boolean;
   footer?: ReactElement | null;
+  fixedAction?: ReactElement | null;
   style?: StyleProp<ViewStyle>;
   labelTextStyle?: StyleProp<TextStyle> | ((row: TownRowResponse) => StyleProp<TextStyle>);
   renderTrailing?: (row: TownRowResponse) => ReactNode;
@@ -41,6 +43,7 @@ export function TownItemList({
   header,
   stickyHeader = false,
   footer,
+  fixedAction,
   style,
   labelTextStyle,
   renderTrailing,
@@ -59,7 +62,8 @@ export function TownItemList({
     : rows;
 
   return (
-    <FlatList
+    <>
+      <FlatList
       automaticallyAdjustKeyboardInsets
       ref={listRef}
       onFocus={(event) => scrollFocusedInputIntoView(listRef.current, event.nativeEvent.target)}
@@ -171,7 +175,9 @@ export function TownItemList({
         }
         return trailing == null ? card : <View style={styles.rowLayout}>{card}{trailing}</View>;
       }}
-    />
+      />
+      {fixedAction ? <FixedBottomAction>{fixedAction}</FixedBottomAction> : null}
+    </>
   );
 }
 

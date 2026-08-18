@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ChevronRight,
   ChevronsDown,
@@ -113,14 +114,6 @@ export function CharacterManagementScreen({
           },
         ])
       : void execute(command);
-  if (itemsOpen)
-    return (
-      <CharacterItemsScreen
-        detail={detail}
-        onBack={() => setItemsOpen(false)}
-        onCommand={onCommand}
-      />
-    );
   if (transferOpen && onPreviewTransfer && onExecuteTransfer)
     return (
       <CharacterSettingsTransferScreen
@@ -134,6 +127,22 @@ export function CharacterManagementScreen({
     );
   return (
     <View style={styles.screen}>
+      {itemsOpen && (
+        <Modal
+          animationType="slide"
+          onRequestClose={() => setItemsOpen(false)}
+          testID="character-items-modal"
+          visible
+        >
+          <SafeAreaView edges={["top", "bottom"]} style={styles.itemsModal}>
+            <CharacterItemsScreen
+              detail={detail}
+              onBack={() => setItemsOpen(false)}
+              onCommand={onCommand}
+            />
+          </SafeAreaView>
+        </Modal>
+      )}
       <SectionHeader title="일반 관리" />
       <View style={styles.actionList}>
         <ActionRow
@@ -529,6 +538,7 @@ function Button({
 }
 const styles = StyleSheet.create({
   screen: { gap: 10, paddingHorizontal: 12, paddingTop: 13 },
+  itemsModal: { flex: 1, backgroundColor: theme.colors.background },
   heading: { color: theme.colors.text, fontSize: 14, fontWeight: "900" },
   dangerHeading: { color: theme.colors.danger },
   actionList: {

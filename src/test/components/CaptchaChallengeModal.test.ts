@@ -41,4 +41,11 @@ describe('captcha challenge modal', () => {
     assert.match(modalSource, /maxHeight:\s*'90%'/);
     assert.match(appConfig, /"softwareKeyboardLayoutMode"\s*:\s*"pan"/);
   });
+
+  it('keeps submit and retry actions outside the scrolling captcha content', () => {
+    const scrollEnd = modalSource.indexOf('</ScrollView>');
+    assert.ok(scrollEnd >= 0);
+    assert.ok(modalSource.lastIndexOf('label="제출"') > scrollEnd);
+    assert.ok(modalSource.lastIndexOf('label="다시 확인"') > scrollEnd);
+  });
 });
