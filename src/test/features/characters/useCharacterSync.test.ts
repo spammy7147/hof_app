@@ -5,7 +5,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { useCharacterSync } from '../../../main/features/characters/useCharacterSync';
 import type { BackendApiClient } from '../../../main/services/backendApi';
-import type { HofCharacter, HofObservedStatusResponse } from '../../../main/types/api';
+import type { CharacterSyncJobResponse, HofCharacter, HofObservedStatusResponse } from '../../../main/types/api';
 import { makeHofCharacter } from '../../fixtures/api';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -59,7 +59,89 @@ describe('useCharacterSync roster observation', () => {
     assert.equal(sync.characters[0]?.name, '다음 목록');
     await act(async () => { renderer.unmount(); });
   });
+
+  it('starts one manual roster sync while the start request is in flight', async () => {
+    let sync!: ReturnType<typeof useCharacterSync>;
+    let startCalls = 0;
+    const started = deferred<CharacterSyncJobResponse>();
+    const api = {
+      subscribeHofStatus: () => () => undefined,
+      async startCharacterSyncJob() {
+        startCalls += 1;
+        return started.promise;
+      },
+      subscribeCharacterSyncJob: () => ({ close: () => undefined }),
+    } as unknown as BackendApiClient;
+    const Harness = () => {
+      sync = useCharacterSync({ api, describeError: String, onNotice: () => undefined });
+      return null;
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(Harness)); });
+
+    let first!: Promise<void>;
+    let second!: Promise<void>;
+    await act(async () => {
+      first = sync.startCharacterSync();
+      second = sync.startCharacterSync();
+      await Promise.resolve();
+    });
+    assert.equal(startCalls, 1);
+    assert.equal(sync.characterSyncLabel, '동기화 준비 중');
+
+    await act(async () => {
+      started.resolve(syncJob());
+      await Promise.all([first, second]);
+    });
+    assert.equal(sync.characterSyncJob?.jobId, 17);
+    await act(async () => { renderer.unmount(); });
+  });
+
+  it('clears the progress label and publishes an error when manual sync cannot start', async () => {
+    let sync!: ReturnType<typeof useCharacterSync>;
+    const notices: Array<string | null> = [];
+    const api = {
+      subscribeHofStatus: () => () => undefined,
+      async startCharacterSyncJob() {
+        throw new Error('start failed');
+      },
+    } as unknown as BackendApiClient;
+    const Harness = () => {
+      sync = useCharacterSync({
+        api,
+        describeError: (error) => error instanceof Error ? error.message : String(error),
+        onNotice: (message) => notices.push(message),
+      });
+      return null;
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(Harness)); });
+
+    await act(async () => { await sync.startCharacterSync(); });
+
+    assert.equal(sync.characterSyncLabel, null);
+    assert.deepEqual(notices, ['start failed']);
+    await act(async () => { renderer.unmount(); });
+  });
 });
+
+function syncJob(): CharacterSyncJobResponse {
+  return {
+    jobId: 17,
+    accountId: 1,
+    status: 'pending',
+    rosterCount: 0,
+    syncedCount: 0,
+    failedCharacterIds: [],
+    characters: [],
+    message: null,
+    startedAt: '2026-08-18T07:00:00Z',
+    finishedAt: null,
+    stopRequested: false,
+    lastCompletedRosterIndex: -1,
+    currentHofCharacterId: null,
+  };
+}
 
 function observedStatus(characterRosterObservedAt: string): HofObservedStatusResponse {
   return {
@@ -72,4 +154,10 @@ function observedStatus(characterRosterObservedAt: string): HofObservedStatusRes
     observedAt: characterRosterObservedAt,
     characterRosterObservedAt,
   };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise; });
+  return { promise, resolve };
 }

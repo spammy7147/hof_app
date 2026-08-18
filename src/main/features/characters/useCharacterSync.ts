@@ -33,6 +33,8 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
   const [characterSyncJob, setCharacterSyncJob] = useState<CharacterSyncJobResponse | null>(null);
   const subscriptionRef = useRef<SseSubscription | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startJobPromiseRef = useRef<Promise<void> | null>(null);
+  const syncGenerationRef = useRef(0);
   const automaticSyncEvaluatedRef = useRef(false);
   const latestRosterObservationRef = useRef<number | null>(null);
   const characterListRequestRef = useRef(0);
@@ -109,13 +111,32 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
     openSubscriptionRef.current = openSubscription;
   }, [openSubscription]);
 
-  const startJob = useCallback(async () => {
+  const startJob = useCallback((): Promise<void> => {
+    if (startJobPromiseRef.current) return startJobPromiseRef.current;
+
+    const syncGeneration = syncGenerationRef.current;
     closeSubscription();
     setCharacterSyncLabel('동기화 준비 중');
-    const job = await api.startCharacterSyncJob();
-    setCharacterSyncJob(job);
-    openSubscription(job.jobId);
-  }, [api, closeSubscription, openSubscription]);
+    const startPromise = (async () => {
+      try {
+        const job = await api.startCharacterSyncJob();
+        if (syncGeneration !== syncGenerationRef.current) return;
+        setCharacterSyncJob(job);
+        openSubscription(job.jobId);
+      } catch (error) {
+        if (syncGeneration !== syncGenerationRef.current) return;
+        setCharacterSyncLabel(null);
+        onNotice(describeError(error));
+      }
+    })();
+    startJobPromiseRef.current = startPromise;
+    void startPromise.finally(() => {
+      if (startJobPromiseRef.current === startPromise) {
+        startJobPromiseRef.current = null;
+      }
+    });
+    return startPromise;
+  }, [api, closeSubscription, describeError, onNotice, openSubscription]);
 
   const loadSavedCharacters = useCallback(async () => {
     const requestId = ++characterListRequestRef.current;
@@ -177,6 +198,8 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
 
   /** 로그아웃에서 화면 목록, 진행 표시와 연결을 원자적으로 초기화한다. */
   const resetCharacterSync = useCallback(() => {
+    syncGenerationRef.current += 1;
+    startJobPromiseRef.current = null;
     closeSubscription();
     setCharacters([]);
     setCharacterSyncLabel(null);
@@ -192,6 +215,7 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
     characters,
     characterSyncLabel,
     characterSyncJob,
+    startCharacterSync: startJob,
     stopCharacterSync,
     resumeCharacterSync,
     loadSavedCharacters,

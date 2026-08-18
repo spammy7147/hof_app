@@ -87,6 +87,7 @@ type MainScreenProps = {
   characters: HofCharacter[];
   characterSyncLabel: string | null;
   characterSyncJob?: CharacterSyncJobResponse | null;
+  onStartCharacterSync?: () => Promise<void>;
   onStopCharacterSync?: () => Promise<void>;
   onResumeCharacterSync?: () => Promise<void>;
   notice: string | null;
@@ -187,6 +188,7 @@ export function MainScreen({
   characters,
   characterSyncLabel,
   characterSyncJob,
+  onStartCharacterSync,
   onStopCharacterSync,
   onResumeCharacterSync,
   notice,
@@ -700,6 +702,7 @@ export function MainScreen({
           characters,
           characterSyncLabel,
           characterSyncJob,
+          onStartCharacterSync,
           onStopCharacterSync,
           onResumeCharacterSync,
           onLoadBattleCategories,
@@ -858,6 +861,7 @@ type RenderActiveTabArgs = {
   characters: HofCharacter[];
   characterSyncLabel: string | null;
   characterSyncJob?: CharacterSyncJobResponse | null;
+  onStartCharacterSync?: () => Promise<void>;
   onStopCharacterSync?: () => Promise<void>;
   onResumeCharacterSync?: () => Promise<void>;
   onLoadBattleCategories: () => void;
@@ -972,6 +976,7 @@ function renderActiveTab({
   characters,
   characterSyncLabel,
   characterSyncJob,
+  onStartCharacterSync,
   onStopCharacterSync,
   onResumeCharacterSync,
   onLoadBattleCategories,
@@ -1099,6 +1104,20 @@ function renderActiveTab({
               <Text style={styles.sectionMeta}>
                 {characterSyncLabel ?? `${characters.length}명`}
               </Text>
+              {characterSyncLabel == null &&
+                characterSyncJob?.status !== "running" &&
+                characterSyncJob?.status !== "pending" &&
+                characterSyncJob?.status !== "stopped" &&
+                onStartCharacterSync && (
+                  <Pressable
+                    accessibilityLabel="캐릭터 목록 동기화"
+                    accessibilityRole="button"
+                    onPress={() => void onStartCharacterSync()}
+                    style={styles.syncControl}
+                  >
+                    <Text style={styles.syncControlText}>목록 동기화</Text>
+                  </Pressable>
+                )}
               {(characterSyncJob?.status === "running" ||
                 characterSyncJob?.status === "pending") && (
                 <Pressable

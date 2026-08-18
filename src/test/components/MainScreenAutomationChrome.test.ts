@@ -337,6 +337,21 @@ describe('MainScreen automation editor chrome', () => {
     await act(async () => detail.props.onBack());
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 1);
   });
+
+  it('starts a manual character roster sync from the character header', async () => {
+    let syncCalls = 0;
+    const props = mainProps({
+      onStartCharacterSync: async () => { syncCalls += 1; },
+    });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => { renderer = create(React.createElement(MainScreen, props)); });
+
+    await act(async () => renderer.root.find((node) => String(node.type) === 'BottomTabBar').props.onChangeTab('characters'));
+    const syncButton = renderer.root.findByProps({ accessibilityLabel: '캐릭터 목록 동기화' });
+    await act(async () => syncButton.props.onPress());
+
+    assert.equal(syncCalls, 1);
+  });
 });
 
 function mainProps(overrides: Record<string, unknown> = {}) {
