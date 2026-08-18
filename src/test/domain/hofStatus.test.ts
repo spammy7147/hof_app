@@ -5,6 +5,7 @@ import {
   estimateActionTime,
   formatActionTime,
   formatFunds,
+  formatPlayerDisplayName,
   formatStatusBarFunds,
   formatStatusBarStateValue,
   mergeObservedHofStatus,
@@ -39,6 +40,12 @@ describe('hof status utilities', () => {
     assert.equal(formatStatusBarStateValue(' item/funds '), 'item/funds');
     assert.equal(formatStatusBarStateValue(''), '-');
     assert.equal(formatStatusBarStateValue(null), '-');
+  });
+
+  it('separates a title from the nickname while preserving untitled names', () => {
+    assert.equal(formatPlayerDisplayName('《얼어붙은 손길》공민이'), '《얼어붙은 손길》 공민이');
+    assert.equal(formatPlayerDisplayName('《얼어붙은 손길》  공민이'), '《얼어붙은 손길》 공민이');
+    assert.equal(formatPlayerDisplayName('공민이'), '공민이');
   });
 
   it('merges a newer observed display status without losing synchronization metadata', () => {

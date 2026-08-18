@@ -1,4 +1,6 @@
-export type MainTabId = 'home' | 'battle' | 'characters' | 'town' | 'data' | 'settings';
+export type MainTabId = 'home' | 'battle' | 'characters' | 'town' | 'data';
+
+export type MainRouteId = MainTabId | 'settings';
 
 export type MainTab = {
   id: MainTabId;
@@ -11,7 +13,6 @@ export const MAIN_TABS: MainTab[] = [
   { id: 'characters', label: '캐릭' },
   { id: 'town', label: '마을' },
   { id: 'data', label: '데이터' },
-  { id: 'settings', label: '설정' },
 ];
 
 export const DEFAULT_MAIN_TAB_ID: MainTabId = 'home';

@@ -141,6 +141,7 @@ moduleWithLoader._load = (request, parent, isMain) => {
   };
   if (request.endsWith('/UnifiedAutomationDashboard')) return { UnifiedAutomationDashboard: homeDashboardMock };
   if (request.endsWith('/UnifiedAutomationSettings')) return { UnifiedAutomationSettings: host('UnifiedAutomationSettings') };
+  if (request.endsWith('/HomeStatusSummary')) return { HomeStatusSummary: host('HomeStatusSummary') };
   return originalLoad(request, parent, isMain);
 };
 const homeTabScreenPath = require.resolve('../../main/screens/HomeTabScreen');
@@ -1392,6 +1393,7 @@ describe('HomeTabScreen mounted typed editor routing', () => {
     await act(async () => {
       renderer = create(React.createElement(ActualHomeTabScreen, {
         authenticated: true,
+        status: null,
         automationController: controller as never,
         battleCategories: [{ id: 'battle_map', label: '전투맵', description: '', order: 0, enabled: true }],
         areBattleCategoriesLoaded: true,
@@ -1401,6 +1403,7 @@ describe('HomeTabScreen mounted typed editor routing', () => {
         onLoadBattleMaps: async () => [catalogMap('battle_map', 'a', 'Alpha')],
         partyPresetCatalog: presetCatalog([{ ...preset(7, 'Safe'), folderId: 90 }]),
         onOpenCaptcha: () => undefined,
+        onOpenAppSettings: () => undefined,
       }));
     });
 
@@ -1490,6 +1493,7 @@ describe('HomeTabScreen mounted typed editor routing', () => {
     };
     const props = {
       authenticated: true,
+      status: null,
       automationController: controller as never,
       battleCategories: [],
       areBattleCategoriesLoaded: true,
@@ -1499,6 +1503,7 @@ describe('HomeTabScreen mounted typed editor routing', () => {
       onLoadBattleMaps: async () => [],
       partyPresetCatalog: presetCatalog([]),
       onOpenCaptcha: () => undefined,
+      onOpenAppSettings: () => undefined,
       onDetailModeChange,
     };
 

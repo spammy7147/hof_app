@@ -49,6 +49,13 @@ export function formatStatusBarStateValue(value: string | null | undefined): str
 }
 
 /**
+ * HOF가 여백 없이 반환하는 `《칭호》닉네임`을 읽기 쉽게 표시한다.
+ */
+export function formatPlayerDisplayName(playerName: string): string {
+  return playerName.trim().replace(/^(《[^》]+》)\s*(.+)$/, '$1 $2');
+}
+
+/**
  * Time 값을 `현재/최대` 형식으로 표시한다.
  */
 export function formatActionTime(time: ActionTimeValue): string {

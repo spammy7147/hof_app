@@ -1,4 +1,4 @@
-import { BarChart3, Home, LucideIcon, Settings, Store, Swords, UsersRound } from 'lucide-react-native';
+import { BarChart3, Home, LucideIcon, Store, Swords, UsersRound } from 'lucide-react-native';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { MAIN_TABS, MainTabId } from '../domain/mainTabs';
@@ -15,7 +15,6 @@ const tabIcons: Record<MainTabId, LucideIcon> = {
   characters: UsersRound,
   town: Store,
   data: BarChart3,
-  settings: Settings,
 };
 
 /**
@@ -65,7 +64,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
   },
   tab: {
-    width: '16.66%',
+    width: '20%',
     minHeight: 46,
     alignItems: 'center',
     justifyContent: 'center',

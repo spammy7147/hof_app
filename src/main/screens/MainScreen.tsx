@@ -16,10 +16,12 @@ import { FixedBottomActionHost } from "../components/FixedBottomAction";
 import { scrollFocusedInputIntoView } from "../components/keyboardAwareScroll";
 import { CharacterDetail } from "../components/CharacterDetail";
 import { CharacterList } from "../components/CharacterList";
-import { GameStatusBar } from "../components/GameStatusBar";
 import { PartyPresetList } from "../components/PartyPresetList";
 import { PrimaryButton } from "../components/PrimaryButton";
-import { DEFAULT_MAIN_TAB_ID, MainTabId } from "../domain/mainTabs";
+import {
+  DEFAULT_MAIN_TAB_ID,
+  MainRouteId,
+} from "../domain/mainTabs";
 import {
   PartyPresetCatalogLoadCoordinator,
   type PartyPresetCatalogResource,
@@ -510,7 +512,7 @@ export function MainScreen({
     [adoptPartyPresetCatalog, onDeletePartyPresetFolder],
   );
   const [activeTabId, setActiveTabId] =
-    useState<MainTabId>(DEFAULT_MAIN_TAB_ID);
+    useState<MainRouteId>(DEFAULT_MAIN_TAB_ID);
   const [pendingBattleTarget, setPendingBattleTarget] =
     useState<FishingBattleTarget | null>(null);
   const consumePendingBattleTarget = useCallback(
@@ -537,7 +539,8 @@ export function MainScreen({
   const isCharacterDetailOpen =
     activeTabId === "characters" && selectedCharacter != null;
   const townDetailFullScreen = activeTabId === "town" && townDetailOpen;
-  const showGlobalChrome =
+  const showBottomTabs =
+    activeTabId !== "settings" &&
     !automationEditorOpen &&
     !dataLogOpen &&
     !townDetailFullScreen &&
@@ -670,8 +673,6 @@ export function MainScreen({
 
   return (
     <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
-      {showGlobalChrome ? <GameStatusBar status={status} /> : null}
-
       <View
         accessibilityLabel={
           townDetailFullScreen
@@ -690,6 +691,7 @@ export function MainScreen({
           {renderSystemMessage(session, notice, onOpenLogin)}
           {renderActiveTab({
           activeTabId,
+          status,
           authenticated: session?.loggedIn === true,
           battleCategories,
           areBattleCategoriesLoaded,
@@ -706,6 +708,8 @@ export function MainScreen({
           onLoadBattleLogs,
           onLoadBattleStats,
           onOpenCaptcha,
+          onOpenAppSettings: () => setActiveTabId("settings"),
+          onCloseAppSettings: () => setActiveTabId("home"),
           onStatusObserved,
           automationController,
           partyPresetCatalog: partyPresetCatalogResource,
@@ -776,7 +780,7 @@ export function MainScreen({
         </FixedBottomActionHost>
       </View>
 
-      {showGlobalChrome ? (
+      {showBottomTabs ? (
         <BottomTabBar activeTabId={activeTabId} onChangeTab={setActiveTabId} />
       ) : null}
     </SafeAreaView>
@@ -844,7 +848,8 @@ function comparePresetOrder(
 }
 
 type RenderActiveTabArgs = {
-  activeTabId: MainTabId;
+  activeTabId: MainRouteId;
+  status: HofStatusResponse | null;
   authenticated: boolean;
   battleCategories: BattleCategoryResponse[];
   areBattleCategoriesLoaded: boolean;
@@ -863,6 +868,8 @@ type RenderActiveTabArgs = {
     period?: AdventureMapStatsPeriod,
   ) => Promise<BattleStatsResponse>;
   onOpenCaptcha: () => void;
+  onOpenAppSettings: () => void;
+  onCloseAppSettings: () => void;
   onStatusObserved?: (status: HofObservedStatusResponse) => void;
   automationController: UnifiedAutomationController;
   partyPresetCatalog: PartyPresetCatalogResource;
@@ -956,6 +963,7 @@ type RenderActiveTabArgs = {
  */
 function renderActiveTab({
   activeTabId,
+  status,
   authenticated,
   battleCategories,
   areBattleCategoriesLoaded,
@@ -972,6 +980,8 @@ function renderActiveTab({
   onLoadBattleLogs,
   onLoadBattleStats,
   onOpenCaptcha,
+  onOpenAppSettings,
+  onCloseAppSettings,
   onStatusObserved,
   automationController,
   partyPresetCatalog,
@@ -1022,6 +1032,7 @@ function renderActiveTab({
       return (
         <HomeTabScreen
           authenticated={authenticated}
+          status={status}
           battleCategories={battleCategories}
           areBattleCategoriesLoaded={areBattleCategoriesLoaded}
           isBattleCategoriesLoading={isBattleCategoriesLoading}
@@ -1031,6 +1042,7 @@ function renderActiveTab({
           partyPresetCatalog={partyPresetCatalog}
           automationController={automationController}
           onOpenCaptcha={onOpenCaptcha}
+          onOpenAppSettings={onOpenAppSettings}
           onStatusObserved={onStatusObserved}
           onDetailModeChange={onAutomationEditorModeChange}
           townApi={townApi}
@@ -1177,6 +1189,7 @@ function renderActiveTab({
         <TabScrollContainer>
           <SettingsTabScreen
             authenticated={authenticated}
+            onBack={onCloseAppSettings}
             onLogout={onLogout}
             onOpenCaptcha={onOpenCaptcha}
           />

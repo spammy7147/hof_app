@@ -27,7 +27,7 @@ it('keeps the footer compact without shrinking tab touch targets below 44 points
   });
 
   const tabs = renderer!.root.findAll((node) => String(node.type) === 'Pressable' && node.props.accessibilityRole === 'tab');
-  assert.equal(tabs.length, 6);
+  assert.equal(tabs.length, 5);
   for (const tab of tabs) {
     assert.equal(styleOf(tab).minHeight, 46);
     assert.ok(Number(styleOf(tab).minHeight) >= 44);
@@ -36,9 +36,10 @@ it('keeps the footer compact without shrinking tab touch targets below 44 points
     if (typeof node.type !== 'string') return false;
     return !['View', 'Text', 'Pressable'].includes(node.type as string) && node.props.size != null;
   });
-  assert.equal(icons.length, 6);
+  assert.equal(icons.length, 5);
   assert.ok(icons.every((icon) => icon.props.size === 21));
   assert.equal(renderer!.root.findAll((node) => String(node.type) === 'Text' && node.children.includes('채팅')).length, 0);
+  assert.equal(renderer!.root.findAll((node) => String(node.type) === 'Text' && node.children.includes('설정')).length, 0);
 });
 
 function styleOf(node: ReactTestInstance): Record<string, unknown> {

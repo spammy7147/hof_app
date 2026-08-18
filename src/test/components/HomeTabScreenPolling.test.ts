@@ -29,6 +29,7 @@ moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') return reactNativeMock;
   if (request === 'lucide-react-native') return iconsMock;
   if (request === 'react-native-draggable-flatlist') return { NestableScrollContainer: host('NestableScrollContainer') };
+  if (request.endsWith('/HomeStatusSummary')) return { HomeStatusSummary: host('HomeStatusSummary') };
   if (request.endsWith('/UnifiedAutomationDashboard')) return { UnifiedAutomationDashboard: dashboardMock };
   if (request.endsWith('/UnifiedAutomationSettings')) return { UnifiedAutomationSettings: settingsMock };
   if (request.endsWith('/QuestAutomationEditor')) return { QuestAutomationEditor: host('QuestAutomationEditor') };
@@ -74,6 +75,10 @@ describe('HomeTabScreen dashboard polling', () => {
     });
 
     assert.deepEqual(received, [observed]);
+    assert.deepEqual(
+      renderer.root.find((node) => String(node.type) === 'HomeStatusSummary').props.status,
+      observed,
+    );
     await act(async () => { renderer.unmount(); });
   });
 
@@ -176,6 +181,7 @@ function controllerStub(
 function props(automationController: never) {
   return {
     authenticated: true,
+    status: null,
     automationController,
     battleCategories: [],
     areBattleCategoriesLoaded: true,
@@ -185,6 +191,7 @@ function props(automationController: never) {
     onLoadBattleMaps: async () => [],
     partyPresetCatalog: { catalog: { folders: [], presets: [] }, loading: false, error: null, retry: () => undefined },
     onOpenCaptcha: () => undefined,
+    onOpenAppSettings: () => undefined,
     onStatusObserved: () => undefined,
   };
 }

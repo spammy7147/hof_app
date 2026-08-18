@@ -15,12 +15,14 @@ import { HomeQuestAutomationEditor } from '../features/automation/components/Hom
 import { AutomationHistoryScreen } from '../features/automation/components/AutomationHistoryScreen';
 import { theme } from '../styles/theme';
 import { scrollFocusedInputIntoView } from '../components/keyboardAwareScroll';
+import { HomeStatusSummary } from '../components/HomeStatusSummary';
 import type { TownApi } from '../features/town/api/townApi';
 import type {
   BattleCategoryResponse,
   BattleMapResponse,
   AutomationType,
   HofObservedStatusResponse,
+  HofStatusResponse,
   RaidPubResponse,
   HomeResponse,
   TypedAutomationEntryResponse,
@@ -31,6 +33,7 @@ import type {
 
 type HomeTabScreenProps = {
   authenticated: boolean;
+  status: HofStatusResponse | null;
   battleCategories: BattleCategoryResponse[];
   areBattleCategoriesLoaded: boolean;
   isBattleCategoriesLoading: boolean;
@@ -40,6 +43,7 @@ type HomeTabScreenProps = {
   partyPresetCatalog: PartyPresetCatalogResource;
   automationController: UnifiedAutomationController;
   onOpenCaptcha: () => void;
+  onOpenAppSettings: () => void;
   onStatusObserved?: (status: HofObservedStatusResponse) => void;
   onDetailModeChange?: (active: boolean) => void;
   townApi?: TownApi;
@@ -55,6 +59,7 @@ type HomeRoute = 'dashboard' | 'settings' | 'editor' | 'history';
  */
 export function HomeTabScreen({
   authenticated,
+  status,
   battleCategories,
   areBattleCategoriesLoaded,
   isBattleCategoriesLoading,
@@ -64,6 +69,7 @@ export function HomeTabScreen({
   partyPresetCatalog,
   automationController,
   onOpenCaptcha,
+  onOpenAppSettings,
   onStatusObserved,
   onDetailModeChange,
   townApi,
@@ -303,6 +309,13 @@ export function HomeTabScreen({
       ref={scrollRef}
       style={styles.scroller}
     >
+      {route === 'dashboard' ? (
+        <HomeStatusSummary
+          onOpenSettings={onOpenAppSettings}
+          status={aggregate?.hofStatus ?? status}
+        />
+      ) : null}
+
       {showPageHeader ? (
         <View style={styles.header}>
           {route === 'settings' ? (

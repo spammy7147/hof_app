@@ -33,7 +33,6 @@ moduleWithLoader._load = (request, parent, isMain) => {
   if (request.endsWith('/BottomTabBar')) return { BottomTabBar: host('BottomTabBar') };
   if (request.endsWith('/CharacterDetail')) return { CharacterDetail: host('CharacterDetail') };
   if (request.endsWith('/CharacterList')) return { CharacterList: host('CharacterList') };
-  if (request.endsWith('/GameStatusBar')) return { GameStatusBar: host('GameStatusBar') };
   if (request.endsWith('/PartyPresetList')) return { PartyPresetList: host('PartyPresetList') };
   if (request.endsWith('/PrimaryButton')) return { PrimaryButton: host('PrimaryButton') };
   if (request.endsWith('/BattleTabScreen')) return { BattleTabScreen: host('BattleTabScreen') };
@@ -49,7 +48,7 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('MainScreen automation editor chrome', () => {
-  it('hides the status header and bottom tabs while a town detail uses the safe-area layout', async () => {
+  it('hides bottom tabs while a town detail uses the safe-area layout', async () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => { renderer = create(React.createElement(MainScreen, mainProps({}))); });
 
@@ -58,13 +57,11 @@ describe('MainScreen automation editor chrome', () => {
     const town = renderer.root.find((node) => String(node.type) === 'TownTabScreen');
     await act(async () => town.props.onDetailStateChange('fishing', true));
 
-    assert.equal(renderer.root.findAll((node) => String(node.type) === 'GameStatusBar').length, 0);
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 0);
     assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '마을 상세 전체 화면' }).length > 0);
 
     await act(async () => renderer.root.find((node) => String(node.type) === 'TownTabScreen')
       .props.onDetailStateChange('fishing', false));
-    assert.equal(renderer.root.findAll((node) => String(node.type) === 'GameStatusBar').length, 1);
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 1);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '마을 상세 전체 화면' }).length, 0);
   });
@@ -274,25 +271,53 @@ describe('MainScreen automation editor chrome', () => {
     assert.equal(loads, 1);
   });
 
-  it('protects system insets and hides global chrome only while an editor is active', async () => {
+  it('protects system insets and hides bottom tabs only while an editor is active', async () => {
     const props = mainProps();
     let renderer!: ReturnType<typeof create>;
     await act(async () => { renderer = create(React.createElement(MainScreen, props)); });
 
-    assert.equal(renderer.root.findAll((node) => String(node.type) === 'GameStatusBar').length, 1);
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 1);
     assert.deepEqual(renderer.root.find((node) => String(node.type) === 'SafeAreaView').props.edges, ['top', 'bottom']);
 
     await act(async () => {
       renderer.root.find((node) => String(node.type) === 'HomeTabScreen').props.onDetailModeChange(true);
     });
-    assert.equal(renderer.root.findAll((node) => String(node.type) === 'GameStatusBar').length, 0);
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 0);
 
     await act(async () => {
       renderer.root.find((node) => String(node.type) === 'HomeTabScreen').props.onDetailModeChange(false);
     });
-    assert.equal(renderer.root.findAll((node) => String(node.type) === 'GameStatusBar').length, 1);
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 1);
+  });
+
+  it('opens settings from the home header and returns without a sixth bottom tab', async () => {
+    const status = {
+      accountId: 1,
+      playerName: '《얼어붙은 손길》공민이',
+      funds: 762_272_960,
+      timeCurrent: 2297,
+      timeMax: 6000,
+      work: 'Nothing',
+      auction: 'Nothing',
+      totalCharacterCount: 0,
+      synchronizedCharacterCount: 0,
+      characterSyncRequired: false,
+      observedAt: '2026-08-18T00:00:00Z',
+    };
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(MainScreen, mainProps({ status })));
+    });
+
+    const home = renderer.root.find((node) => String(node.type) === 'HomeTabScreen');
+    assert.strictEqual(home.props.status, status);
+    await act(async () => home.props.onOpenAppSettings());
+
+    const settings = renderer.root.find((node) => String(node.type) === 'SettingsTabScreen');
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 0);
+
+    await act(async () => settings.props.onBack());
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'HomeTabScreen').length, 1);
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 1);
   });
 
@@ -305,13 +330,11 @@ describe('MainScreen automation editor chrome', () => {
     await act(async () => renderer.root.find((node) => String(node.type) === 'BottomTabBar').props.onChangeTab('characters'));
     await act(async () => renderer.root.find((node) => String(node.type) === 'CharacterList').props.onSelectCharacter(character));
 
-    assert.equal(renderer.root.findAll((node) => String(node.type) === 'GameStatusBar').length, 0);
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 0);
     assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '캐릭터 상세 전체 화면' }).length > 0);
 
     const detail = renderer.root.find((node) => String(node.type) === 'CharacterDetail');
     await act(async () => detail.props.onBack());
-    assert.equal(renderer.root.findAll((node) => String(node.type) === 'GameStatusBar').length, 1);
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 1);
   });
 });
