@@ -129,6 +129,10 @@ describe('NewAutomationEditor', () => {
     };
     const renderer = await renderEditor({ entry: entry('RAID'), maps: [], raidPub });
 
+    assert.equal(hasText(
+      renderer.root,
+      '등록부터 시작·누적 전투·보상 후 확인까지 진행합니다. 대기 중에는 다른 자동화가 계속됩니다. 진행 중 대상을 해제하면 수동 레이드로 인계합니다.',
+    ), true);
     assert.equal(hasText(renderer.root, '선택한 맵 · 실행 순서'), true);
     await act(async () => {
       renderer.root.findByProps({ accessibilityLabel: '맵 추가 탭' }).props.onPress();

@@ -283,7 +283,7 @@ function PresetTrigger({ name, value, presets, onPress }: { name: string; value:
 function description(type: TypedAutomationEntryResponse['type']) {
   if (type === 'FISHING') return '시작과 잡기를 반복하고 전투가 생기면 선택 프리셋으로 처리합니다.';
   if (type === 'UNION') return '공유 쿨다운이 끝날 때마다 선택 맵을 순서대로 한 번 전투합니다.';
-  return '등록부터 시작·누적 전투·보상까지 진행하며 등록 후 사이클은 끝까지 수행합니다.';
+  return '등록부터 시작·누적 전투·보상 후 확인까지 진행합니다. 대기 중에는 다른 자동화가 계속됩니다. 진행 중 대상을 해제하면 수동 레이드로 인계합니다.';
 }
 function isFishingBattleMap(map: BattleMapResponse): boolean {
   return map.groupName?.trim().startsWith('낚시') === true
