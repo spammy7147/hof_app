@@ -532,7 +532,19 @@ export class BackendApiClient {
   }
 
   /**
-   * 캐릭터 동기화 job을 시작한다.
+   * HOF 홈의 roster만 다시 관측하고 DB 캐릭터 목록을 반환한다.
+   *
+   * 상세 동기화 job을 만들지 않으므로 캐릭터별 상세 페이지는 조회하지 않는다.
+   */
+  async syncCharacterRoster(): Promise<HofCharacter[]> {
+    return this.runManualAction(async () => {
+      await this.fetchStatus();
+      return this.listCharacters();
+    });
+  }
+
+  /**
+   * 전체 캐릭터의 일반 상세 동기화 job을 시작한다.
    */
   async startCharacterSyncJob(): Promise<CharacterSyncJobResponse> {
     const job = await this.request<CharacterSyncJobResponse>('/api/characters/sync-jobs', {

@@ -87,7 +87,8 @@ type MainScreenProps = {
   characters: HofCharacter[];
   characterSyncLabel: string | null;
   characterSyncJob?: CharacterSyncJobResponse | null;
-  onStartCharacterSync?: () => Promise<void>;
+  onSyncCharacterRoster?: () => Promise<void>;
+  onStartCharacterFullSync?: () => Promise<void>;
   onStopCharacterSync?: () => Promise<void>;
   onResumeCharacterSync?: () => Promise<void>;
   notice: string | null;
@@ -188,7 +189,8 @@ export function MainScreen({
   characters,
   characterSyncLabel,
   characterSyncJob,
-  onStartCharacterSync,
+  onSyncCharacterRoster,
+  onStartCharacterFullSync,
   onStopCharacterSync,
   onResumeCharacterSync,
   notice,
@@ -702,7 +704,8 @@ export function MainScreen({
           characters,
           characterSyncLabel,
           characterSyncJob,
-          onStartCharacterSync,
+          onSyncCharacterRoster,
+          onStartCharacterFullSync,
           onStopCharacterSync,
           onResumeCharacterSync,
           onLoadBattleCategories,
@@ -861,7 +864,8 @@ type RenderActiveTabArgs = {
   characters: HofCharacter[];
   characterSyncLabel: string | null;
   characterSyncJob?: CharacterSyncJobResponse | null;
-  onStartCharacterSync?: () => Promise<void>;
+  onSyncCharacterRoster?: () => Promise<void>;
+  onStartCharacterFullSync?: () => Promise<void>;
   onStopCharacterSync?: () => Promise<void>;
   onResumeCharacterSync?: () => Promise<void>;
   onLoadBattleCategories: () => void;
@@ -976,7 +980,8 @@ function renderActiveTab({
   characters,
   characterSyncLabel,
   characterSyncJob,
-  onStartCharacterSync,
+  onSyncCharacterRoster,
+  onStartCharacterFullSync,
   onStopCharacterSync,
   onResumeCharacterSync,
   onLoadBattleCategories,
@@ -1108,14 +1113,35 @@ function renderActiveTab({
                 characterSyncJob?.status !== "running" &&
                 characterSyncJob?.status !== "pending" &&
                 characterSyncJob?.status !== "stopped" &&
-                onStartCharacterSync && (
+                onSyncCharacterRoster && (
                   <Pressable
                     accessibilityLabel="캐릭터 목록 동기화"
                     accessibilityRole="button"
-                    onPress={() => void onStartCharacterSync()}
+                    onPress={() => void onSyncCharacterRoster()}
                     style={styles.syncControl}
                   >
                     <Text style={styles.syncControlText}>목록 동기화</Text>
+                  </Pressable>
+                )}
+              {characterSyncLabel == null &&
+                characterSyncJob?.status !== "running" &&
+                characterSyncJob?.status !== "pending" &&
+                characterSyncJob?.status !== "stopped" &&
+                onStartCharacterFullSync && (
+                  <Pressable
+                    accessibilityLabel="전체 캐릭터 상세 동기화"
+                    accessibilityRole="button"
+                    onPress={() => void onStartCharacterFullSync()}
+                    style={[styles.syncControl, styles.syncControlPrimary]}
+                  >
+                    <Text
+                      style={[
+                        styles.syncControlText,
+                        styles.syncControlPrimaryText,
+                      ]}
+                    >
+                      전체 상세 동기화
+                    </Text>
                   </Pressable>
                 )}
               {(characterSyncJob?.status === "running" ||
@@ -1397,8 +1423,11 @@ const styles = StyleSheet.create({
     gap: theme.spacing.md,
   },
   sectionActions: {
+    flex: 1,
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
+    justifyContent: "flex-end",
     gap: theme.spacing.sm,
   },
   sectionTitle: {
@@ -1423,6 +1452,12 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     fontSize: 12,
     fontWeight: "800",
+  },
+  syncControlPrimary: {
+    backgroundColor: theme.colors.accentGreen,
+  },
+  syncControlPrimaryText: {
+    color: theme.colors.buttonText,
   },
   characterSubTabs: {
     flexDirection: "row",

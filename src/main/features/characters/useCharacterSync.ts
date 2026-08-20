@@ -33,7 +33,8 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
   const [characterSyncJob, setCharacterSyncJob] = useState<CharacterSyncJobResponse | null>(null);
   const subscriptionRef = useRef<SseSubscription | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const startJobPromiseRef = useRef<Promise<void> | null>(null);
+  const rosterSyncPromiseRef = useRef<Promise<void> | null>(null);
+  const fullSyncStartPromiseRef = useRef<Promise<void> | null>(null);
   const syncGenerationRef = useRef(0);
   const automaticSyncEvaluatedRef = useRef(false);
   const latestRosterObservationRef = useRef<number | null>(null);
@@ -57,7 +58,7 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
         ? `${snapshot.syncedCount.toLocaleString('en-US')}/${snapshot.rosterCount.toLocaleString('en-US')}`
         : '준비 중';
       const currentName = snapshot.characters.find((item) => item.hofCharacterId === snapshot.currentHofCharacterId)?.name;
-      setCharacterSyncLabel(`동기화 ${progress}${currentName ? ` · ${currentName}` : ''}`);
+      setCharacterSyncLabel(`전체 상세 동기화 ${progress}${currentName ? ` · ${currentName}` : ''}`);
     } else {
       setCharacterSyncLabel(null);
     }
@@ -67,8 +68,8 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
 
   const handleEvent = useCallback((event: CharacterSyncEventResponse) => {
     setCharacterSyncLabel(event.rosterCount > 0
-      ? `동기화 ${formatCharacterSyncProgress(event)}`
-      : '동기화 준비 중');
+      ? `전체 상세 동기화 ${formatCharacterSyncProgress(event)}`
+      : '전체 상세 동기화 준비 중');
     setCharacters((current) => upsertCharacterFromSyncEvent(current, event));
     setCharacterSyncJob((current) => current ? { ...current, status: event.eventType === 'stopped' ? 'stopped' : current.status, rosterCount: event.rosterCount, syncedCount: event.syncedCount, message: event.message, characters: event.character ? upsertCharacterFromSyncEvent(current.characters, event) : current.characters } : current);
 
@@ -77,7 +78,7 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
     closeSubscription();
     setCharacterSyncLabel(null);
     if (event.eventType === 'failed') {
-      onNotice(event.message ?? '캐릭터 동기화가 실패했습니다.');
+      onNotice(event.message ?? '전체 캐릭터 상세 동기화가 실패했습니다.');
       return;
     }
     api.fetchCharacterSyncJob(event.jobId)
@@ -111,12 +112,12 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
     openSubscriptionRef.current = openSubscription;
   }, [openSubscription]);
 
-  const startJob = useCallback((): Promise<void> => {
-    if (startJobPromiseRef.current) return startJobPromiseRef.current;
+  const startFullSyncJob = useCallback((): Promise<void> => {
+    if (fullSyncStartPromiseRef.current) return fullSyncStartPromiseRef.current;
 
     const syncGeneration = syncGenerationRef.current;
     closeSubscription();
-    setCharacterSyncLabel('동기화 준비 중');
+    setCharacterSyncLabel('전체 상세 동기화 준비 중');
     const startPromise = (async () => {
       try {
         const job = await api.startCharacterSyncJob();
@@ -129,10 +130,10 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
         onNotice(describeError(error));
       }
     })();
-    startJobPromiseRef.current = startPromise;
+    fullSyncStartPromiseRef.current = startPromise;
     void startPromise.finally(() => {
-      if (startJobPromiseRef.current === startPromise) {
-        startJobPromiseRef.current = null;
+      if (fullSyncStartPromiseRef.current === startPromise) {
+        fullSyncStartPromiseRef.current = null;
       }
     });
     return startPromise;
@@ -144,6 +145,33 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
     if (requestId === characterListRequestRef.current) setCharacters(incoming);
   }, [api]);
 
+  /** HOF 홈 roster와 생명주기만 갱신하고 캐릭터별 상세 페이지는 조회하지 않는다. */
+  const syncCharacterRoster = useCallback((): Promise<void> => {
+    if (rosterSyncPromiseRef.current) return rosterSyncPromiseRef.current;
+
+    const syncGeneration = syncGenerationRef.current;
+    setCharacterSyncLabel('목록 동기화 중');
+    const syncPromise = (async () => {
+      try {
+        const incoming = await api.syncCharacterRoster();
+        if (syncGeneration !== syncGenerationRef.current) return;
+        setCharacters(incoming);
+        setCharacterSyncLabel(null);
+      } catch (error) {
+        if (syncGeneration !== syncGenerationRef.current) return;
+        setCharacterSyncLabel(null);
+        onNotice(describeError(error));
+      }
+    })();
+    rosterSyncPromiseRef.current = syncPromise;
+    void syncPromise.finally(() => {
+      if (rosterSyncPromiseRef.current === syncPromise) {
+        rosterSyncPromiseRef.current = null;
+      }
+    });
+    return syncPromise;
+  }, [api, describeError, onNotice]);
+
   /** 새 로그인 홈 roster가 관측되면 같은 응답 헤더로 인한 재귀 호출 없이 저장 목록을 다시 읽는다. */
   const handleRosterObservation = useCallback((status: HofObservedStatusResponse) => {
     if (!status.characterRosterObservedAt) return;
@@ -153,6 +181,7 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
     if (latest != null && observedAt <= latest) return;
 
     latestRosterObservationRef.current = observedAt;
+    if (rosterSyncPromiseRef.current) return;
     void loadSavedCharacters().catch((error: unknown) => {
       if (latestRosterObservationRef.current === observedAt) {
         latestRosterObservationRef.current = null;
@@ -169,8 +198,8 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
   const startAutomaticSyncIfRequired = useCallback(async (required: boolean) => {
     if (!shouldStartAutomaticCharacterSync(required, automaticSyncEvaluatedRef.current)) return;
     automaticSyncEvaluatedRef.current = true;
-    await startJob();
-  }, [startJob]);
+    await startFullSyncJob();
+  }, [startFullSyncJob]);
 
   const upsertCharacter = useCallback((incoming: HofCharacter) => {
     setCharacters((current) => {
@@ -199,7 +228,8 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
   /** 로그아웃에서 화면 목록, 진행 표시와 연결을 원자적으로 초기화한다. */
   const resetCharacterSync = useCallback(() => {
     syncGenerationRef.current += 1;
-    startJobPromiseRef.current = null;
+    rosterSyncPromiseRef.current = null;
+    fullSyncStartPromiseRef.current = null;
     closeSubscription();
     setCharacters([]);
     setCharacterSyncLabel(null);
@@ -215,7 +245,8 @@ export function useCharacterSync({ api, describeError, onNotice }: UseCharacterS
     characters,
     characterSyncLabel,
     characterSyncJob,
-    startCharacterSync: startJob,
+    syncCharacterRoster,
+    startCharacterFullSync: startFullSyncJob,
     stopCharacterSync,
     resumeCharacterSync,
     loadSavedCharacters,

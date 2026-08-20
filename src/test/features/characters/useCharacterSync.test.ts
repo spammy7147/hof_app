@@ -60,7 +60,50 @@ describe('useCharacterSync roster observation', () => {
     await act(async () => { renderer.unmount(); });
   });
 
-  it('starts one manual roster sync while the start request is in flight', async () => {
+  it('synchronizes only the roster without starting a full detail job', async () => {
+    let sync!: ReturnType<typeof useCharacterSync>;
+    let rosterSyncCalls = 0;
+    let fullSyncCalls = 0;
+    const roster = deferred<HofCharacter[]>();
+    const api = {
+      subscribeHofStatus: () => () => undefined,
+      async syncCharacterRoster() {
+        rosterSyncCalls += 1;
+        return roster.promise;
+      },
+      async startCharacterSyncJob() {
+        fullSyncCalls += 1;
+        return syncJob();
+      },
+    } as unknown as BackendApiClient;
+    const Harness = () => {
+      sync = useCharacterSync({ api, describeError: String, onNotice: () => undefined });
+      return null;
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(Harness)); });
+
+    let first!: Promise<void>;
+    let second!: Promise<void>;
+    await act(async () => {
+      first = sync.syncCharacterRoster();
+      second = sync.syncCharacterRoster();
+      await Promise.resolve();
+    });
+    assert.equal(rosterSyncCalls, 1);
+    assert.equal(fullSyncCalls, 0);
+    assert.equal(sync.characterSyncLabel, '목록 동기화 중');
+
+    await act(async () => {
+      roster.resolve([makeHofCharacter(1, { name: '목록 전용' })]);
+      await Promise.all([first, second]);
+    });
+    assert.equal(sync.characters[0]?.name, '목록 전용');
+    assert.equal(sync.characterSyncLabel, null);
+    await act(async () => { renderer.unmount(); });
+  });
+
+  it('starts one full detail sync while the start request is in flight', async () => {
     let sync!: ReturnType<typeof useCharacterSync>;
     let startCalls = 0;
     const started = deferred<CharacterSyncJobResponse>();
@@ -82,12 +125,12 @@ describe('useCharacterSync roster observation', () => {
     let first!: Promise<void>;
     let second!: Promise<void>;
     await act(async () => {
-      first = sync.startCharacterSync();
-      second = sync.startCharacterSync();
+      first = sync.startCharacterFullSync();
+      second = sync.startCharacterFullSync();
       await Promise.resolve();
     });
     assert.equal(startCalls, 1);
-    assert.equal(sync.characterSyncLabel, '동기화 준비 중');
+    assert.equal(sync.characterSyncLabel, '전체 상세 동기화 준비 중');
 
     await act(async () => {
       started.resolve(syncJob());
@@ -117,7 +160,7 @@ describe('useCharacterSync roster observation', () => {
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(React.createElement(Harness)); });
 
-    await act(async () => { await sync.startCharacterSync(); });
+    await act(async () => { await sync.startCharacterFullSync(); });
 
     assert.equal(sync.characterSyncLabel, null);
     assert.deepEqual(notices, ['start failed']);

@@ -476,6 +476,43 @@ describe('BackendApiClient', () => {
     assert.equal(characters[1]?.imageUrl, 'http://sic.zerosic.com/ZeroHOF/image/char/sknight02.gif');
   });
 
+  it('synchronizes the roster through the HOF home without starting a detail job', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const requests: CapturedRequest[] = [];
+    const responses: unknown[] = [
+      {
+        accountId: 1,
+        playerName: '공민이',
+        funds: 100,
+        timeCurrent: 10,
+        timeMax: 20,
+        work: 'Nothing',
+        auction: 'Nothing',
+        totalCharacterCount: 1,
+        synchronizedCharacterCount: 0,
+        characterSyncRequired: true,
+        observedAt: '2026-08-20T00:00:00Z',
+      },
+      [makeHofCharacter(1, { name: '목록 전용' })],
+    ];
+    globalThis.fetch = (async (url: RequestInfo | URL, init: RequestInit = {}) => {
+      requests.push({ url: String(url), init });
+      return mockResponse(responses.shift());
+    }) as unknown as typeof fetch;
+
+    const characters = await new BackendApiClient('http://backend.test').syncCharacterRoster();
+
+    assert.equal(characters[0]?.name, '목록 전용');
+    assert.deepEqual(
+      requests.map(({ url, init }) => [url, init.method ?? 'GET']),
+      [
+        ['http://backend.test/api/status', 'GET'],
+        ['http://backend.test/api/characters', 'GET'],
+      ],
+    );
+    assert.equal(requests.some(({ url }) => url.includes('/sync-jobs')), false);
+  });
+
   it('normalizes character detail and sync snapshot image URLs', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const client = new BackendApiClient('http://backend.test');

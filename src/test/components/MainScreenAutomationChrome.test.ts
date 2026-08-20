@@ -338,19 +338,24 @@ describe('MainScreen automation editor chrome', () => {
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 1);
   });
 
-  it('starts a manual character roster sync from the character header', async () => {
-    let syncCalls = 0;
+  it('offers separate roster and full-detail sync actions from the character header', async () => {
+    let rosterSyncCalls = 0;
+    let fullSyncCalls = 0;
     const props = mainProps({
-      onStartCharacterSync: async () => { syncCalls += 1; },
+      onSyncCharacterRoster: async () => { rosterSyncCalls += 1; },
+      onStartCharacterFullSync: async () => { fullSyncCalls += 1; },
     });
     let renderer!: ReturnType<typeof create>;
     await act(async () => { renderer = create(React.createElement(MainScreen, props)); });
 
     await act(async () => renderer.root.find((node) => String(node.type) === 'BottomTabBar').props.onChangeTab('characters'));
-    const syncButton = renderer.root.findByProps({ accessibilityLabel: '캐릭터 목록 동기화' });
-    await act(async () => syncButton.props.onPress());
+    const rosterSyncButton = renderer.root.findByProps({ accessibilityLabel: '캐릭터 목록 동기화' });
+    const fullSyncButton = renderer.root.findByProps({ accessibilityLabel: '전체 캐릭터 상세 동기화' });
+    await act(async () => rosterSyncButton.props.onPress());
+    await act(async () => fullSyncButton.props.onPress());
 
-    assert.equal(syncCalls, 1);
+    assert.equal(rosterSyncCalls, 1);
+    assert.equal(fullSyncCalls, 1);
   });
 });
 

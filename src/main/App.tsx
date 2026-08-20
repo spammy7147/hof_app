@@ -131,7 +131,8 @@ function AppContent({ api }: { api: BackendApiClient }) {
     characters,
     characterSyncLabel,
     characterSyncJob,
-    startCharacterSync,
+    syncCharacterRoster,
+    startCharacterFullSync,
     stopCharacterSync,
     resumeCharacterSync,
     loadSavedCharacters,
@@ -593,7 +594,8 @@ function AppContent({ api }: { api: BackendApiClient }) {
         characters={characters}
         characterSyncLabel={characterSyncLabel}
         characterSyncJob={characterSyncJob}
-        onStartCharacterSync={startCharacterSync}
+        onSyncCharacterRoster={syncCharacterRoster}
+        onStartCharacterFullSync={startCharacterFullSync}
         onStopCharacterSync={stopCharacterSync}
         onResumeCharacterSync={resumeCharacterSync}
         notice={notice}
