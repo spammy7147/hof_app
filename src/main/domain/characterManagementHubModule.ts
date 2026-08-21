@@ -5,6 +5,7 @@ import type {
   CharacterDeepSyncResponse,
   CharacterIdentityCandidate,
   CharacterPatternApplyRequest,
+  CharacterPatternSetting,
   CharacterPatternOperationResult,
   CharacterTransferExecutionResult,
   CharacterTransferPreview,
@@ -85,6 +86,8 @@ export type CharacterManagementHubActions = {
   applyPattern?: (
     request: CharacterPatternApplyRequest,
   ) => Promise<CharacterPatternOperationResult>;
+  savePattern?: (change: CharacterPatternChange) => Promise<void>;
+  resolvePatternConflict?: () => Promise<void>;
   loadSavedPattern?: (slotCode: string) => Promise<CharacterPatternOperationResult>;
   deleteSavedPattern?: (slotCode: string) => Promise<CharacterPatternOperationResult>;
   deepSync?: () => Promise<CharacterDeepSyncResponse | void>;
@@ -143,6 +146,14 @@ type CharacterManagementHubOptions = {
   freshnessMs?: number;
 };
 
+export type CharacterPatternChange = {
+  base: CharacterPatternSetting;
+  draft: CharacterPatternSetting;
+  slotAction?: 'NONE' | 'SAVE_EMPTY' | 'REPLACE';
+  targetSlotCode?: string;
+  slotName?: string;
+};
+
 type CharacterManagementCommandIntent =
   | { type: 'RENAME'; newName: string }
   | { type: 'KICK' | 'KNOCKBACK'; confirmationName: string }
@@ -175,6 +186,7 @@ export class CharacterManagementHubModule {
   private selectionGeneration = 0;
   private transferGeneration = 0;
   private requestGeneration = 0;
+  private pendingPatternChange: CharacterPatternChange | null = null;
   private roster = new Map<number, HofCharacter>();
   private resource: CharacterManagementHubResource;
 
@@ -207,6 +219,7 @@ export class CharacterManagementHubModule {
     this.selectionGeneration += 1;
     this.transferGeneration += 1;
     this.requestGeneration += 1;
+    this.pendingPatternChange = null;
     this.roster = new Map();
     this.replace(emptyResource(
       this.actionsFor(
@@ -223,6 +236,7 @@ export class CharacterManagementHubModule {
     this.selectionGeneration += 1;
     this.transferGeneration += 1;
     this.requestGeneration += 1;
+    this.pendingPatternChange = null;
     this.roster = new Map();
     this.replace(emptyResource(
       this.actionsFor(
@@ -307,6 +321,7 @@ export class CharacterManagementHubModule {
     if (transferSource && !observedTransferSource) return;
     this.selectionGeneration += 1;
     this.transferGeneration += 1;
+    this.pendingPatternChange = null;
     const request = ++this.requestGeneration;
     const generation = this.generation;
     const selectionGeneration = this.selectionGeneration;
@@ -351,6 +366,7 @@ export class CharacterManagementHubModule {
     this.selectionGeneration += 1;
     this.transferGeneration += 1;
     this.requestGeneration += 1;
+    this.pendingPatternChange = null;
     this.replace(emptyResource(
       this.actionsFor(
         this.generation,
@@ -606,6 +622,10 @@ export class CharacterManagementHubModule {
     if (this.backend.applyPattern) {
       actions.applyPattern = (request) =>
         this.applyPattern(request, generation, selectionGeneration);
+      actions.savePattern = (change) =>
+        this.savePattern(change, generation, selectionGeneration);
+      actions.resolvePatternConflict = () =>
+        this.resolvePatternConflict(generation, selectionGeneration);
     }
     if (this.backend.loadSavedPattern) {
       actions.loadSavedPattern = (slotCode) =>
@@ -779,6 +799,50 @@ export class CharacterManagementHubModule {
     )
       ? result
       : {};
+  }
+
+  private async savePattern(
+    change: CharacterPatternChange,
+    expectedGeneration: number,
+    expectedSelectionGeneration: number,
+    force = false,
+  ): Promise<void> {
+    const detail = this.resource.detail;
+    const target = this.currentTarget(
+      expectedGeneration,
+      expectedSelectionGeneration,
+    );
+    if (!detail || !target || detail.id !== target.id) return;
+    this.pendingPatternChange = change;
+    const result = await this.applyPattern(
+      {
+        characterId: target.id,
+        baseRevision: detail.revision,
+        base: change.base,
+        draft: { ...change.draft, baseRevision: detail.revision },
+        slotAction: change.slotAction,
+        targetSlotCode: change.targetSlotCode,
+        slotName: change.slotName,
+        force,
+      },
+      expectedGeneration,
+      expectedSelectionGeneration,
+    );
+    if (!isPatternConflict(result)) this.pendingPatternChange = null;
+  }
+
+  private async resolvePatternConflict(
+    expectedGeneration: number,
+    expectedSelectionGeneration: number,
+  ): Promise<void> {
+    const change = this.pendingPatternChange;
+    if (!change) return;
+    await this.savePattern(
+      change,
+      expectedGeneration,
+      expectedSelectionGeneration,
+      true,
+    );
   }
 
   private async loadSavedPattern(
@@ -1211,6 +1275,7 @@ export class CharacterManagementHubModule {
     expectedSelectionGeneration: number,
   ): void {
     if (!this.isActiveLease(expectedGeneration, expectedSelectionGeneration)) return;
+    this.pendingPatternChange = null;
     this.replace({ ...this.resource, patternConflict: null });
   }
 

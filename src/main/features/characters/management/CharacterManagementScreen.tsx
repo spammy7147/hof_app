@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Alert,
   Modal,
@@ -22,8 +22,6 @@ import {
   type LucideIcon,
 } from "lucide-react-native";
 import type {
-  CharacterCommand,
-  CharacterCommandResult,
   CharacterDeepSyncResponse,
 } from "../../../types/api";
 import { theme } from "../../../styles/theme";
@@ -38,7 +36,7 @@ export function CharacterManagementScreen({
   characterHub: CharacterManagementHubResource;
 }) {
   const detail = characterHub.detail!;
-  const onCommand = characterHub.actions.executeCommand;
+  const actions = characterHub.actions;
   const [newName, setNewName] = useState("");
   const [renameOpen, setRenameOpen] = useState(false);
   const [kickName, setKickName] = useState("");
@@ -51,10 +49,7 @@ export function CharacterManagementScreen({
   const [transferOpen, setTransferOpen] = useState(
     characterHub.transfer.sourceCharacter != null,
   );
-  const [identityResolution, setIdentityResolution] = useState<Extract<
-    CharacterCommandResult,
-    { candidates: unknown }
-  > | null>(null);
+  const identityResolution = characterHub.identityResolution;
   const [showAllIdentityCandidates, setShowAllIdentityCandidates] =
     useState(false);
   const deepSyncProgress = characterHub.deepSync.progress;
@@ -62,30 +57,27 @@ export function CharacterManagementScreen({
   const deepSyncError = characterHub.deepSync.errorMessage;
   const canTransfer = characterHub.actions.previewTransfer != null
     && characterHub.actions.executeTransfer != null;
-  const revision = detail.revision;
   const classOptions = (detail.patternOptions ?? []).filter(
     (option) => option.type === "CLASS",
   );
-  const execute = async (command: CharacterCommand) => {
-    const result = await onCommand?.(command);
-    if (result?.type === "IdentityResolutionRequired") {
-      setIdentityResolution(result);
-      setShowAllIdentityCandidates(
-        result.candidates.every((candidate) => candidate.matchingFields.length === 0),
-      );
-    }
-  };
-  const run = (command: CharacterCommand, confirm?: string) =>
+  useEffect(() => {
+    setShowAllIdentityCandidates(
+      identityResolution?.candidates.every(
+        (candidate) => candidate.matchingFields.length === 0,
+      ) ?? false,
+    );
+  }, [identityResolution]);
+  const run = (action: () => Promise<void>, confirm?: string) =>
     confirm
       ? Alert.alert("확인", confirm, [
           { text: "취소", style: "cancel" },
           {
             text: "실행",
             style: "destructive",
-            onPress: () => void execute(command),
+            onPress: () => void action(),
           },
         ])
-      : void execute(command);
+      : void action();
   if (transferOpen && canTransfer)
     return (
       <CharacterSettingsTransferScreen
@@ -127,16 +119,12 @@ export function CharacterManagementScreen({
           description="성장·초기화와 기타 아이템을 찾아 사용합니다."
           disabled={itemsBusy}
           onPress={() => {
-            if (!onCommand) {
+            if (!actions.prepareItems) {
               setItemsOpen(true);
               return;
             }
             setItemsBusy(true);
-            void execute({
-              type: "PREPARE_ITEMS",
-              characterId: detail.id,
-              expectedRevision: revision,
-            })
+            void actions.prepareItems()
               .then(() => setItemsOpen(true))
               .catch((error) => Alert.alert("아이템 확인 실패", toUserFacingErrorMessage(error)))
               .finally(() => setItemsBusy(false));
@@ -151,11 +139,7 @@ export function CharacterManagementScreen({
               : "현재 캐릭터로 기도합니다."
           }
           onPress={() =>
-            run({
-              type: "PRAY",
-              characterId: detail.id,
-              expectedRevision: revision,
-            })
+            actions.pray && run(actions.pray)
           }
         />
         <ActionRow
@@ -239,12 +223,7 @@ export function CharacterManagementScreen({
                       text: "변경",
                       onPress: () => {
                         setRenameOpen(false);
-                        void execute({
-                          type: "RENAME",
-                          characterId: detail.id,
-                          expectedRevision: revision,
-                          newName,
-                        });
+                        void actions.rename?.(newName);
                       },
                     },
                   ])
@@ -290,8 +269,8 @@ export function CharacterManagementScreen({
                   if (!selectedClass) return;
                   const classValue = selectedClass;
                   setClassOpen(false);
-                  run(
-                    { type: "CHANGE_CLASS", characterId: detail.id, expectedRevision: revision, classValue },
+                  if (actions.changeClass) run(
+                    () => actions.changeClass!(classValue),
                     `${detail.job}에서 ${classOptions.find((option) => option.value === classValue)?.label} 직업으로 전직하시겠습니까?`,
                   );
                 }}
@@ -317,7 +296,7 @@ export function CharacterManagementScreen({
                 onPress={() => {
                   void characterHub.actions.linkCharacter?.(
                     candidate.hofCharacterId,
-                  ).then(() => setIdentityResolution(null));
+                  );
                 }}
                 style={styles.classChoice}
               >
@@ -382,7 +361,7 @@ export function CharacterManagementScreen({
                 label="계속"
                 onPress={() => {
                   setKnockbackOpen(false);
-                  void execute({ type: "KNOCKBACK", characterId: detail.id, expectedRevision: revision, confirmationName: detail.name });
+                  void actions.knockback?.(detail.name);
                 }}
               />
             </View>
@@ -416,7 +395,7 @@ export function CharacterManagementScreen({
                 disabled={kickName !== detail.name}
                 onPress={() => {
                   setKickOpen(false);
-                  void execute({ type: "KICK", characterId: detail.id, expectedRevision: revision, confirmationName: kickName });
+                  void actions.kick?.(kickName);
                 }}
               />
             </View>

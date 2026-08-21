@@ -19,11 +19,6 @@ import { FixedBottomAction } from "../../../components/FixedBottomAction";
 import type { CharacterManagementHubResource } from "../../../domain/characterManagementHubModule";
 
 type Row = { key: string; judge: string; quantity: string; skill: string };
-type PendingApply = {
-  slotAction: "NONE" | "SAVE_EMPTY" | "REPLACE";
-  targetSlotCode?: string;
-  name?: string;
-};
 const GUARD_OPTIONS = [
   "always",
   "never",
@@ -42,11 +37,9 @@ export function CharacterPatternScreen({
   onImportSettings?: () => void;
 }) {
   const detail = characterHub.detail!;
-  const onApply = characterHub.actions.applyPattern;
-  const onLoadSaved = (_characterId: number, slotCode: string) =>
-    characterHub.actions.loadSavedPattern?.(slotCode) ?? Promise.resolve({});
-  const onDeleteSaved = (_characterId: number, slotCode: string) =>
-    characterHub.actions.deleteSavedPattern?.(slotCode) ?? Promise.resolve({});
+  const savePattern = characterHub.actions.savePattern;
+  const onLoadSaved = characterHub.actions.loadSavedPattern;
+  const onDeleteSaved = characterHub.actions.deleteSavedPattern;
   const onBeginEdit = characterHub.actions.beginPatternEdit;
   const initial = useMemo<Row[]>(
     () =>
@@ -77,9 +70,6 @@ export function CharacterPatternScreen({
   const [pendingSlot, setPendingSlot] = useState<string | null>(null);
   const visibleConflict = characterHub.patternConflict;
   const dismissConflict = characterHub.actions.dismissPatternConflict;
-  const [conflictedApply, setConflictedApply] = useState<PendingApply | null>(
-    null,
-  );
   const [automationPauseNotice, setAutomationPauseNotice] = useState(false);
   const rowKey = useRef(0);
   const pauseRequested = useRef(false);
@@ -155,18 +145,14 @@ export function CharacterPatternScreen({
     slotAction: "NONE" | "SAVE_EMPTY" | "REPLACE" = "NONE",
     targetSlotCode?: string,
     name?: string,
-    force = false,
   ) => {
-    const result = await onApply?.({
-      characterId: detail.id,
-      baseRevision: detail.revision,
+    await savePattern?.({
       base: {
         rows: settingRows(initial),
         position: detail.positionGuard.selectedPosition,
         guard: detail.positionGuard.guardValue,
       },
       draft: {
-        baseRevision: detail.revision,
         rows: settingRows(rows),
         position,
         guard,
@@ -174,19 +160,9 @@ export function CharacterPatternScreen({
       slotAction,
       targetSlotCode,
       slotName: name,
-      force,
     });
-    if (
-      result &&
-      (result.currentRevision || (result.rowDiffs?.length ?? 0) > 0)
-    ) {
-      setConflictedApply({ slotAction, targetSlotCode, name });
-    } else {
-      setConflictedApply(null);
-      setPendingSlot(null);
-      setSlotName("");
-    }
-    return result;
+    setPendingSlot(null);
+    setSlotName("");
   };
   const dirty =
     JSON.stringify(settingRows(rows)) !==
@@ -502,7 +478,7 @@ export function CharacterPatternScreen({
                         onPress={() => {
                           const load = () => {
                             setSlotsOpen(false);
-                            void onLoadSaved?.(detail.id, slot.slot);
+                            void onLoadSaved?.(slot.slot);
                           };
                           if (dirty) {
                             Alert.alert("저장 패턴 불러오기", "적용하지 않은 편집 내용이 있습니다. 저장 패턴을 불러올까요?", [
@@ -525,7 +501,7 @@ export function CharacterPatternScreen({
                         label="삭제"
                         onPress={() => {
                           setSlotsOpen(false);
-                          void onDeleteSaved?.(detail.id, slot.slot);
+                          void onDeleteSaved?.(slot.slot);
                         }}
                       />
                     </>
@@ -583,15 +559,7 @@ export function CharacterPatternScreen({
               </Pressable>
               <Pressable
                 onPress={() => {
-                  dismissConflict();
-                  const pending = conflictedApply;
-                  if (pending)
-                    void apply(
-                      pending.slotAction,
-                      pending.targetSlotCode,
-                      pending.name,
-                      true,
-                    );
+                  void characterHub.actions.resolvePatternConflict?.();
                 }}
                 style={styles.control}
               >

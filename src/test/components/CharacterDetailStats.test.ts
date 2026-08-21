@@ -7,7 +7,7 @@ import React from 'react';
 import { act, create } from 'react-test-renderer';
 import { makeHofCharacter, makeHofCharacterDetail } from '../fixtures/api';
 import { makeCharacterManagementHubResource } from '../fixtures/characterManagementHub';
-import type { CharacterCommand, CharacterPatternApplyRequest } from '../../main/types/api';
+import type { CharacterPatternChange } from '../../main/domain/characterManagementHubModule';
 
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => (
   React.createElement(name, { ...props, ref }, props.children as React.ReactNode)
@@ -487,7 +487,7 @@ describe('CharacterDetail stat allocation', () => {
   });
 
   it('shows pattern editing controls immediately without opening a generic accordion', async () => {
-    const requests: CharacterPatternApplyRequest[] = [];
+    const requests: CharacterPatternChange[] = [];
     let pauseRequests = 0;
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
@@ -495,9 +495,8 @@ describe('CharacterDetail stat allocation', () => {
         characterHub: hubWithDetail(
           makeHofCharacterDetail(1, { actionPatterns: [{ index: 0, judge: 'always', judgeText: '항상', quantity: '0', quantityText: '', skill: 'slash', skillText: 'Quick Slash' }], patternOptions: [{ type: 'CONDITION', value: 'always', label: '항상', category: null }, { type: 'CONDITION', value: '1099', label: 'HP', category: 'HP' }, { type: 'CONDITION', value: 'hp', label: 'HP가 낮을 때', category: null }, { type: 'SKILL', value: 'slash', label: 'Quick Slash', category: null }], positionGuard: { positions: [{ value: 'front', checked: true }], selectedPosition: 'front', guardValue: 'always', guardText: '항상' } }),
           { actions: {
-            applyPattern: async (request: CharacterPatternApplyRequest) => {
+            savePattern: async (request: CharacterPatternChange) => {
               requests.push(request);
-              return {};
             },
             beginPatternEdit: async () => { pauseRequests += 1; },
           } },
@@ -552,7 +551,6 @@ describe('CharacterDetail stat allocation', () => {
     assert.equal(requests.length, 1);
     assert.equal(requests[0].draft.rows[0].judge, 'hp');
     assert.equal(requests[0].draft.rows[0].quantity, '35');
-    assert.equal(requests[0].baseRevision, '2026-08-17T00:00:00Z');
     assert.equal(pauseRequests, 1);
   });
 
@@ -761,7 +759,7 @@ describe('CharacterDetail stat allocation', () => {
   });
 
   it('offers optional empty-slot storage only after the pattern save flow starts', async () => {
-    const requests: CharacterPatternApplyRequest[] = [];
+    const requests: CharacterPatternChange[] = [];
     const detail = makeHofCharacterDetail(1, {
       patternSlots: [{ slot: '0', label: '빈 슬롯', canLoad: false }],
       actionPatterns: [{ index: 0, judge: 'always', judgeText: '반드시', quantity: '0', quantityText: '0', skill: 'attack', skillText: 'Attack' }],
@@ -773,9 +771,8 @@ describe('CharacterDetail stat allocation', () => {
       renderer = create(React.createElement(CharacterDetail, {
         characterHub: hubWithDetail(detail, {
           actions: {
-            applyPattern: async (request: CharacterPatternApplyRequest) => {
+            savePattern: async (request: CharacterPatternChange) => {
               requests.push(request);
-              return {};
             },
           },
         }),
@@ -803,8 +800,8 @@ describe('CharacterDetail stat allocation', () => {
     assert.equal(requests[0].slotName, '범용');
   });
 
-  it('keeps the requested slot replacement when the user confirms a pattern conflict', async () => {
-    const requests: CharacterPatternApplyRequest[] = [];
+  it('resolves a visible pattern conflict through the semantic hub action', async () => {
+    let resolutions = 0;
     const detail = makeHofCharacterDetail(1, {
       actionPatterns: [{ index: 0, judge: 'always', judgeText: '항상', quantity: '0', quantityText: '', skill: 'slash', skillText: 'Quick Slash' }],
       patternOptions: [{ type: 'CONDITION', value: 'always', label: '항상', category: null }, { type: 'SKILL', value: 'slash', label: 'Quick Slash', category: null }],
@@ -815,13 +812,16 @@ describe('CharacterDetail stat allocation', () => {
     await act(async () => {
       renderer = create(React.createElement(CharacterDetail, {
         characterHub: hubWithDetail(detail, {
+          patternConflict: {
+            currentRevision: '2026-08-17T00:01:00Z',
+            rowDiffs: [{
+              rowNumber: 1,
+              before: detail.actionPatterns[0] ?? null,
+              current: { judge: 'changed', quantity: '1', skill: 'slash' },
+            }],
+          },
           actions: {
-            applyPattern: async (request: CharacterPatternApplyRequest) => {
-              requests.push(request);
-              return requests.length === 1
-                ? { currentRevision: '2026-08-17T00:01:00Z', rowDiffs: [{ rowNumber: 1, before: request.base.rows[0] ?? null, current: { judge: 'changed', quantity: '1', skill: 'slash' } }] }
-                : { revision: '2026-08-17T00:02:00Z' };
-            },
+            resolvePatternConflict: async () => { resolutions += 1; },
           },
         }),
       }));
@@ -843,33 +843,20 @@ describe('CharacterDetail stat allocation', () => {
     assert.deepEqual(actionWidths, [64, 64, 64]);
     const patternSource = readFileSync(resolve(process.cwd(), 'src/main/features/characters/pattern/CharacterPatternScreen.tsx'), 'utf8');
     assert.match(patternSource, /slotActions:\s*\{[^}]*gap:\s*8/);
-    await act(async () => replace?.props.onPress());
     const overwrite = renderer.root.findAll((node) => String(node.type) === 'Pressable').find((node) => node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '덮어쓰기').length > 0);
     await act(async () => overwrite?.props.onPress());
 
-    assert.equal(requests.length, 2);
-    assert.equal(requests[1].force, true);
-    assert.equal(requests[1].slotAction, 'REPLACE');
-    assert.equal(requests[1].targetSlotCode, '2');
-    assert.equal(requests[1].slotName, '대회랑');
+    assert.equal(resolutions, 1);
   });
 
   it('opens the HOF growth item selector before showing the item screen', async () => {
-    const commandTypes: string[] = [];
+    let preparations = 0;
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(CharacterManagementScreen, {
         characterHub: hubWithDetail(makeHofCharacterDetail(), {
           actions: {
-            executeCommand: async (command: CharacterCommand) => {
-              commandTypes.push(command.type);
-              return {
-                type: 'Completed' as const,
-                characterId: command.characterId,
-                revision: '2026-08-17T00:01:00Z',
-                messages: [],
-              };
-            },
+            prepareItems: async () => { preparations += 1; },
           },
         }),
       }));
@@ -880,7 +867,7 @@ describe('CharacterDetail stat allocation', () => {
     ));
     await act(async () => itemUse?.props.onPress());
 
-    assert.deepEqual(commandTypes, ['PREPARE_ITEMS']);
+    assert.equal(preparations, 1);
     assert.equal(renderer.root.findByProps({ testID: 'character-items-modal' }).props.visible, true);
     const text = renderer.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join(''));
     assert.ok(text.includes('성장·초기화'));
@@ -978,16 +965,14 @@ describe('CharacterDetail stat allocation', () => {
     await act(async () => {
       renderer = create(React.createElement(CharacterManagementScreen, {
         characterHub: hubWithDetail(detail, {
+          identityResolution: {
+            message: '새 캐릭터 연결을 선택해 주세요.',
+            candidates: [
+              { hofCharacterId: 'recommended', name: '추천 후보', job: 'Knight', level: 60, matchingFields: ['name', 'job', 'level'] },
+              { hofCharacterId: 'other', name: '다른 캐릭터', job: 'Mage', level: 42, matchingFields: [] },
+            ],
+          },
           actions: {
-            executeCommand: async () => ({
-              type: 'IdentityResolutionRequired' as const,
-              characterId: detail.id,
-              message: '새 캐릭터 연결을 선택해 주세요.',
-              candidates: [
-                { hofCharacterId: 'recommended', name: '추천 후보', job: 'Knight', level: 60, matchingFields: ['name', 'job', 'level'] },
-                { hofCharacterId: 'other', name: '다른 캐릭터', job: 'Mage', level: 42, matchingFields: [] },
-              ],
-            }),
             linkCharacter: async (hofCharacterId: string) => {
               linked.push([detail.id, hofCharacterId]);
             },
@@ -996,10 +981,6 @@ describe('CharacterDetail stat allocation', () => {
       }));
     });
 
-    const pray = renderer.root.findAll((node) => String(node.type) === 'Pressable').find((node) => (
-      node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '기도').length > 0
-    ));
-    await act(async () => pray?.props.onPress());
     const textBefore = renderer.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join(''));
     assert.ok(textBefore.includes('추천 후보'));
     assert.equal(textBefore.includes('다른 캐릭터'), false);

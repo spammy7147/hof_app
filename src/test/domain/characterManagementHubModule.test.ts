@@ -10,6 +10,7 @@ import type {
   CharacterCommand,
   CharacterCommandResult,
   CharacterDeepSyncResponse,
+  CharacterPatternApplyRequest,
   CharacterPatternOperationResult,
   CharacterTransferExecutionResult,
   CharacterTransferPreview,
@@ -442,6 +443,7 @@ describe('character management hub module', () => {
       rowDiffs: [{ rowNumber: 1, before: null, current: null }],
     };
     let patternResult = conflict;
+    const requests: CharacterPatternApplyRequest[] = [];
     let loads = 0;
     const detail = freshDetail(1);
     const hub = new CharacterManagementHubModule(backend({
@@ -449,23 +451,33 @@ describe('character management hub module', () => {
         loads += 1;
         return detail;
       },
-      applyPattern: async () => patternResult,
+      applyPattern: async (request) => {
+        requests.push(request);
+        return patternResult;
+      },
     }));
     const character = makeHofCharacter(1);
     hub.activate('account-1');
     hub.observeRoster([character]);
     await hub.getSnapshot().actions.select(character);
 
-    const request = patternRequest(character.id, character.revision);
-    assert.equal(await hub.getSnapshot().actions.applyPattern?.(request), conflict);
+    const change = patternChange();
+    await hub.getSnapshot().actions.savePattern?.(change);
     assert.equal(hub.getSnapshot().patternConflict, conflict);
     assert.equal(hub.getSnapshot().detail, detail);
     assert.equal(loads, 1);
+    assert.equal(requests[0]?.characterId, character.id);
+    assert.equal(requests[0]?.baseRevision, detail.revision);
+    assert.equal(requests[0]?.draft.baseRevision, detail.revision);
 
     patternResult = { revision: 'revision-3' };
-    await hub.getSnapshot().actions.applyPattern?.(request);
+    await hub.getSnapshot().actions.resolvePatternConflict?.();
     assert.equal(hub.getSnapshot().patternConflict, null);
     assert.equal(loads, 2);
+    assert.equal(requests[1]?.force, true);
+    assert.equal(requests[1]?.slotAction, 'REPLACE');
+    assert.equal(requests[1]?.targetSlotCode, 'slot-2');
+    assert.equal(requests[1]?.slotName, '대회랑');
   });
 
   it('owns deep-sync progress and ignores progress after selection changes', async () => {
@@ -947,12 +959,13 @@ function freshDetail(characterId: number) {
   });
 }
 
-function patternRequest(characterId: number, revision: string) {
+function patternChange() {
   return {
-    characterId,
-    baseRevision: revision,
     base: { rows: [], position: '', guard: '' },
-    draft: { baseRevision: revision, rows: [], position: '', guard: '' },
+    draft: { rows: [], position: '', guard: '' },
+    slotAction: 'REPLACE' as const,
+    targetSlotCode: 'slot-2',
+    slotName: '대회랑',
   };
 }
 
