@@ -56,7 +56,6 @@ type PartyPresetListProps = {
 
 type ExpandedPresetId = number | 'new' | null;
 type NewPresetDraft = { name: string; party: BattlePartyMember[]; folderId: number | null };
-type PresetReorderOverlay = { base: PartyPresetResponse[]; value: PartyPresetResponse[] };
 type FolderMoveOverlay = { base: PartyPresetFolderResponse[]; value: PartyPresetFolderResponse[] };
 type PickerInvocation = { handle: ReturnType<typeof findNodeHandle> };
 
@@ -75,7 +74,6 @@ export function PartyPresetList({
   onMovePartyPresetFolder,
   onDeletePartyPresetFolder,
 }: PartyPresetListProps) {
-  const [presetReorderOverlay, setPresetReorderOverlay] = useState<PresetReorderOverlay | null>(null);
   const [folderMoveOverlay, setFolderMoveOverlay] = useState<FolderMoveOverlay | null>(null);
   const [expandedPresetId, setExpandedPresetId] = useState<ExpandedPresetId>(null);
   const [newDraft, setNewDraft] = useState<NewPresetDraft | null>(null);
@@ -92,7 +90,7 @@ export function PartyPresetList({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const canonicalPresets = authenticated ? partyPresetCatalog.catalog.presets : [];
   const canonicalFolders = authenticated ? partyPresetCatalog.catalog.folders : [];
-  const presets = presetReorderOverlay?.base === canonicalPresets ? presetReorderOverlay.value : canonicalPresets;
+  const presets = canonicalPresets;
   const folders = folderMoveOverlay?.base === canonicalFolders ? folderMoveOverlay.value : canonicalFolders;
   const mutationPendingRef = useRef(false);
   const authenticatedRef = useRef(authenticated);
@@ -186,7 +184,6 @@ export function PartyPresetList({
     setExpandedFolderIds(new Set());
     setFolderPickerOpen(false);
     setFolderEditMode(false);
-    setPresetReorderOverlay(null);
     setFolderMoveOverlay(null);
     setErrorMessage(null);
     pickerInvocationRef.current = null;
@@ -358,12 +355,7 @@ export function PartyPresetList({
     const live = visiblePresetsRef.current;
     if (live.length !== previous.length || live.some((preset, index) => preset !== previous[index])) return;
     const optimistic = orderedPresets.map((preset, displayOrder) => ({ ...preset, displayOrder }));
-    const optimisticById = new Map(optimistic.map((preset) => [preset.id, preset]));
     mutationPendingRef.current = true;
-    setPresetReorderOverlay({
-      base: partyPresetCatalog.catalog.presets,
-      value: partyPresetCatalog.catalog.presets.map((preset) => optimisticById.get(preset.id) ?? preset),
-    });
     setIsSaving(true);
     setErrorMessage(null);
     try {
@@ -371,16 +363,9 @@ export function PartyPresetList({
         folderId: activePresetFolderId,
         presetIds: optimistic.map(({ id }) => id),
       });
-      if (isCurrentAccountGeneration(accountGeneration)) setPresetReorderOverlay(null);
     } catch (error) {
       if (isCurrentAccountGeneration(accountGeneration)) {
-        setPresetReorderOverlay(null);
         setErrorMessage(toUserFacingErrorMessage(error));
-        try {
-          partyPresetCatalog.retry();
-        } catch {
-          // Keep the captured pre-drag order when authoritative recovery is unavailable.
-        }
       }
     } finally {
       if (isCurrentAccountGeneration(accountGeneration)) {

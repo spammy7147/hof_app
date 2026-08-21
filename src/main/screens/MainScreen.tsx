@@ -239,8 +239,18 @@ export function MainScreen({
         loadCatalog: onGetPartyPresetCatalog,
         createPreset: onCreatePartyPreset,
         updatePreset: onUpdatePartyPreset,
+        makePresetPrimary: onMakePartyPresetPrimary,
+        reorderPresets: onReorderPartyPresets,
+        deletePreset: onDeletePartyPreset,
       }),
-    [onCreatePartyPreset, onGetPartyPresetCatalog, onUpdatePartyPreset],
+    [
+      onCreatePartyPreset,
+      onDeletePartyPreset,
+      onGetPartyPresetCatalog,
+      onMakePartyPresetPrimary,
+      onReorderPartyPresets,
+      onUpdatePartyPreset,
+    ],
   );
   const partyPresetAccountKeyRef = useRef({});
   const partyPresetCatalogResource = useSyncExternalStore(
@@ -270,37 +280,18 @@ export function MainScreen({
   );
   const makePresetPrimary = useCallback(
     (presetId: number) =>
-      partyPresetCatalogModule.runCompatibilityMutation(
-        () => onMakePartyPresetPrimary(presetId),
-        (catalog, updated) => ({
-          ...catalog,
-          presets: catalog.presets.map((preset) =>
-            preset.id === updated.id
-              ? { ...updated, isPrimary: true }
-              : { ...preset, isPrimary: false },
-          ),
-        }),
-      ),
-    [onMakePartyPresetPrimary, partyPresetCatalogModule],
+      partyPresetCatalogModule.makePresetPrimary(presetId),
+    [partyPresetCatalogModule],
   );
   const reorderPresets = useCallback(
     (request: ReorderPartyPresetsRequest) =>
-      partyPresetCatalogModule.runCompatibilityMutation(
-        () => onReorderPartyPresets(request),
-        (catalog, presets) => mergePresetMutationResponse(catalog, presets),
-      ),
-    [onReorderPartyPresets, partyPresetCatalogModule],
+      partyPresetCatalogModule.reorderPresets(request),
+    [partyPresetCatalogModule],
   );
   const deletePreset = useCallback(
     (presetId: number) =>
-      partyPresetCatalogModule.runCompatibilityMutation(
-        () => onDeletePartyPreset(presetId),
-        (catalog) => ({
-          ...catalog,
-          presets: catalog.presets.filter((preset) => preset.id !== presetId),
-        }),
-      ),
-    [onDeletePartyPreset, partyPresetCatalogModule],
+      partyPresetCatalogModule.deletePreset(presetId),
+    [partyPresetCatalogModule],
   );
   const createPresetFolder = useCallback(
     (request: CreatePartyPresetFolderRequest) => {
@@ -638,21 +629,6 @@ export function MainScreen({
       ) : null}
     </SafeAreaView>
   );
-}
-
-function mergePresetMutationResponse(
-  catalog: PartyPresetCatalogResponse,
-  returned: PartyPresetResponse[],
-): PartyPresetCatalogResponse {
-  const returnedById = new Map(returned.map((preset) => [preset.id, preset]));
-  const existingIds = new Set(catalog.presets.map(({ id }) => id));
-  return {
-    ...catalog,
-    presets: [
-      ...catalog.presets.map((preset) => returnedById.get(preset.id) ?? preset),
-      ...returned.filter(({ id }) => !existingIds.has(id)),
-    ],
-  };
 }
 
 type RenderActiveTabArgs = {

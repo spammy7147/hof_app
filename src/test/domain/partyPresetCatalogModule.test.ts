@@ -140,6 +140,200 @@ describe('party preset catalog module', () => {
     await creating;
     assert.deepEqual(module.getSnapshot().catalog, emptyCatalog());
   });
+
+  it('projects one primary preset immediately and converges to the authoritative catalog', async () => {
+    const primaryResult = deferred<PartyPresetResponse>();
+    const reload = deferred<PartyPresetCatalogResponse>();
+    const module = createModule({
+      loadCatalog: sequence(
+        Promise.resolve(catalogWithPresets(preset(1, 'first', true), preset(2, 'second'))),
+        reload.promise,
+      ),
+      makePresetPrimary: () => primaryResult.promise,
+    });
+    await module.activate('account-a');
+
+    const makingPrimary = module.makePresetPrimary(2);
+    assert.deepEqual(
+      module.getSnapshot().catalog.presets.map(({ id, isPrimary }) => [id, isPrimary]),
+      [[1, false], [2, true]],
+    );
+
+    primaryResult.resolve(preset(2, 'second', true));
+    await waitFor(() => module.getSnapshot().loading);
+    reload.resolve(catalogWithPresets(preset(1, 'server-first'), preset(2, 'server-second', true)));
+    await makingPrimary;
+    assert.deepEqual(
+      module.getSnapshot().catalog.presets.map(({ name, isPrimary }) => [name, isPrimary]),
+      [['server-first', false], ['server-second', true]],
+    );
+  });
+
+  it('keeps the latest optimistic reorder while rapid requests converge in queue order', async () => {
+    const firstResult = deferred<PartyPresetResponse[]>();
+    const firstReload = deferred<PartyPresetCatalogResponse>();
+    const secondResult = deferred<PartyPresetResponse[]>();
+    const secondReload = deferred<PartyPresetCatalogResponse>();
+    const reorderCalls: number[][] = [];
+    const reorderResults = [firstResult, secondResult];
+    const module = createModule({
+      loadCatalog: sequence(
+        Promise.resolve(catalogWithPresets(preset(1, 'one'), preset(2, 'two'), preset(3, 'three'))),
+        firstReload.promise,
+        secondReload.promise,
+      ),
+      reorderPresets: (request) => {
+        reorderCalls.push(request.presetIds);
+        return reorderResults.shift()!.promise;
+      },
+    });
+    await module.activate('account-a');
+
+    const first = module.reorderPresets({ folderId: null, presetIds: [3, 2, 1] });
+    const second = module.reorderPresets({ folderId: null, presetIds: [2, 1, 3] });
+    assert.deepEqual(presetIds(module), [2, 1, 3]);
+    await Promise.resolve();
+    assert.deepEqual(reorderCalls, [[3, 2, 1]]);
+
+    const firstOrder = orderedPresets([3, 2, 1]);
+    firstResult.resolve(firstOrder);
+    await waitFor(() => module.getSnapshot().loading);
+    assert.deepEqual(presetIds(module), [2, 1, 3]);
+    firstReload.resolve(catalogWithPresets(...firstOrder));
+    await first;
+    await waitFor(() => reorderCalls.length === 2);
+    assert.deepEqual(reorderCalls, [[3, 2, 1], [2, 1, 3]]);
+    assert.deepEqual(presetIds(module), [2, 1, 3]);
+
+    const finalOrder = orderedPresets([2, 1, 3]);
+    secondResult.resolve(finalOrder);
+    await waitFor(() => module.getSnapshot().loading);
+    secondReload.resolve(catalogWithPresets(...finalOrder));
+    await second;
+    assert.deepEqual(presetIds(module), [2, 1, 3]);
+  });
+
+  it('removes a preset for every subscriber and rolls back to authority on failure', async () => {
+    const deletion = deferred<null>();
+    const initial = catalogWithPresets(preset(1, 'one'), preset(2, 'two'));
+    const recovered = catalogWithPresets(preset(1, 'server-one'), preset(2, 'server-two'), preset(3, 'server-three'));
+    const module = createModule({
+      loadCatalog: sequence(Promise.resolve(initial), Promise.resolve(recovered)),
+      deletePreset: () => deletion.promise,
+    });
+    await module.activate('account-a');
+    const observedPresetIds: number[][] = [];
+    module.subscribe(() => observedPresetIds.push(presetIds(module)));
+
+    const deleting = module.deletePreset(1);
+    assert.deepEqual(presetIds(module), [2]);
+    deletion.reject(new Error('delete failed'));
+    await assert.rejects(deleting, /delete failed/);
+
+    assert.deepEqual(presetIds(module), [1, 2, 3]);
+    assert.equal(module.getSnapshot().error, null);
+    assert.equal(module.getSnapshot().mutationError, '파티 프리셋을 변경하지 못했습니다.');
+    assert.ok(observedPresetIds.some((ids) => ids.length === 1 && ids[0] === 2));
+    assert.deepEqual(observedPresetIds.at(-1), [1, 2, 3]);
+  });
+
+  it('keeps a load freshness error while a mutation is only queued', async () => {
+    const authoritative = catalogWithPresets(preset(1, 'one'), preset(2, 'server-two', true));
+    const module = createModule({
+      loadCatalog: sequence(
+        Promise.resolve(catalogWithPresets(preset(1, 'one', true), preset(2, 'two'))),
+        Promise.reject(new Error('reload failed')),
+        Promise.resolve(authoritative),
+      ),
+    });
+    await module.activate('account-a');
+    await module.reload();
+    assert.equal(module.getSnapshot().error, '파티 프리셋을 불러오지 못했습니다.');
+
+    const mutation = module.makePresetPrimary(2);
+    assert.equal(module.getSnapshot().error, '파티 프리셋을 불러오지 못했습니다.');
+    await mutation;
+    assert.equal(module.getSnapshot().error, null);
+  });
+
+  it('does not publish a late primary result after switching accounts', async () => {
+    const primaryResult = deferred<PartyPresetResponse>();
+    const module = createModule({
+      loadCatalog: sequence(
+        Promise.resolve(catalogWithPresets(preset(1, 'old-primary', true), preset(2, 'old'))),
+        Promise.resolve(catalogWithPresets(preset(9, 'new-primary', true))),
+      ),
+      makePresetPrimary: () => primaryResult.promise,
+    });
+    await module.activate('account-a');
+    const oldMutation = module.makePresetPrimary(2);
+    await Promise.resolve();
+    await module.activate('account-b');
+
+    primaryResult.resolve(preset(2, 'old', true));
+    await oldMutation;
+    assert.deepEqual(presetIds(module), [9]);
+    assert.equal(module.getSnapshot().catalog.presets[0]?.name, 'new-primary');
+  });
+
+  it('clears an earlier mutation notice when the next queued mutation succeeds', async () => {
+    const failedReorder = deferred<PartyPresetResponse[]>();
+    const successfulReorder = deferred<PartyPresetResponse[]>();
+    const reorderResults = [failedReorder, successfulReorder];
+    const initial = catalogWithPresets(preset(1, 'one'), preset(2, 'two'));
+    const finalOrder = orderedPresets([2, 1]);
+    const module = createModule({
+      loadCatalog: sequence(
+        Promise.resolve(initial),
+        Promise.resolve(initial),
+        Promise.resolve(catalogWithPresets(...finalOrder)),
+      ),
+      reorderPresets: () => reorderResults.shift()!.promise,
+    });
+    await module.activate('account-a');
+
+    const first = module.reorderPresets({ folderId: null, presetIds: [2, 1] });
+    const second = module.reorderPresets({ folderId: null, presetIds: [2, 1] });
+    await Promise.resolve();
+    failedReorder.reject(new Error('first failed'));
+    await assert.rejects(first, /first failed/);
+    await waitFor(() => module.getSnapshot().mutationError == null);
+
+    successfulReorder.resolve(finalOrder);
+    await second;
+    assert.deepEqual(presetIds(module), [2, 1]);
+    assert.equal(module.getSnapshot().error, null);
+    assert.equal(module.getSnapshot().mutationError, null);
+  });
+
+  it('cancels queued mutations until a failed authority recovery is retried', async () => {
+    const deletion = deferred<null>();
+    let primaryCalls = 0;
+    const initial = catalogWithPresets(preset(1, 'one', true), preset(2, 'two'));
+    const module = createModule({
+      loadCatalog: sequence(
+        Promise.resolve(initial),
+        Promise.reject(new Error('recovery unavailable')),
+      ),
+      deletePreset: () => deletion.promise,
+      makePresetPrimary: async (presetId) => {
+        primaryCalls += 1;
+        return preset(presetId, 'two', true);
+      },
+    });
+    await module.activate('account-a');
+
+    const failed = module.deletePreset(1);
+    const queued = module.makePresetPrimary(2);
+    await Promise.resolve();
+    deletion.reject(new Error('delete failed'));
+    await assert.rejects(failed, /delete failed/);
+    await assert.rejects(queued, /refresh required/);
+
+    assert.equal(primaryCalls, 0);
+    assert.equal(module.getSnapshot().error, '파티 프리셋을 불러오지 못했습니다.');
+    assert.equal(module.getSnapshot().mutationError, '파티 프리셋을 변경하지 못했습니다.');
+  });
 });
 
 function createModule(overrides: Partial<PartyPresetCatalogBackend> = {}) {
@@ -147,6 +341,9 @@ function createModule(overrides: Partial<PartyPresetCatalogBackend> = {}) {
     loadCatalog: async () => emptyCatalog(),
     createPreset: async (request) => preset(1, request.name),
     updatePreset: async (presetId, request) => preset(presetId, request.name),
+    makePresetPrimary: async (presetId) => preset(presetId, `preset-${presetId}`, true),
+    reorderPresets: async (request) => orderedPresets(request.presetIds),
+    deletePreset: async () => null,
     ...overrides,
   };
   return new PartyPresetCatalogModule(backend);
@@ -167,18 +364,35 @@ function catalogWithPresets(...presets: PartyPresetResponse[]): PartyPresetCatal
   return { folders: [], presets };
 }
 
-function preset(id: number, name: string): PartyPresetResponse {
+function preset(id: number, name: string, isPrimary = false): PartyPresetResponse {
   return {
     id,
     accountId: 1,
     name,
     folderId: null,
     displayOrder: id - 1,
-    isPrimary: false,
+    isPrimary,
     members: [],
     createdAt: '',
     updatedAt: '',
   };
+}
+
+function orderedPresets(ids: number[]): PartyPresetResponse[] {
+  return ids.map((id, displayOrder) => ({
+    ...preset(id, ['zero', 'one', 'two', 'three'][id] ?? `preset-${id}`),
+    displayOrder,
+  }));
+}
+
+function presetIds(module: PartyPresetCatalogModule): number[] {
+  return [...module.getSnapshot().catalog.presets]
+    .sort((left, right) => left.displayOrder - right.displayOrder)
+    .map(({ id }) => id);
+}
+
+function sequence<T>(...values: Array<Promise<T>>): () => Promise<T> {
+  return () => values.shift()!;
 }
 
 function deferred<T>() {

@@ -571,7 +571,7 @@ describe('PartyPresetList', () => {
     assert.deepEqual(requests, [{ folderId: 10, presetIds: [2, 1] }]);
   });
 
-  it('renders catalog preset order, updates optimistically, and adopts successful server order', async () => {
+  it('renders catalog preset order and adopts the owner snapshot after reorder', async () => {
     const pending = deferred<PartyPresetResponse[]>();
     const catalog: PartyPresetCatalogResponse = {
       ...FOLDER_PRESETS_CATALOG,
@@ -594,7 +594,7 @@ describe('PartyPresetList', () => {
       await Promise.resolve();
     });
     draggable = findHost(renderer.root, 'DraggableFlatList');
-    assert.deepEqual((draggable.props.data as PartyPresetResponse[]).map(({ id }) => id), [2, 1]);
+    assert.deepEqual((draggable.props.data as PartyPresetResponse[]).map(({ id }) => id), [1, 2]);
     await act(async () => pending.resolve([
       { ...catalog.presets[0]!, displayOrder: 1 },
       { ...catalog.presets[1]!, displayOrder: 0 },

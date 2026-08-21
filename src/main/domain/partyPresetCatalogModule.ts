@@ -2,17 +2,22 @@ import type {
   CreatePartyPresetRequest,
   PartyPresetCatalogResponse,
   PartyPresetResponse,
+  ReorderPartyPresetsRequest,
   UpdatePartyPresetRequest,
 } from '../types/api';
 
 const LOAD_ERROR_MESSAGE = '파티 프리셋을 불러오지 못했습니다.';
+const MUTATION_ERROR_MESSAGE = '파티 프리셋을 변경하지 못했습니다.';
 
 export type PartyPresetCatalogResource = {
   catalog: PartyPresetCatalogResponse;
   loading: boolean;
   error: string | null;
+  mutationError?: string | null;
   retry: () => void;
 };
+
+type CatalogLoadOutcome = 'success' | 'failure' | 'stale' | 'skipped' | 'inactive';
 
 export type PartyPresetCatalogBackend = {
   loadCatalog: () => Promise<PartyPresetCatalogResponse>;
@@ -21,12 +26,28 @@ export type PartyPresetCatalogBackend = {
     presetId: number,
     request: UpdatePartyPresetRequest,
   ) => Promise<PartyPresetResponse>;
+  makePresetPrimary: (presetId: number) => Promise<PartyPresetResponse>;
+  reorderPresets: (
+    request: ReorderPartyPresetsRequest,
+  ) => Promise<PartyPresetResponse[]>;
+  deletePreset: (presetId: number) => Promise<null>;
 };
 
 type CatalogProjector<T> = (
   catalog: PartyPresetCatalogResponse,
   result: T,
 ) => PartyPresetCatalogResponse;
+
+type OptimisticMutation = {
+  id: number;
+  project: (catalog: PartyPresetCatalogResponse) => PartyPresetCatalogResponse;
+};
+
+class CatalogMutationBlockedError extends Error {
+  constructor() {
+    super('Party preset catalog refresh required');
+  }
+}
 
 /**
  * 파티 프리셋 카탈로그의 계정별 조회 상태와 변경 순서를 소유한다.
@@ -43,6 +64,12 @@ export class PartyPresetCatalogModule {
   private loaded = false;
   private active = false;
   private mutationTail: Promise<void> = Promise.resolve();
+  private nextMutationId = 0;
+  private optimisticMutations: OptimisticMutation[] = [];
+  private authoritativeCatalog = emptyCatalog();
+  private loadError: string | null = null;
+  private mutationError: string | null = null;
+  private mutationBlocked = true;
   private snapshot: PartyPresetCatalogResource;
 
   constructor(private readonly backend: PartyPresetCatalogBackend) {
@@ -57,10 +84,11 @@ export class PartyPresetCatalogModule {
   };
 
   retry = (): void => {
+    this.mutationError = null;
     void this.reload();
   };
 
-  activate(accountKey: unknown): Promise<void> {
+  activate(accountKey: unknown): Promise<CatalogLoadOutcome> {
     if (this.active && Object.is(this.accountKey, accountKey)) {
       return this.load(false);
     }
@@ -72,6 +100,11 @@ export class PartyPresetCatalogModule {
     this.loaded = false;
     this.active = true;
     this.mutationTail = Promise.resolve();
+    this.optimisticMutations = [];
+    this.authoritativeCatalog = emptyCatalog();
+    this.loadError = null;
+    this.mutationError = null;
+    this.mutationBlocked = true;
     this.snapshot = this.emptySnapshot();
     return this.load(false);
   }
@@ -85,10 +118,15 @@ export class PartyPresetCatalogModule {
     this.loaded = false;
     this.active = false;
     this.mutationTail = Promise.resolve();
+    this.optimisticMutations = [];
+    this.authoritativeCatalog = emptyCatalog();
+    this.loadError = null;
+    this.mutationError = null;
+    this.mutationBlocked = true;
     this.publish(this.emptySnapshot());
   }
 
-  reload(): Promise<void> {
+  reload(): Promise<CatalogLoadOutcome> {
     return this.load(true);
   }
 
@@ -109,6 +147,35 @@ export class PartyPresetCatalogModule {
     );
   }
 
+  makePresetPrimary(presetId: number): Promise<PartyPresetResponse> {
+    return this.enqueueMutation(
+      () => this.backend.makePresetPrimary(presetId),
+      projectPrimaryPreset,
+      true,
+      (catalog) => projectPrimaryPresetId(catalog, presetId),
+    );
+  }
+
+  reorderPresets(
+    request: ReorderPartyPresetsRequest,
+  ): Promise<PartyPresetResponse[]> {
+    return this.enqueueMutation(
+      () => this.backend.reorderPresets(request),
+      mergePresetMutationResponse,
+      true,
+      (catalog) => projectPresetReorder(catalog, request),
+    );
+  }
+
+  deletePreset(presetId: number): Promise<null> {
+    return this.enqueueMutation(
+      () => this.backend.deletePreset(presetId),
+      (catalog) => projectPresetDelete(catalog, presetId),
+      true,
+      (catalog) => projectPresetDelete(catalog, presetId),
+    );
+  }
+
   /** expand 단계 동안 아직 이전되지 않은 동작도 같은 queue를 사용한다. */
   runCompatibilityMutation<T>(
     operation: () => Promise<T>,
@@ -118,29 +185,32 @@ export class PartyPresetCatalogModule {
     return this.enqueueMutation(operation, project, reload);
   }
 
-  private async load(force: boolean): Promise<void> {
-    if (!this.active) return;
-    if (!force && (this.activeRequestGeneration != null || this.loaded)) return;
+  private async load(force: boolean): Promise<CatalogLoadOutcome> {
+    if (!this.active) return 'inactive';
+    if (!force && (this.activeRequestGeneration != null || this.loaded)) return 'skipped';
 
     const accountGeneration = this.accountGeneration;
     const requestGeneration = ++this.requestGeneration;
     this.activeRequestGeneration = requestGeneration;
-    this.publish({ ...this.snapshot, loading: true, error: null });
+    this.loadError = null;
+    this.publishProjection(true);
 
     try {
       const catalog = await this.backend.loadCatalog();
-      if (!this.isCurrent(accountGeneration, requestGeneration)) return;
+      if (!this.isCurrent(accountGeneration, requestGeneration)) return 'stale';
       this.loaded = true;
       this.activeRequestGeneration = null;
-      this.publish({ catalog, loading: false, error: null, retry: this.retry });
+      this.authoritativeCatalog = catalog;
+      this.loadError = null;
+      this.mutationBlocked = false;
+      this.publishProjection(false);
+      return 'success';
     } catch {
-      if (!this.isCurrent(accountGeneration, requestGeneration)) return;
+      if (!this.isCurrent(accountGeneration, requestGeneration)) return 'stale';
       this.activeRequestGeneration = null;
-      this.publish({
-        ...this.snapshot,
-        loading: false,
-        error: LOAD_ERROR_MESSAGE,
-      });
+      this.loadError = LOAD_ERROR_MESSAGE;
+      this.publishProjection(false);
+      return 'failure';
     }
   }
 
@@ -148,17 +218,46 @@ export class PartyPresetCatalogModule {
     operation: () => Promise<T>,
     project: CatalogProjector<T>,
     reload = true,
+    optimisticProject?: (
+      catalog: PartyPresetCatalogResponse,
+    ) => PartyPresetCatalogResponse,
   ): Promise<T> {
     if (!this.active) return Promise.reject(new Error('Party preset mutation cancelled'));
+    if (this.mutationBlocked) return Promise.reject(new CatalogMutationBlockedError());
     const accountGeneration = this.accountGeneration;
+    const optimisticMutation = optimisticProject == null
+      ? null
+      : { id: ++this.nextMutationId, project: optimisticProject };
+    if (optimisticMutation != null) this.optimisticMutations.push(optimisticMutation);
+    this.mutationError = null;
+    this.publishProjection(this.snapshot.loading);
     const queued = this.mutationTail.then(async () => {
-      this.requireCurrentAccount(accountGeneration);
-      const result = await operation();
-      if (!this.isCurrentAccount(accountGeneration)) return result;
+      try {
+        this.requireCurrentAccount(accountGeneration);
+        if (this.mutationBlocked) throw new CatalogMutationBlockedError();
+        this.mutationError = null;
+        this.publishProjection(this.snapshot.loading);
+        const result = await operation();
+        if (!this.isCurrentAccount(accountGeneration)) return result;
 
-      this.replace(project(this.snapshot.catalog, result));
-      if (reload) await this.load(true);
-      return result;
+        this.removeOptimisticMutation(optimisticMutation?.id);
+        this.replace(project(this.authoritativeCatalog, result));
+        if (reload) await this.load(true);
+        return result;
+      } catch (error) {
+        if (this.isCurrentAccount(accountGeneration)) {
+          this.removeOptimisticMutation(optimisticMutation?.id);
+          if (error instanceof CatalogMutationBlockedError) {
+            this.publishProjection(this.snapshot.loading);
+          } else {
+            this.mutationError = MUTATION_ERROR_MESSAGE;
+            this.mutationBlocked = true;
+            this.publishProjection(this.snapshot.loading);
+            await this.load(true);
+          }
+        }
+        throw error;
+      }
     });
     this.mutationTail = queued.then(
       () => undefined,
@@ -171,7 +270,29 @@ export class PartyPresetCatalogModule {
     this.requestGeneration += 1;
     this.activeRequestGeneration = null;
     this.loaded = true;
-    this.publish({ catalog, loading: false, error: null, retry: this.retry });
+    this.authoritativeCatalog = catalog;
+    this.publishProjection(false);
+  }
+
+  private removeOptimisticMutation(id: number | undefined): void {
+    if (id == null) return;
+    this.optimisticMutations = this.optimisticMutations.filter(
+      (mutation) => mutation.id !== id,
+    );
+  }
+
+  private publishProjection(loading: boolean): void {
+    const catalog = this.optimisticMutations.reduce(
+      (current, mutation) => mutation.project(current),
+      this.authoritativeCatalog,
+    );
+    this.publish({
+      catalog,
+      loading,
+      error: this.loadError,
+      mutationError: this.mutationError,
+      retry: this.retry,
+    });
   }
 
   private requireCurrentAccount(accountGeneration: number): void {
@@ -194,6 +315,7 @@ export class PartyPresetCatalogModule {
       catalog: emptyCatalog(),
       loading: false,
       error: null,
+      mutationError: null,
       retry: this.retry,
     };
   }
@@ -239,6 +361,78 @@ function projectPresetUpsert(
     presets.push(normalizedById.get(updated.id) ?? { ...updated, displayOrder: 0 });
   }
   return { ...catalog, presets };
+}
+
+function projectPrimaryPreset(
+  catalog: PartyPresetCatalogResponse,
+  updated: PartyPresetResponse,
+): PartyPresetCatalogResponse {
+  if (!catalog.presets.some(({ id }) => id === updated.id)) return catalog;
+  return {
+    ...catalog,
+    presets: catalog.presets.map((preset) =>
+      preset.id === updated.id
+        ? { ...updated, isPrimary: true }
+        : { ...preset, isPrimary: false },
+    ),
+  };
+}
+
+function projectPrimaryPresetId(
+  catalog: PartyPresetCatalogResponse,
+  presetId: number,
+): PartyPresetCatalogResponse {
+  if (!catalog.presets.some(({ id }) => id === presetId)) return catalog;
+  return {
+    ...catalog,
+    presets: catalog.presets.map((preset) => ({
+      ...preset,
+      isPrimary: preset.id === presetId,
+    })),
+  };
+}
+
+function projectPresetReorder(
+  catalog: PartyPresetCatalogResponse,
+  request: ReorderPartyPresetsRequest,
+): PartyPresetCatalogResponse {
+  const folderId = request.folderId ?? null;
+  const displayOrderById = new Map(
+    request.presetIds.map((presetId, displayOrder) => [presetId, displayOrder]),
+  );
+  return {
+    ...catalog,
+    presets: catalog.presets.map((preset) => {
+      if (preset.folderId !== folderId) return preset;
+      const displayOrder = displayOrderById.get(preset.id);
+      return displayOrder == null ? preset : { ...preset, displayOrder };
+    }),
+  };
+}
+
+function mergePresetMutationResponse(
+  catalog: PartyPresetCatalogResponse,
+  returned: PartyPresetResponse[],
+): PartyPresetCatalogResponse {
+  const returnedById = new Map(returned.map((preset) => [preset.id, preset]));
+  const existingIds = new Set(catalog.presets.map(({ id }) => id));
+  return {
+    ...catalog,
+    presets: [
+      ...catalog.presets.map((preset) => returnedById.get(preset.id) ?? preset),
+      ...returned.filter(({ id }) => !existingIds.has(id)),
+    ],
+  };
+}
+
+function projectPresetDelete(
+  catalog: PartyPresetCatalogResponse,
+  presetId: number,
+): PartyPresetCatalogResponse {
+  return {
+    ...catalog,
+    presets: catalog.presets.filter((preset) => preset.id !== presetId),
+  };
 }
 
 function comparePresetOrder(
