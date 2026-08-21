@@ -6,7 +6,9 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'rea
 
 import type { BattlePartyMember } from '../../main/domain/battleParty';
 import { buildPartyPresetFolderEditorRows } from '../../main/domain/partyPresetFolderEditor';
+import type { PartyPresetCatalogActions } from '../../main/domain/partyPresetCatalogModule';
 import type { PartyPresetCatalogResponse, PartyPresetResponse } from '../../main/types/api';
+import { makePartyPresetCatalogResource } from '../fixtures/partyPresetCatalog';
 
 type SwipeableMockMethods = { close: () => void; closeCalls: number };
 
@@ -608,6 +610,62 @@ describe('PartyPresetList', () => {
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '오래됨 폴더, 프리셋 0개, 열기' }).length, 0);
   });
 
+  it('retries a failed shared catalog without replacing its user-facing error', async () => {
+    let retries = 0;
+    const renderer = await renderList({
+      partyPresetCatalog: makePartyPresetCatalogResource(
+        { folders: [], presets: [] },
+        {
+          error: '프리셋을 불러오지 못했습니다.',
+          retry: () => { retries += 1; },
+        },
+      ),
+    });
+
+    assert.equal(textCount(renderer.root, '프리셋을 불러오지 못했습니다.'), 1);
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '프리셋 다시 시도' }).props.onPress();
+    });
+    assert.equal(retries, 1);
+  });
+
+  it('clears a local mutation failure after the shared retry recovers', async () => {
+    let retries = 0;
+    const failedResource = makePartyPresetCatalogResource(CATALOG, {
+      mutationError: '프리셋을 변경하지 못했습니다.',
+      retry: () => { retries += 1; },
+    });
+    const props = listProps({
+      partyPresetCatalog: failedResource,
+      onUpdatePartyPreset: async () => {
+        throw new Error('상세 저장 실패');
+      },
+    });
+    const renderer = await renderListProps(props);
+    await openUnassignedPreset(renderer, '서관, 대표 프리셋');
+    await act(async () => {
+      await findButtonByText(renderer.root, '저장').props.onPress();
+    });
+    assert.equal(textCount(renderer.root, '상세 저장 실패'), 1);
+
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '프리셋 다시 시도' }).props.onPress();
+      renderer.update(React.createElement(PartyPresetList, {
+        ...props,
+        partyPresetCatalog: {
+          ...failedResource,
+          error: null,
+          mutationError: null,
+        },
+      }));
+    });
+
+    assert.equal(retries, 1);
+    assert.equal(textCount(renderer.root, '상세 저장 실패'), 0);
+    assert.equal(textCount(renderer.root, '프리셋을 변경하지 못했습니다.'), 0);
+    assert.equal(renderer.root.findAllByProps({ accessibilityRole: 'alert' }).length, 0);
+  });
+
   it('isolates a pending preset mutation across auth loss and reverse relogin completion', async () => {
     const oldUpdate = deferred<PartyPresetResponse>();
     const newCreate = deferred<PartyPresetResponse>();
@@ -627,12 +685,11 @@ describe('PartyPresetList', () => {
     });
 
     await act(async () => renderer.update(React.createElement(PartyPresetList, { ...oldProps, authenticated: false })));
-    const newProps = {
-      ...oldProps,
+    const newProps = listProps({
       authenticated: true,
       partyPresetCatalog: catalogResource(latestCatalog),
       onCreatePartyPreset: async () => newCreate.promise,
-    };
+    });
     await act(async () => {
       renderer.update(React.createElement(PartyPresetList, newProps));
       await Promise.resolve();
@@ -642,6 +699,10 @@ describe('PartyPresetList', () => {
     await act(async () => {
       void findButtonByText(renderer.root, '저장').props.onPress();
       await Promise.resolve();
+      renderer.update(React.createElement(PartyPresetList, {
+        ...newProps,
+        partyPresetCatalog: { ...newProps.partyPresetCatalog, mutating: true },
+      }));
     });
 
     await act(async () => oldUpdate.resolve({ ...PRESETS[0]!, name: '이전 계정 완료' }));
@@ -671,12 +732,11 @@ describe('PartyPresetList', () => {
     });
 
     await act(async () => renderer.update(React.createElement(PartyPresetList, { ...oldProps, authenticated: false })));
-    const newProps = {
-      ...oldProps,
+    const newProps = listProps({
       authenticated: true,
       partyPresetCatalog: catalogResource(latestCatalog),
       onCreatePartyPresetFolder: async () => newCreate.promise,
-    };
+    });
     await act(async () => {
       renderer.update(React.createElement(PartyPresetList, newProps));
       await Promise.resolve();
@@ -685,6 +745,10 @@ describe('PartyPresetList', () => {
     await act(async () => {
       void findHost(renderer.root, 'PartyPresetFolderEditor').props.onCreate({ name: '새 폴더', parentFolderId: null });
       await Promise.resolve();
+      renderer.update(React.createElement(PartyPresetList, {
+        ...newProps,
+        partyPresetCatalog: { ...newProps.partyPresetCatalog, mutating: true },
+      }));
     });
 
     await act(async () => oldCreate.reject(new Error('이전 계정 실패')));
@@ -727,7 +791,19 @@ describe('PartyPresetList', () => {
 
 });
 
-type Overrides = Partial<React.ComponentProps<typeof PartyPresetList>>;
+type ActionOverrides = {
+  onCreatePartyPreset?: PartyPresetCatalogActions['createPreset'];
+  onUpdatePartyPreset?: PartyPresetCatalogActions['updatePreset'];
+  onMakePartyPresetPrimary?: PartyPresetCatalogActions['makePresetPrimary'];
+  onReorderPartyPresets?: PartyPresetCatalogActions['reorderPresets'];
+  onDeletePartyPreset?: PartyPresetCatalogActions['deletePreset'];
+  onCreatePartyPresetFolder?: PartyPresetCatalogActions['createFolder'];
+  onRenamePartyPresetFolder?: PartyPresetCatalogActions['renameFolder'];
+  onReorderPartyPresetFolders?: PartyPresetCatalogActions['reorderFolders'];
+  onMovePartyPresetFolder?: PartyPresetCatalogActions['moveFolder'];
+  onDeletePartyPresetFolder?: PartyPresetCatalogActions['deleteFolder'];
+};
+type Overrides = Partial<React.ComponentProps<typeof PartyPresetList>> & ActionOverrides;
 
 async function renderList(overrides: Overrides = {}): Promise<ReactTestRenderer> {
   const props = listProps(overrides);
@@ -741,87 +817,130 @@ async function renderList(overrides: Overrides = {}): Promise<ReactTestRenderer>
 
 function ControlledPartyPresetList(props: React.ComponentProps<typeof PartyPresetList>) {
   const [catalog, setCatalog] = React.useState(props.partyPresetCatalog.catalog);
-  const resource = React.useMemo(
-    () => ({ ...props.partyPresetCatalog, catalog }),
-    [catalog, props.partyPresetCatalog],
-  );
-  return React.createElement(PartyPresetList, {
-    ...props,
-    partyPresetCatalog: resource,
-    onCreatePartyPreset: async (request) => {
-      const created = await props.onCreatePartyPreset(request);
-      setCatalog((current) => ({ ...current, presets: [...current.presets.filter(({ id }) => id !== created.id), created] }));
-      return created;
-    },
-    onUpdatePartyPreset: async (presetId, request) => {
-      const updated = await props.onUpdatePartyPreset(presetId, request);
-      setCatalog((current) => ({ ...current, presets: current.presets.map((preset) => preset.id === updated.id ? updated : preset) }));
-      return updated;
-    },
-    onMakePartyPresetPrimary: async (presetId) => {
-      const updated = await props.onMakePartyPresetPrimary(presetId);
-      setCatalog((current) => ({
+  const [mutating, setMutating] = React.useState(false);
+  const pendingCountRef = React.useRef(0);
+  const sourceActions = props.partyPresetCatalog.actions;
+  const runMutation = React.useCallback(async <T,>(
+    operation: () => Promise<T>,
+    project: (result: T) => void,
+  ): Promise<T> => {
+    pendingCountRef.current += 1;
+    setMutating(true);
+    try {
+      const result = await operation();
+      project(result);
+      return result;
+    } finally {
+      pendingCountRef.current -= 1;
+      setMutating(pendingCountRef.current > 0);
+    }
+  }, []);
+  const actions = React.useMemo<PartyPresetCatalogActions>(() => ({
+    createPreset: (request) => runMutation(
+      () => sourceActions.createPreset(request),
+      (created) => setCatalog((current) => ({
+        ...current,
+        presets: [...current.presets.filter(({ id }) => id !== created.id), created],
+      })),
+    ),
+    updatePreset: (presetId, request) => runMutation(
+      () => sourceActions.updatePreset(presetId, request),
+      (updated) => setCatalog((current) => ({
+        ...current,
+        presets: current.presets.map((preset) => preset.id === updated.id ? updated : preset),
+      })),
+    ),
+    makePresetPrimary: (presetId) => runMutation(
+      () => sourceActions.makePresetPrimary(presetId),
+      (updated) => setCatalog((current) => ({
         ...current,
         presets: current.presets.map((preset) => preset.id === updated.id
           ? { ...updated, isPrimary: true }
           : { ...preset, isPrimary: false }),
-      }));
-      return updated;
-    },
-    onReorderPartyPresets: async (request) => {
-      const presets = await props.onReorderPartyPresets(request);
-      setCatalog((current) => ({ ...current, presets }));
-      return presets;
-    },
-    onDeletePartyPreset: async (presetId) => {
-      const result = await props.onDeletePartyPreset(presetId);
-      setCatalog((current) => ({ ...current, presets: current.presets.filter(({ id }) => id !== presetId) }));
-      return result;
-    },
-    onCreatePartyPresetFolder: props.onCreatePartyPresetFolder ? async (request) => {
-      const next = await props.onCreatePartyPresetFolder!(request);
-      setCatalog(next);
-      return next;
-    } : undefined,
-    onRenamePartyPresetFolder: props.onRenamePartyPresetFolder ? async (folderId, request) => {
-      const next = await props.onRenamePartyPresetFolder!(folderId, request);
-      setCatalog(next);
-      return next;
-    } : undefined,
-    onReorderPartyPresetFolders: props.onReorderPartyPresetFolders ? async (request) => {
-      const next = await props.onReorderPartyPresetFolders!(request);
-      setCatalog(next);
-      return next;
-    } : undefined,
-    onMovePartyPresetFolder: props.onMovePartyPresetFolder ? async (folderId, request) => {
-      const next = await props.onMovePartyPresetFolder!(folderId, request);
-      setCatalog(next);
-      return next;
-    } : undefined,
-    onDeletePartyPresetFolder: props.onDeletePartyPresetFolder ? async (folderId) => {
-      const next = await props.onDeletePartyPresetFolder!(folderId);
-      setCatalog(next);
-      return next;
-    } : undefined,
+      })),
+    ),
+    reorderPresets: (request) => runMutation(
+      () => sourceActions.reorderPresets(request),
+      (presets) => setCatalog((current) => ({ ...current, presets })),
+    ),
+    deletePreset: (presetId) => runMutation(
+      () => sourceActions.deletePreset(presetId),
+      () => setCatalog((current) => ({
+        ...current,
+        presets: current.presets.filter(({ id }) => id !== presetId),
+      })),
+    ),
+    createFolder: (request) => runMutation(
+      () => sourceActions.createFolder(request),
+      setCatalog,
+    ),
+    renameFolder: (folderId, request) => runMutation(
+      () => sourceActions.renameFolder(folderId, request),
+      setCatalog,
+    ),
+    reorderFolders: (request) => runMutation(
+      () => sourceActions.reorderFolders(request),
+      setCatalog,
+    ),
+    moveFolder: (folderId, request) => runMutation(
+      () => sourceActions.moveFolder(folderId, request),
+      setCatalog,
+    ),
+    deleteFolder: (folderId) => runMutation(
+      () => sourceActions.deleteFolder(folderId),
+      setCatalog,
+    ),
+  }), [runMutation, sourceActions]);
+  const resource = React.useMemo(
+    () => ({ ...props.partyPresetCatalog, catalog, mutating, actions }),
+    [actions, catalog, mutating, props.partyPresetCatalog],
+  );
+  return React.createElement(PartyPresetList, {
+    ...props,
+    partyPresetCatalog: resource,
   });
 }
 
 function listProps(overrides: Overrides = {}): React.ComponentProps<typeof PartyPresetList> {
+  const {
+    onCreatePartyPreset,
+    onUpdatePartyPreset,
+    onMakePartyPresetPrimary,
+    onReorderPartyPresets,
+    onDeletePartyPreset,
+    onCreatePartyPresetFolder,
+    onRenamePartyPresetFolder,
+    onReorderPartyPresetFolders,
+    onMovePartyPresetFolder,
+    onDeletePartyPresetFolder,
+    partyPresetCatalog = catalogResource({ folders: [], presets: PRESETS }),
+    ...componentOverrides
+  } = overrides;
   return {
     authenticated: true,
     characters: [],
-    partyPresetCatalog: catalogResource({ folders: [], presets: PRESETS }),
-    onCreatePartyPreset: async () => PRESETS[0]!,
-    onUpdatePartyPreset: async () => PRESETS[0]!,
-    onMakePartyPresetPrimary: async () => PRESETS[0]!,
-    onReorderPartyPresets: async () => PRESETS,
-    onDeletePartyPreset: async () => null,
-    ...overrides,
+    ...componentOverrides,
+    partyPresetCatalog: {
+      ...partyPresetCatalog,
+      actions: {
+        ...partyPresetCatalog.actions,
+        createPreset: onCreatePartyPreset ?? (async () => PRESETS[0]!),
+        updatePreset: onUpdatePartyPreset ?? (async () => PRESETS[0]!),
+        makePresetPrimary: onMakePartyPresetPrimary ?? (async () => PRESETS[0]!),
+        reorderPresets: onReorderPartyPresets ?? (async () => PRESETS),
+        deletePreset: onDeletePartyPreset ?? (async () => null),
+        createFolder: onCreatePartyPresetFolder ?? partyPresetCatalog.actions.createFolder,
+        renameFolder: onRenamePartyPresetFolder ?? partyPresetCatalog.actions.renameFolder,
+        reorderFolders: onReorderPartyPresetFolders ?? partyPresetCatalog.actions.reorderFolders,
+        moveFolder: onMovePartyPresetFolder ?? partyPresetCatalog.actions.moveFolder,
+        deleteFolder: onDeletePartyPresetFolder ?? partyPresetCatalog.actions.deleteFolder,
+      },
+    },
   };
 }
 
 function catalogResource(catalog: PartyPresetCatalogResponse) {
-  return { catalog, loading: false, error: null, retry: () => undefined };
+  return makePartyPresetCatalogResource(catalog);
 }
 
 async function renderListProps(props: React.ComponentProps<typeof PartyPresetList>): Promise<ReactTestRenderer> {

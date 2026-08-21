@@ -3,6 +3,7 @@ import Module from 'node:module';
 import { afterEach, describe, it } from 'node:test';
 import React from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
+import { makePartyPresetCatalogResource } from '../fixtures/partyPresetCatalog';
 
 const host = (name: string) => (props: Record<string, unknown>) => React.createElement(name, props, props.children as React.ReactNode);
 const reactNativeMock = {
@@ -117,7 +118,7 @@ describe('FishingPanel', () => {
     await render(React.createElement(FishingPanel, {
       api: fakeApi({ load: async () => battle }),
       characters: [],
-      partyPresetCatalog: { catalog: { folders: [], presets: [] }, loading: false, error: null, retry: () => undefined },
+      partyPresetCatalog: makePartyPresetCatalogResource({ folders: [], presets: [] }),
       onRunBattle: async () => { throw new Error('unexpected'); },
     }));
 

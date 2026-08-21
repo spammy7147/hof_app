@@ -13,6 +13,7 @@ import type {
   UpdateRaidAutomationRequest,
   UpdateUnionAutomationRequest,
 } from '../../main/types/api';
+import { makePartyPresetCatalogResource } from '../fixtures/partyPresetCatalog';
 
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
   React.useImperativeHandle(ref, () => ({}), []);
@@ -213,7 +214,7 @@ async function renderEditor({
       onLoadBattleMaps: async () => maps,
       onLoadRaidTargets: async () => raidPub,
       onSave,
-      partyPresetCatalog: { catalog: presets(), loading: false, error: null, retry: () => undefined },
+      partyPresetCatalog: makePartyPresetCatalogResource(presets()),
       saving: false,
     } as React.ComponentProps<typeof NewAutomationEditor>));
     await Promise.resolve();

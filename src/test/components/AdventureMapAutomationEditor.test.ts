@@ -12,6 +12,7 @@ import type {
   TypedAutomationEntryResponse,
   UpdateAdventureMapAutomationRequest,
 } from '../../main/types/api';
+import { makePartyPresetCatalogResource } from '../fixtures/partyPresetCatalog';
 
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
   const nodeRef = React.useRef<Record<string, unknown>>({});
@@ -1093,7 +1094,10 @@ function editorProps(overrides: Partial<React.ComponentProps<typeof AdventureMap
   };
 }
 function presetCatalog(presets: PartyPresetResponse[]) {
-  return { catalog: { folders: [{ id: 90, name: '공유 폴더', parentFolderId: null, displayOrder: 0, createdAt: '', updatedAt: '' }], presets }, loading: false, error: null, retry: () => undefined };
+  return makePartyPresetCatalogResource({
+    folders: [{ id: 90, name: '공유 폴더', parentFolderId: null, displayOrder: 0, createdAt: '', updatedAt: '' }],
+    presets,
+  });
 }
 function hasText(root: ReactTestInstance, text: string): boolean {
   return root.findAll((node) => (node.type as unknown) === 'Text' && node.children.join('') === text).length > 0;

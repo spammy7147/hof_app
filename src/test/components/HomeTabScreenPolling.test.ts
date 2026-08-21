@@ -5,6 +5,7 @@ import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import type { TypedAutomationAggregateResponse } from '../../main/types/api';
+import { makePartyPresetCatalogResource } from '../fixtures/partyPresetCatalog';
 
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => (
   React.createElement(name, { ...props, ref }, props.children as React.ReactNode)
@@ -189,7 +190,7 @@ function props(automationController: never) {
     battleCategoriesError: null,
     onLoadBattleCategories: () => undefined,
     onLoadBattleMaps: async () => [],
-    partyPresetCatalog: { catalog: { folders: [], presets: [] }, loading: false, error: null, retry: () => undefined },
+    partyPresetCatalog: makePartyPresetCatalogResource({ folders: [], presets: [] }),
     onOpenCaptcha: () => undefined,
     onOpenAppSettings: () => undefined,
     onStatusObserved: () => undefined,

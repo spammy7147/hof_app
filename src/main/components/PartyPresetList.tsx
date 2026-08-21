@@ -25,32 +25,18 @@ import { getPartyPresetFolderPath, indexPartyPresetCatalog, searchPartyPresetCat
 import { theme } from '../styles/theme';
 import { FixedBottomAction } from './FixedBottomAction';
 import type {
-  CreatePartyPresetRequest,
   CreatePartyPresetFolderRequest,
   HofCharacter,
   MovePartyPresetFolderRequest,
   PartyPresetCatalogResponse,
   PartyPresetResponse,
   RenamePartyPresetFolderRequest,
-  ReorderPartyPresetFoldersRequest,
-  ReorderPartyPresetsRequest,
-  UpdatePartyPresetRequest,
 } from '../types/api';
 
 type PartyPresetListProps = {
   authenticated: boolean;
   characters: HofCharacter[];
   partyPresetCatalog: PartyPresetCatalogResource;
-  onCreatePartyPreset: (request: CreatePartyPresetRequest) => Promise<PartyPresetResponse>;
-  onUpdatePartyPreset: (presetId: number, request: UpdatePartyPresetRequest) => Promise<PartyPresetResponse>;
-  onMakePartyPresetPrimary: (presetId: number) => Promise<PartyPresetResponse>;
-  onReorderPartyPresets: (request: ReorderPartyPresetsRequest) => Promise<PartyPresetResponse[]>;
-  onDeletePartyPreset: (presetId: number) => Promise<null>;
-  onCreatePartyPresetFolder?: (request: CreatePartyPresetFolderRequest) => Promise<PartyPresetCatalogResponse>;
-  onRenamePartyPresetFolder?: (folderId: number, request: RenamePartyPresetFolderRequest) => Promise<PartyPresetCatalogResponse>;
-  onReorderPartyPresetFolders?: (request: ReorderPartyPresetFoldersRequest) => Promise<PartyPresetCatalogResponse>;
-  onMovePartyPresetFolder?: (folderId: number, request: MovePartyPresetFolderRequest) => Promise<PartyPresetCatalogResponse>;
-  onDeletePartyPresetFolder?: (folderId: number) => Promise<PartyPresetCatalogResponse>;
 };
 
 type ExpandedPresetId = number | 'new' | null;
@@ -62,15 +48,6 @@ export function PartyPresetList({
   authenticated,
   characters,
   partyPresetCatalog,
-  onCreatePartyPreset,
-  onUpdatePartyPreset,
-  onMakePartyPresetPrimary,
-  onReorderPartyPresets,
-  onDeletePartyPreset,
-  onCreatePartyPresetFolder,
-  onRenamePartyPresetFolder,
-  onMovePartyPresetFolder,
-  onDeletePartyPresetFolder,
 }: PartyPresetListProps) {
   const [expandedPresetId, setExpandedPresetId] = useState<ExpandedPresetId>(null);
   const [newDraft, setNewDraft] = useState<NewPresetDraft | null>(null);
@@ -82,9 +59,20 @@ export function PartyPresetList({
   const [catalogQuery, setCatalogQuery] = useState('');
   const [expandedFolderIds, setExpandedFolderIds] = useState<PartyPresetExpandedFolderIds>(() => new Set());
   const [folderEditMode, setFolderEditMode] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const isSaving = partyPresetCatalog.mutating;
+  const {
+    createPreset,
+    updatePreset,
+    makePresetPrimary,
+    reorderPresets: reorderCatalogPresets,
+    deletePreset,
+    createFolder: createCatalogFolder,
+    renameFolder: renameCatalogFolder,
+    moveFolder: moveCatalogFolder,
+    deleteFolder: deleteCatalogFolder,
+  } = partyPresetCatalog.actions;
   const canonicalPresets = authenticated ? partyPresetCatalog.catalog.presets : [];
   const canonicalFolders = authenticated ? partyPresetCatalog.catalog.folders : [];
   const presets = canonicalPresets;
@@ -174,7 +162,6 @@ export function PartyPresetList({
 
   useEffect(() => {
     mutationPendingRef.current = false;
-    setIsSaving(false);
     setExpandedPresetId(null);
     setNewDraft(null);
     setCatalogQuery('');
@@ -260,6 +247,11 @@ export function PartyPresetList({
     restorePickerFocusAfterClose();
   }
 
+  function retryCatalog() {
+    setErrorMessage(null);
+    partyPresetCatalog.retry();
+  }
+
   async function savePreset() {
     if (!authenticated || mutationPendingRef.current) return;
     const accountGeneration = accountGenerationRef.current;
@@ -274,16 +266,15 @@ export function PartyPresetList({
     }
 
     mutationPendingRef.current = true;
-    setIsSaving(true);
     setErrorMessage(null);
     try {
       if (editingNew) {
-        await onCreatePartyPreset(request);
+        await createPreset(request);
         if (!isCurrentAccountGeneration(accountGeneration)) return;
         setNewDraft(null);
         setExpandedPresetId(null);
       } else if (typeof expandedPresetId === 'number') {
-        await onUpdatePartyPreset(expandedPresetId, request);
+        await updatePreset(expandedPresetId, request);
         if (!isCurrentAccountGeneration(accountGeneration)) return;
         setExpandedPresetId(null);
       }
@@ -292,7 +283,6 @@ export function PartyPresetList({
     } finally {
       if (isCurrentAccountGeneration(accountGeneration)) {
         mutationPendingRef.current = false;
-        setIsSaving(false);
       }
     }
   }
@@ -308,10 +298,9 @@ export function PartyPresetList({
     const accountGeneration = accountGenerationRef.current;
     closeOpenSwipeable();
     mutationPendingRef.current = true;
-    setIsSaving(true);
     setErrorMessage(null);
     try {
-      await onDeletePartyPreset(presetId);
+      await deletePreset(presetId);
       if (!isCurrentAccountGeneration(accountGeneration)) return;
       setExpandedPresetId((current) => current === presetId ? null : current);
     } catch (error) {
@@ -319,7 +308,6 @@ export function PartyPresetList({
     } finally {
       if (isCurrentAccountGeneration(accountGeneration)) {
         mutationPendingRef.current = false;
-        setIsSaving(false);
       }
     }
   }
@@ -330,17 +318,15 @@ export function PartyPresetList({
     const target = catalogIndex.presetsById.get(presetId);
     if (target?.isPrimary) return;
     mutationPendingRef.current = true;
-    setIsSaving(true);
     setErrorMessage(null);
     try {
-      await onMakePartyPresetPrimary(presetId);
+      await makePresetPrimary(presetId);
       if (!isCurrentAccountGeneration(accountGeneration)) return;
     } catch (error) {
       if (isCurrentAccountGeneration(accountGeneration)) setErrorMessage(toUserFacingErrorMessage(error));
     } finally {
       if (isCurrentAccountGeneration(accountGeneration)) {
         mutationPendingRef.current = false;
-        setIsSaving(false);
       }
     }
   }
@@ -352,10 +338,9 @@ export function PartyPresetList({
     if (live.length !== previous.length || live.some((preset, index) => preset !== previous[index])) return;
     const optimistic = orderedPresets.map((preset, displayOrder) => ({ ...preset, displayOrder }));
     mutationPendingRef.current = true;
-    setIsSaving(true);
     setErrorMessage(null);
     try {
-      await onReorderPartyPresets({
+      await reorderCatalogPresets({
         folderId: activePresetFolderId,
         presetIds: optimistic.map(({ id }) => id),
       });
@@ -366,7 +351,6 @@ export function PartyPresetList({
     } finally {
       if (isCurrentAccountGeneration(accountGeneration)) {
         mutationPendingRef.current = false;
-        setIsSaving(false);
       }
     }
   }
@@ -375,7 +359,6 @@ export function PartyPresetList({
     if (!authenticated || mutationPendingRef.current) return false;
     const accountGeneration = accountGenerationRef.current;
     mutationPendingRef.current = true;
-    setIsSaving(true);
     setErrorMessage(null);
     try {
       await operation();
@@ -387,29 +370,24 @@ export function PartyPresetList({
     } finally {
       if (isCurrentAccountGeneration(accountGeneration)) {
         mutationPendingRef.current = false;
-        setIsSaving(false);
       }
     }
   }
 
   async function createFolder(request: CreatePartyPresetFolderRequest) {
-    if (!onCreatePartyPresetFolder) return false;
-    return mutateFolder(() => onCreatePartyPresetFolder(request));
+    return mutateFolder(() => createCatalogFolder(request));
   }
 
   async function renameFolder(folderId: number, request: RenamePartyPresetFolderRequest) {
-    if (!onRenamePartyPresetFolder) return false;
-    return mutateFolder(() => onRenamePartyPresetFolder(folderId, request));
+    return mutateFolder(() => renameCatalogFolder(folderId, request));
   }
 
   async function deleteFolder(folderId: number) {
-    if (!onDeletePartyPresetFolder) return false;
-    return mutateFolder(() => onDeletePartyPresetFolder(folderId));
+    return mutateFolder(() => deleteCatalogFolder(folderId));
   }
 
   async function moveFolder(folderId: number, request: MovePartyPresetFolderRequest) {
-    if (!onMovePartyPresetFolder) return false;
-    return mutateFolder(() => onMovePartyPresetFolder(folderId, request));
+    return mutateFolder(() => moveCatalogFolder(folderId, request));
   }
 
   function movePreset(presetId: number, offset: -1 | 1) {
@@ -559,7 +537,7 @@ export function PartyPresetList({
     <View style={styles.root}>
       <View style={styles.toolbar}>
         <Text style={styles.toolbarTitle}>프리셋</Text>
-        {folders.length > 0 || onCreatePartyPresetFolder ? (
+        {authenticated ? (
           <Pressable
             accessibilityLabel={folderEditMode ? '폴더 편집 종료' : '폴더 편집 시작'}
             accessibilityRole="button"
@@ -587,7 +565,28 @@ export function PartyPresetList({
         </Pressable>
       </View>
 
-      {errorMessage ?? partyPresetCatalog.error ? <Text style={styles.errorText}>{errorMessage ?? partyPresetCatalog.error}</Text> : null}
+      {errorMessage ?? partyPresetCatalog.mutationError ?? partyPresetCatalog.error ? (
+        <>
+          <Text accessibilityRole="alert" style={styles.errorText}>
+            {errorMessage ?? partyPresetCatalog.mutationError ?? partyPresetCatalog.error}
+          </Text>
+          {partyPresetCatalog.error != null || partyPresetCatalog.mutationError != null ? (
+            <Pressable
+              accessibilityLabel="프리셋 다시 시도"
+              accessibilityRole="button"
+              disabled={partyPresetCatalog.loading || partyPresetCatalog.mutating}
+              onPress={retryCatalog}
+              style={({ pressed }) => [
+                styles.retryButton,
+                (partyPresetCatalog.loading || partyPresetCatalog.mutating) && styles.disabledButton,
+                pressed && !partyPresetCatalog.loading && !partyPresetCatalog.mutating && styles.pressed,
+              ]}
+            >
+              <Text style={styles.retryText}>다시 시도</Text>
+            </Pressable>
+          ) : null}
+        </>
+      ) : null}
       {partyPresetCatalog.loading ? (
         <View style={styles.stateBox}>
           <ActivityIndicator color={theme.colors.accentGreen} />
@@ -987,6 +986,8 @@ const styles = StyleSheet.create({
   primaryActionText: { color: theme.colors.background, fontSize: 13, fontWeight: '900' },
   secondaryActionText: { color: theme.colors.danger, fontSize: 13, fontWeight: '900' },
   errorText: { color: theme.colors.danger, borderWidth: 1, borderColor: theme.colors.danger, borderRadius: theme.radius.sm, padding: theme.spacing.md, fontSize: 13, fontWeight: '800', lineHeight: 19 },
+  retryButton: { alignItems: 'center', justifyContent: 'center', minHeight: 44, borderWidth: 1, borderColor: theme.colors.danger, borderRadius: theme.radius.sm, paddingHorizontal: theme.spacing.md },
+  retryText: { color: theme.colors.danger, fontSize: 13, fontWeight: '900' },
   stateBox: { minHeight: 116, justifyContent: 'center', gap: theme.spacing.xs, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.radius.sm, backgroundColor: theme.colors.surface, padding: theme.spacing.lg },
   stateTitle: { color: theme.colors.text, fontSize: 16, fontWeight: '900' },
   stateText: { color: theme.colors.textMuted, fontSize: 13, fontWeight: '700' },

@@ -298,55 +298,6 @@ export function MainScreen({
     return () => partyPresetCatalogModule.deactivate();
   }, [authenticated, partyPresetCatalogModule]);
 
-  const createPreset = useCallback(
-    (request: CreatePartyPresetRequest) =>
-      partyPresetCatalogModule.createPreset(request),
-    [partyPresetCatalogModule],
-  );
-  const updatePreset = useCallback(
-    (presetId: number, request: UpdatePartyPresetRequest) =>
-      partyPresetCatalogModule.updatePreset(presetId, request),
-    [partyPresetCatalogModule],
-  );
-  const makePresetPrimary = useCallback(
-    (presetId: number) =>
-      partyPresetCatalogModule.makePresetPrimary(presetId),
-    [partyPresetCatalogModule],
-  );
-  const reorderPresets = useCallback(
-    (request: ReorderPartyPresetsRequest) =>
-      partyPresetCatalogModule.reorderPresets(request),
-    [partyPresetCatalogModule],
-  );
-  const deletePreset = useCallback(
-    (presetId: number) =>
-      partyPresetCatalogModule.deletePreset(presetId),
-    [partyPresetCatalogModule],
-  );
-  const createPresetFolder = useCallback(
-    (request: CreatePartyPresetFolderRequest) =>
-      partyPresetCatalogModule.createFolder(request),
-    [partyPresetCatalogModule],
-  );
-  const renamePresetFolder = useCallback(
-    (folderId: number, request: RenamePartyPresetFolderRequest) =>
-      partyPresetCatalogModule.renameFolder(folderId, request),
-    [partyPresetCatalogModule],
-  );
-  const reorderPresetFolders = useCallback(
-    (request: ReorderPartyPresetFoldersRequest) =>
-      partyPresetCatalogModule.reorderFolders(request),
-    [partyPresetCatalogModule],
-  );
-  const movePresetFolder = useCallback(
-    (folderId: number, request: MovePartyPresetFolderRequest) =>
-      partyPresetCatalogModule.moveFolder(folderId, request),
-    [partyPresetCatalogModule],
-  );
-  const deletePresetFolder = useCallback(
-    (folderId: number) => partyPresetCatalogModule.deleteFolder(folderId),
-    [partyPresetCatalogModule],
-  );
   const [activeTabId, setActiveTabId] =
     useState<MainRouteId>(DEFAULT_MAIN_TAB_ID);
   const [pendingBattleTarget, setPendingBattleTarget] =
@@ -551,26 +502,6 @@ export function MainScreen({
           onStatusObserved,
           automationController,
           partyPresetCatalog: partyPresetCatalogResource,
-          onCreatePartyPresetFolder: onCreatePartyPresetFolder
-            ? createPresetFolder
-            : undefined,
-          onRenamePartyPresetFolder: onRenamePartyPresetFolder
-            ? renamePresetFolder
-            : undefined,
-          onReorderPartyPresetFolders: onReorderPartyPresetFolders
-            ? reorderPresetFolders
-            : undefined,
-          onMovePartyPresetFolder: onMovePartyPresetFolder
-            ? movePresetFolder
-            : undefined,
-          onDeletePartyPresetFolder: onDeletePartyPresetFolder
-            ? deletePresetFolder
-            : undefined,
-          onCreatePartyPreset: createPreset,
-          onUpdatePartyPreset: updatePreset,
-          onMakePartyPresetPrimary: makePresetPrimary,
-          onReorderPartyPresets: reorderPresets,
-          onDeletePartyPreset: deletePreset,
           onLogout,
           characterDetailError,
           isCharacterDetailLoading,
@@ -653,35 +584,6 @@ type RenderActiveTabArgs = {
   onStatusObserved?: (status: HofObservedStatusResponse) => void;
   automationController: UnifiedAutomationController;
   partyPresetCatalog: PartyPresetCatalogResource;
-  onCreatePartyPresetFolder?: (
-    request: CreatePartyPresetFolderRequest,
-  ) => Promise<PartyPresetCatalogResponse>;
-  onRenamePartyPresetFolder?: (
-    folderId: number,
-    request: RenamePartyPresetFolderRequest,
-  ) => Promise<PartyPresetCatalogResponse>;
-  onReorderPartyPresetFolders?: (
-    request: ReorderPartyPresetFoldersRequest,
-  ) => Promise<PartyPresetCatalogResponse>;
-  onMovePartyPresetFolder?: (
-    folderId: number,
-    request: MovePartyPresetFolderRequest,
-  ) => Promise<PartyPresetCatalogResponse>;
-  onDeletePartyPresetFolder?: (
-    folderId: number,
-  ) => Promise<PartyPresetCatalogResponse>;
-  onCreatePartyPreset: (
-    request: CreatePartyPresetRequest,
-  ) => Promise<PartyPresetResponse>;
-  onUpdatePartyPreset: (
-    presetId: number,
-    request: UpdatePartyPresetRequest,
-  ) => Promise<PartyPresetResponse>;
-  onMakePartyPresetPrimary: (presetId: number) => Promise<PartyPresetResponse>;
-  onReorderPartyPresets: (
-    request: ReorderPartyPresetsRequest,
-  ) => Promise<PartyPresetResponse[]>;
-  onDeletePartyPreset: (presetId: number) => Promise<null>;
   onLogout: () => void;
   characterDetailError: string | null;
   isCharacterDetailLoading: boolean;
@@ -767,16 +669,6 @@ function renderActiveTab({
   onStatusObserved,
   automationController,
   partyPresetCatalog,
-  onCreatePartyPresetFolder,
-  onRenamePartyPresetFolder,
-  onReorderPartyPresetFolders,
-  onMovePartyPresetFolder,
-  onDeletePartyPresetFolder,
-  onCreatePartyPreset,
-  onUpdatePartyPreset,
-  onMakePartyPresetPrimary,
-  onReorderPartyPresets,
-  onDeletePartyPreset,
   onLogout,
   characterDetailError,
   isCharacterDetailLoading,
@@ -966,16 +858,6 @@ function renderActiveTab({
               authenticated={authenticated}
               characters={characters}
               partyPresetCatalog={partyPresetCatalog}
-              onCreatePartyPresetFolder={onCreatePartyPresetFolder}
-              onRenamePartyPresetFolder={onRenamePartyPresetFolder}
-              onReorderPartyPresetFolders={onReorderPartyPresetFolders}
-              onMovePartyPresetFolder={onMovePartyPresetFolder}
-              onDeletePartyPresetFolder={onDeletePartyPresetFolder}
-              onCreatePartyPreset={onCreatePartyPreset}
-              onUpdatePartyPreset={onUpdatePartyPreset}
-              onMakePartyPresetPrimary={onMakePartyPresetPrimary}
-              onReorderPartyPresets={onReorderPartyPresets}
-              onDeletePartyPreset={onDeletePartyPreset}
             />
           )}
         </View>

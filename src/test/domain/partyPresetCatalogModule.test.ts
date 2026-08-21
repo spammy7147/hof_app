@@ -129,6 +129,30 @@ describe('party preset catalog module', () => {
     );
   });
 
+  it('publishes semantic actions and queue activity through the same snapshot', async () => {
+    const created = deferred<PartyPresetResponse>();
+    const module = createModule({
+      loadCatalog: sequence(
+        Promise.resolve(emptyCatalog()),
+        Promise.resolve(catalogWithPresets(preset(1, 'created'))),
+      ),
+      createPreset: () => created.promise,
+    });
+    await module.activate('account-a');
+
+    const actions = module.getSnapshot().actions;
+    const creating = actions.createPreset({ name: 'created', members: [] });
+
+    assert.equal(module.getSnapshot().actions, actions);
+    assert.equal(module.getSnapshot().mutating, true);
+    created.resolve(preset(1, 'created'));
+    await creating;
+
+    assert.equal(module.getSnapshot().actions, actions);
+    assert.equal(module.getSnapshot().mutating, false);
+    assert.equal(module.getSnapshot().catalog.presets[0]?.name, 'created');
+  });
+
   it('does not apply an in-flight mutation after the account changes', async () => {
     const mutation = deferred<PartyPresetResponse>();
     const module = createModule({
@@ -143,6 +167,27 @@ describe('party preset catalog module', () => {
     mutation.resolve(preset(1, 'old account'));
     await creating;
     assert.deepEqual(module.getSnapshot().catalog, emptyCatalog());
+  });
+
+  it('rejects actions retained from an earlier account before calling the backend', async () => {
+    let createCalls = 0;
+    const module = createModule({
+      loadCatalog: async () => emptyCatalog(),
+      createPreset: async () => {
+        createCalls += 1;
+        return preset(1, 'stale');
+      },
+    });
+    await module.activate('account-a');
+    const staleCreate = module.getSnapshot().actions.createPreset;
+
+    await module.activate('account-b');
+
+    await assert.rejects(
+      staleCreate({ name: 'stale', members: [] }),
+      /cancelled/i,
+    );
+    assert.equal(createCalls, 0);
   });
 
   it('projects one primary preset immediately and converges to the authoritative catalog', async () => {

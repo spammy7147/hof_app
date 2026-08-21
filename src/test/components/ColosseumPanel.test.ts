@@ -3,6 +3,7 @@ import Module from 'node:module';
 import { afterEach, describe, it } from 'node:test';
 import React from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
+import { makePartyPresetCatalogResource } from '../fixtures/partyPresetCatalog';
 
 const host = (name: string) => (props: Record<string, unknown>) => React.createElement(name, props, props.children as React.ReactNode);
 const reactNativeMock = {
@@ -37,7 +38,7 @@ describe('ColosseumPanel', () => {
   it('상대를 선택한 뒤 프리셋 멤버를 콜로세움 팀 후보에 맞춰 채운다', async () => {
     const calls: unknown[] = []; const value = battle();
     const preset = { id: 7, accountId: 1, name: '콜로세움', folderId: null, displayOrder: 0, isPrimary: false, members: [{ slotIndex: 0, characterId: 'f2', patternSlot: 1 }, { slotIndex: 1, characterId: 'missing', patternSlot: 1 }, { slotIndex: 2, characterId: 'f1', patternSlot: 1 }], createdAt: '', updatedAt: '' };
-    const partyPresetCatalog = { catalog: { folders: [], presets: [preset] }, loading: false, error: null, retry: () => undefined };
+    const partyPresetCatalog = makePartyPresetCatalogResource({ folders: [], presets: [preset] });
     await render(React.createElement(ColosseumPanel, { api: api(async () => value, async (path, request) => { calls.push({ path, request }); return value; }), mode: 'battle', partyPresetCatalog }));
     await press('라이벌 선택');
     await act(async () => presetPicker().props.onSelectPreset(preset));

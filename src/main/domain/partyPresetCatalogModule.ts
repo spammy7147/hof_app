@@ -18,12 +18,42 @@ import {
 const LOAD_ERROR_MESSAGE = '파티 프리셋을 불러오지 못했습니다.';
 const MUTATION_ERROR_MESSAGE = '파티 프리셋을 변경하지 못했습니다.';
 
+export type PartyPresetCatalogActions = {
+  createPreset: (request: CreatePartyPresetRequest) => Promise<PartyPresetResponse>;
+  updatePreset: (
+    presetId: number,
+    request: UpdatePartyPresetRequest,
+  ) => Promise<PartyPresetResponse>;
+  makePresetPrimary: (presetId: number) => Promise<PartyPresetResponse>;
+  reorderPresets: (
+    request: ReorderPartyPresetsRequest,
+  ) => Promise<PartyPresetResponse[]>;
+  deletePreset: (presetId: number) => Promise<null>;
+  createFolder: (
+    request: CreatePartyPresetFolderRequest,
+  ) => Promise<PartyPresetCatalogResponse>;
+  renameFolder: (
+    folderId: number,
+    request: RenamePartyPresetFolderRequest,
+  ) => Promise<PartyPresetCatalogResponse>;
+  reorderFolders: (
+    request: ReorderPartyPresetFoldersRequest,
+  ) => Promise<PartyPresetCatalogResponse>;
+  moveFolder: (
+    folderId: number,
+    request: MovePartyPresetFolderRequest,
+  ) => Promise<PartyPresetCatalogResponse>;
+  deleteFolder: (folderId: number) => Promise<PartyPresetCatalogResponse>;
+};
+
 export type PartyPresetCatalogResource = {
   catalog: PartyPresetCatalogResponse;
   loading: boolean;
   error: string | null;
-  mutationError?: string | null;
+  mutationError: string | null;
+  mutating: boolean;
   retry: () => void;
+  actions: PartyPresetCatalogActions;
 };
 
 type CatalogLoadOutcome = 'success' | 'failure' | 'stale' | 'skipped' | 'inactive';
@@ -104,9 +134,12 @@ export class PartyPresetCatalogModule {
   private loadError: string | null = null;
   private mutationError: string | null = null;
   private mutationBlocked = true;
+  private pendingMutationCount = 0;
+  private actions: PartyPresetCatalogActions;
   private snapshot: PartyPresetCatalogResource;
 
   constructor(private readonly backend: PartyPresetCatalogBackend) {
+    this.actions = this.createActions(this.accountGeneration);
     this.snapshot = this.emptySnapshot();
   }
 
@@ -129,6 +162,7 @@ export class PartyPresetCatalogModule {
 
     this.accountKey = accountKey;
     this.accountGeneration += 1;
+    this.actions = this.createActions(this.accountGeneration);
     this.requestGeneration += 1;
     this.activeRequestGeneration = null;
     this.loaded = false;
@@ -139,6 +173,7 @@ export class PartyPresetCatalogModule {
     this.loadError = null;
     this.mutationError = null;
     this.mutationBlocked = true;
+    this.pendingMutationCount = 0;
     this.snapshot = this.emptySnapshot();
     return this.load(false);
   }
@@ -147,6 +182,7 @@ export class PartyPresetCatalogModule {
     if (!this.active && isEmptySnapshot(this.snapshot)) return;
     this.accountKey = null;
     this.accountGeneration += 1;
+    this.actions = this.createActions(this.accountGeneration);
     this.requestGeneration += 1;
     this.activeRequestGeneration = null;
     this.loaded = false;
@@ -157,6 +193,7 @@ export class PartyPresetCatalogModule {
     this.loadError = null;
     this.mutationError = null;
     this.mutationBlocked = true;
+    this.pendingMutationCount = 0;
     this.publish(this.emptySnapshot());
   }
 
@@ -322,6 +359,7 @@ export class PartyPresetCatalogModule {
       ? null
       : { id: ++this.nextMutationId, project: optimisticProject };
     if (optimisticMutation != null) this.optimisticMutations.push(optimisticMutation);
+    this.pendingMutationCount += 1;
     this.mutationError = null;
     this.publishProjection(this.snapshot.loading);
     const queued = this.mutationTail.then(async () => {
@@ -356,6 +394,11 @@ export class PartyPresetCatalogModule {
           }
         }
         throw error;
+      } finally {
+        if (this.isCurrentAccount(accountGeneration)) {
+          this.pendingMutationCount = Math.max(0, this.pendingMutationCount - 1);
+          this.publishProjection(this.snapshot.loading);
+        }
       }
     });
     this.mutationTail = queued.then(
@@ -390,7 +433,9 @@ export class PartyPresetCatalogModule {
       loading,
       error: this.loadError,
       mutationError: this.mutationError,
+      mutating: this.pendingMutationCount > 0,
       retry: this.retry,
+      actions: this.actions,
     });
   }
 
@@ -398,6 +443,35 @@ export class PartyPresetCatalogModule {
     if (!this.isCurrentAccount(accountGeneration)) {
       throw new Error('Party preset mutation cancelled');
     }
+  }
+
+  private createActions(accountGeneration: number): PartyPresetCatalogActions {
+    const current = <T,>(operation: () => Promise<T>): Promise<T> => {
+      if (!this.isCurrentAccount(accountGeneration)) {
+        return Promise.reject(new Error('Party preset mutation cancelled'));
+      }
+      return operation();
+    };
+    return {
+      createPreset: (request) => current(() => this.createPreset(request)),
+      updatePreset: (presetId, request) => current(
+        () => this.updatePreset(presetId, request),
+      ),
+      makePresetPrimary: (presetId) => current(
+        () => this.makePresetPrimary(presetId),
+      ),
+      reorderPresets: (request) => current(() => this.reorderPresets(request)),
+      deletePreset: (presetId) => current(() => this.deletePreset(presetId)),
+      createFolder: (request) => current(() => this.createFolder(request)),
+      renameFolder: (folderId, request) => current(
+        () => this.renameFolder(folderId, request),
+      ),
+      reorderFolders: (request) => current(() => this.reorderFolders(request)),
+      moveFolder: (folderId, request) => current(
+        () => this.moveFolder(folderId, request),
+      ),
+      deleteFolder: (folderId) => current(() => this.deleteFolder(folderId)),
+    };
   }
 
   private isCurrentAccount(accountGeneration: number): boolean {
@@ -415,7 +489,9 @@ export class PartyPresetCatalogModule {
       loading: false,
       error: null,
       mutationError: null,
+      mutating: false,
       retry: this.retry,
+      actions: this.actions,
     };
   }
 

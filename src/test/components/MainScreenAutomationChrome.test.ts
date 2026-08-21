@@ -106,6 +106,32 @@ describe('MainScreen automation editor chrome', () => {
     assert.equal(loads, 1);
   });
 
+  it('gives the preset manager the shared catalog actions without callback relays', async () => {
+    let creates = 0;
+    const props = mainProps({
+      onCreatePartyPreset: async () => {
+        creates += 1;
+        return preset(9, '공유 생성');
+      },
+    });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => { renderer = create(React.createElement(MainScreen, props)); });
+    const homeResource = renderer.root.find((node) => String(node.type) === 'HomeTabScreen')
+      .props.partyPresetCatalog;
+    const manager = await openPartyPresetManager(renderer);
+
+    assert.equal(manager.props.partyPresetCatalog.actions, homeResource.actions);
+    assert.equal(manager.props.onCreatePartyPreset, undefined);
+    await act(async () => {
+      await manager.props.partyPresetCatalog.actions.createPreset({
+        name: '공유 생성',
+        members: [],
+        folderId: null,
+      });
+    });
+    assert.equal(creates, 1);
+  });
+
   it('does not refresh or repopulate the catalog when a preset mutation finishes after auth loss', async () => {
     const mutation = deferred<PartyPresetResponse>();
     let loads = 0;
@@ -117,7 +143,11 @@ describe('MainScreen automation editor chrome', () => {
     await act(async () => { renderer = create(React.createElement(MainScreen, props)); });
     const manager = await openPartyPresetManager(renderer);
     let resultPromise!: Promise<PartyPresetResponse>;
-    await act(async () => { resultPromise = manager.props.onCreatePartyPreset({ name: 'late', members: [], folderId: null }); });
+    await act(async () => {
+      resultPromise = manager.props.partyPresetCatalog.actions.createPreset({
+        name: 'late', members: [], folderId: null,
+      });
+    });
     await act(async () => renderer.update(React.createElement(MainScreen, { ...props, session: null })));
     await act(async () => mutation.resolve({ id: 99, accountId: 1, name: 'late', folderId: null, displayOrder: 0, isPrimary: false, members: [], createdAt: '', updatedAt: '' }));
     await resultPromise;
@@ -141,7 +171,9 @@ describe('MainScreen automation editor chrome', () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => { renderer = create(React.createElement(MainScreen, props)); });
     const manager = await openPartyPresetManager(renderer);
-    await act(async () => { await manager.props.onCreatePartyPresetFolder({ name: '전투', parentFolderId: null }); });
+    await act(async () => {
+      await manager.props.partyPresetCatalog.actions.createFolder({ name: '전투', parentFolderId: null });
+    });
 
     const updatedManager = renderer.root.find((node) => String(node.type) === 'PartyPresetList');
     assert.equal(updatedManager.props.partyPresetCatalog.catalog, authoritative);
@@ -168,7 +200,9 @@ describe('MainScreen automation editor chrome', () => {
       await act(async () => { renderer = create(React.createElement(MainScreen, props)); });
       const manager = await openPartyPresetManager(renderer);
 
-      await act(async () => { await scenario.mutate(manager.props); });
+      await act(async () => {
+        await scenario.mutate(manager.props as PresetManagerProps);
+      });
       const updatedManager = renderer.root.find((node) => String(node.type) === 'PartyPresetList');
       const sharedResource = updatedManager.props.partyPresetCatalog;
       assert.deepEqual(sharedResource.catalog, scenario.expected);
@@ -204,8 +238,8 @@ describe('MainScreen automation editor chrome', () => {
     let updatePromise!: Promise<PartyPresetResponse>;
     let createPromise!: Promise<PartyPresetResponse>;
     await act(async () => {
-      updatePromise = manager.props.onUpdatePartyPreset(1, { name: '수정', members: [], folderId: null });
-      createPromise = manager.props.onCreatePartyPreset({ name: '신규', members: [], folderId: null });
+      updatePromise = manager.props.partyPresetCatalog.actions.updatePreset(1, { name: '수정', members: [], folderId: null });
+      createPromise = manager.props.partyPresetCatalog.actions.createPreset({ name: '신규', members: [], folderId: null });
       await Promise.resolve();
     });
     assert.deepEqual(calls, ['update']);
@@ -233,8 +267,8 @@ describe('MainScreen automation editor chrome', () => {
     let firstPromise!: Promise<PartyPresetResponse>;
     let queuedPromise!: Promise<PartyPresetResponse>;
     await act(async () => {
-      firstPromise = manager.props.onUpdatePartyPreset(1, { name: '수정', members: [], folderId: null });
-      queuedPromise = manager.props.onCreatePartyPreset({ name: '신규', members: [], folderId: null });
+      firstPromise = manager.props.partyPresetCatalog.actions.updatePreset(1, { name: '수정', members: [], folderId: null });
+      queuedPromise = manager.props.partyPresetCatalog.actions.createPreset({ name: '신규', members: [], folderId: null });
       await Promise.resolve();
       renderer.update(React.createElement(MainScreen, { ...props, session: null }));
     });
@@ -259,8 +293,8 @@ describe('MainScreen automation editor chrome', () => {
     let firstPromise!: Promise<PartyPresetResponse>;
     let queuedPromise!: Promise<PartyPresetResponse>;
     await act(async () => {
-      firstPromise = manager.props.onUpdatePartyPreset(1, { name: '수정', members: [], folderId: null });
-      queuedPromise = manager.props.onCreatePartyPreset({ name: '신규', members: [], folderId: null });
+      firstPromise = manager.props.partyPresetCatalog.actions.updatePreset(1, { name: '수정', members: [], folderId: null });
+      queuedPromise = manager.props.partyPresetCatalog.actions.createPreset({ name: '신규', members: [], folderId: null });
       await Promise.resolve();
       renderer.unmount();
     });
@@ -414,6 +448,12 @@ function presetCatalog(presets: PartyPresetResponse[]) {
   return { folders: [], presets };
 }
 
+type PresetManagerProps = {
+  partyPresetCatalog: {
+    actions: Record<string, (...args: never[]) => Promise<unknown>>;
+  };
+};
+
 function simplePresetMutationScenarios() {
   const created = preset(3, '셋째', { displayOrder: 0 });
   const updated = preset(1, '첫째 수정', { isPrimary: true, displayOrder: 0 });
@@ -422,27 +462,27 @@ function simplePresetMutationScenarios() {
   return [
     {
       name: 'create', handlers: { onCreatePartyPreset: async () => created },
-      mutate: (props: Record<string, (...args: never[]) => Promise<unknown>>) => props.onCreatePartyPreset({ name: '셋째', members: [], folderId: null } as never),
+      mutate: (props: PresetManagerProps) => props.partyPresetCatalog.actions.createPreset!({ name: '셋째', members: [], folderId: null } as never),
       expected: presetCatalog([preset(1, '첫째', { isPrimary: true, displayOrder: 1 }), preset(2, '둘째', { displayOrder: 2 }), created]),
     },
     {
       name: 'update', handlers: { onUpdatePartyPreset: async () => updated },
-      mutate: (props: Record<string, (...args: never[]) => Promise<unknown>>) => props.onUpdatePartyPreset(1 as never, { name: '첫째 수정', members: [], folderId: null } as never),
+      mutate: (props: PresetManagerProps) => props.partyPresetCatalog.actions.updatePreset!(1 as never, { name: '첫째 수정', members: [], folderId: null } as never),
       expected: presetCatalog([updated, preset(2, '둘째', { displayOrder: 1 })]),
     },
     {
       name: 'update upsert', handlers: { onUpdatePartyPreset: async () => created },
-      mutate: (props: Record<string, (...args: never[]) => Promise<unknown>>) => props.onUpdatePartyPreset(3 as never, { name: '셋째', members: [], folderId: null } as never),
+      mutate: (props: PresetManagerProps) => props.partyPresetCatalog.actions.updatePreset!(3 as never, { name: '셋째', members: [], folderId: null } as never),
       expected: presetCatalog([preset(1, '첫째', { isPrimary: true, displayOrder: 1 }), preset(2, '둘째', { displayOrder: 2 }), created]),
     },
     {
       name: 'primary', handlers: { onMakePartyPresetPrimary: async () => madePrimary },
-      mutate: (props: Record<string, (...args: never[]) => Promise<unknown>>) => props.onMakePartyPresetPrimary(2 as never),
+      mutate: (props: PresetManagerProps) => props.partyPresetCatalog.actions.makePresetPrimary!(2 as never),
       expected: presetCatalog([preset(1, '첫째', { displayOrder: 0 }), madePrimary]),
     },
     {
       name: 'reorder', handlers: { onReorderPartyPresets: async () => reordered },
-      mutate: (props: Record<string, (...args: never[]) => Promise<unknown>>) => props.onReorderPartyPresets({ folderId: null, presetIds: [2, 1] } as never),
+      mutate: (props: PresetManagerProps) => props.partyPresetCatalog.actions.reorderPresets!({ folderId: null, presetIds: [2, 1] } as never),
       initial: {
         folders: [{ id: 10, name: '별도', parentFolderId: null, displayOrder: 0, createdAt: '', updatedAt: '' }],
         presets: [preset(1, '첫째', { isPrimary: true, displayOrder: 0 }), preset(2, '둘째', { displayOrder: 1 }), preset(9, '별도 프리셋', { folderId: 10, displayOrder: 0 })],
@@ -455,7 +495,7 @@ function simplePresetMutationScenarios() {
     {
       name: 'folder move update',
       handlers: { onUpdatePartyPreset: async () => preset(1, '이동됨', { folderId: 20, displayOrder: 0, isPrimary: true }) },
-      mutate: (props: Record<string, (...args: never[]) => Promise<unknown>>) => props.onUpdatePartyPreset(1 as never, { name: '이동됨', members: [], folderId: 20 } as never),
+      mutate: (props: PresetManagerProps) => props.partyPresetCatalog.actions.updatePreset!(1 as never, { name: '이동됨', members: [], folderId: 20 } as never),
       initial: {
         folders: [
           { id: 10, name: 'A', parentFolderId: null, displayOrder: 0, createdAt: '', updatedAt: '' },
@@ -481,7 +521,7 @@ function simplePresetMutationScenarios() {
     },
     {
       name: 'delete', handlers: { onDeletePartyPreset: async () => null },
-      mutate: (props: Record<string, (...args: never[]) => Promise<unknown>>) => props.onDeletePartyPreset(1 as never),
+      mutate: (props: PresetManagerProps) => props.partyPresetCatalog.actions.deletePreset!(1 as never),
       expected: presetCatalog([preset(2, '둘째', { displayOrder: 1 })]),
     },
   ];

@@ -14,6 +14,7 @@ import type {
   TypedAutomationEntryResponse,
   UpdateQuestAutomationRequest,
 } from '../../main/types/api';
+import { makePartyPresetCatalogResource } from '../fixtures/partyPresetCatalog';
 
 let alertArguments: unknown[] | null = null;
 const accessibilityFocusCalls: unknown[] = [];
@@ -1611,7 +1612,10 @@ function editorProps(overrides: EditorOverrides = {}) {
   };
 }
 function presetCatalog(presets: ReturnType<typeof preset>[], error: string | null = null, retry = () => undefined) {
-  return { catalog: { folders: [presetFolder()], presets }, loading: false, error, retry };
+  return makePartyPresetCatalogResource(
+    { folders: [presetFolder()], presets },
+    { error, retry },
+  );
 }
 function presetFolder() { return { id: 90, name: '공유 폴더', parentFolderId: null, displayOrder: 0, createdAt: '', updatedAt: '' }; }
 

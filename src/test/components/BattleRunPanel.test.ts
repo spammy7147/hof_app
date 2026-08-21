@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import React from 'react';
 import { act, create } from 'react-test-renderer';
 import { makeHofCharacter } from '../fixtures/api';
+import { makePartyPresetCatalogResource } from '../fixtures/partyPresetCatalog';
 
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => React.createElement(name, { ...props, ref }, props.children as React.ReactNode));
 const flatList = (props: Record<string, unknown>) => React.createElement(
@@ -43,7 +44,7 @@ describe('BattleRunPanel party preset catalog', () => {
     await act(async () => {
       renderer = create(React.createElement(BattleRunPanel, {
         characters,
-        partyPresetCatalog: { catalog: { folders: [], presets: [] }, loading: false, error: null, retry: () => undefined },
+        partyPresetCatalog: makePartyPresetCatalogResource({ folders: [], presets: [] }),
         isRunning: false,
         result: null,
         errorMessage: null,
@@ -64,7 +65,7 @@ describe('BattleRunPanel party preset catalog', () => {
       folders: [{ id: 1, name: '전투', parentFolderId: null, displayOrder: 0, createdAt: '', updatedAt: '' }],
       presets: [{ id: 7, accountId: 1, name: '레이드', folderId: 1, displayOrder: 0, isPrimary: false, members: [], createdAt: '', updatedAt: '' }],
     };
-    const resource = { catalog, loading: false, error: null, retry: () => undefined };
+    const resource = makePartyPresetCatalogResource(catalog);
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(BattleRunPanel, {
@@ -83,7 +84,7 @@ describe('BattleRunPanel party preset catalog', () => {
     const selected = { id: 7, accountId: 1, name: '레이드', folderId: null, displayOrder: 0, isPrimary: false, members: [], createdAt: '', updatedAt: '' };
     const baseProps = {
       characters: [],
-      partyPresetCatalog: { catalog: { folders: [], presets: [selected] }, loading: false, error: null, retry: () => undefined },
+      partyPresetCatalog: makePartyPresetCatalogResource({ folders: [], presets: [selected] }),
       isRunning: false,
       result: null,
       errorMessage: null,
