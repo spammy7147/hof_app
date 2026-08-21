@@ -155,13 +155,18 @@ export function CharacterItemsScreen({
                   text: "사용",
                   onPress: () => {
                     setOutcome(null);
-                    setLastUse({
+                    const pendingUse = {
                       value: chosen.value,
                       name: chosen.name,
                       before: chosen.quantity ?? null,
                       observation: detail.equipmentCandidates,
-                    });
-                    void useItem?.(chosen.value);
+                    };
+                    const use = useItem?.(chosen.value);
+                    if (!use) return;
+                    void use.then(
+                      () => setLastUse(pendingUse),
+                      () => undefined,
+                    );
                   },
                 },
               ],

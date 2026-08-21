@@ -908,6 +908,83 @@ describe('CharacterDetail stat allocation', () => {
 
   });
 
+  it('does not report item-use success from an unrelated detail refresh before the action resolves', async () => {
+    const candidate = {
+      value: '7510',
+      typeCode: 'resetitem',
+      name: 'Reset Crystal',
+      iconUrl: '',
+      description: '성장 초기화',
+      quantity: 2,
+    };
+    let resolveUse!: () => void;
+    const usePromise = new Promise<void>((resolve) => { resolveUse = resolve; });
+    let confirmUse: (() => void) | undefined;
+    const alert = reactNativeMock.Alert as unknown as {
+      alert: (...args: unknown[]) => void;
+    };
+    const originalAlert = alert.alert;
+    alert.alert = (...args) => {
+      const buttons = args[2] as Array<{ text: string; onPress?: () => void }>;
+      confirmUse = buttons.find((button) => button.text === '사용')?.onPress;
+    };
+    const renderHub = (quantity: number) => hubWithDetail(
+      makeHofCharacterDetail(1, {
+        equipmentCandidates: [{ ...candidate, quantity }],
+      }),
+      { actions: { useItem: () => usePromise } },
+    );
+    let renderer!: ReturnType<typeof create>;
+    try {
+      await act(async () => {
+        renderer = create(React.createElement(CharacterItemsScreen, {
+          characterHub: renderHub(2),
+          onBack: () => undefined,
+        }));
+      });
+      const list = renderer.root.findByProps({ accessibilityLabel: '사용 가능한 아이템' });
+      await act(async () => list.props.renderItem({ item: list.props.data[0], index: 0 }).props.onPress());
+      const useButton = renderer.root.findAll((node) => String(node.type) === 'Pressable').find((node) => (
+        node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '사용').length > 0
+      ));
+      await act(async () => useButton?.props.onPress());
+      await act(async () => confirmUse?.());
+
+      await act(async () => {
+        renderer.update(React.createElement(CharacterItemsScreen, {
+          characterHub: renderHub(2),
+          onBack: () => undefined,
+        }));
+      });
+      assert.equal(renderer.root.findAll((node) => (
+        String(node.type) === 'Text' && node.children.join('').includes('수량 2 →')
+      )).length, 0);
+      assert.equal(
+        renderer.root.findByProps({ accessibilityLabel: '사용 가능한 아이템' }).props.extraData,
+        '7510',
+      );
+
+      await act(async () => {
+        renderer.update(React.createElement(CharacterItemsScreen, {
+          characterHub: renderHub(1),
+          onBack: () => undefined,
+        }));
+      });
+      assert.equal(renderer.root.findAll((node) => (
+        String(node.type) === 'Text' && node.children.join('').includes('수량 2 →')
+      )).length, 0);
+      await act(async () => {
+        resolveUse();
+        await usePromise;
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    } finally {
+      alert.alert = originalAlert;
+      await act(async () => { renderer?.unmount(); });
+    }
+  });
+
   it('keeps the item use action outside the scrolling item list', async () => {
     const detail = makeHofCharacterDetail(1, {
       equipmentCandidates: [
