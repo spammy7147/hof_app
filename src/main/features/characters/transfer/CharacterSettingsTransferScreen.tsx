@@ -19,15 +19,17 @@ import type {
 import { theme } from "../../../styles/theme";
 import { toUserFacingErrorMessage } from "../../../domain/userFacingErrors";
 import { FixedBottomAction } from "../../../components/FixedBottomAction";
+import type { CharacterManagementHubResource } from "../../../domain/characterManagementHubModule";
 
 type Props = {
-  target: HofCharacterDetail;
+  characterHub?: CharacterManagementHubResource;
+  target?: HofCharacterDetail;
   characters: HofCharacter[];
   onBack: () => void;
-  onPreview: (
+  onPreview?: (
     request: CharacterTransferPreviewRequest,
   ) => Promise<CharacterTransferPreview>;
-  onExecute: (
+  onExecute?: (
     request: CharacterTransferPreviewRequest,
     onProgress?: (progress: CharacterTransferExecutionResult) => void,
   ) => Promise<CharacterTransferExecutionResult>;
@@ -35,35 +37,66 @@ type Props = {
 };
 
 export function CharacterSettingsTransferScreen({
-  target,
+  characterHub,
+  target: legacyTarget,
   characters,
   initialSourceId,
   onBack,
   onPreview,
   onExecute,
 }: Props) {
-  const initialSource = characters.find((item) => item.id === initialSourceId);
+  const target = (characterHub?.detail ?? legacyTarget) as HofCharacterDetail;
+  const transfer = characterHub?.transfer;
+  const transferRequest = transfer?.request;
+  const resolvedInitialSourceId =
+    transferRequest?.sourceCharacterId ?? initialSourceId ?? null;
+  const initialSource = characters.find(
+    (item) => item.id === resolvedInitialSourceId,
+  );
   const [sourceTab, setSourceTab] = useState<"ACTIVE" | "MISSING" | "ARCHIVED">(
     initialSource?.lifecycle ?? "ACTIVE",
   );
   const [sourceId, setSourceId] = useState<number | null>(
-    initialSourceId ?? null,
+    resolvedInitialSourceId,
   );
   const [sourceQuery, setSourceQuery] = useState("");
-  const [selectedSlots, setSelectedSlots] = useState<string[]>([]);
-  const [targetBySource, setTargetBySource] = useState<Record<string, string>>(
-    {},
+  const [selectedSlots, setSelectedSlots] = useState<string[]>(
+    transferRequest?.transfer.savedPatternMappings.map(({ sourceSlot }) => sourceSlot)
+      ?? [],
   );
-  const [includeCurrentPattern, setIncludeCurrentPattern] = useState(true);
-  const [includeStats, setIncludeStats] = useState(false);
-  const [includeSkills, setIncludeSkills] = useState(false);
-  const [includeEquipment, setIncludeEquipment] = useState(false);
-  const [preview, setPreview] = useState<CharacterTransferPreview | null>(null);
-  const [result, setResult] = useState<CharacterTransferExecutionResult | null>(
+  const [targetBySource, setTargetBySource] = useState<Record<string, string>>(
+    Object.fromEntries(
+      transferRequest?.transfer.savedPatternMappings.map(
+        ({ sourceSlot, targetSlot }) => [sourceSlot, targetSlot],
+      ) ?? [],
+    ),
+  );
+  const [includeCurrentPattern, setIncludeCurrentPattern] = useState(
+    transferRequest?.transfer.includeCurrentPattern ?? true,
+  );
+  const [includeStats, setIncludeStats] = useState(
+    transferRequest?.transfer.includeStats ?? false,
+  );
+  const [includeSkills, setIncludeSkills] = useState(
+    transferRequest?.transfer.includeSkills ?? false,
+  );
+  const [includeEquipment, setIncludeEquipment] = useState(
+    transferRequest?.transfer.includeEquipment ?? false,
+  );
+  const [legacyPreview, setLegacyPreview] = useState<CharacterTransferPreview | null>(null);
+  const [legacyResult, setLegacyResult] = useState<CharacterTransferExecutionResult | null>(
     null,
   );
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [legacyBusy, setLegacyBusy] = useState(false);
+  const [legacyError, setLegacyError] = useState<string | null>(null);
+  const preview = transfer?.preview ?? legacyPreview;
+  const result = transfer?.progress ?? transfer?.result ?? legacyResult;
+  const busy = transfer
+    ? transfer.status === "previewing" || transfer.status === "running"
+    : legacyBusy;
+  const error = transfer?.errorMessage ?? legacyError;
+  const primaryRunsPreview = preview == null
+    || (transfer != null && transfer.status !== "ready");
   const sources = useMemo(() => {
     const normalized = sourceQuery.trim().toLowerCase();
     return characters.filter(
@@ -114,9 +147,17 @@ export function CharacterSettingsTransferScreen({
     ],
   );
 
+  const clearTransfer = () => {
+    if (characterHub) characterHub.actions.clearTransfer();
+    else {
+      setLegacyPreview(null);
+      setLegacyResult(null);
+      setLegacyError(null);
+    }
+  };
   const toggleSlot = (slot: string) => {
-    setPreview(null);
-    setResult(null);
+    if (busy) return;
+    clearTransfer();
     setSelectedSlots((current) =>
       current.includes(slot)
         ? current.filter((value) => value !== slot)
@@ -124,6 +165,7 @@ export function CharacterSettingsTransferScreen({
     );
   };
   const cycleTarget = (sourceSlot: string) => {
+    if (busy) return;
     if (targetSlots.length === 0) return;
     const current = targetBySource[sourceSlot] ?? targetSlots[0]!.slot;
     const next =
@@ -132,19 +174,24 @@ export function CharacterSettingsTransferScreen({
           targetSlots.length
       ]!.slot;
     setTargetBySource((values) => ({ ...values, [sourceSlot]: next }));
-    setPreview(null);
+    clearTransfer();
   };
   const previewTransfer = async () => {
     if (!request) return;
-    setBusy(true);
-    setError(null);
-    setResult(null);
+    if (characterHub?.actions.previewTransfer) {
+      await characterHub.actions.previewTransfer(request);
+      return;
+    }
+    if (!onPreview) return;
+    setLegacyBusy(true);
+    setLegacyError(null);
+    setLegacyResult(null);
     try {
-      setPreview(await onPreview(request));
+      setLegacyPreview(await onPreview(request));
     } catch (caught) {
-      setError(toUserFacingErrorMessage(caught));
+      setLegacyError(toUserFacingErrorMessage(caught));
     } finally {
-      setBusy(false);
+      setLegacyBusy(false);
     }
   };
   const executeTransfer = async () => {
@@ -157,14 +204,19 @@ export function CharacterSettingsTransferScreen({
         {
           text: "가져오기",
           onPress: async () => {
-            setBusy(true);
-            setError(null);
+            if (characterHub?.actions.executeTransfer) {
+              await characterHub.actions.executeTransfer();
+              return;
+            }
+            if (!onExecute) return;
+            setLegacyBusy(true);
+            setLegacyError(null);
             try {
-              setResult(await onExecute(request, setResult));
+              setLegacyResult(await onExecute(request, setLegacyResult));
             } catch (caught) {
-              setError(toUserFacingErrorMessage(caught));
+              setLegacyError(toUserFacingErrorMessage(caught));
             } finally {
-              setBusy(false);
+              setLegacyBusy(false);
             }
           },
         },
@@ -175,7 +227,13 @@ export function CharacterSettingsTransferScreen({
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
-        <Pressable onPress={onBack} style={styles.touch}>
+        <Pressable
+          onPress={() => {
+            characterHub?.actions.clearTransfer();
+            onBack();
+          }}
+          style={styles.touch}
+        >
           <Text style={styles.muted}>‹ 관리</Text>
         </Pressable>
         <Text style={styles.title}>설정 가져오기</Text>
@@ -186,11 +244,12 @@ export function CharacterSettingsTransferScreen({
           <Pressable
             key={value}
             onPress={() => {
+              if (busy) return;
               setSourceTab(value);
               setSourceId(null);
               setSourceQuery("");
               setSelectedSlots([]);
-              setPreview(null);
+              clearTransfer();
             }}
             style={[styles.tab, sourceTab === value && styles.tabActive]}
           >
@@ -228,9 +287,10 @@ export function CharacterSettingsTransferScreen({
         renderItem={({ item }) => (
           <Pressable
             onPress={() => {
+              if (busy) return;
               setSourceId(item.id);
               setSelectedSlots([]);
-              setPreview(null);
+              clearTransfer();
             }}
             style={[styles.character, sourceId === item.id && styles.selected]}
           >
@@ -249,32 +309,36 @@ export function CharacterSettingsTransferScreen({
               label="현재 패턴·위치·호위"
               selected={includeCurrentPattern}
               onPress={() => {
+                if (busy) return;
                 setIncludeCurrentPattern(!includeCurrentPattern);
-                setPreview(null);
+                clearTransfer();
               }}
             />
             <Toggle
               label="스탯"
               selected={includeStats}
               onPress={() => {
+                if (busy) return;
                 setIncludeStats(!includeStats);
-                setPreview(null);
+                clearTransfer();
               }}
             />
             <Toggle
               label="스킬"
               selected={includeSkills}
               onPress={() => {
+                if (busy) return;
                 setIncludeSkills(!includeSkills);
-                setPreview(null);
+                clearTransfer();
               }}
             />
             <Toggle
               label="현재 장비·저장 1·2"
               selected={includeEquipment}
               onPress={() => {
+                if (busy) return;
                 setIncludeEquipment(!includeEquipment);
-                setPreview(null);
+                clearTransfer();
               }}
             />
           </View>
@@ -366,7 +430,7 @@ export function CharacterSettingsTransferScreen({
       {source ? (
         <FixedBottomAction>
           <View style={styles.fixedActions}>
-            {preview ? (
+            {preview && !primaryRunsPreview ? (
               <Pressable
                 accessibilityRole="button"
                 disabled={busy}
@@ -378,16 +442,22 @@ export function CharacterSettingsTransferScreen({
             ) : null}
             <Pressable
               accessibilityRole="button"
-              disabled={busy || (preview != null && !preview.executable)}
-              onPress={() => void (preview ? executeTransfer() : previewTransfer())}
+              disabled={busy || (!primaryRunsPreview && !preview.executable)}
+              onPress={() => void (
+                primaryRunsPreview ? previewTransfer() : executeTransfer()
+              )}
               style={[
                 styles.primary,
                 styles.fixedActionButton,
-                (busy || (preview != null && !preview.executable)) && styles.disabled,
+                (busy || (!primaryRunsPreview && !preview.executable)) && styles.disabled,
               ]}
             >
               <Text style={styles.primaryText}>
-                {busy ? "확인 중…" : preview ? "가져오기" : "가져오기 확인"}
+                {busy
+                  ? "확인 중…"
+                  : primaryRunsPreview
+                    ? preview == null ? "가져오기 확인" : "다시 확인"
+                    : "가져오기"}
               </Text>
             </Pressable>
           </View>

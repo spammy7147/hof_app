@@ -76,6 +76,40 @@ describe('party preset catalog module', () => {
     assert.deepEqual(module.getSnapshot().catalog, catalog(2));
   });
 
+  it('exposes an awaitable account-bound authoritative refresh action', async () => {
+    let loads = 0;
+    const module = createModule({
+      loadCatalog: async () => catalog(++loads),
+    });
+    await module.activate('account-a');
+    const oldActions = module.getSnapshot().actions;
+
+    await oldActions.refresh();
+    assert.deepEqual(module.getSnapshot().catalog, catalog(2));
+
+    await module.activate('account-b');
+    const loadsBeforeStaleRefresh = loads;
+    await assert.rejects(() => oldActions.refresh(), /cancelled/);
+    assert.equal(loads, loadsBeforeStaleRefresh);
+  });
+
+  it('reports an authoritative refresh failure with the catalog domain message', async () => {
+    let fail = false;
+    const module = createModule({
+      loadCatalog: async () => {
+        if (fail) throw new Error('internal transport failure');
+        return catalog(1);
+      },
+    });
+    await module.activate('account-a');
+    fail = true;
+
+    await assert.rejects(
+      () => module.getSnapshot().actions.refresh(),
+      /파티 프리셋을 불러오지 못했습니다/,
+    );
+  });
+
   it('serializes create and update, projects each result, then converges to authoritative loads', async () => {
     const createResult = deferred<PartyPresetResponse>();
     const createReload = deferred<PartyPresetCatalogResponse>();

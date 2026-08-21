@@ -17,6 +17,7 @@ export function makePartyPresetCatalogResource(
 ): PartyPresetCatalogResource {
   const unsupported = () => Promise.reject(new Error('unsupported test action'));
   const actions: PartyPresetCatalogActions = {
+    refresh: async () => undefined,
     createPreset: unsupported,
     updatePreset: unsupported,
     makePresetPrimary: unsupported,

@@ -836,6 +836,7 @@ function ControlledPartyPresetList(props: React.ComponentProps<typeof PartyPrese
     }
   }, []);
   const actions = React.useMemo<PartyPresetCatalogActions>(() => ({
+    refresh: () => sourceActions.refresh(),
     createPreset: (request) => runMutation(
       () => sourceActions.createPreset(request),
       (created) => setCatalog((current) => ({

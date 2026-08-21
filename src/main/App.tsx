@@ -345,25 +345,11 @@ function AppContent({ api }: { api: BackendApiClient }) {
     [api],
   );
   const executeCharacterTransfer = useCallback(
-    async (
+    (
       request: CharacterTransferPreviewRequest,
       onProgress?: (progress: CharacterTransferExecutionResult) => void,
-    ) => {
-      const result = await api.executeCharacterTransfer(request, [], onProgress);
-      upsertCharacter(
-        await api.fetchCharacterDetail(request.targetCharacterId),
-      );
-      const failures = result.results.filter(
-        (item) => item.status === "FAILED",
-      ).length;
-      setNotice(
-        failures > 0
-          ? `${failures}개 설정을 적용하지 못했습니다. 결과를 확인해 주세요.`
-          : "선택한 캐릭터 설정을 가져왔습니다.",
-      );
-      return result;
-    },
-    [api, upsertCharacter],
+    ) => api.executeCharacterTransfer(request, [], onProgress),
+    [api],
   );
 
   /**

@@ -19,6 +19,7 @@ const LOAD_ERROR_MESSAGE = '파티 프리셋을 불러오지 못했습니다.';
 const MUTATION_ERROR_MESSAGE = '파티 프리셋을 변경하지 못했습니다.';
 
 export type PartyPresetCatalogActions = {
+  refresh: () => Promise<void>;
   createPreset: (request: CreatePartyPresetRequest) => Promise<PartyPresetResponse>;
   updatePreset: (
     presetId: number,
@@ -408,6 +409,21 @@ export class PartyPresetCatalogModule {
     return queued;
   }
 
+  private enqueueRefresh(accountGeneration: number): Promise<void> {
+    const queued = this.mutationTail.then(async () => {
+      this.requireCurrentAccount(accountGeneration);
+      const outcome = await this.load(true);
+      if (outcome !== 'success') {
+        throw new Error(LOAD_ERROR_MESSAGE);
+      }
+    });
+    this.mutationTail = queued.then(
+      () => undefined,
+      () => undefined,
+    );
+    return queued;
+  }
+
   private replace(catalog: PartyPresetCatalogResponse): void {
     this.requestGeneration += 1;
     this.activeRequestGeneration = null;
@@ -453,6 +469,7 @@ export class PartyPresetCatalogModule {
       return operation();
     };
     return {
+      refresh: () => current(() => this.enqueueRefresh(accountGeneration)),
       createPreset: (request) => current(() => this.createPreset(request)),
       updatePreset: (presetId, request) => current(
         () => this.updatePreset(presetId, request),

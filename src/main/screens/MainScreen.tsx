@@ -199,6 +199,10 @@ export function MainScreen({
     () => automationController.changeState("pause"),
     [automationController],
   );
+  const reloadRelatedPartyPresets = useCallback(
+    () => partyPresetCatalog.actions.refresh(),
+    [partyPresetCatalog.actions],
+  );
   const characterHub = useCharacterManagementHub(
     {
       loadStoredDetail: onLoadCharacterDetail,
@@ -212,6 +216,9 @@ export function MainScreen({
       loadRoster: onLoadCharacterRoster,
       publishRoster: onPublishCharacterRoster,
       publishDetail: onPublishCharacterDetail,
+      previewTransfer: onPreviewCharacterTransfer,
+      executeTransfer: onExecuteCharacterTransfer,
+      reloadRelatedPresets: reloadRelatedPartyPresets,
       beginPatternEdit: beginCharacterPatternEdit,
     },
     session?.loggedIn === true ? session : null,
@@ -296,8 +303,6 @@ export function MainScreen({
           onArchiveCharacter,
           onRestoreCharacter,
           onDeleteCharacterPermanently,
-          onPreviewCharacterTransfer,
-          onExecuteCharacterTransfer,
           townApi,
           resolveCaptcha,
           pendingBattleTarget,
@@ -359,13 +364,6 @@ type RenderActiveTabArgs = {
   onArchiveCharacter?: (characterId: number) => Promise<void>;
   onRestoreCharacter?: (characterId: number) => Promise<void>;
   onDeleteCharacterPermanently?: (characterId: number) => Promise<void>;
-  onPreviewCharacterTransfer?: (
-    request: CharacterTransferPreviewRequest,
-  ) => Promise<CharacterTransferPreview>;
-  onExecuteCharacterTransfer?: (
-    request: CharacterTransferPreviewRequest,
-    onProgress?: (progress: CharacterTransferExecutionResult) => void,
-  ) => Promise<CharacterTransferExecutionResult>;
   onAutomationEditorModeChange: (active: boolean) => void;
   onDataLogModeChange: (active: boolean) => void;
   onTownDetailOpenChange: (open: boolean) => void;
@@ -418,8 +416,6 @@ function renderActiveTab({
   onArchiveCharacter,
   onRestoreCharacter,
   onDeleteCharacterPermanently,
-  onPreviewCharacterTransfer,
-  onExecuteCharacterTransfer,
   onAutomationEditorModeChange,
   onTownDetailOpenChange,
   townApi,
@@ -474,8 +470,6 @@ function renderActiveTab({
             <CharacterDetail
               characterHub={characterHub}
               characters={characters}
-              onPreviewTransfer={onPreviewCharacterTransfer}
-              onExecuteTransfer={onExecuteCharacterTransfer}
               initialTransferSourceId={transferSourceCharacterId}
               onBack={closeCharacterDetail}
             />

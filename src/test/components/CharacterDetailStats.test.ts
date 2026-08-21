@@ -100,6 +100,176 @@ describe('CharacterDetail stat allocation', () => {
     assert.ok(text().includes('작업을 시작하고 있습니다.'));
   });
 
+  it('renders transfer preview and progress from the same hub resource', async () => {
+    const target = makeHofCharacter(1, { name: '대상' });
+    const source = makeHofCharacter(2, { name: '원본' });
+    const request = {
+      sourceCharacterId: source.id,
+      targetCharacterId: target.id,
+      transfer: {
+        includeCurrentPattern: true,
+        savedPatternMappings: [],
+        includeStats: false,
+        includeSkills: false,
+        includeEquipment: false,
+      },
+    };
+    const characterHub = makeCharacterManagementHubResource({
+      selectedCharacter: target,
+      detail: makeHofCharacterDetail(target.id, { name: '대상' }),
+      transfer: {
+        status: 'running',
+        sourceCharacter: source,
+        targetCharacterId: target.id,
+        request,
+        preview: {
+          sourceCharacterId: source.id,
+          targetCharacterId: target.id,
+          steps: [{ id: 'current-pattern', dependsOn: [] }],
+          issues: [],
+          executable: true,
+        },
+        progress: {
+          targetCharacterId: target.id,
+          results: [{ stepId: 'current-pattern', status: 'COMPLETED', message: '' }],
+          nextStepIndex: 1,
+        },
+        result: null,
+        errorMessage: null,
+      },
+      actions: {
+        previewTransfer: async () => undefined,
+        executeTransfer: async () => undefined,
+      },
+    });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(CharacterDetail, {
+        characterHub,
+        characters: [target, source],
+        initialTransferSourceId: source.id,
+      }));
+    });
+    const text = renderer.root
+      .findAll((node) => String(node.type) === 'Text')
+      .map((node) => node.children.join(''));
+
+    assert.ok(text.includes('설정 가져오기'));
+    assert.ok(text.includes('현재 패턴·위치·호위를 적용합니다.'));
+    assert.ok(text.some((value) => value.includes('완료')));
+  });
+
+  it('sends a transfer preview through the hub semantic action', async () => {
+    const target = makeHofCharacter(1, { name: '대상' });
+    const source = makeHofCharacter(2, { name: '원본' });
+    let submitted: unknown = null;
+    const characterHub = makeCharacterManagementHubResource({
+      selectedCharacter: target,
+      detail: makeHofCharacterDetail(target.id, { name: '대상' }),
+      actions: {
+        previewTransfer: async (request) => {
+          submitted = request;
+          return undefined;
+        },
+        executeTransfer: async () => undefined,
+      },
+    });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(CharacterDetail, {
+        characterHub,
+        characters: [target, source],
+        initialTransferSourceId: source.id,
+      }));
+    });
+    const previewButton = renderer.root
+      .findAll((node) => String(node.type) === 'Pressable')
+      .find((node) => node.findAll((child) => (
+        String(child.type) === 'Text'
+        && child.children.join('') === '가져오기 확인'
+      )).length > 0);
+
+    await act(async () => previewButton?.props.onPress());
+
+    assert.deepEqual(submitted, {
+      sourceCharacterId: source.id,
+      targetCharacterId: target.id,
+      transfer: {
+        includeCurrentPattern: true,
+        savedPatternMappings: [],
+        includeStats: false,
+        includeSkills: false,
+        includeEquipment: false,
+      },
+    });
+  });
+
+  it('offers a fresh transfer preview instead of a no-op execute after an error', async () => {
+    const target = makeHofCharacter(1, { name: '대상' });
+    const source = makeHofCharacter(2, { name: '원본' });
+    let previews = 0;
+    let executions = 0;
+    const characterHub = makeCharacterManagementHubResource({
+      selectedCharacter: target,
+      detail: makeHofCharacterDetail(target.id, { name: '대상' }),
+      transfer: {
+        status: 'error',
+        sourceCharacter: source,
+        targetCharacterId: target.id,
+        request: {
+          sourceCharacterId: source.id,
+          targetCharacterId: target.id,
+          transfer: {
+            includeCurrentPattern: true,
+            savedPatternMappings: [],
+            includeStats: false,
+            includeSkills: false,
+            includeEquipment: false,
+          },
+        },
+        preview: {
+          sourceCharacterId: source.id,
+          targetCharacterId: target.id,
+          steps: [],
+          issues: [],
+          executable: true,
+        },
+        progress: null,
+        result: null,
+        errorMessage: '다시 확인해 주세요.',
+      },
+      actions: {
+        previewTransfer: async () => {
+          previews += 1;
+          return undefined;
+        },
+        executeTransfer: async () => {
+          executions += 1;
+          return undefined;
+        },
+      },
+    });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(CharacterDetail, {
+        characterHub,
+        characters: [target, source],
+        initialTransferSourceId: source.id,
+      }));
+    });
+    const primaryButton = renderer.root
+      .findAll((node) => String(node.type) === 'Pressable')
+      .find((node) => node.findAll((child) => (
+        String(child.type) === 'Text'
+        && child.children.join('') === '다시 확인'
+      )).length > 0 && node.props.disabled === false);
+
+    await act(async () => primaryButton?.props.onPress());
+
+    assert.equal(previews, 1);
+    assert.equal(executions, 0);
+  });
+
   it('keeps the detail navigator and back action visible with a revalidation warning', async () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => {

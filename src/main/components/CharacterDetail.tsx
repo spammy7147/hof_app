@@ -88,6 +88,7 @@ export function CharacterDetail({
     reloadStored: async () => undefined,
     refresh: onRefresh ?? (async () => undefined),
     dismissPatternConflict: () => undefined,
+    clearTransfer: () => undefined,
     executeCommand: onCommand,
     applyPattern: onApplyPattern,
     loadSavedPattern: onLoadSavedPattern && legacyDetail
@@ -113,6 +114,16 @@ export function CharacterDetail({
     warningMessage: legacyWarning,
     patternConflict: null,
     deepSync: { status: "idle" as const, progress: null, errorMessage: null },
+    transfer: {
+      status: "idle" as const,
+      sourceCharacter: null,
+      targetCharacterId: null,
+      request: null,
+      preview: null,
+      progress: null,
+      result: null,
+      errorMessage: null,
+    },
     actions: legacyActions,
   };
   const {

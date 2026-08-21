@@ -5,6 +5,9 @@ import type {
   CharacterDeepSyncResponse,
   CharacterPatternApplyRequest,
   CharacterPatternOperationResult,
+  CharacterTransferExecutionResult,
+  CharacterTransferPreview,
+  CharacterTransferPreviewRequest,
   HofCharacter,
   HofCharacterDetail,
 } from '../types/api';
@@ -37,6 +40,14 @@ export type CharacterManagementHubBackend = {
   loadRoster?: () => Promise<HofCharacter[]>;
   publishRoster?: (characters: HofCharacter[]) => void;
   publishDetail?: (detail: HofCharacterDetail) => void;
+  previewTransfer?: (
+    request: CharacterTransferPreviewRequest,
+  ) => Promise<CharacterTransferPreview>;
+  executeTransfer?: (
+    request: CharacterTransferPreviewRequest,
+    onProgress: (progress: CharacterTransferExecutionResult) => void,
+  ) => Promise<CharacterTransferExecutionResult>;
+  reloadRelatedPresets?: () => Promise<void>;
   beginPatternEdit?: () => Promise<void>;
 };
 
@@ -60,12 +71,28 @@ export type CharacterManagementHubActions = {
     characterId: number,
     newHofCharacterId: string,
   ) => Promise<void>;
+  previewTransfer?: (
+    request: CharacterTransferPreviewRequest,
+  ) => Promise<CharacterTransferPreview | void>;
+  executeTransfer?: () => Promise<CharacterTransferExecutionResult | void>;
+  clearTransfer: () => void;
   beginPatternEdit?: () => Promise<void>;
 };
 
 export type CharacterManagementDeepSyncState = {
   status: 'idle' | 'running' | 'completed' | 'error';
   progress: CharacterDeepSyncResponse | null;
+  errorMessage: string | null;
+};
+
+export type CharacterManagementTransferState = {
+  status: 'idle' | 'previewing' | 'ready' | 'running' | 'completed' | 'error';
+  sourceCharacter: HofCharacter | null;
+  targetCharacterId: number | null;
+  request: CharacterTransferPreviewRequest | null;
+  preview: CharacterTransferPreview | null;
+  progress: CharacterTransferExecutionResult | null;
+  result: CharacterTransferExecutionResult | null;
   errorMessage: string | null;
 };
 
@@ -77,6 +104,7 @@ export type CharacterManagementHubResource = {
   warningMessage: string | null;
   patternConflict: CharacterPatternOperationResult | null;
   deepSync: CharacterManagementDeepSyncState;
+  transfer: CharacterManagementTransferState;
   actions: CharacterManagementHubActions;
 };
 
@@ -97,6 +125,7 @@ export class CharacterManagementHubModule {
   private accountKey: unknown | null = null;
   private generation = 0;
   private selectionGeneration = 0;
+  private transferGeneration = 0;
   private requestGeneration = 0;
   private roster = new Map<number, HofCharacter>();
   private resource: CharacterManagementHubResource;
@@ -108,7 +137,11 @@ export class CharacterManagementHubModule {
     this.now = options.now ?? Date.now;
     this.freshnessMs = options.freshnessMs ?? DEFAULT_FRESHNESS_MS;
     this.resource = emptyResource(
-      this.actionsFor(this.generation, this.selectionGeneration),
+      this.actionsFor(
+        this.generation,
+        this.selectionGeneration,
+        this.transferGeneration,
+      ),
     );
   }
 
@@ -124,10 +157,15 @@ export class CharacterManagementHubModule {
     this.accountKey = accountKey;
     this.generation += 1;
     this.selectionGeneration += 1;
+    this.transferGeneration += 1;
     this.requestGeneration += 1;
     this.roster = new Map();
     this.replace(emptyResource(
-      this.actionsFor(this.generation, this.selectionGeneration),
+      this.actionsFor(
+        this.generation,
+        this.selectionGeneration,
+        this.transferGeneration,
+      ),
     ));
   }
 
@@ -135,16 +173,46 @@ export class CharacterManagementHubModule {
     this.accountKey = null;
     this.generation += 1;
     this.selectionGeneration += 1;
+    this.transferGeneration += 1;
     this.requestGeneration += 1;
     this.roster = new Map();
     this.replace(emptyResource(
-      this.actionsFor(this.generation, this.selectionGeneration),
+      this.actionsFor(
+        this.generation,
+        this.selectionGeneration,
+        this.transferGeneration,
+      ),
     ));
   }
 
   observeRoster(characters: HofCharacter[]): void {
     this.roster = new Map(characters.map((character) => [character.id, character]));
     const selected = this.resource.selectedCharacter;
+    const transferSource = this.resource.transfer.sourceCharacter;
+    if (transferSource) {
+      const observedSource = this.roster.get(transferSource.id);
+      if (!observedSource) {
+        this.transferGeneration += 1;
+        this.replace({
+          ...this.resource,
+          transfer: {
+            ...this.resource.transfer,
+            status: 'error',
+            errorMessage: '설정 원본 캐릭터를 더 이상 찾을 수 없습니다.',
+          },
+          actions: this.actionsFor(
+            this.generation,
+            this.selectionGeneration,
+            this.transferGeneration,
+          ),
+        });
+      } else if (observedSource !== transferSource) {
+        this.replace({
+          ...this.resource,
+          transfer: { ...this.resource.transfer, sourceCharacter: observedSource },
+        });
+      }
+    }
     if (!selected) return;
     const observed = this.roster.get(selected.id);
     if (!observed || !isActive(observed)) {
@@ -167,6 +235,7 @@ export class CharacterManagementHubModule {
     const selected = this.roster.get(candidate.id);
     if (!selected || !isActive(selected)) return;
     this.selectionGeneration += 1;
+    this.transferGeneration += 1;
     const request = ++this.requestGeneration;
     const generation = this.generation;
     const selectionGeneration = this.selectionGeneration;
@@ -179,7 +248,12 @@ export class CharacterManagementHubModule {
       warningMessage: null,
       patternConflict: null,
       deepSync: idleDeepSync(),
-      actions: this.actionsFor(generation, selectionGeneration),
+      transfer: idleTransfer(),
+      actions: this.actionsFor(
+        generation,
+        selectionGeneration,
+        this.transferGeneration,
+      ),
     });
     await this.loadStored(
       selected.id,
@@ -197,9 +271,14 @@ export class CharacterManagementHubModule {
   ): void {
     if (!this.isActiveLease(expectedGeneration, expectedSelectionGeneration)) return;
     this.selectionGeneration += 1;
+    this.transferGeneration += 1;
     this.requestGeneration += 1;
     this.replace(emptyResource(
-      this.actionsFor(this.generation, this.selectionGeneration),
+      this.actionsFor(
+        this.generation,
+        this.selectionGeneration,
+        this.transferGeneration,
+      ),
     ));
   }
 
@@ -353,6 +432,7 @@ export class CharacterManagementHubModule {
   private actionsFor(
     generation: number,
     selectionGeneration: number,
+    transferGeneration: number,
   ): CharacterManagementHubActions {
     const actions: CharacterManagementHubActions = {
       select: (character) => this.select(character, generation, selectionGeneration),
@@ -361,6 +441,8 @@ export class CharacterManagementHubModule {
       refresh: () => this.refresh(generation, selectionGeneration),
       dismissPatternConflict: () =>
         this.dismissPatternConflict(generation, selectionGeneration),
+      clearTransfer: () =>
+        this.clearTransfer(generation, selectionGeneration, transferGeneration),
     };
     if (this.backend.executeCommand) {
       actions.executeCommand = (command) =>
@@ -390,6 +472,23 @@ export class CharacterManagementHubModule {
     if (this.backend.beginPatternEdit) {
       actions.beginPatternEdit = () =>
         this.beginPatternEdit(generation, selectionGeneration);
+    }
+    if (this.backend.previewTransfer) {
+      actions.previewTransfer = (request) =>
+        this.previewTransfer(
+          request,
+          generation,
+          selectionGeneration,
+          transferGeneration,
+        );
+    }
+    if (this.backend.executeTransfer) {
+      actions.executeTransfer = () =>
+        this.executeTransfer(
+          generation,
+          selectionGeneration,
+          transferGeneration,
+        );
     }
     return actions;
   }
@@ -643,6 +742,252 @@ export class CharacterManagementHubModule {
     await begin();
   }
 
+  private async previewTransfer(
+    request: CharacterTransferPreviewRequest,
+    expectedGeneration: number,
+    expectedSelectionGeneration: number,
+    expectedTransferGeneration: number,
+  ): Promise<CharacterTransferPreview | void> {
+    const preview = this.backend.previewTransfer;
+    const target = this.currentTarget(
+      expectedGeneration,
+      expectedSelectionGeneration,
+    );
+    const source = this.roster.get(request.sourceCharacterId);
+    if (
+      !preview ||
+      this.transferGeneration !== expectedTransferGeneration ||
+      this.resource.transfer.status === 'previewing' ||
+      this.resource.transfer.status === 'running' ||
+      !target ||
+      !source ||
+      source.id === target.id ||
+      request.targetCharacterId !== target.id
+    ) return undefined;
+    const transferGeneration = ++this.transferGeneration;
+    this.replace({
+      ...this.resource,
+      transfer: {
+        status: 'previewing',
+        sourceCharacter: source,
+        targetCharacterId: target.id,
+        request,
+        preview: null,
+        progress: null,
+        result: null,
+        errorMessage: null,
+      },
+      actions: this.actionsFor(
+        expectedGeneration,
+        expectedSelectionGeneration,
+        transferGeneration,
+      ),
+    });
+    try {
+      const result = await preview(request);
+      if (!this.isCurrentTransfer(
+        source.id,
+        target.id,
+        expectedGeneration,
+        expectedSelectionGeneration,
+        transferGeneration,
+      )) return undefined;
+      if (
+        result.sourceCharacterId !== source.id ||
+        result.targetCharacterId !== target.id
+      ) {
+        throw new Error('설정 가져오기 대상이 요청과 일치하지 않습니다.');
+      }
+      this.replace({
+        ...this.resource,
+        transfer: { ...this.resource.transfer, status: 'ready', preview: result },
+      });
+      return result;
+    } catch (error: unknown) {
+      if (!this.isCurrentTransfer(
+        source.id,
+        target.id,
+        expectedGeneration,
+        expectedSelectionGeneration,
+        transferGeneration,
+      )) return undefined;
+      this.replace({
+        ...this.resource,
+        transfer: {
+          ...this.resource.transfer,
+          status: 'error',
+          errorMessage: toUserFacingErrorMessage(error),
+        },
+      });
+      return undefined;
+    }
+  }
+
+  private async executeTransfer(
+    expectedGeneration: number,
+    expectedSelectionGeneration: number,
+    expectedTransferGeneration: number,
+  ): Promise<CharacterTransferExecutionResult | void> {
+    const execute = this.backend.executeTransfer;
+    const transfer = this.resource.transfer;
+    const source = transfer.sourceCharacter;
+    const targetCharacterId = transfer.targetCharacterId;
+    const request = transfer.request;
+    if (
+      !execute ||
+      this.transferGeneration !== expectedTransferGeneration ||
+      transfer.status !== 'ready' ||
+      !transfer.preview?.executable ||
+      !source ||
+      targetCharacterId == null ||
+      !request ||
+      !this.isCurrentTarget(
+        targetCharacterId,
+        expectedGeneration,
+        expectedSelectionGeneration,
+      )
+    ) return undefined;
+    const transferGeneration = this.transferGeneration;
+    this.replace({
+      ...this.resource,
+      transfer: {
+        ...transfer,
+        status: 'running',
+        progress: null,
+        result: null,
+        errorMessage: null,
+      },
+    });
+    let result: CharacterTransferExecutionResult;
+    try {
+      result = await execute(request, (progress) => {
+        if (
+          progress.targetCharacterId !== targetCharacterId ||
+          !this.isCurrentTransfer(
+            source.id,
+            targetCharacterId,
+            expectedGeneration,
+            expectedSelectionGeneration,
+            transferGeneration,
+          )
+        ) return;
+        this.replace({
+          ...this.resource,
+          transfer: { ...this.resource.transfer, progress },
+        });
+      });
+    } catch (error: unknown) {
+      if (!this.isCurrentTransfer(
+        source.id,
+        targetCharacterId,
+        expectedGeneration,
+        expectedSelectionGeneration,
+        transferGeneration,
+      )) return undefined;
+      this.replace({
+        ...this.resource,
+        transfer: {
+          ...this.resource.transfer,
+          status: 'error',
+          errorMessage: toUserFacingErrorMessage(error),
+        },
+      });
+      return undefined;
+    }
+    if (!this.isCurrentTransfer(
+      source.id,
+      targetCharacterId,
+      expectedGeneration,
+      expectedSelectionGeneration,
+      transferGeneration,
+    )) return undefined;
+    if (result.targetCharacterId !== targetCharacterId) {
+      this.replace({
+        ...this.resource,
+        transfer: {
+          ...this.resource.transfer,
+          status: 'error',
+          errorMessage: '설정 가져오기 결과 대상이 요청과 일치하지 않습니다.',
+        },
+      });
+      return undefined;
+    }
+    this.replace({
+      ...this.resource,
+      transfer: { ...this.resource.transfer, progress: result, result },
+    });
+    await this.refresh(expectedGeneration, expectedSelectionGeneration);
+    if (!this.isCurrentTransfer(
+      source.id,
+      targetCharacterId,
+      expectedGeneration,
+      expectedSelectionGeneration,
+      transferGeneration,
+    )) return undefined;
+    let relatedPresetError: string | null = null;
+    try {
+      await this.backend.reloadRelatedPresets?.();
+    } catch (error: unknown) {
+      relatedPresetError = toUserFacingErrorMessage(error);
+    }
+    if (!this.isCurrentTransfer(
+      source.id,
+      targetCharacterId,
+      expectedGeneration,
+      expectedSelectionGeneration,
+      transferGeneration,
+    )) return undefined;
+    this.replace({
+      ...this.resource,
+      transfer: {
+        ...this.resource.transfer,
+        status: 'completed',
+        progress: result,
+        result,
+        errorMessage: relatedPresetError,
+      },
+    });
+    return result;
+  }
+
+  private clearTransfer(
+    expectedGeneration: number,
+    expectedSelectionGeneration: number,
+    expectedTransferGeneration: number,
+  ): void {
+    if (
+      !this.isActiveLease(expectedGeneration, expectedSelectionGeneration) ||
+      this.transferGeneration !== expectedTransferGeneration ||
+      this.resource.transfer.status === 'running'
+    ) return;
+    this.transferGeneration += 1;
+    this.replace({
+      ...this.resource,
+      transfer: idleTransfer(),
+      actions: this.actionsFor(
+        expectedGeneration,
+        expectedSelectionGeneration,
+        this.transferGeneration,
+      ),
+    });
+  }
+
+  private isCurrentTransfer(
+    sourceCharacterId: number,
+    targetCharacterId: number,
+    expectedGeneration: number,
+    expectedSelectionGeneration: number,
+    expectedTransferGeneration: number,
+  ): boolean {
+    return this.transferGeneration === expectedTransferGeneration
+      && this.roster.has(sourceCharacterId)
+      && this.isCurrentTarget(
+        targetCharacterId,
+        expectedGeneration,
+        expectedSelectionGeneration,
+      );
+  }
+
   private dismissPatternConflict(
     expectedGeneration: number,
     expectedSelectionGeneration: number,
@@ -697,6 +1042,7 @@ function emptyResource(
     warningMessage: null,
     patternConflict: null,
     deepSync: idleDeepSync(),
+    transfer: idleTransfer(),
     actions,
   };
 }
@@ -711,4 +1057,17 @@ function isPatternConflict(result: CharacterPatternOperationResult): boolean {
 
 function idleDeepSync(): CharacterManagementDeepSyncState {
   return { status: 'idle', progress: null, errorMessage: null };
+}
+
+function idleTransfer(): CharacterManagementTransferState {
+  return {
+    status: 'idle',
+    sourceCharacter: null,
+    targetCharacterId: null,
+    request: null,
+    preview: null,
+    progress: null,
+    result: null,
+    errorMessage: null,
+  };
 }

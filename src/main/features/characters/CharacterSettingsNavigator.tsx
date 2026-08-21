@@ -49,6 +49,10 @@ export function CharacterSettingsNavigator(
   const [statusHelpOpen, setStatusHelpOpen] = useState(false);
   const [patternTransferOpen, setPatternTransferOpen] = useState(false);
   const detail = props.characterHub.detail;
+  const usesHubTransfer = props.characterHub.actions.previewTransfer != null
+    && props.characterHub.actions.executeTransfer != null;
+  const canTransfer = usesHubTransfer
+    || (props.onPreviewTransfer != null && props.onExecuteTransfer != null);
   if (!detail) return null;
   return (
     <View style={styles.root}>
@@ -94,19 +98,20 @@ export function CharacterSettingsNavigator(
           onOpenHelp={() => setStatusHelpOpen(true)}
         />
       )}
-      {tab === "pattern" && patternTransferOpen && props.onPreviewTransfer && props.onExecuteTransfer ? (
+      {tab === "pattern" && patternTransferOpen && canTransfer ? (
         <CharacterSettingsTransferScreen
-          target={detail}
+          characterHub={usesHubTransfer ? props.characterHub : undefined}
+          target={usesHubTransfer ? undefined : detail}
           characters={props.characters ?? []}
           onBack={() => setPatternTransferOpen(false)}
-          onPreview={props.onPreviewTransfer}
-          onExecute={props.onExecuteTransfer}
+          onPreview={usesHubTransfer ? undefined : props.onPreviewTransfer}
+          onExecute={usesHubTransfer ? undefined : props.onExecuteTransfer}
         />
       ) : tab === "pattern" && (
         <CharacterPatternScreen
           characterHub={props.characterHub}
           onImportSettings={
-            props.onPreviewTransfer && props.onExecuteTransfer
+            canTransfer
               ? () => setPatternTransferOpen(true)
               : undefined
           }
@@ -123,8 +128,8 @@ export function CharacterSettingsNavigator(
           characterHub={props.characterHub}
           characters={props.characters ?? []}
           initialTransferSourceId={props.initialTransferSourceId}
-          onPreviewTransfer={props.onPreviewTransfer}
-          onExecuteTransfer={props.onExecuteTransfer}
+          onPreviewTransfer={usesHubTransfer ? undefined : props.onPreviewTransfer}
+          onExecuteTransfer={usesHubTransfer ? undefined : props.onExecuteTransfer}
         />
       )}
     </View>

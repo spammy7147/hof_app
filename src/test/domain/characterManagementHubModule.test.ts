@@ -10,6 +10,9 @@ import type {
   CharacterCommandResult,
   CharacterDeepSyncResponse,
   CharacterPatternOperationResult,
+  CharacterTransferExecutionResult,
+  CharacterTransferPreview,
+  CharacterTransferPreviewRequest,
   HofCharacter,
   HofCharacterDetail,
 } from '../../main/types/api';
@@ -559,6 +562,222 @@ describe('character management hub module', () => {
     assert.deepEqual(publishedRoster, []);
     assert.equal(hub.getSnapshot().selectedCharacter?.id, second.id);
   });
+
+  it('owns a transfer preview for exact stable source and target records', async () => {
+    const request = transferRequest(2, 1);
+    const preview = transferPreview(2, 1);
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async (characterId) => freshDetail(characterId),
+      previewTransfer: async (submitted) => {
+        assert.deepEqual(submitted, request);
+        return preview;
+      },
+    }));
+    const target = makeHofCharacter(1);
+    const source = makeHofCharacter(2, { lifecycle: 'ARCHIVED' });
+    hub.activate('account-1');
+    hub.observeRoster([target, source]);
+    await hub.getSnapshot().actions.select(target);
+
+    const observed = await hub.getSnapshot().actions.previewTransfer?.(request);
+
+    assert.equal(observed, preview);
+    assert.equal(hub.getSnapshot().transfer.status, 'ready');
+    assert.equal(hub.getSnapshot().transfer.sourceCharacter, source);
+    assert.equal(hub.getSnapshot().transfer.targetCharacterId, target.id);
+    assert.equal(hub.getSnapshot().transfer.preview, preview);
+  });
+
+  it('projects transfer progress and refreshes only target authority and related presets', async () => {
+    const request = transferRequest(2, 1);
+    const preview = transferPreview(2, 1);
+    const progress: CharacterTransferExecutionResult = {
+      targetCharacterId: 1,
+      results: [{ stepId: 'pattern', status: 'COMPLETED', message: '' }],
+      nextStepIndex: 1,
+    };
+    const result: CharacterTransferExecutionResult = {
+      targetCharacterId: 1,
+      results: [{ stepId: 'pattern', status: 'COMPLETED', message: '' }],
+      nextStepIndex: 2,
+    };
+    const refreshedIds: number[] = [];
+    const publishedDetails: HofCharacterDetail[] = [];
+    let presetReloads = 0;
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async (characterId) => freshDetail(characterId),
+      previewTransfer: async () => preview,
+      executeTransfer: async (submitted, onProgress) => {
+        assert.deepEqual(submitted, request);
+        onProgress(progress);
+        return result;
+      },
+      refreshAuthoritativeDetail: async (characterId) => {
+        refreshedIds.push(characterId);
+        return makeHofCharacterDetail(characterId, { revision: 'revision-2' });
+      },
+      reloadRelatedPresets: async () => { presetReloads += 1; },
+      publishDetail: (detail) => publishedDetails.push(detail),
+    }));
+    const target = makeHofCharacter(1);
+    const source = makeHofCharacter(2);
+    hub.activate('account-1');
+    hub.observeRoster([target, source]);
+    await hub.getSnapshot().actions.select(target);
+    publishedDetails.length = 0;
+    await hub.getSnapshot().actions.previewTransfer?.(request);
+
+    const completed = await hub.getSnapshot().actions.executeTransfer?.();
+
+    assert.equal(completed, result);
+    assert.equal(hub.getSnapshot().transfer.status, 'completed');
+    assert.equal(hub.getSnapshot().transfer.progress, result);
+    assert.equal(hub.getSnapshot().transfer.result, result);
+    assert.deepEqual(refreshedIds, [target.id]);
+    assert.equal(publishedDetails.at(-1)?.id, target.id);
+    assert.equal(presetReloads, 1);
+    assert.equal(hub.getSnapshot().transfer.sourceCharacter, source);
+  });
+
+  it('ends a current transfer with an error when completion targets another stable record', async () => {
+    let refreshes = 0;
+    let presetReloads = 0;
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async (characterId) => freshDetail(characterId),
+      previewTransfer: async () => transferPreview(2, 1),
+      executeTransfer: async () => ({
+        targetCharacterId: 99,
+        results: [],
+        nextStepIndex: 1,
+      }),
+      refreshAuthoritativeDetail: async (characterId) => {
+        refreshes += 1;
+        return freshDetail(characterId);
+      },
+      reloadRelatedPresets: async () => { presetReloads += 1; },
+    }));
+    const target = makeHofCharacter(1);
+    const source = makeHofCharacter(2);
+    hub.activate('account-1');
+    hub.observeRoster([target, source]);
+    await hub.getSnapshot().actions.select(target);
+    await hub.getSnapshot().actions.previewTransfer?.(transferRequest(2, 1));
+
+    const completed = await hub.getSnapshot().actions.executeTransfer?.();
+
+    assert.equal(completed, undefined);
+    assert.equal(hub.getSnapshot().transfer.status, 'error');
+    assert.match(hub.getSnapshot().transfer.errorMessage ?? '', /대상이 요청과 일치하지 않습니다/);
+    assert.equal(refreshes, 0);
+    assert.equal(presetReloads, 0);
+    hub.getSnapshot().actions.clearTransfer();
+    assert.equal(hub.getSnapshot().transfer.status, 'idle');
+  });
+
+  it('fences late transfer progress and completion after target selection changes', async () => {
+    const request = transferRequest(2, 1);
+    const execution = deferred<CharacterTransferExecutionResult>();
+    let reportProgress!: (progress: CharacterTransferExecutionResult) => void;
+    let refreshes = 0;
+    let presetReloads = 0;
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async (characterId) => freshDetail(characterId),
+      previewTransfer: async () => transferPreview(2, 1),
+      executeTransfer: (_request, onProgress) => {
+        reportProgress = onProgress;
+        return execution.promise;
+      },
+      refreshAuthoritativeDetail: async (characterId) => {
+        refreshes += 1;
+        return freshDetail(characterId);
+      },
+      reloadRelatedPresets: async () => { presetReloads += 1; },
+    }));
+    const target = makeHofCharacter(1);
+    const source = makeHofCharacter(2);
+    const other = makeHofCharacter(3);
+    hub.activate('account-1');
+    hub.observeRoster([target, source, other]);
+    await hub.getSnapshot().actions.select(target);
+    await hub.getSnapshot().actions.previewTransfer?.(request);
+    const pending = hub.getSnapshot().actions.executeTransfer?.();
+
+    await hub.getSnapshot().actions.select(other);
+    reportProgress({ targetCharacterId: 1, results: [], nextStepIndex: 1 });
+    execution.resolve({ targetCharacterId: 1, results: [], nextStepIndex: 2 });
+    assert.equal(await pending, undefined);
+
+    assert.equal(hub.getSnapshot().selectedCharacter?.id, other.id);
+    assert.equal(hub.getSnapshot().transfer.status, 'idle');
+    assert.equal(refreshes, 0);
+    assert.equal(presetReloads, 0);
+  });
+
+  it('does not let callbacks retained from an older transfer clear or execute a newer preview', async () => {
+    let executions = 0;
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async (characterId) => freshDetail(characterId),
+      previewTransfer: async (request) => transferPreview(
+        request.sourceCharacterId,
+        request.targetCharacterId,
+      ),
+      executeTransfer: async (request) => {
+        executions += 1;
+        return { targetCharacterId: request.targetCharacterId, results: [], nextStepIndex: 1 };
+      },
+    }));
+    const target = makeHofCharacter(1);
+    const source = makeHofCharacter(2);
+    hub.activate('account-1');
+    hub.observeRoster([target, source]);
+    await hub.getSnapshot().actions.select(target);
+    const olderTransferActions = hub.getSnapshot().actions;
+    await olderTransferActions.previewTransfer?.(transferRequest(2, 1));
+
+    await hub.getSnapshot().actions.previewTransfer?.({
+      ...transferRequest(2, 1),
+      transfer: { ...transferRequest(2, 1).transfer, includeSkills: true },
+    });
+    const currentPreview = hub.getSnapshot().transfer.preview;
+    olderTransferActions.clearTransfer();
+    await olderTransferActions.executeTransfer?.();
+
+    assert.equal(hub.getSnapshot().transfer.preview, currentPreview);
+    assert.equal(executions, 0);
+  });
+
+  it('drops transfer progress and completion after logout', async () => {
+    const execution = deferred<CharacterTransferExecutionResult>();
+    let reportProgress!: (progress: CharacterTransferExecutionResult) => void;
+    let refreshes = 0;
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async (characterId) => freshDetail(characterId),
+      previewTransfer: async () => transferPreview(2, 1),
+      executeTransfer: (_request, onProgress) => {
+        reportProgress = onProgress;
+        return execution.promise;
+      },
+      refreshAuthoritativeDetail: async (characterId) => {
+        refreshes += 1;
+        return freshDetail(characterId);
+      },
+    }));
+    const target = makeHofCharacter(1);
+    const source = makeHofCharacter(2);
+    hub.activate('account-1');
+    hub.observeRoster([target, source]);
+    await hub.getSnapshot().actions.select(target);
+    await hub.getSnapshot().actions.previewTransfer?.(transferRequest(2, 1));
+    const pending = hub.getSnapshot().actions.executeTransfer?.();
+
+    hub.deactivate();
+    reportProgress({ targetCharacterId: 1, results: [], nextStepIndex: 1 });
+    execution.resolve({ targetCharacterId: 1, results: [], nextStepIndex: 2 });
+    assert.equal(await pending, undefined);
+
+    assert.equal(hub.getSnapshot().transfer.status, 'idle');
+    assert.equal(refreshes, 0);
+  });
 });
 
 function backend(
@@ -593,5 +812,35 @@ function patternRequest(characterId: number, revision: string) {
     baseRevision: revision,
     base: { rows: [], position: '', guard: '' },
     draft: { baseRevision: revision, rows: [], position: '', guard: '' },
+  };
+}
+
+function transferRequest(
+  sourceCharacterId: number,
+  targetCharacterId: number,
+): CharacterTransferPreviewRequest {
+  return {
+    sourceCharacterId,
+    targetCharacterId,
+    transfer: {
+      includeCurrentPattern: true,
+      savedPatternMappings: [],
+      includeStats: false,
+      includeSkills: false,
+      includeEquipment: false,
+    },
+  };
+}
+
+function transferPreview(
+  sourceCharacterId: number,
+  targetCharacterId: number,
+): CharacterTransferPreview {
+  return {
+    sourceCharacterId,
+    targetCharacterId,
+    steps: [],
+    issues: [],
+    executable: true,
   };
 }

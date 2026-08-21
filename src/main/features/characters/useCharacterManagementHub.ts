@@ -10,6 +10,9 @@ import type {
   CharacterDeepSyncResponse,
   CharacterPatternApplyRequest,
   CharacterPatternOperationResult,
+  CharacterTransferExecutionResult,
+  CharacterTransferPreview,
+  CharacterTransferPreviewRequest,
   HofCharacter,
   HofCharacterDetail,
 } from '../../types/api';
@@ -40,6 +43,14 @@ export type CharacterManagementHubApi = {
   loadRoster?: () => Promise<HofCharacter[]>;
   publishRoster?: (characters: HofCharacter[]) => void;
   publishDetail?: (detail: HofCharacterDetail) => void;
+  previewTransfer?: (
+    request: CharacterTransferPreviewRequest,
+  ) => Promise<CharacterTransferPreview>;
+  executeTransfer?: (
+    request: CharacterTransferPreviewRequest,
+    onProgress?: (progress: CharacterTransferExecutionResult) => void,
+  ) => Promise<CharacterTransferExecutionResult>;
+  reloadRelatedPresets?: () => Promise<void>;
   beginPatternEdit?: () => Promise<void>;
 };
 
@@ -63,6 +74,12 @@ export function useCharacterManagementHub(
       loadRoster: api.loadRoster,
       publishRoster: api.publishRoster,
       publishDetail: api.publishDetail,
+      previewTransfer: api.previewTransfer,
+      executeTransfer: api.executeTransfer
+        ? (request, onProgress) => api.executeTransfer?.(request, onProgress)
+          ?? Promise.reject(new Error('설정 가져오기를 실행할 수 없습니다.'))
+        : undefined,
+      reloadRelatedPresets: api.reloadRelatedPresets,
       beginPatternEdit: api.beginPatternEdit,
     }),
     [
@@ -77,6 +94,9 @@ export function useCharacterManagementHub(
       api.loadStoredDetail,
       api.publishDetail,
       api.publishRoster,
+      api.previewTransfer,
+      api.executeTransfer,
+      api.reloadRelatedPresets,
       api.refreshAuthoritativeDetail,
     ],
   );

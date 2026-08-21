@@ -4,7 +4,7 @@ import type {
 } from '../../main/domain/characterManagementHubModule';
 
 export function makeCharacterManagementHubResource(
-  overrides: Partial<CharacterManagementHubResource> & {
+  overrides: Partial<Omit<CharacterManagementHubResource, 'actions'>> & {
     actions?: Partial<CharacterManagementHubActions>;
   } = {},
 ): CharacterManagementHubResource {
@@ -14,6 +14,7 @@ export function makeCharacterManagementHubResource(
     reloadStored: async () => undefined,
     refresh: async () => undefined,
     dismissPatternConflict: () => undefined,
+    clearTransfer: () => undefined,
     ...overrides.actions,
   };
   return {
@@ -24,6 +25,16 @@ export function makeCharacterManagementHubResource(
     warningMessage: null,
     patternConflict: null,
     deepSync: { status: 'idle', progress: null, errorMessage: null },
+    transfer: {
+      status: 'idle',
+      sourceCharacter: null,
+      targetCharacterId: null,
+      request: null,
+      preview: null,
+      progress: null,
+      result: null,
+      errorMessage: null,
+    },
     ...overrides,
     actions,
   };

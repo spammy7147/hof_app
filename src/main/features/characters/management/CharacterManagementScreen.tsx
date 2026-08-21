@@ -104,6 +104,10 @@ export function CharacterManagementScreen({
     ? characterHub.deepSync.status === "running"
     : legacyDeepSyncBusy;
   const deepSyncError = characterHub?.deepSync.errorMessage ?? legacyDeepSyncError;
+  const usesHubTransfer = characterHub?.actions.previewTransfer != null
+    && characterHub.actions.executeTransfer != null;
+  const canTransfer = usesHubTransfer
+    || (onPreviewTransfer != null && onExecuteTransfer != null);
   const revision = detail.revision;
   const classOptions = (detail.patternOptions ?? []).filter(
     (option) => option.type === "CLASS",
@@ -128,15 +132,16 @@ export function CharacterManagementScreen({
           },
         ])
       : void execute(command);
-  if (transferOpen && onPreviewTransfer && onExecuteTransfer)
+  if (transferOpen && canTransfer)
     return (
       <CharacterSettingsTransferScreen
-        target={detail}
+        characterHub={usesHubTransfer ? characterHub : undefined}
+        target={usesHubTransfer ? undefined : detail}
         characters={characters}
         initialSourceId={initialTransferSourceId}
         onBack={() => setTransferOpen(false)}
-        onPreview={onPreviewTransfer}
-        onExecute={onExecuteTransfer}
+        onPreview={usesHubTransfer ? undefined : onPreviewTransfer}
+        onExecute={usesHubTransfer ? undefined : onExecuteTransfer}
       />
     );
   return (
