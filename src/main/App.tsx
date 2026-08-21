@@ -23,8 +23,6 @@ import type {
   BattleResultResponse,
   BattleStatsResponse,
   AdventureMapStatsPeriod,
-  CreatePartyPresetRequest,
-  CreatePartyPresetFolderRequest,
   CharacterCommand,
   CharacterCommandResult,
   CharacterPatternApplyRequest,
@@ -35,17 +33,11 @@ import type {
   HofCharacterDetail,
   HofStatusResponse,
   HofObservedStatusResponse,
-  MovePartyPresetFolderRequest,
-  PartyPresetCatalogResponse,
-  PartyPresetResponse,
-  RenamePartyPresetFolderRequest,
-  ReorderPartyPresetFoldersRequest,
-  ReorderPartyPresetsRequest,
   RunBattleRequest,
-  UpdatePartyPresetRequest,
 } from "./types/api";
 import { theme } from "./styles/theme";
 import { createTownApi } from "./features/town/api/townApi";
+import { usePartyPresetCatalog } from "./features/partyPresets/usePartyPresetCatalog";
 
 type ScreenMode = "boot" | "login" | "main";
 
@@ -94,6 +86,10 @@ function AppContent({ api }: { api: BackendApiClient }) {
   );
   const [mode, setMode] = useState<ScreenMode>("boot");
   const [session, setSession] = useState<AppSession | null>(null);
+  const partyPresetCatalog = usePartyPresetCatalog(
+    api,
+    session?.loggedIn === true ? session : null,
+  );
   const [battleCategories, setBattleCategories] = useState<
     BattleCategoryResponse[]
   >([]);
@@ -256,66 +252,6 @@ function AppContent({ api }: { api: BackendApiClient }) {
   const loadBattleStats = useCallback(
     (period?: AdventureMapStatsPeriod): Promise<BattleStatsResponse> =>
       api.fetchBattleStats(period),
-    [api],
-  );
-
-  const getPartyPresetCatalog = useCallback(
-    (): Promise<PartyPresetCatalogResponse> => api.getPartyPresetCatalog(),
-    [api],
-  );
-  const createPartyPresetFolder = useCallback(
-    (request: CreatePartyPresetFolderRequest) =>
-      api.createPartyPresetFolder(request),
-    [api],
-  );
-  const renamePartyPresetFolder = useCallback(
-    (folderId: number, request: RenamePartyPresetFolderRequest) =>
-      api.renamePartyPresetFolder(folderId, request),
-    [api],
-  );
-  const reorderPartyPresetFolders = useCallback(
-    (request: ReorderPartyPresetFoldersRequest) =>
-      api.reorderPartyPresetFolders(request),
-    [api],
-  );
-  const movePartyPresetFolder = useCallback(
-    (folderId: number, request: MovePartyPresetFolderRequest) =>
-      api.movePartyPresetFolder(folderId, request),
-    [api],
-  );
-  const deletePartyPresetFolder = useCallback(
-    (folderId: number) => api.deletePartyPresetFolder(folderId),
-    [api],
-  );
-
-  const createPartyPreset = useCallback(
-    (request: CreatePartyPresetRequest): Promise<PartyPresetResponse> =>
-      api.createPartyPreset(request),
-    [api],
-  );
-
-  const updatePartyPreset = useCallback(
-    (
-      presetId: number,
-      request: UpdatePartyPresetRequest,
-    ): Promise<PartyPresetResponse> => api.updatePartyPreset(presetId, request),
-    [api],
-  );
-
-  const makePartyPresetPrimary = useCallback(
-    (presetId: number): Promise<PartyPresetResponse> =>
-      api.makePartyPresetPrimary(presetId),
-    [api],
-  );
-
-  const reorderPartyPresets = useCallback(
-    (request: ReorderPartyPresetsRequest): Promise<PartyPresetResponse[]> =>
-      api.reorderPartyPresets(request),
-    [api],
-  );
-
-  const deletePartyPreset = useCallback(
-    (presetId: number): Promise<null> => api.deletePartyPreset(presetId),
     [api],
   );
 
@@ -607,17 +543,7 @@ function AppContent({ api }: { api: BackendApiClient }) {
         onOpenCaptcha={handleOpenCaptchaModal}
         onStatusObserved={handleStatusObserved}
         automationController={automationController}
-        onGetPartyPresetCatalog={getPartyPresetCatalog}
-        onCreatePartyPresetFolder={createPartyPresetFolder}
-        onRenamePartyPresetFolder={renamePartyPresetFolder}
-        onReorderPartyPresetFolders={reorderPartyPresetFolders}
-        onMovePartyPresetFolder={movePartyPresetFolder}
-        onDeletePartyPresetFolder={deletePartyPresetFolder}
-        onCreatePartyPreset={createPartyPreset}
-        onUpdatePartyPreset={updatePartyPreset}
-        onMakePartyPresetPrimary={makePartyPresetPrimary}
-        onReorderPartyPresets={reorderPartyPresets}
-        onDeletePartyPreset={deletePartyPreset}
+        partyPresetCatalog={partyPresetCatalog}
         onLoadCharacterDetail={loadCharacterDetail}
         onExecuteCharacterCommand={executeTypedCharacterCommand}
         onApplyCharacterPattern={applyTypedCharacterPattern}

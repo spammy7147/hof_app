@@ -2,11 +2,8 @@ import type { ElementRef, ReactNode } from "react";
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
-  useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -23,10 +20,7 @@ import {
   DEFAULT_MAIN_TAB_ID,
   MainRouteId,
 } from "../domain/mainTabs";
-import {
-  PartyPresetCatalogModule,
-  type PartyPresetCatalogResource,
-} from "../domain/partyPresetCatalogModule";
+import type { PartyPresetCatalogResource } from "../domain/partyPresetCatalogModule";
 import type { UnifiedAutomationController } from "../domain/unifiedAutomationController";
 import { toUserFacingErrorMessage } from "../domain/userFacingErrors";
 import { theme } from "../styles/theme";
@@ -39,8 +33,6 @@ import type {
   BattleStatsResponse,
   AdventureMapStatsPeriod,
   FishingBattleTarget,
-  CreatePartyPresetRequest,
-  CreatePartyPresetFolderRequest,
   CharacterCommand,
   CharacterCommandResult,
   CharacterPatternApplyRequest,
@@ -54,14 +46,7 @@ import type {
   HofCharacterDetail,
   HofObservedStatusResponse,
   HofStatusResponse,
-  MovePartyPresetFolderRequest,
-  PartyPresetCatalogResponse,
-  PartyPresetResponse,
-  RenamePartyPresetFolderRequest,
-  ReorderPartyPresetFoldersRequest,
-  ReorderPartyPresetsRequest,
   RunBattleRequest,
-  UpdatePartyPresetRequest,
 } from "../types/api";
 import { BattleTabScreen } from "./BattleTabScreen";
 import { DataTabScreen } from "./DataTabScreen";
@@ -103,36 +88,7 @@ type MainScreenProps = {
   onOpenCaptcha: () => void;
   onStatusObserved?: (status: HofObservedStatusResponse) => void;
   automationController: UnifiedAutomationController;
-  onGetPartyPresetCatalog: () => Promise<PartyPresetCatalogResponse>;
-  onCreatePartyPresetFolder?: (
-    request: CreatePartyPresetFolderRequest,
-  ) => Promise<PartyPresetCatalogResponse>;
-  onRenamePartyPresetFolder?: (
-    folderId: number,
-    request: RenamePartyPresetFolderRequest,
-  ) => Promise<PartyPresetCatalogResponse>;
-  onReorderPartyPresetFolders?: (
-    request: ReorderPartyPresetFoldersRequest,
-  ) => Promise<PartyPresetCatalogResponse>;
-  onMovePartyPresetFolder?: (
-    folderId: number,
-    request: MovePartyPresetFolderRequest,
-  ) => Promise<PartyPresetCatalogResponse>;
-  onDeletePartyPresetFolder?: (
-    folderId: number,
-  ) => Promise<PartyPresetCatalogResponse>;
-  onCreatePartyPreset: (
-    request: CreatePartyPresetRequest,
-  ) => Promise<PartyPresetResponse>;
-  onUpdatePartyPreset: (
-    presetId: number,
-    request: UpdatePartyPresetRequest,
-  ) => Promise<PartyPresetResponse>;
-  onMakePartyPresetPrimary: (presetId: number) => Promise<PartyPresetResponse>;
-  onReorderPartyPresets: (
-    request: ReorderPartyPresetsRequest,
-  ) => Promise<PartyPresetResponse[]>;
-  onDeletePartyPreset: (presetId: number) => Promise<null>;
+  partyPresetCatalog: PartyPresetCatalogResource;
   onLoadCharacterDetail: (characterId: number) => Promise<HofCharacterDetail>;
   onExecuteCharacterCommand?: (
     command: CharacterCommand,
@@ -203,17 +159,7 @@ export function MainScreen({
   onOpenCaptcha,
   onStatusObserved,
   automationController,
-  onGetPartyPresetCatalog,
-  onCreatePartyPresetFolder,
-  onRenamePartyPresetFolder,
-  onReorderPartyPresetFolders,
-  onMovePartyPresetFolder,
-  onDeletePartyPresetFolder,
-  onCreatePartyPreset,
-  onUpdatePartyPreset,
-  onMakePartyPresetPrimary,
-  onReorderPartyPresets,
-  onDeletePartyPreset,
+  partyPresetCatalog,
   onLoadCharacterDetail,
   onExecuteCharacterCommand,
   onApplyCharacterPattern,
@@ -232,72 +178,6 @@ export function MainScreen({
   townApi,
   resolveCaptcha,
 }: MainScreenProps) {
-  const authenticated = Boolean(session?.loggedIn);
-  const partyPresetCatalogModule = useMemo(
-    () =>
-      new PartyPresetCatalogModule({
-        loadCatalog: onGetPartyPresetCatalog,
-        createPreset: onCreatePartyPreset,
-        updatePreset: onUpdatePartyPreset,
-        makePresetPrimary: onMakePartyPresetPrimary,
-        reorderPresets: onReorderPartyPresets,
-        deletePreset: onDeletePartyPreset,
-        createFolder: (request) => {
-          if (!onCreatePartyPresetFolder)
-            return Promise.reject(new Error("폴더 만들기를 사용할 수 없습니다."));
-          return onCreatePartyPresetFolder(request);
-        },
-        renameFolder: (folderId, request) => {
-          if (!onRenamePartyPresetFolder)
-            return Promise.reject(new Error("폴더 이름 변경을 사용할 수 없습니다."));
-          return onRenamePartyPresetFolder(folderId, request);
-        },
-        reorderFolders: (request) => {
-          if (!onReorderPartyPresetFolders)
-            return Promise.reject(new Error("폴더 순서 변경을 사용할 수 없습니다."));
-          return onReorderPartyPresetFolders(request);
-        },
-        moveFolder: (folderId, request) => {
-          if (!onMovePartyPresetFolder)
-            return Promise.reject(new Error("폴더 이동을 사용할 수 없습니다."));
-          return onMovePartyPresetFolder(folderId, request);
-        },
-        deleteFolder: (folderId) => {
-          if (!onDeletePartyPresetFolder)
-            return Promise.reject(new Error("폴더 삭제를 사용할 수 없습니다."));
-          return onDeletePartyPresetFolder(folderId);
-        },
-      }),
-    [
-      onCreatePartyPresetFolder,
-      onCreatePartyPreset,
-      onDeletePartyPresetFolder,
-      onDeletePartyPreset,
-      onGetPartyPresetCatalog,
-      onMakePartyPresetPrimary,
-      onMovePartyPresetFolder,
-      onRenamePartyPresetFolder,
-      onReorderPartyPresetFolders,
-      onReorderPartyPresets,
-      onUpdatePartyPreset,
-    ],
-  );
-  const partyPresetAccountKeyRef = useRef({});
-  const partyPresetCatalogResource = useSyncExternalStore(
-    partyPresetCatalogModule.subscribe,
-    partyPresetCatalogModule.getSnapshot,
-    partyPresetCatalogModule.getSnapshot,
-  );
-
-  useLayoutEffect(() => {
-    if (!authenticated) {
-      partyPresetCatalogModule.deactivate();
-      return;
-    }
-    void partyPresetCatalogModule.activate(partyPresetAccountKeyRef.current);
-    return () => partyPresetCatalogModule.deactivate();
-  }, [authenticated, partyPresetCatalogModule]);
-
   const [activeTabId, setActiveTabId] =
     useState<MainRouteId>(DEFAULT_MAIN_TAB_ID);
   const [pendingBattleTarget, setPendingBattleTarget] =
@@ -501,7 +381,7 @@ export function MainScreen({
           onCloseAppSettings: () => setActiveTabId("home"),
           onStatusObserved,
           automationController,
-          partyPresetCatalog: partyPresetCatalogResource,
+          partyPresetCatalog,
           onLogout,
           characterDetailError,
           isCharacterDetailLoading,

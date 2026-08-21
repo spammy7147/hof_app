@@ -3,8 +3,13 @@ import Module from 'node:module';
 import { describe, it } from 'node:test';
 import React from 'react';
 import { act, create } from 'react-test-renderer';
+import {
+  usePartyPresetCatalog,
+  type PartyPresetCatalogApi,
+} from '../../main/features/partyPresets/usePartyPresetCatalog';
 import type { PartyPresetResponse } from '../../main/types/api';
 import { makeHofCharacter } from '../fixtures/api';
+import { makePartyPresetCatalogResource } from '../fixtures/partyPresetCatalog';
 
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => (
   React.createElement(name, { ...props, ref }, props.children as React.ReactNode)
@@ -47,7 +52,75 @@ moduleWithLoader._load = originalLoad;
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+type CatalogHarnessProps = Omit<ReturnType<typeof mainProps>, 'session'> & {
+  session: { loggedIn: boolean } | null;
+  onCreatePartyPresetFolder?: PartyPresetCatalogApi['createPartyPresetFolder'];
+  onRenamePartyPresetFolder?: PartyPresetCatalogApi['renamePartyPresetFolder'];
+  onReorderPartyPresetFolders?: PartyPresetCatalogApi['reorderPartyPresetFolders'];
+  onMovePartyPresetFolder?: PartyPresetCatalogApi['movePartyPresetFolder'];
+  onDeletePartyPresetFolder?: PartyPresetCatalogApi['deletePartyPresetFolder'];
+};
+
+function CatalogMainScreen(props: CatalogHarnessProps) {
+  const api = React.useMemo<PartyPresetCatalogApi>(() => ({
+    getPartyPresetCatalog: props.onGetPartyPresetCatalog,
+    createPartyPreset: props.onCreatePartyPreset,
+    updatePartyPreset: props.onUpdatePartyPreset,
+    makePartyPresetPrimary: props.onMakePartyPresetPrimary,
+    reorderPartyPresets: props.onReorderPartyPresets,
+    deletePartyPreset: props.onDeletePartyPreset,
+    createPartyPresetFolder: props.onCreatePartyPresetFolder
+      ?? (() => Promise.reject(new Error('폴더 만들기를 사용할 수 없습니다.'))),
+    renamePartyPresetFolder: props.onRenamePartyPresetFolder
+      ?? (() => Promise.reject(new Error('폴더 이름 변경을 사용할 수 없습니다.'))),
+    reorderPartyPresetFolders: props.onReorderPartyPresetFolders
+      ?? (() => Promise.reject(new Error('폴더 순서 변경을 사용할 수 없습니다.'))),
+    movePartyPresetFolder: props.onMovePartyPresetFolder
+      ?? (() => Promise.reject(new Error('폴더 이동을 사용할 수 없습니다.'))),
+    deletePartyPresetFolder: props.onDeletePartyPresetFolder
+      ?? (() => Promise.reject(new Error('폴더 삭제를 사용할 수 없습니다.'))),
+  }), [
+    props.onCreatePartyPreset,
+    props.onCreatePartyPresetFolder,
+    props.onDeletePartyPreset,
+    props.onDeletePartyPresetFolder,
+    props.onGetPartyPresetCatalog,
+    props.onMakePartyPresetPrimary,
+    props.onMovePartyPresetFolder,
+    props.onRenamePartyPresetFolder,
+    props.onReorderPartyPresetFolders,
+    props.onReorderPartyPresets,
+    props.onUpdatePartyPreset,
+  ]);
+  const partyPresetCatalog = usePartyPresetCatalog(
+    api,
+    props.session?.loggedIn === true ? props.session : null,
+  );
+  return React.createElement(MainScreen, { ...props, partyPresetCatalog });
+}
+
 describe('MainScreen automation editor chrome', () => {
+  it('consumes one supplied catalog resource without owning backend callbacks', async () => {
+    const resource = makePartyPresetCatalogResource({
+      folders: [],
+      presets: [preset(7, '외부 소유')],
+    });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(MainScreen, mainProps({
+        partyPresetCatalog: resource,
+      })));
+    });
+
+    const home = renderer.root.find((node) => String(node.type) === 'HomeTabScreen');
+    assert.equal(home.props.partyPresetCatalog, resource);
+    await act(async () => {
+      renderer.root.find((node) => String(node.type) === 'BottomTabBar').props.onChangeTab('town');
+    });
+    const town = renderer.root.find((node) => String(node.type) === 'TownTabScreen');
+    assert.equal(town.props.partyPresetCatalog, resource);
+  });
+
   it('hides bottom tabs while a town detail uses the safe-area layout', async () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => { renderer = create(React.createElement(MainScreen, mainProps({}))); });
@@ -92,7 +165,7 @@ describe('MainScreen automation editor chrome', () => {
       onGetPartyPresetCatalog: async () => { loads += 1; return catalog; },
     });
     let renderer!: ReturnType<typeof create>;
-    await act(async () => { renderer = create(React.createElement(MainScreen, props)); });
+    await act(async () => { renderer = create(React.createElement(CatalogMainScreen, props as CatalogHarnessProps)); });
 
     const home = renderer.root.find((node) => String(node.type) === 'HomeTabScreen');
     const homeCatalogResource = home.props.partyPresetCatalog;
@@ -115,7 +188,7 @@ describe('MainScreen automation editor chrome', () => {
       },
     });
     let renderer!: ReturnType<typeof create>;
-    await act(async () => { renderer = create(React.createElement(MainScreen, props)); });
+    await act(async () => { renderer = create(React.createElement(CatalogMainScreen, props as CatalogHarnessProps)); });
     const homeResource = renderer.root.find((node) => String(node.type) === 'HomeTabScreen')
       .props.partyPresetCatalog;
     const manager = await openPartyPresetManager(renderer);
@@ -140,7 +213,7 @@ describe('MainScreen automation editor chrome', () => {
       onCreatePartyPreset: () => mutation.promise,
     });
     let renderer!: ReturnType<typeof create>;
-    await act(async () => { renderer = create(React.createElement(MainScreen, props)); });
+    await act(async () => { renderer = create(React.createElement(CatalogMainScreen, props as CatalogHarnessProps)); });
     const manager = await openPartyPresetManager(renderer);
     let resultPromise!: Promise<PartyPresetResponse>;
     await act(async () => {
@@ -148,12 +221,12 @@ describe('MainScreen automation editor chrome', () => {
         name: 'late', members: [], folderId: null,
       });
     });
-    await act(async () => renderer.update(React.createElement(MainScreen, { ...props, session: null })));
+    await act(async () => renderer.update(React.createElement(CatalogMainScreen, { ...props, session: null } as CatalogHarnessProps)));
     await act(async () => mutation.resolve({ id: 99, accountId: 1, name: 'late', folderId: null, displayOrder: 0, isPrimary: false, members: [], createdAt: '', updatedAt: '' }));
     await resultPromise;
 
     assert.equal(loads, 1);
-    await act(async () => renderer.update(React.createElement(MainScreen, props)));
+    await act(async () => renderer.update(React.createElement(CatalogMainScreen, props as CatalogHarnessProps)));
     assert.equal(loads, 2);
   });
 
@@ -169,7 +242,7 @@ describe('MainScreen automation editor chrome', () => {
       onCreatePartyPresetFolder: async () => { mutations += 1; return authoritative; },
     });
     let renderer!: ReturnType<typeof create>;
-    await act(async () => { renderer = create(React.createElement(MainScreen, props)); });
+    await act(async () => { renderer = create(React.createElement(CatalogMainScreen, props as CatalogHarnessProps)); });
     const manager = await openPartyPresetManager(renderer);
     await act(async () => {
       await manager.props.partyPresetCatalog.actions.createFolder({ name: '전투', parentFolderId: null });
@@ -197,7 +270,7 @@ describe('MainScreen automation editor chrome', () => {
         ...scenario.handlers,
       });
       let renderer!: ReturnType<typeof create>;
-      await act(async () => { renderer = create(React.createElement(MainScreen, props)); });
+      await act(async () => { renderer = create(React.createElement(CatalogMainScreen, props as CatalogHarnessProps)); });
       const manager = await openPartyPresetManager(renderer);
 
       await act(async () => {
@@ -233,7 +306,7 @@ describe('MainScreen automation editor chrome', () => {
       onCreatePartyPreset: async () => { calls.push('create'); return second.promise; },
     });
     let renderer!: ReturnType<typeof create>;
-    await act(async () => { renderer = create(React.createElement(MainScreen, props)); });
+    await act(async () => { renderer = create(React.createElement(CatalogMainScreen, props as CatalogHarnessProps)); });
     const manager = await openPartyPresetManager(renderer);
     let updatePromise!: Promise<PartyPresetResponse>;
     let createPromise!: Promise<PartyPresetResponse>;
@@ -262,7 +335,7 @@ describe('MainScreen automation editor chrome', () => {
       onCreatePartyPreset: async () => { creates += 1; return preset(2, '신규'); },
     });
     let renderer!: ReturnType<typeof create>;
-    await act(async () => { renderer = create(React.createElement(MainScreen, props)); });
+    await act(async () => { renderer = create(React.createElement(CatalogMainScreen, props as CatalogHarnessProps)); });
     const manager = await openPartyPresetManager(renderer);
     let firstPromise!: Promise<PartyPresetResponse>;
     let queuedPromise!: Promise<PartyPresetResponse>;
@@ -270,7 +343,7 @@ describe('MainScreen automation editor chrome', () => {
       firstPromise = manager.props.partyPresetCatalog.actions.updatePreset(1, { name: '수정', members: [], folderId: null });
       queuedPromise = manager.props.partyPresetCatalog.actions.createPreset({ name: '신규', members: [], folderId: null });
       await Promise.resolve();
-      renderer.update(React.createElement(MainScreen, { ...props, session: null }));
+      renderer.update(React.createElement(CatalogMainScreen, { ...props, session: null } as CatalogHarnessProps));
     });
     await act(async () => { first.resolve(preset(1, '수정')); await firstPromise; });
 
@@ -288,7 +361,7 @@ describe('MainScreen automation editor chrome', () => {
       onCreatePartyPreset: async () => { creates += 1; return preset(2, '신규'); },
     });
     let renderer!: ReturnType<typeof create>;
-    await act(async () => { renderer = create(React.createElement(MainScreen, props)); });
+    await act(async () => { renderer = create(React.createElement(CatalogMainScreen, props as CatalogHarnessProps)); });
     const manager = await openPartyPresetManager(renderer);
     let firstPromise!: Promise<PartyPresetResponse>;
     let queuedPromise!: Promise<PartyPresetResponse>;
@@ -411,6 +484,7 @@ function mainProps(overrides: Record<string, unknown> = {}) {
       onLoadBattleStats: async () => ({}) as never,
       onOpenCaptcha: () => undefined,
       automationController: {} as never,
+      partyPresetCatalog: makePartyPresetCatalogResource({ folders: [], presets: [] }),
       onGetPartyPresetCatalog: async () => ({ folders: [], presets: [] }),
       onCreatePartyPreset: async () => ({}) as never,
       onUpdatePartyPreset: async () => ({}) as never,
