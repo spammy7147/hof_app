@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   formatCharacterSyncProgress,
   shouldCloseCharacterSyncSubscription,
-  upsertCharacterFromSyncEvent,
 } from '../../domain/characterSyncJobs';
 import type { BackendApiClient } from '../../services/backendApi';
 import type { SseSubscription } from '../../services/sseClient';
@@ -90,7 +89,13 @@ export function useCharacterSync({
       ? `전체 상세 동기화 ${formatCharacterSyncProgress(event)}`
       : '전체 상세 동기화 준비 중');
     if (event.character) observations.observeCharacter(event.character);
-    setCharacterSyncJob((current) => current ? { ...current, status: event.eventType === 'stopped' ? 'stopped' : current.status, rosterCount: event.rosterCount, syncedCount: event.syncedCount, message: event.message, characters: event.character ? upsertCharacterFromSyncEvent(current.characters, event) : current.characters } : current);
+    setCharacterSyncJob((current) => current ? {
+      ...current,
+      status: event.eventType === 'stopped' ? 'stopped' : current.status,
+      rosterCount: event.rosterCount,
+      syncedCount: event.syncedCount,
+      message: event.message,
+    } : current);
 
     if (!shouldCloseCharacterSyncSubscription(event)) return;
 

@@ -144,7 +144,7 @@ describe('useCharacterSync roster observation', () => {
     await act(async () => { requireHandlers(handlers).onEvent(syncEvent(observed)); });
 
     assert.equal(observations.characters[0], observed);
-    assert.equal(sync.characterSyncJob?.characters[0], observed);
+    assert.deepEqual(sync.characterSyncJob?.characters, []);
     await act(async () => { renderer.unmount(); });
   });
 

@@ -1,27 +1,4 @@
-import type { CharacterSyncEventResponse, HofCharacter } from '../types/api';
-import { sortCharactersByRosterOrder } from './characters';
-
-/**
- * SSE로 도착한 캐릭터 1명 동기화 이벤트를 현재 캐릭터 목록에 반영한다.
- *
- * @remarks
- * 같은 안정 캐릭터 ID가 이미 있으면 그 자리를 교체하고, 목록은 HOF roster 원본 순서로 유지한다.
- */
-export function upsertCharacterFromSyncEvent(
-  characters: HofCharacter[],
-  event: CharacterSyncEventResponse,
-): HofCharacter[] {
-  if (!event.character) return characters;
-
-  const existingIndex = characters.findIndex(
-    (character) => character.id === event.character?.id,
-  );
-  const merged = existingIndex < 0
-    ? [...characters, event.character]
-    : characters.map((character, index) => index === existingIndex ? event.character! : character);
-
-  return sortCharactersByRosterOrder(merged);
-}
+import type { CharacterSyncEventResponse } from '../types/api';
 
 /**
  * SSE 연결을 닫아도 되는 terminal 이벤트인지 판단한다.

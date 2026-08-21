@@ -191,6 +191,10 @@ describe('character management hub module', () => {
 
   it('keeps a newer character observation when an older roster request completes later', () => {
     const original = makeHofCharacter(1, { revision: '2026-08-21T00:00:00Z' });
+    const observedOnly = makeHofCharacter(2, {
+      name: 'SSE로 새로 발견',
+      revision: '2026-08-21T00:01:00Z',
+    });
     const observed = makeHofCharacter(1, {
       name: 'SSE 최신 이름',
       revision: '2026-08-21T00:02:00Z',
@@ -202,9 +206,11 @@ describe('character management hub module', () => {
     const publishList = observations.beginRosterObservation();
 
     assert.equal(observations.observeCharacter(observed), true);
-    assert.equal(publishList([original]), false);
+    assert.equal(observations.observeCharacter(observedOnly), true);
+    assert.equal(publishList([original]), true);
 
     assert.equal(hub.getSnapshot().characters[0]?.name, 'SSE 최신 이름');
+    assert.equal(hub.getSnapshot().characters[1]?.name, 'SSE로 새로 발견');
   });
 
   it('rejects roster and character observations retained from a previous account', () => {

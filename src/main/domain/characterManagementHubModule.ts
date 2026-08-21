@@ -187,6 +187,7 @@ export class CharacterManagementHubModule {
   private requestGeneration = 0;
   private rosterAuthorityGeneration = 0;
   private rosterProjectionGeneration = 0;
+  private rosterProjectionGenerationById = new Map<number, number>();
   private rosterObservationRequest = 0;
   private pendingPatternChange: CharacterPatternChange | null = null;
   private roster = new Map<number, HofCharacter>();
@@ -226,6 +227,7 @@ export class CharacterManagementHubModule {
     this.rosterObservationRequest += 1;
     this.pendingPatternChange = null;
     this.roster = new Map();
+    this.rosterProjectionGenerationById.clear();
     this.replace(emptyResource(
       this.actionsFor(
         this.generation,
@@ -246,6 +248,7 @@ export class CharacterManagementHubModule {
     this.rosterObservationRequest += 1;
     this.pendingPatternChange = null;
     this.roster = new Map();
+    this.rosterProjectionGenerationById.clear();
     this.replace(emptyResource(
       this.actionsFor(
         this.generation,
@@ -259,6 +262,7 @@ export class CharacterManagementHubModule {
     this.rosterAuthorityGeneration += 1;
     this.rosterProjectionGeneration += 1;
     this.rosterObservationRequest += 1;
+    this.rosterProjectionGenerationById.clear();
     this.applyRoster(characters);
   }
 
@@ -272,12 +276,16 @@ export class CharacterManagementHubModule {
           if (
             !this.isObservationAccount(accountKey) ||
             request !== this.rosterObservationRequest ||
-            authorityGeneration !== this.rosterAuthorityGeneration ||
-            projectionGeneration !== this.rosterProjectionGeneration
+            authorityGeneration !== this.rosterAuthorityGeneration
           ) return false;
           this.applyRoster(mergeFresherCharacterProjections(
             [...this.roster.values()],
             characters,
+            new Set(
+              [...this.rosterProjectionGenerationById]
+                .filter(([, generation]) => generation > projectionGeneration)
+                .map(([characterId]) => characterId),
+            ),
           ));
           return true;
         };
@@ -296,14 +304,26 @@ export class CharacterManagementHubModule {
 
   private projectCharacter(character: HofCharacter): void {
     this.rosterProjectionGeneration += 1;
-    this.applyRoster(upsertFresherCharacterProjection(
-      [...this.roster.values()],
+    const current = [...this.roster.values()];
+    const projected = upsertFresherCharacterProjection(
+      current,
       character,
-    ));
+    );
+    if (projected !== current) {
+      this.rosterProjectionGenerationById.set(
+        character.id,
+        this.rosterProjectionGeneration,
+      );
+    }
+    this.applyRoster(projected);
   }
 
   private projectAuthoritativeCharacter(character: HofCharacter): void {
     this.rosterProjectionGeneration += 1;
+    this.rosterProjectionGenerationById.set(
+      character.id,
+      this.rosterProjectionGeneration,
+    );
     const current = [...this.roster.values()];
     this.applyRoster(this.roster.has(character.id)
       ? current.map((item) => item.id === character.id ? character : item)
@@ -312,6 +332,11 @@ export class CharacterManagementHubModule {
 
   private applyRoster(characters: HofCharacter[]): void {
     const roster = new Map(characters.map((character) => [character.id, character]));
+    for (const characterId of this.rosterProjectionGenerationById.keys()) {
+      if (!roster.has(characterId)) {
+        this.rosterProjectionGenerationById.delete(characterId);
+      }
+    }
     const selected = this.resource.selectedCharacter;
     const transferSource = this.resource.transfer.sourceCharacter;
     let transfer = this.resource.transfer;
@@ -1410,12 +1435,19 @@ function isActive(character: HofCharacter): boolean {
 function mergeFresherCharacterProjections(
   current: HofCharacter[],
   incoming: HofCharacter[],
+  preserveCurrentIds: ReadonlySet<number>,
 ): HofCharacter[] {
   const currentById = new Map(current.map((character) => [character.id, character]));
-  return incoming.map((observed) => {
+  const incomingIds = new Set(incoming.map((character) => character.id));
+  const merged = incoming.map((observed) => {
     const existing = currentById.get(observed.id);
     return existing && isFresherCharacter(existing, observed) ? existing : observed;
   });
+  return [
+    ...merged,
+    ...current.filter((character) =>
+      !incomingIds.has(character.id) && preserveCurrentIds.has(character.id)),
+  ];
 }
 
 function upsertFresherCharacterProjection(
