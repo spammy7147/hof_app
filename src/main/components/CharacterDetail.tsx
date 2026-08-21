@@ -20,6 +20,7 @@ type CharacterDetailProps = {
   detail: HofCharacterDetail | null;
   isLoading: boolean;
   errorMessage: string | null;
+  warningMessage?: string | null;
   onCommand?: (
     command: CharacterCommand,
   ) => Promise<CharacterCommandResult | void>;
@@ -62,6 +63,7 @@ export function CharacterDetail({
   detail,
   isLoading,
   errorMessage,
+  warningMessage,
   onCommand,
   onApplyPattern,
   onLoadSavedPattern,
@@ -91,23 +93,30 @@ export function CharacterDetail({
     );
   if (!detail) return null;
   return (
-    <CharacterSettingsNavigator
-      character={character}
-      detail={detail}
-      characters={characters}
-      initialTransferSourceId={initialTransferSourceId}
-      onDeepSync={onDeepSync}
-      onBeginPatternEdit={onBeginPatternEdit}
-      onLinkCharacter={onLinkCharacter}
-      onBack={onBack}
-      onCommand={onCommand}
-      onApplyPattern={onApplyPattern}
-      onLoadSavedPattern={onLoadSavedPattern}
-      onDeleteSavedPattern={onDeleteSavedPattern}
-      onRefresh={onRefresh}
-      onPreviewTransfer={onPreviewTransfer}
-      onExecuteTransfer={onExecuteTransfer}
-    />
+    <View>
+      {warningMessage ? (
+        <Text accessibilityRole="alert" style={styles.warning}>
+          {warningMessage}
+        </Text>
+      ) : null}
+      <CharacterSettingsNavigator
+        character={character}
+        detail={detail}
+        characters={characters}
+        initialTransferSourceId={initialTransferSourceId}
+        onDeepSync={onDeepSync}
+        onBeginPatternEdit={onBeginPatternEdit}
+        onLinkCharacter={onLinkCharacter}
+        onBack={onBack}
+        onCommand={onCommand}
+        onApplyPattern={onApplyPattern}
+        onLoadSavedPattern={onLoadSavedPattern}
+        onDeleteSavedPattern={onDeleteSavedPattern}
+        onRefresh={onRefresh}
+        onPreviewTransfer={onPreviewTransfer}
+        onExecuteTransfer={onExecuteTransfer}
+      />
+    </View>
   );
 }
 
@@ -152,4 +161,11 @@ const styles = StyleSheet.create({
   },
   muted: { color: theme.colors.textMuted },
   error: { color: theme.colors.danger, padding: 16, lineHeight: 21 },
+  warning: {
+    color: theme.colors.accentAmber,
+    backgroundColor: theme.colors.surfaceAlt,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    lineHeight: 20,
+  },
 });

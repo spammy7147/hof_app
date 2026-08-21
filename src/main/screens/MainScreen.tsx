@@ -1,7 +1,6 @@
 import type { ElementRef, ReactNode } from "react";
 import {
   useCallback,
-  useEffect,
   useRef,
   useState,
 } from "react";
@@ -21,8 +20,8 @@ import {
   MainRouteId,
 } from "../domain/mainTabs";
 import type { PartyPresetCatalogResource } from "../domain/partyPresetCatalogModule";
+import type { CharacterManagementHubResource } from "../domain/characterManagementHubModule";
 import type { UnifiedAutomationController } from "../domain/unifiedAutomationController";
-import { toUserFacingErrorMessage } from "../domain/userFacingErrors";
 import { theme } from "../styles/theme";
 import type {
   BattleCategoryResponse,
@@ -54,8 +53,7 @@ import { HomeTabScreen } from "./HomeTabScreen";
 import { SettingsTabScreen } from "./SettingsTabScreen";
 import { TownTabScrollContainer } from "./TownTabScrollContainer";
 import type { TownApi } from "../features/town/api/townApi";
-
-const CHARACTER_DETAIL_STALE_MS = 30 * 60 * 1000;
+import { useCharacterManagementHub } from "../features/characters/useCharacterManagementHub";
 
 type MainSession = {
   loggedIn: boolean;
@@ -188,18 +186,18 @@ export function MainScreen({
   );
   const [characterSubTabId, setCharacterSubTabId] =
     useState<CharacterSubTabId>("characters");
-  const [selectedCharacter, setSelectedCharacter] =
-    useState<HofCharacter | null>(null);
-  const [selectedCharacterDetail, setSelectedCharacterDetail] =
-    useState<HofCharacterDetail | null>(null);
   const [transferSourceCharacterId, setTransferSourceCharacterId] = useState<
     number | null
   >(null);
-  const [isCharacterDetailLoading, setIsCharacterDetailLoading] =
-    useState(false);
-  const [characterDetailError, setCharacterDetailError] = useState<
-    string | null
-  >(null);
+  const characterHub = useCharacterManagementHub(
+    {
+      loadStoredDetail: onLoadCharacterDetail,
+      refreshAuthoritativeDetail: onRefreshCharacterDetail,
+    },
+    session?.loggedIn === true ? session : null,
+    characters,
+  );
+  const selectedCharacter = characterHub.selectedCharacter;
   const [automationEditorOpen, setAutomationEditorOpen] = useState(false);
   const [dataLogOpen, setDataLogOpen] = useState(false);
   const [townDetailOpen, setTownDetailOpen] = useState(false);
@@ -213,90 +211,12 @@ export function MainScreen({
     !townDetailFullScreen &&
     !isCharacterDetailOpen;
 
-  /**
-   * SSE 동기화로 characters 배열이 갱신되면 현재 선택된 캐릭터 객체도 최신 값으로 교체한다.
-   *
-   * 같은 hofCharacterId를 더 이상 찾지 못하면 동기화 중 사라진 캐릭터로 보고 상세 화면을 닫는다.
-   */
-  useEffect(() => {
-    if (!selectedCharacter) return;
-    const refreshedCharacter = characters.find(
-      (character) => character.id === selectedCharacter.id,
-    );
-    setSelectedCharacter(
-      refreshedCharacter &&
-        (refreshedCharacter.lifecycle ?? "ACTIVE") === "ACTIVE"
-        ? refreshedCharacter
-        : null,
-    );
-  }, [characters, selectedCharacter?.id]);
-
-  /**
-   * 캐릭터 상세 화면에서 선택 캐릭터의 상세 정보를 불러온다.
-   *
-   * 사용자가 빠르게 다른 캐릭터로 이동해도 이전 요청 결과가 늦게 도착해 화면을 덮어쓰지 않도록 cancelled 플래그를 사용한다.
-   */
-  useEffect(() => {
-    if (!selectedCharacter || !session?.loggedIn) {
-      setSelectedCharacterDetail(null);
-      setIsCharacterDetailLoading(false);
-      setCharacterDetailError(null);
-      return;
-    }
-
-    let cancelled = false;
-    setSelectedCharacterDetail(null);
-    setIsCharacterDetailLoading(true);
-    setCharacterDetailError(null);
-
-    onLoadCharacterDetail(selectedCharacter.id)
-      .then((character) => {
-        if (!cancelled) {
-          setSelectedCharacterDetail(character);
-          const syncedAt = character.detailSyncedAt
-            ? new Date(character.detailSyncedAt).getTime()
-            : 0;
-          if (
-            onRefreshCharacterDetail &&
-            Date.now() - syncedAt >= CHARACTER_DETAIL_STALE_MS
-          ) {
-            void onRefreshCharacterDetail(character.id)
-              .then((refreshed) => {
-                if (!cancelled) setSelectedCharacterDetail(refreshed);
-              })
-              .catch(() => undefined);
-          }
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setCharacterDetailError(toUserFacingErrorMessage(error));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsCharacterDetailLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    onLoadCharacterDetail,
-    onRefreshCharacterDetail,
-    selectedCharacter?.id,
-    session?.loggedIn,
-  ]);
-
   async function handleTypedCharacterCommand(
     command: CharacterCommand,
   ): Promise<CharacterCommandResult | void> {
     if (!selectedCharacter || !onExecuteCharacterCommand) return undefined;
     const result = await onExecuteCharacterCommand(command);
-    setSelectedCharacterDetail(
-      await onLoadCharacterDetail(selectedCharacter.id),
-    );
+    await characterHub.actions.reloadStored();
     return result;
   }
 
@@ -308,16 +228,14 @@ export function MainScreen({
     const conflicted =
       result.currentRevision != null || (result.rowDiffs?.length ?? 0) > 0;
     if (!conflicted) {
-      setSelectedCharacterDetail(
-        await onLoadCharacterDetail(selectedCharacter.id),
-      );
+      await characterHub.actions.reloadStored();
     }
     return result;
   }
   async function handleLoadSavedPattern(characterId: number, slotCode: string) {
     if (!onLoadSavedCharacterPattern) return {};
     const result = await onLoadSavedCharacterPattern(characterId, slotCode);
-    setSelectedCharacterDetail(await onLoadCharacterDetail(characterId));
+    await characterHub.actions.reloadStored();
     return result;
   }
   async function handleDeleteSavedPattern(
@@ -326,16 +244,12 @@ export function MainScreen({
   ) {
     if (!onDeleteSavedCharacterPattern) return {};
     const result = await onDeleteSavedCharacterPattern(characterId, slotCode);
-    setSelectedCharacterDetail(await onLoadCharacterDetail(characterId));
+    await characterHub.actions.reloadStored();
     return result;
   }
 
   async function handleCharacterRefresh(): Promise<void> {
-    if (!selectedCharacter) return;
-    const refreshed = onRefreshCharacterDetail
-      ? await onRefreshCharacterDetail(selectedCharacter.id)
-      : await onLoadCharacterDetail(selectedCharacter.id);
-    setSelectedCharacterDetail(refreshed);
+    await characterHub.actions.refresh();
   }
 
   return (
@@ -382,25 +296,23 @@ export function MainScreen({
           onStatusObserved,
           automationController,
           partyPresetCatalog,
+          characterHub,
           onLogout,
-          characterDetailError,
-          isCharacterDetailLoading,
-          selectedCharacter,
-          selectedCharacterDetail,
           characterSubTabId,
           setCharacterSubTabId,
           setSelectedCharacter: (character) => {
             setTransferSourceCharacterId(null);
-            setSelectedCharacter(character);
+            if (character) void characterHub.actions.select(character);
+            else characterHub.actions.close();
           },
           transferSourceCharacterId,
           onCopyCharacterSettings: (source, target) => {
             setTransferSourceCharacterId(source.id);
-            setSelectedCharacter(target);
+            void characterHub.actions.select(target);
           },
           closeCharacterDetail: () => {
             setTransferSourceCharacterId(null);
-            setSelectedCharacter(null);
+            characterHub.actions.close();
           },
           onExecuteCharacterCommand: handleTypedCharacterCommand,
           onApplyCharacterPattern: handleTypedPattern,
@@ -464,11 +376,8 @@ type RenderActiveTabArgs = {
   onStatusObserved?: (status: HofObservedStatusResponse) => void;
   automationController: UnifiedAutomationController;
   partyPresetCatalog: PartyPresetCatalogResource;
+  characterHub: CharacterManagementHubResource;
   onLogout: () => void;
-  characterDetailError: string | null;
-  isCharacterDetailLoading: boolean;
-  selectedCharacter: HofCharacter | null;
-  selectedCharacterDetail: HofCharacterDetail | null;
   characterSubTabId: CharacterSubTabId;
   setCharacterSubTabId: (tabId: CharacterSubTabId) => void;
   setSelectedCharacter: (character: HofCharacter | null) => void;
@@ -549,11 +458,8 @@ function renderActiveTab({
   onStatusObserved,
   automationController,
   partyPresetCatalog,
+  characterHub,
   onLogout,
-  characterDetailError,
-  isCharacterDetailLoading,
-  selectedCharacter,
-  selectedCharacterDetail,
   characterSubTabId,
   setCharacterSubTabId,
   setSelectedCharacter,
@@ -581,6 +487,7 @@ function renderActiveTab({
   consumePendingBattleTarget,
   onDataLogModeChange,
 }: RenderActiveTabArgs) {
+  const selectedCharacter = characterHub.selectedCharacter;
   switch (activeTabId) {
     case "home":
       return (
@@ -624,9 +531,10 @@ function renderActiveTab({
           <CharacterDetailScroll>
             <CharacterDetail
               character={selectedCharacter}
-              detail={selectedCharacterDetail}
-              isLoading={isCharacterDetailLoading}
-              errorMessage={characterDetailError}
+              detail={characterHub.detail}
+              isLoading={characterHub.isLoading}
+              errorMessage={characterHub.errorMessage}
+              warningMessage={characterHub.warningMessage}
               onCommand={onExecuteCharacterCommand}
               onApplyPattern={onApplyCharacterPattern}
               onLoadSavedPattern={onLoadSavedCharacterPattern}

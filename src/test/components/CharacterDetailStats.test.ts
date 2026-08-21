@@ -61,6 +61,23 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('CharacterDetail stat allocation', () => {
+  it('keeps the detail navigator and back action visible with a revalidation warning', async () => {
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(CharacterDetail, {
+        character: makeHofCharacter(),
+        detail: makeHofCharacterDetail(),
+        isLoading: false,
+        errorMessage: null,
+        warningMessage: '최신 상태를 다시 확인하지 못했습니다.',
+      }));
+    });
+
+    assert.ok(renderer.root.findByProps({ accessibilityRole: 'alert' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '캐릭터 목록으로' }));
+    assert.ok(renderer.root.findByProps({ accessibilityRole: 'tablist' }));
+  });
+
   it('keeps remaining skill points with the content and filters the compact skill list by category', async () => {
     const detail = makeHofCharacterDetail(1, {
       stats: { ...makeHofCharacterDetail().stats, skillPoints: 12 },
