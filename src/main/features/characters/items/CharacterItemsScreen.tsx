@@ -9,6 +9,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import type { HofCharacterDetail } from "../../../types/api";
 import { theme } from "../../../styles/theme";
 import type { CharacterManagementHubResource } from "../../../domain/characterManagementHubModule";
 
@@ -28,7 +29,7 @@ export function CharacterItemsScreen({
     value: string;
     name: string;
     before: number | null;
-    revision: string;
+    observation: HofCharacterDetail["equipmentCandidates"];
   } | null>(null);
   const [outcome, setOutcome] = useState<string | null>(null);
   const allItems = useMemo(
@@ -51,7 +52,7 @@ export function CharacterItemsScreen({
   );
   const chosen = items.find((item) => item.value === selected);
   useEffect(() => {
-    if (!lastUse || detail.revision === lastUse.revision) return;
+    if (!lastUse || detail.equipmentCandidates === lastUse.observation) return;
     const after = allItems.find((item) => item.value === lastUse.value)?.quantity ?? 0;
     setOutcome(
       lastUse.before == null
@@ -60,7 +61,7 @@ export function CharacterItemsScreen({
     );
     setLastUse(null);
     setSelected(null);
-  }, [allItems, detail.revision, lastUse]);
+  }, [allItems, detail.equipmentCandidates, lastUse]);
   return (
     <View style={styles.screen}>
       <View style={styles.head}>
@@ -158,7 +159,7 @@ export function CharacterItemsScreen({
                       value: chosen.value,
                       name: chosen.name,
                       before: chosen.quantity ?? null,
-                      revision: detail.revision,
+                      observation: detail.equipmentCandidates,
                     });
                     void useItem?.(chosen.value);
                   },

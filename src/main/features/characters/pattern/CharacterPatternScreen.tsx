@@ -49,7 +49,7 @@ export function CharacterPatternScreen({
         quantity: row.quantity,
         skill: row.skill,
       })),
-    [detail],
+    [detail.actionPatterns],
   );
   const [rows, setRows] = useState(initial);
   const [selected, setSelected] = useState(0);
@@ -87,7 +87,7 @@ export function CharacterPatternScreen({
     setAlsoSave(false);
     setAutomationPauseNotice(false);
     pauseRequested.current = false;
-  }, [detail.revision]);
+  }, [detail.positionGuard, initial]);
   const beginEdit = () => {
     if (pauseRequested.current) return;
     pauseRequested.current = true;

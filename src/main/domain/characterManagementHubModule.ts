@@ -64,9 +64,6 @@ export type CharacterManagementHubActions = {
   reloadStored: () => Promise<void>;
   refresh: () => Promise<void>;
   dismissPatternConflict: () => void;
-  executeCommand?: (
-    command: CharacterCommand,
-  ) => Promise<CharacterCommandResult | void>;
   rename?: (newName: string) => Promise<void>;
   kick?: (confirmationName: string) => Promise<void>;
   knockback?: (confirmationName: string) => Promise<void>;
@@ -83,9 +80,6 @@ export type CharacterManagementHubActions = {
   removeEquipment?: (equipmentPart: string) => Promise<void>;
   saveEquipmentPreset?: (slotNumber: 1 | 2) => Promise<void>;
   loadEquipmentPreset?: (slotNumber: 1 | 2) => Promise<void>;
-  applyPattern?: (
-    request: CharacterPatternApplyRequest,
-  ) => Promise<CharacterPatternOperationResult>;
   savePattern?: (change: CharacterPatternChange) => Promise<void>;
   resolvePatternConflict?: () => Promise<void>;
   loadSavedPattern?: (slotCode: string) => Promise<CharacterPatternOperationResult>;
@@ -546,8 +540,6 @@ export class CharacterManagementHubModule {
         this.clearTransfer(generation, selectionGeneration, transferGeneration),
     };
     if (this.backend.executeCommand) {
-      actions.executeCommand = (command) =>
-        this.executeCommand(command, generation, selectionGeneration);
       actions.rename = (newName) => this.executeCommandIntent(
         { type: 'RENAME', newName },
         generation,
@@ -620,8 +612,6 @@ export class CharacterManagementHubModule {
       );
     }
     if (this.backend.applyPattern) {
-      actions.applyPattern = (request) =>
-        this.applyPattern(request, generation, selectionGeneration);
       actions.savePattern = (change) =>
         this.savePattern(change, generation, selectionGeneration);
       actions.resolvePatternConflict = () =>

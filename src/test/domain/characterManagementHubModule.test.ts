@@ -313,9 +313,6 @@ describe('character management hub module', () => {
 
   it('executes a semantic command and reloads the selected authoritative projection', async () => {
     let stored = freshDetail(1);
-    const commandResult: CharacterCommandResult = {
-      type: 'Completed', characterId: 1, revision: 'revision-2', messages: [],
-    };
     const hub = new CharacterManagementHubModule(backend({
       loadStoredDetail: async () => stored,
       executeCommand: async () => {
@@ -324,7 +321,9 @@ describe('character management hub module', () => {
           revision: 'revision-2',
           detailSyncedAt: new Date().toISOString(),
         });
-        return commandResult;
+        return {
+          type: 'Completed', characterId: 1, revision: 'revision-2', messages: [],
+        };
       },
     }));
     const character = makeHofCharacter(1);
@@ -332,11 +331,8 @@ describe('character management hub module', () => {
     hub.observeRoster([character]);
     await hub.getSnapshot().actions.select(character);
 
-    const result = await hub.getSnapshot().actions.executeCommand?.({
-      type: 'PRAY', characterId: 1, expectedRevision: character.revision,
-    });
+    await hub.getSnapshot().actions.pray?.();
 
-    assert.equal(result, commandResult);
     assert.equal(hub.getSnapshot().detail?.name, '명령 반영');
   });
 
@@ -422,9 +418,7 @@ describe('character management hub module', () => {
     hub.activate('account-1');
     hub.observeRoster([first, second]);
     await hub.getSnapshot().actions.select(first);
-    const pending = hub.getSnapshot().actions.executeCommand?.({
-      type: 'PRAY', characterId: 1, expectedRevision: first.revision,
-    });
+    const pending = hub.getSnapshot().actions.pray?.();
     await hub.getSnapshot().actions.select(second);
     const loadsBeforeResult = [...loads];
 
@@ -625,9 +619,7 @@ describe('character management hub module', () => {
     await hub.getSnapshot().actions.select(character);
     publishedDetails.length = 0;
 
-    await hub.getSnapshot().actions.executeCommand?.({
-      type: 'PRAY', characterId: 1, expectedRevision: character.revision,
-    });
+    await hub.getSnapshot().actions.pray?.();
 
     assert.deepEqual(publishedRoster, [[updated]]);
     assert.equal(publishedDetails.at(-1)?.revision, 'revision-2');
@@ -650,9 +642,7 @@ describe('character management hub module', () => {
     hub.observeRoster([first, second]);
     await hub.getSnapshot().actions.select(first);
     publishedDetails.length = 0;
-    const pending = hub.getSnapshot().actions.executeCommand?.({
-      type: 'PRAY', characterId: 1, expectedRevision: first.revision,
-    });
+    const pending = hub.getSnapshot().actions.pray?.();
     await hub.getSnapshot().actions.select(second);
     publishedDetails.length = 0;
 
