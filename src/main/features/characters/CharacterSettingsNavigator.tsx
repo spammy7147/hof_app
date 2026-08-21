@@ -3,17 +3,12 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ArrowLeft, RefreshCw } from "lucide-react-native";
 
 import type {
-  CharacterCommand,
-  CharacterCommandResult,
-  CharacterDeepSyncResponse,
-  CharacterPatternApplyRequest,
-  CharacterPatternOperationResult,
   CharacterTransferExecutionResult,
   CharacterTransferPreview,
   CharacterTransferPreviewRequest,
   HofCharacter,
-  HofCharacterDetail,
 } from "../../types/api";
+import type { CharacterManagementHubResource } from "../../domain/characterManagementHubModule";
 import { theme } from "../../styles/theme";
 import { CharacterStatusScreen } from "./status/CharacterStatusScreen";
 import { CharacterPatternScreen } from "./pattern/CharacterPatternScreen";
@@ -32,24 +27,8 @@ const tabs: Array<[Tab, string]> = [
 ];
 
 export type CharacterSettingsNavigatorProps = {
-  character: HofCharacter;
-  detail: HofCharacterDetail;
+  characterHub: CharacterManagementHubResource;
   onBack?: () => void;
-  onRefresh?: () => Promise<void>;
-  onCommand?: (
-    command: CharacterCommand,
-  ) => Promise<CharacterCommandResult | void>;
-  onApplyPattern?: (
-    request: CharacterPatternApplyRequest,
-  ) => Promise<CharacterPatternOperationResult>;
-  onLoadSavedPattern?: (
-    characterId: number,
-    slotCode: string,
-  ) => Promise<CharacterPatternOperationResult>;
-  onDeleteSavedPattern?: (
-    characterId: number,
-    slotCode: string,
-  ) => Promise<CharacterPatternOperationResult>;
   characters?: HofCharacter[];
   onPreviewTransfer?: (
     request: CharacterTransferPreviewRequest,
@@ -59,15 +38,6 @@ export type CharacterSettingsNavigatorProps = {
     onProgress?: (progress: CharacterTransferExecutionResult) => void,
   ) => Promise<CharacterTransferExecutionResult>;
   initialTransferSourceId?: number | null;
-  onDeepSync?: (
-    characterId: number,
-    onProgress?: (progress: CharacterDeepSyncResponse) => void,
-  ) => Promise<CharacterDeepSyncResponse>;
-  onBeginPatternEdit?: () => Promise<void>;
-  onLinkCharacter?: (
-    characterId: number,
-    newHofCharacterId: string,
-  ) => Promise<void>;
 };
 
 export function CharacterSettingsNavigator(
@@ -78,7 +48,8 @@ export function CharacterSettingsNavigator(
   );
   const [statusHelpOpen, setStatusHelpOpen] = useState(false);
   const [patternTransferOpen, setPatternTransferOpen] = useState(false);
-  const common = { detail: props.detail, onCommand: props.onCommand };
+  const detail = props.characterHub.detail;
+  if (!detail) return null;
   return (
     <View style={styles.root}>
       <View style={styles.top}>
@@ -93,7 +64,7 @@ export function CharacterSettingsNavigator(
         <Text style={styles.title}>캐릭터 설정</Text>
         <Pressable
           accessibilityRole="button"
-          onPress={() => void props.onRefresh?.()}
+          onPress={() => void props.characterHub.actions.refresh()}
           accessibilityLabel="캐릭터 동기화"
           style={styles.iconButton}
         >
@@ -117,7 +88,7 @@ export function CharacterSettingsNavigator(
       </View>
       {tab === "status" && (
         <CharacterStatusScreen
-          {...common}
+          characterHub={props.characterHub}
           helpOpen={statusHelpOpen}
           onCloseHelp={() => setStatusHelpOpen(false)}
           onOpenHelp={() => setStatusHelpOpen(true)}
@@ -125,7 +96,7 @@ export function CharacterSettingsNavigator(
       )}
       {tab === "pattern" && patternTransferOpen && props.onPreviewTransfer && props.onExecuteTransfer ? (
         <CharacterSettingsTransferScreen
-          target={props.detail}
+          target={detail}
           characters={props.characters ?? []}
           onBack={() => setPatternTransferOpen(false)}
           onPreview={props.onPreviewTransfer}
@@ -133,11 +104,7 @@ export function CharacterSettingsNavigator(
         />
       ) : tab === "pattern" && (
         <CharacterPatternScreen
-          detail={props.detail}
-          onBeginEdit={props.onBeginPatternEdit}
-          onApply={props.onApplyPattern}
-          onLoadSaved={props.onLoadSavedPattern}
-          onDeleteSaved={props.onDeleteSavedPattern}
+          characterHub={props.characterHub}
           onImportSettings={
             props.onPreviewTransfer && props.onExecuteTransfer
               ? () => setPatternTransferOpen(true)
@@ -145,15 +112,17 @@ export function CharacterSettingsNavigator(
           }
         />
       )}
-      {tab === "equipment" && <CharacterEquipmentScreen {...common} />}
-      {tab === "skills" && <CharacterSkillsScreen {...common} />}
+      {tab === "equipment" && (
+        <CharacterEquipmentScreen characterHub={props.characterHub} />
+      )}
+      {tab === "skills" && (
+        <CharacterSkillsScreen characterHub={props.characterHub} />
+      )}
       {tab === "management" && (
         <CharacterManagementScreen
-          {...common}
+          characterHub={props.characterHub}
           characters={props.characters ?? []}
           initialTransferSourceId={props.initialTransferSourceId}
-          onDeepSync={props.onDeepSync}
-          onLinkCharacter={props.onLinkCharacter}
           onPreviewTransfer={props.onPreviewTransfer}
           onExecuteTransfer={props.onExecuteTransfer}
         />

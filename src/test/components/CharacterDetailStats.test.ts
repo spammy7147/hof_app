@@ -6,6 +6,7 @@ import { describe, it } from 'node:test';
 import React from 'react';
 import { act, create } from 'react-test-renderer';
 import { makeHofCharacter, makeHofCharacterDetail } from '../fixtures/api';
+import { makeCharacterManagementHubResource } from '../fixtures/characterManagementHub';
 import type { CharacterCommand, CharacterPatternApplyRequest } from '../../main/types/api';
 
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => (
@@ -61,6 +62,44 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('CharacterDetail stat allocation', () => {
+  it('renders pattern conflict and management progress from one hub resource', async () => {
+    const character = makeHofCharacter();
+    const detail = makeHofCharacterDetail(1, {
+      actionPatterns: [{ index: 0, judge: 'always', judgeText: '항상', quantity: '0', quantityText: '', skill: 'attack', skillText: 'Attack' }],
+    });
+    const characterHub = makeCharacterManagementHubResource({
+      selectedCharacter: character,
+      detail,
+      patternConflict: {
+        currentRevision: 'revision-2',
+        rowDiffs: [{ rowNumber: 1, before: null, current: null }],
+      },
+      deepSync: {
+        status: 'running',
+        progress: { characterId: 1, progress: [] },
+        errorMessage: null,
+      },
+    });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(CharacterDetail, { characterHub }));
+    });
+    const openTab = async (label: string) => {
+      const tab = renderer.root.findAllByProps({ accessibilityRole: 'tab' }).find((node) => (
+        node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === label).length > 0
+      ));
+      await act(async () => tab?.props.onPress());
+    };
+    const text = () => renderer.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join(''));
+
+    await openTab('패턴');
+    assert.ok(text().includes('서버에서 패턴이 변경되었습니다'));
+    assert.ok(text().includes('1행'));
+
+    await openTab('관리');
+    assert.ok(text().includes('작업을 시작하고 있습니다.'));
+  });
+
   it('keeps the detail navigator and back action visible with a revalidation warning', async () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => {

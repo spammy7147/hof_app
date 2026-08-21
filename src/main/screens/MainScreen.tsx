@@ -115,7 +115,10 @@ type MainScreenProps = {
   onLinkCharacter?: (
     characterId: number,
     newHofCharacterId: string,
-  ) => Promise<void>;
+  ) => Promise<HofCharacter[] | void>;
+  onLoadCharacterRoster?: () => Promise<HofCharacter[]>;
+  onPublishCharacterRoster?: (characters: HofCharacter[]) => void;
+  onPublishCharacterDetail?: (detail: HofCharacterDetail) => void;
   onPreviewCharacterTransfer?: (
     request: CharacterTransferPreviewRequest,
   ) => Promise<CharacterTransferPreview>;
@@ -169,6 +172,9 @@ export function MainScreen({
   onRestoreCharacter,
   onDeleteCharacterPermanently,
   onLinkCharacter,
+  onLoadCharacterRoster,
+  onPublishCharacterRoster,
+  onPublishCharacterDetail,
   onPreviewCharacterTransfer,
   onExecuteCharacterTransfer,
   onLogout,
@@ -189,10 +195,24 @@ export function MainScreen({
   const [transferSourceCharacterId, setTransferSourceCharacterId] = useState<
     number | null
   >(null);
+  const beginCharacterPatternEdit = useCallback(
+    () => automationController.changeState("pause"),
+    [automationController],
+  );
   const characterHub = useCharacterManagementHub(
     {
       loadStoredDetail: onLoadCharacterDetail,
       refreshAuthoritativeDetail: onRefreshCharacterDetail,
+      executeCommand: onExecuteCharacterCommand,
+      applyPattern: onApplyCharacterPattern,
+      loadSavedPattern: onLoadSavedCharacterPattern,
+      deleteSavedPattern: onDeleteSavedCharacterPattern,
+      deepSync: onDeepSyncCharacter,
+      linkCharacter: onLinkCharacter,
+      loadRoster: onLoadCharacterRoster,
+      publishRoster: onPublishCharacterRoster,
+      publishDetail: onPublishCharacterDetail,
+      beginPatternEdit: beginCharacterPatternEdit,
     },
     session?.loggedIn === true ? session : null,
     characters,
@@ -210,47 +230,6 @@ export function MainScreen({
     !dataLogOpen &&
     !townDetailFullScreen &&
     !isCharacterDetailOpen;
-
-  async function handleTypedCharacterCommand(
-    command: CharacterCommand,
-  ): Promise<CharacterCommandResult | void> {
-    if (!selectedCharacter || !onExecuteCharacterCommand) return undefined;
-    const result = await onExecuteCharacterCommand(command);
-    await characterHub.actions.reloadStored();
-    return result;
-  }
-
-  async function handleTypedPattern(
-    request: CharacterPatternApplyRequest,
-  ): Promise<CharacterPatternOperationResult> {
-    if (!selectedCharacter || !onApplyCharacterPattern) return {};
-    const result = await onApplyCharacterPattern(request);
-    const conflicted =
-      result.currentRevision != null || (result.rowDiffs?.length ?? 0) > 0;
-    if (!conflicted) {
-      await characterHub.actions.reloadStored();
-    }
-    return result;
-  }
-  async function handleLoadSavedPattern(characterId: number, slotCode: string) {
-    if (!onLoadSavedCharacterPattern) return {};
-    const result = await onLoadSavedCharacterPattern(characterId, slotCode);
-    await characterHub.actions.reloadStored();
-    return result;
-  }
-  async function handleDeleteSavedPattern(
-    characterId: number,
-    slotCode: string,
-  ) {
-    if (!onDeleteSavedCharacterPattern) return {};
-    const result = await onDeleteSavedCharacterPattern(characterId, slotCode);
-    await characterHub.actions.reloadStored();
-    return result;
-  }
-
-  async function handleCharacterRefresh(): Promise<void> {
-    await characterHub.actions.refresh();
-  }
 
   return (
     <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
@@ -314,16 +293,9 @@ export function MainScreen({
             setTransferSourceCharacterId(null);
             characterHub.actions.close();
           },
-          onExecuteCharacterCommand: handleTypedCharacterCommand,
-          onApplyCharacterPattern: handleTypedPattern,
-          onLoadSavedCharacterPattern: handleLoadSavedPattern,
-          onDeleteSavedCharacterPattern: handleDeleteSavedPattern,
-          onRefreshCharacterDetail: handleCharacterRefresh,
-          onDeepSyncCharacter,
           onArchiveCharacter,
           onRestoreCharacter,
           onDeleteCharacterPermanently,
-          onLinkCharacter,
           onPreviewCharacterTransfer,
           onExecuteCharacterTransfer,
           townApi,
@@ -384,32 +356,9 @@ type RenderActiveTabArgs = {
   transferSourceCharacterId: number | null;
   onCopyCharacterSettings: (source: HofCharacter, target: HofCharacter) => void;
   closeCharacterDetail: () => void;
-  onExecuteCharacterCommand: (
-    command: CharacterCommand,
-  ) => Promise<CharacterCommandResult | void>;
-  onApplyCharacterPattern: (
-    request: CharacterPatternApplyRequest,
-  ) => Promise<CharacterPatternOperationResult>;
-  onLoadSavedCharacterPattern: (
-    characterId: number,
-    slotCode: string,
-  ) => Promise<CharacterPatternOperationResult>;
-  onDeleteSavedCharacterPattern: (
-    characterId: number,
-    slotCode: string,
-  ) => Promise<CharacterPatternOperationResult>;
-  onRefreshCharacterDetail: () => Promise<void>;
-  onDeepSyncCharacter?: (
-    characterId: number,
-    onProgress?: (progress: CharacterDeepSyncResponse) => void,
-  ) => Promise<CharacterDeepSyncResponse>;
   onArchiveCharacter?: (characterId: number) => Promise<void>;
   onRestoreCharacter?: (characterId: number) => Promise<void>;
   onDeleteCharacterPermanently?: (characterId: number) => Promise<void>;
-  onLinkCharacter?: (
-    characterId: number,
-    newHofCharacterId: string,
-  ) => Promise<void>;
   onPreviewCharacterTransfer?: (
     request: CharacterTransferPreviewRequest,
   ) => Promise<CharacterTransferPreview>;
@@ -466,16 +415,9 @@ function renderActiveTab({
   transferSourceCharacterId,
   onCopyCharacterSettings,
   closeCharacterDetail,
-  onExecuteCharacterCommand,
-  onApplyCharacterPattern,
-  onLoadSavedCharacterPattern,
-  onDeleteSavedCharacterPattern,
-  onRefreshCharacterDetail,
-  onDeepSyncCharacter,
   onArchiveCharacter,
   onRestoreCharacter,
   onDeleteCharacterPermanently,
-  onLinkCharacter,
   onPreviewCharacterTransfer,
   onExecuteCharacterTransfer,
   onAutomationEditorModeChange,
@@ -530,21 +472,7 @@ function renderActiveTab({
         <View style={[styles.tabPanel, styles.detailPanel]}>
           <CharacterDetailScroll>
             <CharacterDetail
-              character={selectedCharacter}
-              detail={characterHub.detail}
-              isLoading={characterHub.isLoading}
-              errorMessage={characterHub.errorMessage}
-              warningMessage={characterHub.warningMessage}
-              onCommand={onExecuteCharacterCommand}
-              onApplyPattern={onApplyCharacterPattern}
-              onLoadSavedPattern={onLoadSavedCharacterPattern}
-              onDeleteSavedPattern={onDeleteSavedCharacterPattern}
-              onRefresh={onRefreshCharacterDetail}
-              onDeepSync={onDeepSyncCharacter}
-              onBeginPatternEdit={() =>
-                automationController.changeState("pause")
-              }
-              onLinkCharacter={onLinkCharacter}
+              characterHub={characterHub}
               characters={characters}
               onPreviewTransfer={onPreviewCharacterTransfer}
               onExecuteTransfer={onExecuteCharacterTransfer}
@@ -638,7 +566,7 @@ function renderActiveTab({
               onArchiveCharacter={onArchiveCharacter}
               onRestoreCharacter={onRestoreCharacter}
               onDeleteCharacterPermanently={onDeleteCharacterPermanently}
-              onLinkCharacter={onLinkCharacter}
+              onLinkCharacter={characterHub.actions.linkRosterCharacter}
               onCopySettings={onCopyCharacterSettings}
             />
           ) : (

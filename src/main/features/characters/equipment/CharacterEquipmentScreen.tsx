@@ -16,16 +16,21 @@ import type {
   HofCharacterEquipmentCandidate,
 } from "../../../types/api";
 import { theme } from "../../../styles/theme";
+import type { CharacterManagementHubResource } from "../../../domain/characterManagementHubModule";
 
 export function CharacterEquipmentScreen({
-  detail,
-  onCommand,
+  characterHub,
+  detail: legacyDetail,
+  onCommand: legacyCommand,
 }: {
-  detail: HofCharacterDetail;
+  characterHub?: CharacterManagementHubResource;
+  detail?: HofCharacterDetail;
   onCommand?: (
     command: CharacterCommand,
   ) => Promise<CharacterCommandResult | void>;
 }) {
+  const detail = (characterHub?.detail ?? legacyDetail) as HofCharacterDetail;
+  const onCommand = characterHub?.actions.executeCommand ?? legacyCommand;
   const [part, setPart] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const revision = detail.revision;

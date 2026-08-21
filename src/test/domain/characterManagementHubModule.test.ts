@@ -6,6 +6,13 @@ import {
   type CharacterManagementHubBackend,
 } from '../../main/domain/characterManagementHubModule';
 import { makeHofCharacter, makeHofCharacterDetail } from '../fixtures/api';
+import type {
+  CharacterCommandResult,
+  CharacterDeepSyncResponse,
+  CharacterPatternOperationResult,
+  HofCharacter,
+  HofCharacterDetail,
+} from '../../main/types/api';
 
 describe('character management hub module', () => {
   it('publishes one selected-character snapshot and keeps a fresh stored detail', async () => {
@@ -225,6 +232,333 @@ describe('character management hub module', () => {
     assert.equal(hub.getSnapshot().detail?.name, '가장 최신 이름');
     assert.equal(hub.getSnapshot().detail?.revision, 'revision-3');
   });
+
+  it('executes a semantic command and reloads the selected authoritative projection', async () => {
+    let stored = freshDetail(1);
+    const commandResult: CharacterCommandResult = {
+      type: 'Completed', characterId: 1, revision: 'revision-2', messages: [],
+    };
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async () => stored,
+      executeCommand: async () => {
+        stored = makeHofCharacterDetail(1, {
+          name: '명령 반영',
+          revision: 'revision-2',
+          detailSyncedAt: new Date().toISOString(),
+        });
+        return commandResult;
+      },
+    }));
+    const character = makeHofCharacter(1);
+    hub.activate('account-1');
+    hub.observeRoster([character]);
+    await hub.getSnapshot().actions.select(character);
+
+    const result = await hub.getSnapshot().actions.executeCommand?.({
+      type: 'PRAY', characterId: 1, expectedRevision: character.revision,
+    });
+
+    assert.equal(result, commandResult);
+    assert.equal(hub.getSnapshot().detail?.name, '명령 반영');
+  });
+
+  it('does not project a late command result or reload another selected character', async () => {
+    const command = deferred<CharacterCommandResult>();
+    const loads: number[] = [];
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async (characterId) => {
+        loads.push(characterId);
+        return freshDetail(characterId);
+      },
+      executeCommand: () => command.promise,
+    }));
+    const first = makeHofCharacter(1);
+    const second = makeHofCharacter(2);
+    hub.activate('account-1');
+    hub.observeRoster([first, second]);
+    await hub.getSnapshot().actions.select(first);
+    const pending = hub.getSnapshot().actions.executeCommand?.({
+      type: 'PRAY', characterId: 1, expectedRevision: first.revision,
+    });
+    await hub.getSnapshot().actions.select(second);
+    const loadsBeforeResult = [...loads];
+
+    command.resolve({
+      type: 'Completed', characterId: 1, revision: 'revision-2', messages: [],
+    });
+    assert.equal(await pending, undefined);
+    assert.deepEqual(loads, loadsBeforeResult);
+    assert.equal(hub.getSnapshot().selectedCharacter?.id, second.id);
+    assert.equal(hub.getSnapshot().detail?.id, second.id);
+  });
+
+  it('publishes pattern conflicts without replacing the draft detail and reloads only success', async () => {
+    const conflict: CharacterPatternOperationResult = {
+      currentRevision: 'revision-2',
+      rowDiffs: [{ rowNumber: 1, before: null, current: null }],
+    };
+    let patternResult = conflict;
+    let loads = 0;
+    const detail = freshDetail(1);
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async () => {
+        loads += 1;
+        return detail;
+      },
+      applyPattern: async () => patternResult,
+    }));
+    const character = makeHofCharacter(1);
+    hub.activate('account-1');
+    hub.observeRoster([character]);
+    await hub.getSnapshot().actions.select(character);
+
+    const request = patternRequest(character.id, character.revision);
+    assert.equal(await hub.getSnapshot().actions.applyPattern?.(request), conflict);
+    assert.equal(hub.getSnapshot().patternConflict, conflict);
+    assert.equal(hub.getSnapshot().detail, detail);
+    assert.equal(loads, 1);
+
+    patternResult = { revision: 'revision-3' };
+    await hub.getSnapshot().actions.applyPattern?.(request);
+    assert.equal(hub.getSnapshot().patternConflict, null);
+    assert.equal(loads, 2);
+  });
+
+  it('owns deep-sync progress and ignores progress after selection changes', async () => {
+    let reportProgress!: (progress: CharacterDeepSyncResponse) => void;
+    let syncCalls = 0;
+    const completion = deferred<CharacterDeepSyncResponse>();
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async (characterId) => freshDetail(characterId),
+      deepSync: (_characterId, onProgress) => {
+        syncCalls += 1;
+        reportProgress = onProgress;
+        return completion.promise;
+      },
+    }));
+    const first = makeHofCharacter(1);
+    const second = makeHofCharacter(2);
+    hub.activate('account-1');
+    hub.observeRoster([first, second]);
+    await hub.getSnapshot().actions.select(first);
+
+    const pending = hub.getSnapshot().actions.deepSync?.();
+    assert.equal(await hub.getSnapshot().actions.deepSync?.(), undefined);
+    assert.equal(syncCalls, 1);
+    reportProgress({ characterId: 1, progress: [] });
+    assert.equal(hub.getSnapshot().deepSync.status, 'running');
+    await hub.getSnapshot().actions.select(second);
+    reportProgress({ characterId: 1, progress: [] });
+    completion.resolve({ characterId: 1, progress: [] });
+    assert.equal(await pending, undefined);
+
+    assert.equal(hub.getSnapshot().selectedCharacter?.id, second.id);
+    assert.equal(hub.getSnapshot().deepSync.status, 'idle');
+  });
+
+  it('binds saved-pattern and identity-link actions to the selected stable record', async () => {
+    const calls: string[] = [];
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async (characterId) => freshDetail(characterId),
+      loadSavedPattern: async (characterId, slotCode) => {
+        calls.push(`load-pattern:${characterId}:${slotCode}`);
+        return {};
+      },
+      deleteSavedPattern: async (characterId, slotCode) => {
+        calls.push(`delete-pattern:${characterId}:${slotCode}`);
+        return {};
+      },
+      linkCharacter: async (characterId, hofCharacterId) => {
+        calls.push(`link:${characterId}:${hofCharacterId}`);
+      },
+    }));
+    const character = makeHofCharacter(7);
+    hub.activate('account-1');
+    hub.observeRoster([character]);
+    await hub.getSnapshot().actions.select(character);
+
+    await hub.getSnapshot().actions.loadSavedPattern?.('slot-a');
+    await hub.getSnapshot().actions.deleteSavedPattern?.('slot-b');
+    await hub.getSnapshot().actions.linkCharacter?.('new-hof-id');
+
+    assert.deepEqual(calls, [
+      'load-pattern:7:slot-a',
+      'delete-pattern:7:slot-b',
+      'link:7:new-hof-id',
+    ]);
+  });
+
+  it('rejects every action retained from an older character selection', async () => {
+    const calls: string[] = [];
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async (characterId) => {
+        calls.push(`detail:${characterId}`);
+        return freshDetail(characterId);
+      },
+      refreshAuthoritativeDetail: async (characterId) => {
+        calls.push(`refresh:${characterId}`);
+        return freshDetail(characterId);
+      },
+      loadSavedPattern: async (characterId) => {
+        calls.push(`load-pattern:${characterId}`);
+        return {};
+      },
+      deleteSavedPattern: async (characterId) => {
+        calls.push(`delete-pattern:${characterId}`);
+        return {};
+      },
+      deepSync: async (characterId) => {
+        calls.push(`deep-sync:${characterId}`);
+        return { characterId, progress: [] };
+      },
+      linkCharacter: async (characterId) => {
+        calls.push(`link:${characterId}`);
+      },
+      beginPatternEdit: async () => {
+        calls.push('begin-pattern');
+      },
+    }));
+    const first = makeHofCharacter(1);
+    const second = makeHofCharacter(2);
+    hub.activate('account-1');
+    hub.observeRoster([first, second]);
+    await hub.getSnapshot().actions.select(first);
+    const firstActions = hub.getSnapshot().actions;
+
+    await firstActions.select(second);
+    const callsBeforeStaleActions = [...calls];
+    firstActions.close();
+    firstActions.dismissPatternConflict();
+    await firstActions.reloadStored();
+    await firstActions.refresh();
+    await firstActions.loadSavedPattern?.('slot-a');
+    await firstActions.deleteSavedPattern?.('slot-b');
+    await firstActions.deepSync?.();
+    await firstActions.linkCharacter?.('new-hof-id');
+    await firstActions.beginPatternEdit?.();
+
+    assert.deepEqual(calls, callsBeforeStaleActions);
+    assert.equal(hub.getSnapshot().selectedCharacter?.id, second.id);
+    assert.equal(hub.getSnapshot().detail?.id, second.id);
+  });
+
+  it('publishes command roster and detail only after the current selection fence', async () => {
+    const publishedRoster: HofCharacter[][] = [];
+    const publishedDetails: HofCharacterDetail[] = [];
+    const updated = makeHofCharacter(1, {
+      name: '명령 후 이름',
+      revision: 'revision-2',
+    });
+    const detail = makeHofCharacterDetail(1, {
+      name: '명령 후 이름',
+      revision: 'revision-2',
+      detailSyncedAt: new Date().toISOString(),
+    });
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async () => detail,
+      executeCommand: async () => ({
+        type: 'Completed', characterId: 1, revision: 'revision-2', messages: [],
+      }),
+      loadRoster: async () => [updated],
+      publishRoster: (roster) => publishedRoster.push(roster),
+      publishDetail: (next) => publishedDetails.push(next),
+    }));
+    const character = makeHofCharacter(1);
+    hub.activate('account-1');
+    hub.observeRoster([character]);
+    await hub.getSnapshot().actions.select(character);
+    publishedDetails.length = 0;
+
+    await hub.getSnapshot().actions.executeCommand?.({
+      type: 'PRAY', characterId: 1, expectedRevision: character.revision,
+    });
+
+    assert.deepEqual(publishedRoster, [[updated]]);
+    assert.equal(publishedDetails.at(-1)?.revision, 'revision-2');
+  });
+
+  it('does not publish late command observations after selection changes', async () => {
+    const command = deferred<CharacterCommandResult>();
+    const publishedRoster: HofCharacter[][] = [];
+    const publishedDetails: HofCharacterDetail[] = [];
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async (characterId) => freshDetail(characterId),
+      executeCommand: () => command.promise,
+      loadRoster: async () => [makeHofCharacter(1, { revision: 'revision-2' })],
+      publishRoster: (roster) => publishedRoster.push(roster),
+      publishDetail: (detail) => publishedDetails.push(detail),
+    }));
+    const first = makeHofCharacter(1);
+    const second = makeHofCharacter(2);
+    hub.activate('account-1');
+    hub.observeRoster([first, second]);
+    await hub.getSnapshot().actions.select(first);
+    publishedDetails.length = 0;
+    const pending = hub.getSnapshot().actions.executeCommand?.({
+      type: 'PRAY', characterId: 1, expectedRevision: first.revision,
+    });
+    await hub.getSnapshot().actions.select(second);
+    publishedDetails.length = 0;
+
+    command.resolve({
+      type: 'Completed', characterId: 1, revision: 'revision-2', messages: [],
+    });
+    await pending;
+
+    assert.deepEqual(publishedRoster, []);
+    assert.deepEqual(publishedDetails, []);
+    assert.equal(hub.getSnapshot().selectedCharacter?.id, second.id);
+  });
+
+  it('does not publish a late authoritative refresh after selection changes', async () => {
+    const refresh = deferred<HofCharacterDetail>();
+    const publishedDetails: HofCharacterDetail[] = [];
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async (characterId) => freshDetail(characterId),
+      refreshAuthoritativeDetail: () => refresh.promise,
+      publishDetail: (detail) => publishedDetails.push(detail),
+    }));
+    const first = makeHofCharacter(1);
+    const second = makeHofCharacter(2);
+    hub.activate('account-1');
+    hub.observeRoster([first, second]);
+    await hub.getSnapshot().actions.select(first);
+    publishedDetails.length = 0;
+
+    const pending = hub.getSnapshot().actions.refresh();
+    await hub.getSnapshot().actions.select(second);
+    publishedDetails.length = 0;
+    refresh.resolve(freshDetail(1));
+    await pending;
+
+    assert.deepEqual(publishedDetails, []);
+    assert.equal(hub.getSnapshot().selectedCharacter?.id, second.id);
+  });
+
+  it('does not publish a late identity link after the account changes', async () => {
+    const link = deferred<HofCharacter[]>();
+    const publishedRoster: HofCharacter[][] = [];
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async (characterId) => freshDetail(characterId),
+      linkCharacter: () => link.promise,
+      publishRoster: (roster) => publishedRoster.push(roster),
+    }));
+    const first = makeHofCharacter(1);
+    const second = makeHofCharacter(2);
+    hub.activate('account-a');
+    hub.observeRoster([first]);
+    await hub.getSnapshot().actions.select(first);
+
+    const pending = hub.getSnapshot().actions.linkCharacter?.('new-hof-id');
+    hub.activate('account-b');
+    hub.observeRoster([second]);
+    await hub.getSnapshot().actions.select(second);
+    link.resolve([makeHofCharacter(1, { hofCharacterId: 'new-hof-id' })]);
+    await pending;
+
+    assert.deepEqual(publishedRoster, []);
+    assert.equal(hub.getSnapshot().selectedCharacter?.id, second.id);
+  });
 });
 
 function backend(
@@ -251,4 +585,13 @@ function freshDetail(characterId: number) {
   return makeHofCharacterDetail(characterId, {
     detailSyncedAt: new Date().toISOString(),
   });
+}
+
+function patternRequest(characterId: number, revision: string) {
+  return {
+    characterId,
+    baseRevision: revision,
+    base: { rows: [], position: '', guard: '' },
+    draft: { baseRevision: revision, rows: [], position: '', guard: '' },
+  };
 }

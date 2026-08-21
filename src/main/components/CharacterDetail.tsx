@@ -1,6 +1,7 @@
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { CharacterSettingsNavigator } from "../features/characters/CharacterSettingsNavigator";
+import type { CharacterManagementHubResource } from "../domain/characterManagementHubModule";
 import { theme } from "../styles/theme";
 import type {
   CharacterCommand,
@@ -16,10 +17,12 @@ import type {
 } from "../types/api";
 
 type CharacterDetailProps = {
-  character: HofCharacter;
-  detail: HofCharacterDetail | null;
-  isLoading: boolean;
-  errorMessage: string | null;
+  characterHub?: CharacterManagementHubResource;
+  /** #29에서 제거할 구형 화면 fixture 호환 입력이다. */
+  character?: HofCharacter;
+  detail?: HofCharacterDetail | null;
+  isLoading?: boolean;
+  errorMessage?: string | null;
   warningMessage?: string | null;
   onCommand?: (
     command: CharacterCommand,
@@ -59,11 +62,12 @@ type CharacterDetailProps = {
 
 /** 캐릭터 설정 전용 화면의 loading/error 경계와 탭 navigator만 소유한다. */
 export function CharacterDetail({
-  character,
-  detail,
-  isLoading,
-  errorMessage,
-  warningMessage,
+  characterHub,
+  character: legacyCharacter,
+  detail: legacyDetail,
+  isLoading: legacyLoading = false,
+  errorMessage: legacyError = null,
+  warningMessage: legacyWarning = null,
   onCommand,
   onApplyPattern,
   onLoadSavedPattern,
@@ -78,6 +82,46 @@ export function CharacterDetail({
   onBeginPatternEdit,
   onLinkCharacter,
 }: CharacterDetailProps) {
+  const legacyActions = {
+    select: async () => undefined,
+    close: () => undefined,
+    reloadStored: async () => undefined,
+    refresh: onRefresh ?? (async () => undefined),
+    dismissPatternConflict: () => undefined,
+    executeCommand: onCommand,
+    applyPattern: onApplyPattern,
+    loadSavedPattern: onLoadSavedPattern && legacyDetail
+      ? (slotCode: string) => onLoadSavedPattern(legacyDetail.id, slotCode)
+      : undefined,
+    deleteSavedPattern: onDeleteSavedPattern && legacyDetail
+      ? (slotCode: string) => onDeleteSavedPattern(legacyDetail.id, slotCode)
+      : undefined,
+    deepSync: onDeepSync && legacyDetail
+      ? () => onDeepSync(legacyDetail.id)
+      : undefined,
+    beginPatternEdit: onBeginPatternEdit,
+    linkCharacter: onLinkCharacter && legacyDetail
+      ? (newHofCharacterId: string) =>
+          onLinkCharacter(legacyDetail.id, newHofCharacterId)
+      : undefined,
+  };
+  const resolvedHub = characterHub ?? {
+    selectedCharacter: legacyCharacter ?? null,
+    detail: legacyDetail ?? null,
+    isLoading: legacyLoading,
+    errorMessage: legacyError,
+    warningMessage: legacyWarning,
+    patternConflict: null,
+    deepSync: { status: "idle" as const, progress: null, errorMessage: null },
+    actions: legacyActions,
+  };
+  const {
+    selectedCharacter: character,
+    detail,
+    isLoading,
+    errorMessage,
+    warningMessage,
+  } = resolvedHub;
   if (isLoading)
     return (
       <View style={styles.loading}>
@@ -91,7 +135,7 @@ export function CharacterDetail({
         {errorMessage}
       </Text>
     );
-  if (!detail) return null;
+  if (!character || !detail) return null;
   return (
     <View>
       {warningMessage ? (
@@ -100,19 +144,10 @@ export function CharacterDetail({
         </Text>
       ) : null}
       <CharacterSettingsNavigator
-        character={character}
-        detail={detail}
+        characterHub={resolvedHub}
         characters={characters}
         initialTransferSourceId={initialTransferSourceId}
-        onDeepSync={onDeepSync}
-        onBeginPatternEdit={onBeginPatternEdit}
-        onLinkCharacter={onLinkCharacter}
         onBack={onBack}
-        onCommand={onCommand}
-        onApplyPattern={onApplyPattern}
-        onLoadSavedPattern={onLoadSavedPattern}
-        onDeleteSavedPattern={onDeleteSavedPattern}
-        onRefresh={onRefresh}
         onPreviewTransfer={onPreviewTransfer}
         onExecuteTransfer={onExecuteTransfer}
       />

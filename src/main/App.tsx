@@ -265,7 +265,6 @@ function AppContent({ api }: { api: BackendApiClient }) {
     async (command: CharacterCommand): Promise<CharacterCommandResult> => {
       const result = await api.executeCharacterCommand(command);
       if (result.type === "IdentityResolutionRequired") return result;
-      replaceCharacters(await api.listCharacters());
       if (result.type && result.type !== "Completed") {
         if ("message" in result) throw new Error(result.message);
         throw new Error(
@@ -274,31 +273,23 @@ function AppContent({ api }: { api: BackendApiClient }) {
       }
       return result;
     },
-    [api, replaceCharacters],
+    [api],
   );
 
   const applyTypedCharacterPattern = useCallback(
-    async (
+    (
       request: CharacterPatternApplyRequest,
-    ): Promise<CharacterPatternOperationResult> => {
-      const result = await api.applyCharacterPattern(request);
-      // 충돌 시에는 사용자의 로컬 초안을 보존해야 하므로 서버 상세로 덮지 않는다.
-      if (result.revision)
-        upsertCharacter(await api.fetchCharacterDetail(request.characterId));
-      return result;
-    },
-    [api, upsertCharacter],
+    ): Promise<CharacterPatternOperationResult> =>
+      api.applyCharacterPattern(request),
+    [api],
   );
   const loadSavedCharacterPattern = useCallback(
-    async (
+    (
       characterId: number,
       slotCode: string,
-    ): Promise<CharacterPatternOperationResult> => {
-      const result = await api.loadSavedCharacterPattern(characterId, slotCode);
-      upsertCharacter(await api.fetchCharacterDetail(characterId));
-      return result;
-    },
-    [api, upsertCharacter],
+    ): Promise<CharacterPatternOperationResult> =>
+      api.loadSavedCharacterPattern(characterId, slotCode),
+    [api],
   );
   const deleteSavedCharacterPattern = useCallback(
     (
@@ -310,24 +301,18 @@ function AppContent({ api }: { api: BackendApiClient }) {
   );
 
   const refreshCharacterDetail = useCallback(
-    async (characterId: number): Promise<HofCharacterDetail> => {
-      const detail = await api.refreshCharacterDetail(characterId);
-      upsertCharacter(detail);
-      return detail;
-    },
-    [api, upsertCharacter],
+    (characterId: number): Promise<HofCharacterDetail> =>
+      api.refreshCharacterDetail(characterId),
+    [api],
   );
   const deepSyncCharacter = useCallback(
     async (
       characterId: number,
       onProgress?: (progress: CharacterDeepSyncResponse) => void,
     ): Promise<CharacterDeepSyncResponse> => {
-      const response = await api.deepSyncCharacter(characterId, onProgress);
-      upsertCharacter(await api.fetchCharacterDetail(characterId));
-      setNotice("저장 패턴과 장비 저장 1·2까지 동기화했습니다.");
-      return response;
+      return api.deepSyncCharacter(characterId, onProgress);
     },
-    [api, upsertCharacter],
+    [api],
   );
 
   const archiveCharacter = useCallback(
@@ -349,14 +334,11 @@ function AppContent({ api }: { api: BackendApiClient }) {
     [api, replaceCharacters],
   );
   const linkCharacter = useCallback(
-    async (characterId: number, newHofCharacterId: string) => {
-      replaceCharacters(
-        await api.linkCharacter(characterId, newHofCharacterId),
-      );
-      upsertCharacter(await api.refreshCharacterDetail(characterId));
-    },
-    [api, replaceCharacters, upsertCharacter],
+    (characterId: number, newHofCharacterId: string) =>
+      api.linkCharacter(characterId, newHofCharacterId),
+    [api],
   );
+  const loadCharacterRoster = useCallback(() => api.listCharacters(), [api]);
   const previewCharacterTransfer = useCallback(
     (request: CharacterTransferPreviewRequest) =>
       api.previewCharacterTransfer(request),
@@ -555,6 +537,9 @@ function AppContent({ api }: { api: BackendApiClient }) {
         onRestoreCharacter={restoreCharacter}
         onDeleteCharacterPermanently={deleteCharacterPermanently}
         onLinkCharacter={linkCharacter}
+        onLoadCharacterRoster={loadCharacterRoster}
+        onPublishCharacterRoster={replaceCharacters}
+        onPublishCharacterDetail={upsertCharacter}
         onPreviewCharacterTransfer={previewCharacterTransfer}
         onExecuteCharacterTransfer={executeCharacterTransfer}
         onLogout={handleLogout}

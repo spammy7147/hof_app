@@ -9,14 +9,19 @@ import type {
 } from "../../../types/api";
 import { theme } from "../../../styles/theme";
 import { FixedBottomAction } from "../../../components/FixedBottomAction";
+import type { CharacterManagementHubResource } from "../../../domain/characterManagementHubModule";
 
 export function CharacterSkillsScreen({
-  detail,
-  onCommand,
+  characterHub,
+  detail: legacyDetail,
+  onCommand: legacyCommand,
 }: {
-  detail: HofCharacterDetail;
+  characterHub?: CharacterManagementHubResource;
+  detail?: HofCharacterDetail;
   onCommand?: (command: CharacterCommand) => Promise<CharacterCommandResult | void>;
 }) {
+  const detail = (characterHub?.detail ?? legacyDetail) as HofCharacterDetail;
+  const onCommand = characterHub?.actions.executeCommand ?? legacyCommand;
   const [mode, setMode] = useState<"owned" | "learn">("owned");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<HofCharacterSkill | null>(null);

@@ -10,6 +10,7 @@ import type {
 } from "../../../types/api";
 import { theme } from "../../../styles/theme";
 import { CHARACTER_PATTERN_THRESHOLDS, recommendPatternStats } from "../../../domain/characterStats";
+import type { CharacterManagementHubResource } from "../../../domain/characterManagementHubModule";
 
 const STAT_GUIDES: Array<[CharacterStat, string, string]> = [
   ["STR", "힘 기반 물리 공격력 증가", "HP 증가(상) · Real STR 10당 Handle 1 증가"],
@@ -20,18 +21,22 @@ const STAT_GUIDES: Array<[CharacterStat, string, string]> = [
 ];
 
 export function CharacterStatusScreen({
-  detail,
-  onCommand,
+  characterHub,
+  detail: legacyDetail,
+  onCommand: legacyCommand,
   helpOpen = false,
   onOpenHelp,
   onCloseHelp,
 }: {
-  detail: HofCharacterDetail;
+  characterHub?: CharacterManagementHubResource;
+  detail?: HofCharacterDetail;
   onCommand?: (command: CharacterCommand) => Promise<CharacterCommandResult | void>;
   helpOpen?: boolean;
   onOpenHelp?: () => void;
   onCloseHelp?: () => void;
 }) {
+  const detail = (characterHub?.detail ?? legacyDetail) as HofCharacterDetail;
+  const onCommand = characterHub?.actions.executeCommand ?? legacyCommand;
   const [targetOpen, setTargetOpen] = useState(false);
   const [targetPatterns, setTargetPatterns] = useState<number | null>(null);
   const [effectDetail, setEffectDetail] = useState<HofCharacterStatusEffect | null>(null);

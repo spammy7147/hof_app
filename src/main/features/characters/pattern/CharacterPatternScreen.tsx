@@ -21,6 +21,7 @@ import type {
 } from "../../../types/api";
 import { theme } from "../../../styles/theme";
 import { FixedBottomAction } from "../../../components/FixedBottomAction";
+import type { CharacterManagementHubResource } from "../../../domain/characterManagementHubModule";
 
 type Row = { key: string; judge: string; quantity: string; skill: string };
 type PendingApply = {
@@ -39,14 +40,16 @@ const GUARD_OPTIONS = [
   "prob75",
 ];
 export function CharacterPatternScreen({
-  detail,
-  onApply,
-  onLoadSaved,
-  onDeleteSaved,
-  onBeginEdit,
+  characterHub,
+  detail: legacyDetail,
+  onApply: legacyApply,
+  onLoadSaved: legacyLoadSaved,
+  onDeleteSaved: legacyDeleteSaved,
+  onBeginEdit: legacyBeginEdit,
   onImportSettings,
 }: {
-  detail: HofCharacterDetail;
+  characterHub?: CharacterManagementHubResource;
+  detail?: HofCharacterDetail;
   onApply?: (
     request: CharacterPatternApplyRequest,
   ) => Promise<CharacterPatternOperationResult>;
@@ -61,6 +64,17 @@ export function CharacterPatternScreen({
   onBeginEdit?: () => Promise<void>;
   onImportSettings?: () => void;
 }) {
+  const detail = (characterHub?.detail ?? legacyDetail) as HofCharacterDetail;
+  const onApply = characterHub?.actions.applyPattern ?? legacyApply;
+  const onLoadSaved = characterHub?.actions.loadSavedPattern
+    ? (_characterId: number, slotCode: string) =>
+        characterHub.actions.loadSavedPattern?.(slotCode) ?? Promise.resolve({})
+    : legacyLoadSaved;
+  const onDeleteSaved = characterHub?.actions.deleteSavedPattern
+    ? (_characterId: number, slotCode: string) =>
+        characterHub.actions.deleteSavedPattern?.(slotCode) ?? Promise.resolve({})
+    : legacyDeleteSaved;
+  const onBeginEdit = characterHub?.actions.beginPatternEdit ?? legacyBeginEdit;
   const initial = useMemo<Row[]>(
     () =>
       detail.actionPatterns.map((row, index) => ({
@@ -88,8 +102,13 @@ export function CharacterPatternScreen({
   const [alsoSave, setAlsoSave] = useState(false);
   const [slotName, setSlotName] = useState("");
   const [pendingSlot, setPendingSlot] = useState<string | null>(null);
-  const [conflict, setConflict] =
+  const [legacyConflict, setLegacyConflict] =
     useState<CharacterPatternOperationResult | null>(null);
+  const visibleConflict = characterHub?.patternConflict ?? legacyConflict;
+  const dismissConflict = () => {
+    if (characterHub) characterHub.actions.dismissPatternConflict();
+    else setLegacyConflict(null);
+  };
   const [conflictedApply, setConflictedApply] = useState<PendingApply | null>(
     null,
   );
@@ -194,8 +213,9 @@ export function CharacterPatternScreen({
       (result.currentRevision || (result.rowDiffs?.length ?? 0) > 0)
     ) {
       setConflictedApply({ slotAction, targetSlotCode, name });
-      setConflict(result);
+      if (!characterHub) setLegacyConflict(result);
     } else {
+      if (!characterHub) setLegacyConflict(null);
       setConflictedApply(null);
       setPendingSlot(null);
       setSlotName("");
@@ -562,10 +582,10 @@ export function CharacterPatternScreen({
         </View>
       </Modal>
       <Modal
-        visible={conflict != null}
+        visible={visibleConflict != null}
         transparent
         animationType="slide"
-        onRequestClose={() => setConflict(null)}
+        onRequestClose={dismissConflict}
       >
         <View style={styles.overlay}>
           <View style={styles.sheet}>
@@ -575,7 +595,7 @@ export function CharacterPatternScreen({
             <Text style={styles.warning}>
               변경된 행을 확인한 뒤 현재 초안으로 덮어쓸지 선택해 주세요.
             </Text>
-            {(conflict?.rowDiffs ?? []).map((diff) => (
+            {(visibleConflict?.rowDiffs ?? []).map((diff) => (
               <View key={diff.rowNumber} style={styles.conflictCard}>
                 <Text style={styles.conflictNumber}>{diff.rowNumber}행</Text>
                 <Text style={styles.conflictLabel}>편집 시작 당시</Text>
@@ -590,14 +610,14 @@ export function CharacterPatternScreen({
             ))}
             <View style={styles.controls}>
               <Pressable
-                onPress={() => setConflict(null)}
+                onPress={dismissConflict}
                 style={styles.control}
               >
                 <Text style={styles.controlText}>취소</Text>
               </Pressable>
               <Pressable
                 onPress={() => {
-                  setConflict(null);
+                  dismissConflict();
                   const pending = conflictedApply;
                   if (pending)
                     void apply(

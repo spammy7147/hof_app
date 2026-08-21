@@ -33,20 +33,23 @@ import type {
 } from "../../../types/api";
 import { theme } from "../../../styles/theme";
 import { toUserFacingErrorMessage } from "../../../domain/userFacingErrors";
+import type { CharacterManagementHubResource } from "../../../domain/characterManagementHubModule";
 import { CharacterItemsScreen } from "../items/CharacterItemsScreen";
 import { CharacterSettingsTransferScreen } from "../transfer/CharacterSettingsTransferScreen";
 
 export function CharacterManagementScreen({
-  detail,
+  characterHub,
+  detail: legacyDetail,
   characters,
   initialTransferSourceId,
-  onCommand,
-  onDeepSync,
+  onCommand: legacyCommand,
+  onDeepSync: legacyDeepSync,
   onPreviewTransfer,
   onExecuteTransfer,
-  onLinkCharacter,
+  onLinkCharacter: legacyLinkCharacter,
 }: {
-  detail: HofCharacterDetail;
+  characterHub?: CharacterManagementHubResource;
+  detail?: HofCharacterDetail;
   characters: HofCharacter[];
   initialTransferSourceId?: number | null;
   onCommand?: (
@@ -68,6 +71,12 @@ export function CharacterManagementScreen({
     newHofCharacterId: string,
   ) => Promise<void>;
 }) {
+  const detail = (characterHub?.detail ?? legacyDetail) as HofCharacterDetail;
+  const onCommand = characterHub?.actions.executeCommand ?? legacyCommand;
+  const onLinkCharacter = characterHub?.actions.linkCharacter
+    ? (_characterId: number, newHofCharacterId: string) =>
+        characterHub.actions.linkCharacter?.(newHofCharacterId) ?? Promise.resolve()
+    : legacyLinkCharacter;
   const [newName, setNewName] = useState("");
   const [renameOpen, setRenameOpen] = useState(false);
   const [kickName, setKickName] = useState("");
@@ -86,10 +95,15 @@ export function CharacterManagementScreen({
   > | null>(null);
   const [showAllIdentityCandidates, setShowAllIdentityCandidates] =
     useState(false);
-  const [deepSyncProgress, setDeepSyncProgress] =
+  const [legacyDeepSyncProgress, setLegacyDeepSyncProgress] =
     useState<CharacterDeepSyncResponse | null>(null);
-  const [deepSyncBusy, setDeepSyncBusy] = useState(false);
-  const [deepSyncError, setDeepSyncError] = useState<string | null>(null);
+  const [legacyDeepSyncBusy, setLegacyDeepSyncBusy] = useState(false);
+  const [legacyDeepSyncError, setLegacyDeepSyncError] = useState<string | null>(null);
+  const deepSyncProgress = characterHub?.deepSync.progress ?? legacyDeepSyncProgress;
+  const deepSyncBusy = characterHub
+    ? characterHub.deepSync.status === "running"
+    : legacyDeepSyncBusy;
+  const deepSyncError = characterHub?.deepSync.errorMessage ?? legacyDeepSyncError;
   const revision = detail.revision;
   const classOptions = (detail.patternOptions ?? []).filter(
     (option) => option.type === "CLASS",
@@ -136,9 +150,10 @@ export function CharacterManagementScreen({
         >
           <SafeAreaView edges={["top", "bottom"]} style={styles.itemsModal}>
             <CharacterItemsScreen
-              detail={detail}
+              characterHub={characterHub}
+              detail={characterHub ? undefined : detail}
               onBack={() => setItemsOpen(false)}
-              onCommand={onCommand}
+              onCommand={characterHub ? undefined : onCommand}
             />
           </SafeAreaView>
         </Modal>
@@ -217,13 +232,17 @@ export function CharacterManagementScreen({
           description="현재 설정과 저장 패턴·장비 저장 1·2를 다시 확인합니다."
           disabled={deepSyncBusy}
           onPress={() => {
-            if (!onDeepSync) return;
-            setDeepSyncBusy(true);
-            setDeepSyncError(null);
-            setDeepSyncProgress({ characterId: detail.id, progress: [] });
-            void onDeepSync(detail.id, setDeepSyncProgress)
-              .catch((error) => setDeepSyncError(toUserFacingErrorMessage(error)))
-              .finally(() => setDeepSyncBusy(false));
+            if (characterHub?.actions.deepSync) {
+              void characterHub.actions.deepSync();
+              return;
+            }
+            if (!legacyDeepSync) return;
+            setLegacyDeepSyncBusy(true);
+            setLegacyDeepSyncError(null);
+            setLegacyDeepSyncProgress({ characterId: detail.id, progress: [] });
+            void legacyDeepSync(detail.id, setLegacyDeepSyncProgress)
+              .catch((error) => setLegacyDeepSyncError(toUserFacingErrorMessage(error)))
+              .finally(() => setLegacyDeepSyncBusy(false));
           }}
         />
       </View>
