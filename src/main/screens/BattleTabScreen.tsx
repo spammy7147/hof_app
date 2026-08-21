@@ -27,7 +27,7 @@ import {
   type BattleMapGroup,
 } from '../domain/battleMaps';
 import { getBattleResultRounds } from '../domain/battleResults';
-import type { PartyPresetCatalogResource } from '../domain/partyPresetCatalogLoader';
+import type { PartyPresetCatalogResource } from '../domain/partyPresetCatalogModule';
 import { BattleRunPanel } from '../features/battle/components/BattleRunPanel';
 import { theme } from '../styles/theme';
 import type {

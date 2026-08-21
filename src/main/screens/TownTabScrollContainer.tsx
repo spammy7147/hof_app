@@ -7,7 +7,7 @@ import { TownTabScreen } from './TownTabScreen';
 import type { TownApi } from '../features/town/api/townApi';
 import type { FishingBattleTarget } from '../types/api';
 import type { BattleResultResponse, HofCharacter, RunBattleRequest } from '../types/api';
-import type { PartyPresetCatalogResource } from '../domain/partyPresetCatalogLoader';
+import type { PartyPresetCatalogResource } from '../domain/partyPresetCatalogModule';
 import type { TownMenuId } from '../domain/townMenus';
 
 /** 마을 목록의 외부 ScrollView 위치를 상세 전환 동안 보존한다. */

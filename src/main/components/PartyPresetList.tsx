@@ -20,7 +20,7 @@ import {
   formatPartyPresetSummary,
 } from '../domain/partyPresets';
 import { toUserFacingErrorMessage } from '../domain/userFacingErrors';
-import type { PartyPresetCatalogResource } from '../domain/partyPresetCatalogLoader';
+import type { PartyPresetCatalogResource } from '../domain/partyPresetCatalogModule';
 import { getPartyPresetFolderPath, indexPartyPresetCatalog, searchPartyPresetCatalog } from '../domain/partyPresetCatalog';
 import { theme } from '../styles/theme';
 import { FixedBottomAction } from './FixedBottomAction';

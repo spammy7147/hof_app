@@ -3,7 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Switch, Text, TextInput, View
 import { ArrowLeft, ChevronRight, Save } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
 
-import type { PartyPresetCatalogResource } from '../../../domain/partyPresetCatalogLoader';
+import type { PartyPresetCatalogResource } from '../../../domain/partyPresetCatalogModule';
 import { formatAutomationPresetSelection } from '../../../domain/partyPresets';
 import { AUTOMATION_TYPE_METADATA } from '../../../domain/typedAutomation';
 import { resolveUnionMapDisplayName } from '../../../domain/unionAutomation';

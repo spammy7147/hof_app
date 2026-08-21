@@ -3,7 +3,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 
 import { theme } from '../../../styles/theme';
 import { toRunBattleRequest, type BattlePartyMember } from '../../../domain/battleParty';
-import type { PartyPresetCatalogResource } from '../../../domain/partyPresetCatalogLoader';
+import type { PartyPresetCatalogResource } from '../../../domain/partyPresetCatalogModule';
 import { BattleRunPanel } from '../../battle/components/BattleRunPanel';
 import type {
   BattleResultResponse,

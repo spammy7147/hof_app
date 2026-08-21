@@ -1,0 +1,260 @@
+import type {
+  CreatePartyPresetRequest,
+  PartyPresetCatalogResponse,
+  PartyPresetResponse,
+  UpdatePartyPresetRequest,
+} from '../types/api';
+
+const LOAD_ERROR_MESSAGE = '파티 프리셋을 불러오지 못했습니다.';
+
+export type PartyPresetCatalogResource = {
+  catalog: PartyPresetCatalogResponse;
+  loading: boolean;
+  error: string | null;
+  retry: () => void;
+};
+
+export type PartyPresetCatalogBackend = {
+  loadCatalog: () => Promise<PartyPresetCatalogResponse>;
+  createPreset: (request: CreatePartyPresetRequest) => Promise<PartyPresetResponse>;
+  updatePreset: (
+    presetId: number,
+    request: UpdatePartyPresetRequest,
+  ) => Promise<PartyPresetResponse>;
+};
+
+type CatalogProjector<T> = (
+  catalog: PartyPresetCatalogResponse,
+  result: T,
+) => PartyPresetCatalogResponse;
+
+/**
+ * 파티 프리셋 카탈로그의 계정별 조회 상태와 변경 순서를 소유한다.
+ *
+ * 화면은 immutable snapshot만 구독하며, 늦은 응답과 backend 재조회 수렴은
+ * 이 module 경계 밖에서 별도로 조립하지 않는다.
+ */
+export class PartyPresetCatalogModule {
+  private readonly listeners = new Set<() => void>();
+  private accountKey: unknown = null;
+  private accountGeneration = 0;
+  private requestGeneration = 0;
+  private activeRequestGeneration: number | null = null;
+  private loaded = false;
+  private active = false;
+  private mutationTail: Promise<void> = Promise.resolve();
+  private snapshot: PartyPresetCatalogResource;
+
+  constructor(private readonly backend: PartyPresetCatalogBackend) {
+    this.snapshot = this.emptySnapshot();
+  }
+
+  getSnapshot = (): PartyPresetCatalogResource => this.snapshot;
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  retry = (): void => {
+    void this.reload();
+  };
+
+  activate(accountKey: unknown): Promise<void> {
+    if (this.active && Object.is(this.accountKey, accountKey)) {
+      return this.load(false);
+    }
+
+    this.accountKey = accountKey;
+    this.accountGeneration += 1;
+    this.requestGeneration += 1;
+    this.activeRequestGeneration = null;
+    this.loaded = false;
+    this.active = true;
+    this.mutationTail = Promise.resolve();
+    this.snapshot = this.emptySnapshot();
+    return this.load(false);
+  }
+
+  deactivate(): void {
+    if (!this.active && isEmptySnapshot(this.snapshot)) return;
+    this.accountKey = null;
+    this.accountGeneration += 1;
+    this.requestGeneration += 1;
+    this.activeRequestGeneration = null;
+    this.loaded = false;
+    this.active = false;
+    this.mutationTail = Promise.resolve();
+    this.publish(this.emptySnapshot());
+  }
+
+  reload(): Promise<void> {
+    return this.load(true);
+  }
+
+  createPreset(request: CreatePartyPresetRequest): Promise<PartyPresetResponse> {
+    return this.enqueueMutation(
+      () => this.backend.createPreset(request),
+      projectPresetUpsert,
+    );
+  }
+
+  updatePreset(
+    presetId: number,
+    request: UpdatePartyPresetRequest,
+  ): Promise<PartyPresetResponse> {
+    return this.enqueueMutation(
+      () => this.backend.updatePreset(presetId, request),
+      projectPresetUpsert,
+    );
+  }
+
+  /** expand 단계 동안 아직 이전되지 않은 동작도 같은 queue를 사용한다. */
+  runCompatibilityMutation<T>(
+    operation: () => Promise<T>,
+    project: CatalogProjector<T>,
+    reload = true,
+  ): Promise<T> {
+    return this.enqueueMutation(operation, project, reload);
+  }
+
+  private async load(force: boolean): Promise<void> {
+    if (!this.active) return;
+    if (!force && (this.activeRequestGeneration != null || this.loaded)) return;
+
+    const accountGeneration = this.accountGeneration;
+    const requestGeneration = ++this.requestGeneration;
+    this.activeRequestGeneration = requestGeneration;
+    this.publish({ ...this.snapshot, loading: true, error: null });
+
+    try {
+      const catalog = await this.backend.loadCatalog();
+      if (!this.isCurrent(accountGeneration, requestGeneration)) return;
+      this.loaded = true;
+      this.activeRequestGeneration = null;
+      this.publish({ catalog, loading: false, error: null, retry: this.retry });
+    } catch {
+      if (!this.isCurrent(accountGeneration, requestGeneration)) return;
+      this.activeRequestGeneration = null;
+      this.publish({
+        ...this.snapshot,
+        loading: false,
+        error: LOAD_ERROR_MESSAGE,
+      });
+    }
+  }
+
+  private enqueueMutation<T>(
+    operation: () => Promise<T>,
+    project: CatalogProjector<T>,
+    reload = true,
+  ): Promise<T> {
+    if (!this.active) return Promise.reject(new Error('Party preset mutation cancelled'));
+    const accountGeneration = this.accountGeneration;
+    const queued = this.mutationTail.then(async () => {
+      this.requireCurrentAccount(accountGeneration);
+      const result = await operation();
+      if (!this.isCurrentAccount(accountGeneration)) return result;
+
+      this.replace(project(this.snapshot.catalog, result));
+      if (reload) await this.load(true);
+      return result;
+    });
+    this.mutationTail = queued.then(
+      () => undefined,
+      () => undefined,
+    );
+    return queued;
+  }
+
+  private replace(catalog: PartyPresetCatalogResponse): void {
+    this.requestGeneration += 1;
+    this.activeRequestGeneration = null;
+    this.loaded = true;
+    this.publish({ catalog, loading: false, error: null, retry: this.retry });
+  }
+
+  private requireCurrentAccount(accountGeneration: number): void {
+    if (!this.isCurrentAccount(accountGeneration)) {
+      throw new Error('Party preset mutation cancelled');
+    }
+  }
+
+  private isCurrentAccount(accountGeneration: number): boolean {
+    return this.active && accountGeneration === this.accountGeneration;
+  }
+
+  private isCurrent(accountGeneration: number, requestGeneration: number): boolean {
+    return this.isCurrentAccount(accountGeneration)
+      && requestGeneration === this.activeRequestGeneration;
+  }
+
+  private emptySnapshot(): PartyPresetCatalogResource {
+    return {
+      catalog: emptyCatalog(),
+      loading: false,
+      error: null,
+      retry: this.retry,
+    };
+  }
+
+  private publish(snapshot: PartyPresetCatalogResource): void {
+    this.snapshot = snapshot;
+    for (const listener of this.listeners) listener();
+  }
+}
+
+function projectPresetUpsert(
+  catalog: PartyPresetCatalogResponse,
+  updated: PartyPresetResponse,
+): PartyPresetCatalogResponse {
+  const existing = catalog.presets.find(({ id }) => id === updated.id) ?? null;
+  const sourceFolderId = existing?.folderId;
+  const targetFolderId = updated.folderId;
+  const withoutUpdated = catalog.presets.filter(({ id }) => id !== updated.id);
+  const affectedFolderIds = new Set<number | null>([targetFolderId]);
+  if (sourceFolderId !== undefined) affectedFolderIds.add(sourceFolderId);
+  const normalizedById = new Map<number, PartyPresetResponse>();
+
+  for (const folderId of affectedFolderIds) {
+    const siblings = withoutUpdated
+      .filter((preset) => preset.folderId === folderId)
+      .sort(comparePresetOrder);
+    if (folderId === targetFolderId) {
+      const staysInFolder = existing?.folderId === targetFolderId;
+      const insertionIndex = staysInFolder
+        ? Math.max(0, Math.min(updated.displayOrder, siblings.length))
+        : 0;
+      siblings.splice(insertionIndex, 0, updated);
+    }
+    siblings.forEach((preset, displayOrder) => {
+      normalizedById.set(preset.id, { ...preset, displayOrder });
+    });
+  }
+
+  const presets = catalog.presets.map(
+    (preset) => normalizedById.get(preset.id) ?? preset,
+  );
+  if (existing == null) {
+    presets.push(normalizedById.get(updated.id) ?? { ...updated, displayOrder: 0 });
+  }
+  return { ...catalog, presets };
+}
+
+function comparePresetOrder(
+  left: PartyPresetResponse,
+  right: PartyPresetResponse,
+): number {
+  return left.displayOrder - right.displayOrder || left.id - right.id;
+}
+
+function emptyCatalog(): PartyPresetCatalogResponse {
+  return { folders: [], presets: [] };
+}
+
+function isEmptySnapshot(snapshot: PartyPresetCatalogResource): boolean {
+  return !snapshot.loading
+    && snapshot.error == null
+    && snapshot.catalog.folders.length === 0
+    && snapshot.catalog.presets.length === 0;
+}

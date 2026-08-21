@@ -35,7 +35,7 @@ import { RaidPanel } from '../features/town/panels/RaidPanel';
 import { PantheonPanel } from '../features/town/panels/PantheonPanel';
 import type { TownApi } from '../features/town/api/townApi';
 import { TOWN_PANEL_REGISTRY } from '../features/town/townPanelRegistry';
-import type { PartyPresetCatalogResource } from '../domain/partyPresetCatalogLoader';
+import type { PartyPresetCatalogResource } from '../domain/partyPresetCatalogModule';
 import type { BattleResultResponse, FishingBattleTarget, HofCharacter, RunBattleRequest } from '../types/api';
 import { theme } from '../styles/theme';
 

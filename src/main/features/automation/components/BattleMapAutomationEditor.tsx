@@ -32,7 +32,7 @@ import {
 } from '../../../domain/battleMapAutomation';
 import { buildBattleMapCatalogRows, type BattleMapCatalogRow } from '../../../domain/battleMapCatalog';
 import { toUserFacingErrorMessage } from '../../../domain/userFacingErrors';
-import type { PartyPresetCatalogResource } from '../../../domain/partyPresetCatalogLoader';
+import type { PartyPresetCatalogResource } from '../../../domain/partyPresetCatalogModule';
 import { formatAutomationPresetSelection } from '../../../domain/partyPresets';
 import { theme } from '../../../styles/theme';
 import type {

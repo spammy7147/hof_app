@@ -4,7 +4,7 @@ import { ArrowLeft, Info } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
 
 import type { UnifiedAutomationController } from '../domain/unifiedAutomationController';
-import type { PartyPresetCatalogResource } from '../domain/partyPresetCatalogLoader';
+import type { PartyPresetCatalogResource } from '../domain/partyPresetCatalogModule';
 import { UnifiedAutomationDashboard } from '../features/automation/components/UnifiedAutomationDashboard';
 import { AdventureMapAutomationEditor } from '../features/automation/components/AdventureMapAutomationEditor';
 import { BattleMapAutomationEditor } from '../features/automation/components/BattleMapAutomationEditor';

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { BattlePartyPresetPicker, type PartySelectionMode } from '../../battle/components/BattlePartyPresetPicker';
-import type { PartyPresetCatalogResource } from '../../../domain/partyPresetCatalogLoader';
+import type { PartyPresetCatalogResource } from '../../../domain/partyPresetCatalogModule';
 import { toUserFacingErrorMessage } from '../../../domain/userFacingErrors';
 import { theme } from '../../../styles/theme';
 import type {

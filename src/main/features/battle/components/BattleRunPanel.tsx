@@ -23,7 +23,7 @@ import {
   rehydrateExecutablePartyFromPresetSeed,
 } from '../../../domain/partyPresets';
 import { theme } from '../../../styles/theme';
-import type { PartyPresetCatalogResource } from '../../../domain/partyPresetCatalogLoader';
+import type { PartyPresetCatalogResource } from '../../../domain/partyPresetCatalogModule';
 import type {
   BattleResultResponse,
   BattleRoundResultResponse,

@@ -30,7 +30,7 @@ import {
 } from '../../../domain/questAutomation';
 import { filterAutomationProfileCategories } from '../../../domain/automationProfiles';
 import { toUserFacingErrorMessage } from '../../../domain/userFacingErrors';
-import type { PartyPresetCatalogResource } from '../../../domain/partyPresetCatalogLoader';
+import type { PartyPresetCatalogResource } from '../../../domain/partyPresetCatalogModule';
 import { theme } from '../../../styles/theme';
 import type {
   BattleCategoryResponse,
