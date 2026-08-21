@@ -10,9 +10,6 @@ import {
   View,
 } from "react-native";
 import type {
-  CharacterCommand,
-  CharacterCommandResult,
-  HofCharacterDetail,
   HofCharacterEquipmentCandidate,
 } from "../../../types/api";
 import { theme } from "../../../styles/theme";
@@ -24,10 +21,9 @@ export function CharacterEquipmentScreen({
   characterHub: CharacterManagementHubResource;
 }) {
   const detail = characterHub.detail!;
-  const onCommand = characterHub.actions.executeCommand;
+  const actions = characterHub.actions;
   const [part, setPart] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const revision = detail.revision;
   const [chosen, setChosen] = useState<HofCharacterEquipmentCandidate | null>(
     null,
   );
@@ -45,7 +41,6 @@ export function CharacterEquipmentScreen({
       ),
     [candidateType, detail.equipmentCandidates, query],
   );
-  const command = (value: CharacterCommand) => onCommand?.(value);
   return (
     <View style={styles.screen}>
       <View style={styles.stats}>
@@ -70,19 +65,15 @@ export function CharacterEquipmentScreen({
       </View>
       <View testID="equipment-preset-controls" style={styles.presetBox}>
         <View testID="equipment-preset-grid" style={styles.presetGrid}>
-          <PresetCard slotNumber={1} detail={detail} command={command} />
-          <PresetCard slotNumber={2} detail={detail} command={command} />
+          <PresetCard slotNumber={1} actions={actions} />
+          <PresetCard slotNumber={2} actions={actions} />
         </View>
         <Action
           label="전체 해제"
           accessibilityLabel="전체 장비 해제"
           danger
           wide
-          onPress={() => command({
-            type: "REMOVE_ALL_EQUIPMENT",
-            characterId: detail.id,
-            expectedRevision: revision,
-          })}
+          onPress={() => void actions.removeAllEquipment?.()}
         />
       </View>
       <View style={styles.sectionHead}>
@@ -180,14 +171,7 @@ export function CharacterEquipmentScreen({
             )}
             ListHeaderComponent={
               <Pressable
-                onPress={() =>
-                  command({
-                    type: "REMOVE_EQUIPMENT",
-                    characterId: detail.id,
-                    expectedRevision: revision,
-                    equipmentPart: part ?? "",
-                  })
-                }
+                onPress={() => void actions.removeEquipment?.(part ?? "")}
                 style={styles.remove}
               >
                 <Text style={styles.removeText}>이 부위 해제</Text>
@@ -212,14 +196,7 @@ export function CharacterEquipmentScreen({
               </View>
               <Pressable
                 accessibilityRole="button"
-                onPress={() =>
-                  command({
-                    type: "EQUIP_ITEM",
-                    characterId: detail.id,
-                    expectedRevision: revision,
-                    itemValue: chosen.value,
-                  })
-                }
+                onPress={() => void actions.equipItem?.(chosen.value)}
                 style={styles.equip}
               >
                 <Text style={styles.equipText}>장착</Text>
@@ -278,12 +255,10 @@ function Action({
 
 function PresetCard({
   slotNumber,
-  detail,
-  command,
+  actions,
 }: {
   slotNumber: 1 | 2;
-  detail: HofCharacterDetail;
-  command: (value: CharacterCommand) => Promise<CharacterCommandResult | void> | undefined;
+  actions: CharacterManagementHubResource["actions"];
 }) {
   return (
     <View testID={`equipment-preset-${slotNumber}`} style={styles.presetCard}>
@@ -292,23 +267,13 @@ function PresetCard({
         label="불러오기"
         accessibilityLabel={`장비 ${slotNumber} 불러오기`}
         fill
-        onPress={() => command({
-          type: "LOAD_EQUIPMENT_PRESET",
-          characterId: detail.id,
-          expectedRevision: detail.revision,
-          slotNumber,
-        })}
+        onPress={() => void actions.loadEquipmentPreset?.(slotNumber)}
       />
       <Action
         label="저장"
         accessibilityLabel={`장비 ${slotNumber} 저장`}
         fill
-        onPress={() => command({
-          type: "SAVE_EQUIPMENT_PRESET",
-          characterId: detail.id,
-          expectedRevision: detail.revision,
-          slotNumber,
-        })}
+        onPress={() => void actions.saveEquipmentPreset?.(slotNumber)}
       />
     </View>
   );

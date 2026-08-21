@@ -370,6 +370,8 @@ describe('character management hub module', () => {
     await hub.getSnapshot().actions.select(character);
 
     await hub.getSnapshot().actions.allocateStats?.({ STR: 3 });
+    await hub.getSnapshot().actions.useItem?.('reset-crystal');
+    await hub.getSnapshot().actions.saveEquipmentPreset?.(2);
     await hub.getSnapshot().actions.knockback?.('캐릭터 1');
 
     assert.deepEqual(commands, [
@@ -378,6 +380,18 @@ describe('character management hub module', () => {
         characterId: 1,
         expectedRevision: 'detail-revision',
         amounts: { STR: 3 },
+      },
+      {
+        type: 'USE_ITEM',
+        characterId: 1,
+        expectedRevision: 'detail-revision',
+        itemValue: 'reset-crystal',
+      },
+      {
+        type: 'SAVE_EQUIPMENT_PRESET',
+        characterId: 1,
+        expectedRevision: 'detail-revision',
+        slotNumber: 2,
       },
       {
         type: 'KNOCKBACK',

@@ -55,7 +55,7 @@ moduleWithLoader._load = (request, parent, isMain) => (
 const { CharacterDetail, extractAvailableStatPoints, extractPrimaryStatValues, statGroupLabel } = require('../../main/components/CharacterDetail') as typeof import('../../main/components/CharacterDetail');
 const { CharacterEquipmentScreen } = require('../../main/features/characters/equipment/CharacterEquipmentScreen') as typeof import('../../main/features/characters/equipment/CharacterEquipmentScreen');
 const { CharacterManagementScreen } = require('../../main/features/characters/management/CharacterManagementScreen') as typeof import('../../main/features/characters/management/CharacterManagementScreen');
-const { CharacterItemsScreen, buildItemCommand } = require('../../main/features/characters/items/CharacterItemsScreen') as typeof import('../../main/features/characters/items/CharacterItemsScreen');
+const { CharacterItemsScreen } = require('../../main/features/characters/items/CharacterItemsScreen') as typeof import('../../main/features/characters/items/CharacterItemsScreen');
 const { CharacterSkillsScreen } = require('../../main/features/characters/skills/CharacterSkillsScreen') as typeof import('../../main/features/characters/skills/CharacterSkillsScreen');
 moduleWithLoader._load = originalLoad;
 
@@ -919,7 +919,6 @@ describe('CharacterDetail stat allocation', () => {
     await pressTab('기타 아이템');
     assert.deepEqual(visibleItemNames(), ['MYpod']);
 
-    assert.equal(buildItemCommand(detail, detail.equipmentCandidates![2]).type, 'USE_ITEM');
   });
 
   it('keeps the item use action outside the scrolling item list', async () => {

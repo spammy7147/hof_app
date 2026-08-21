@@ -9,11 +9,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import type {
-  CharacterCommand,
-  HofCharacterDetail,
-  HofCharacterEquipmentCandidate,
-} from "../../../types/api";
 import { theme } from "../../../styles/theme";
 import type { CharacterManagementHubResource } from "../../../domain/characterManagementHubModule";
 
@@ -25,7 +20,7 @@ export function CharacterItemsScreen({
   onBack: () => void;
 }) {
   const detail = characterHub.detail!;
-  const onCommand = characterHub.actions.executeCommand;
+  const useItem = characterHub.actions.useItem;
   const [tab, setTab] = useState<"growth" | "other">("growth");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
@@ -165,7 +160,7 @@ export function CharacterItemsScreen({
                       before: chosen.quantity ?? null,
                       revision: detail.revision,
                     });
-                    void onCommand?.(buildItemCommand(detail, chosen));
+                    void useItem?.(chosen.value);
                   },
                 },
               ],
@@ -180,21 +175,6 @@ export function CharacterItemsScreen({
       )}
     </View>
   );
-}
-
-export function buildItemCommand(
-  detail: HofCharacterDetail,
-  item: HofCharacterEquipmentCandidate,
-): CharacterCommand {
-  if (!["resetitem", "characteritem"].includes(item.typeCode)) {
-    throw new Error("관리 화면에서 직접 사용할 수 없는 아이템 유형입니다.");
-  }
-  return {
-    type: "USE_ITEM",
-    characterId: detail.id,
-    expectedRevision: detail.revision,
-    itemValue: item.value,
-  };
 }
 
 function itemCategoryLabel(typeCode: string): string {
