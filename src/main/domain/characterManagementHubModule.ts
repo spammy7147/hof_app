@@ -135,6 +135,13 @@ export type CharacterManagementHubResource = {
   actions: CharacterManagementHubActions;
 };
 
+export type CharacterManagementObservationSink = {
+  beginRosterObservation: () => (
+    characters: HofCharacter[],
+  ) => boolean;
+  observeCharacter: (character: HofCharacter) => boolean;
+};
+
 type CharacterManagementHubOptions = {
   now?: () => number;
   freshnessMs?: number;
@@ -180,6 +187,9 @@ export class CharacterManagementHubModule {
   private selectionGeneration = 0;
   private transferGeneration = 0;
   private requestGeneration = 0;
+  private rosterAuthorityGeneration = 0;
+  private rosterProjectionGeneration = 0;
+  private rosterObservationRequest = 0;
   private pendingPatternChange: CharacterPatternChange | null = null;
   private roster = new Map<number, HofCharacter>();
   private resource: CharacterManagementHubResource;
@@ -213,6 +223,9 @@ export class CharacterManagementHubModule {
     this.selectionGeneration += 1;
     this.transferGeneration += 1;
     this.requestGeneration += 1;
+    this.rosterAuthorityGeneration += 1;
+    this.rosterProjectionGeneration += 1;
+    this.rosterObservationRequest += 1;
     this.pendingPatternChange = null;
     this.roster = new Map();
     this.replace(emptyResource(
@@ -230,6 +243,9 @@ export class CharacterManagementHubModule {
     this.selectionGeneration += 1;
     this.transferGeneration += 1;
     this.requestGeneration += 1;
+    this.rosterAuthorityGeneration += 1;
+    this.rosterProjectionGeneration += 1;
+    this.rosterObservationRequest += 1;
     this.pendingPatternChange = null;
     this.roster = new Map();
     this.replace(emptyResource(
@@ -242,6 +258,61 @@ export class CharacterManagementHubModule {
   }
 
   observeRoster(characters: HofCharacter[]): void {
+    this.rosterAuthorityGeneration += 1;
+    this.rosterProjectionGeneration += 1;
+    this.rosterObservationRequest += 1;
+    this.applyRoster(characters);
+  }
+
+  createObservationSink(accountKey: unknown): CharacterManagementObservationSink {
+    return {
+      beginRosterObservation: () => {
+        const request = ++this.rosterObservationRequest;
+        const authorityGeneration = this.rosterAuthorityGeneration;
+        const projectionGeneration = this.rosterProjectionGeneration;
+        return (characters) => {
+          if (
+            !this.isObservationAccount(accountKey) ||
+            request !== this.rosterObservationRequest ||
+            authorityGeneration !== this.rosterAuthorityGeneration ||
+            projectionGeneration !== this.rosterProjectionGeneration
+          ) return false;
+          this.applyRoster(mergeFresherCharacterProjections(
+            [...this.roster.values()],
+            characters,
+          ));
+          return true;
+        };
+      },
+      observeCharacter: (character) => {
+        if (!this.isObservationAccount(accountKey)) return false;
+        this.projectCharacter(character);
+        return true;
+      },
+    };
+  }
+
+  private isObservationAccount(accountKey: unknown): boolean {
+    return this.accountKey != null && Object.is(this.accountKey, accountKey);
+  }
+
+  private projectCharacter(character: HofCharacter): void {
+    this.rosterProjectionGeneration += 1;
+    this.applyRoster(upsertFresherCharacterProjection(
+      [...this.roster.values()],
+      character,
+    ));
+  }
+
+  private projectAuthoritativeCharacter(character: HofCharacter): void {
+    this.rosterProjectionGeneration += 1;
+    const current = [...this.roster.values()];
+    this.applyRoster(this.roster.has(character.id)
+      ? current.map((item) => item.id === character.id ? character : item)
+      : [...current, character]);
+  }
+
+  private applyRoster(characters: HofCharacter[]): void {
     const roster = new Map(characters.map((character) => [character.id, character]));
     const selected = this.resource.selectedCharacter;
     const transferSource = this.resource.transfer.sourceCharacter;
@@ -348,7 +419,7 @@ export class CharacterManagementHubModule {
       selectionGeneration,
       request,
       true,
-      selected,
+      this.rosterProjectionGeneration,
     );
   }
 
@@ -385,7 +456,7 @@ export class CharacterManagementHubModule {
       this.selectionGeneration,
       request,
       false,
-      selected,
+      this.rosterProjectionGeneration,
     );
   }
 
@@ -395,12 +466,16 @@ export class CharacterManagementHubModule {
     selectionGeneration: number,
     request: number,
     initial: boolean,
-    rosterBaseline: HofCharacter,
+    rosterProjectionBaseline: number,
   ): Promise<void> {
     try {
       const detail = await this.backend.loadStoredDetail(characterId);
       if (!this.isCurrent(characterId, generation, selectionGeneration, request)) return;
-      const mergedDetail = this.mergeRosterObservedAfter(detail, rosterBaseline);
+      const mergedDetail = this.mergeRosterObservedAfter(
+        detail,
+        rosterProjectionBaseline,
+      );
+      this.projectAuthoritativeCharacter(mergedDetail);
       this.replace({
         ...this.resource,
         detail: mergedDetail,
@@ -410,14 +485,13 @@ export class CharacterManagementHubModule {
       });
       this.backend.publishDetail?.(mergedDetail);
       if (this.isStale(mergedDetail)) {
-        const refreshBaseline = this.resource.selectedCharacter ?? rosterBaseline;
         void this.refreshAuthority(
           characterId,
           generation,
           selectionGeneration,
           request,
           false,
-          refreshBaseline,
+          this.rosterProjectionGeneration,
         );
       }
     } catch (error: unknown) {
@@ -448,7 +522,7 @@ export class CharacterManagementHubModule {
       this.selectionGeneration,
       request,
       true,
-      selected,
+      this.rosterProjectionGeneration,
     );
   }
 
@@ -458,12 +532,16 @@ export class CharacterManagementHubModule {
     selectionGeneration: number,
     request: number,
     reportError: boolean,
-    rosterBaseline: HofCharacter,
+    rosterProjectionBaseline: number,
   ): Promise<void> {
     try {
       const detail = await this.backend.refreshAuthoritativeDetail(characterId);
       if (!this.isCurrent(characterId, generation, selectionGeneration, request)) return;
-      const mergedDetail = this.mergeRosterObservedAfter(detail, rosterBaseline);
+      const mergedDetail = this.mergeRosterObservedAfter(
+        detail,
+        rosterProjectionBaseline,
+      );
+      this.projectAuthoritativeCharacter(mergedDetail);
       this.replace({
         ...this.resource,
         detail: mergedDetail,
@@ -710,6 +788,9 @@ export class CharacterManagementHubModule {
       });
     } else {
       this.replace({ ...this.resource, identityResolution: null });
+      const publishRoster = this
+        .createObservationSink(this.accountKey)
+        .beginRosterObservation();
       const roster = await this.backend.loadRoster?.();
       if (!this.isCurrentTarget(
         command.characterId,
@@ -717,8 +798,7 @@ export class CharacterManagementHubModule {
         expectedSelectionGeneration,
       )) return undefined;
       if (roster) {
-        this.observeRoster(roster);
-        this.backend.publishRoster?.(roster);
+        if (publishRoster(roster)) this.backend.publishRoster?.(roster);
       }
       if (!this.isCurrentTarget(
         command.characterId,
@@ -1289,10 +1369,17 @@ export class CharacterManagementHubModule {
 
   private mergeRosterObservedAfter(
     detail: HofCharacterDetail,
-    rosterBaseline: HofCharacter,
+    rosterProjectionBaseline: number,
   ): HofCharacterDetail {
     const observed = this.roster.get(detail.id);
-    return observed && observed !== rosterBaseline && isActive(observed)
+    return observed
+      && isActive(observed)
+      && (
+        (
+          this.rosterProjectionGeneration !== rosterProjectionBaseline
+          && isFresherCharacter(observed, detail)
+        ) || isChronologicallyFresher(observed, detail)
+      )
       ? { ...detail, ...observed }
       : detail;
   }
@@ -1325,6 +1412,70 @@ function emptyResource(
 
 function isActive(character: HofCharacter): boolean {
   return (character.lifecycle ?? 'ACTIVE') === 'ACTIVE';
+}
+
+function mergeFresherCharacterProjections(
+  current: HofCharacter[],
+  incoming: HofCharacter[],
+): HofCharacter[] {
+  const currentById = new Map(current.map((character) => [character.id, character]));
+  return incoming.map((observed) => {
+    const existing = currentById.get(observed.id);
+    return existing && isFresherCharacter(existing, observed) ? existing : observed;
+  });
+}
+
+function upsertFresherCharacterProjection(
+  current: HofCharacter[],
+  observed: HofCharacter,
+): HofCharacter[] {
+  const existing = current.find((character) => character.id === observed.id);
+  if (existing && isFresherCharacter(existing, observed)) return current;
+  return existing
+    ? current.map((character) => character.id === observed.id ? observed : character)
+    : [...current, observed];
+}
+
+function isFresherCharacter(
+  existing: HofCharacter,
+  observed: HofCharacter,
+): boolean {
+  const revisionOrder = compareInstant(existing.revision, observed.revision);
+  if (revisionOrder !== 0) return revisionOrder > 0;
+  return compareInstant(existing.detailSyncedAt, observed.detailSyncedAt) > 0;
+}
+
+function isChronologicallyFresher(
+  existing: HofCharacter,
+  observed: HofCharacter,
+): boolean {
+  const existingRevision = parseIsoInstant(existing.revision);
+  const observedRevision = parseIsoInstant(observed.revision);
+  return Number.isFinite(existingRevision)
+    && Number.isFinite(observedRevision)
+    && existingRevision > observedRevision;
+}
+
+function compareInstant(
+  left: string | null | undefined,
+  right: string | null | undefined,
+): number {
+  if (left === right) return 0;
+  if (left == null) return -1;
+  if (right == null) return 1;
+  const leftTime = parseIsoInstant(left);
+  const rightTime = parseIsoInstant(right);
+  if (!Number.isNaN(leftTime) && !Number.isNaN(rightTime)) {
+    return leftTime - rightTime;
+  }
+  if (Number.isNaN(leftTime) && Number.isNaN(rightTime)) {
+    return left.localeCompare(right);
+  }
+  return 0;
+}
+
+function parseIsoInstant(value: string): number {
+  return /^\d{4}-\d{2}-\d{2}T/.test(value) ? Date.parse(value) : Number.NaN;
 }
 
 function toCharacterCommand(

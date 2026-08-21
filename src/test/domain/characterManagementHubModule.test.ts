@@ -91,11 +91,34 @@ describe('character management hub module', () => {
     hub.observeRoster([character]);
     await hub.getSnapshot().actions.select(character);
 
-    assert.equal(hub.getSnapshot().selectedCharacter, character);
+    assert.equal(hub.getSnapshot().selectedCharacter?.id, character.id);
+    assert.equal(hub.getSnapshot().selectedCharacter?.detailSyncedAt, stored.detailSyncedAt);
     assert.equal(hub.getSnapshot().detail, stored);
     assert.equal(hub.getSnapshot().isLoading, false);
     assert.equal(hub.getSnapshot().errorMessage, null);
     assert.equal(refreshes, 0);
+  });
+
+  it('projects a selected detail directly into the canonical roster', async () => {
+    const character = makeHofCharacter(1, {
+      name: '목록 이름',
+      revision: '2026-08-21T00:00:00Z',
+    });
+    const detail = makeHofCharacterDetail(1, {
+      name: '상세 이름',
+      revision: '2026-08-21T00:01:00Z',
+      detailSyncedAt: new Date().toISOString(),
+    });
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async () => detail,
+    }));
+    hub.activate('account-1');
+    hub.observeRoster([character]);
+
+    await hub.getSnapshot().actions.select(character);
+
+    assert.equal(hub.getSnapshot().characters[0]?.name, '상세 이름');
+    assert.equal(hub.getSnapshot().selectedCharacter?.name, '상세 이름');
   });
 
   it('shows stored state first and refreshes authority after the 30-minute freshness boundary', async () => {
@@ -167,6 +190,95 @@ describe('character management hub module', () => {
     assert.equal(snapshots[0]?.selectedCharacter, null);
     assert.equal(snapshots[0]?.detail, null);
     assert.equal(snapshots[0]?.transfer.sourceCharacter, null);
+  });
+
+  it('keeps a newer character observation when an older roster request completes later', () => {
+    const original = makeHofCharacter(1, { revision: '2026-08-21T00:00:00Z' });
+    const observed = makeHofCharacter(1, {
+      name: 'SSE 최신 이름',
+      revision: '2026-08-21T00:02:00Z',
+    });
+    const hub = new CharacterManagementHubModule(backend({}));
+    hub.activate('account-1');
+    hub.observeRoster([original]);
+    const observations = hub.createObservationSink('account-1');
+    const publishList = observations.beginRosterObservation();
+
+    assert.equal(observations.observeCharacter(observed), true);
+    assert.equal(publishList([original]), false);
+
+    assert.equal(hub.getSnapshot().characters[0]?.name, 'SSE 최신 이름');
+  });
+
+  it('rejects roster and character observations retained from a previous account', () => {
+    const hub = new CharacterManagementHubModule(backend({}));
+    hub.activate('account-1');
+    const stale = hub.createObservationSink('account-1');
+    const publishList = stale.beginRosterObservation();
+
+    hub.activate('account-2');
+    const current = hub.createObservationSink('account-2');
+    assert.equal(stale.observeCharacter(makeHofCharacter(1)), false);
+    assert.equal(publishList([makeHofCharacter(1)]), false);
+    assert.equal(current.observeCharacter(makeHofCharacter(2)), true);
+
+    assert.deepEqual(hub.getSnapshot().characters.map((character) => character.id), [2]);
+  });
+
+  it('keeps a newer SSE projection across a command roster and detail reload', async () => {
+    const original = makeHofCharacter(1, {
+      name: '명령 전 이름',
+      revision: '2026-08-21T00:00:00Z',
+    });
+    const observed = makeHofCharacter(1, {
+      name: 'SSE 최신 이름',
+      revision: '2026-08-21T00:02:00Z',
+    });
+    const roster = deferred<HofCharacter[]>();
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async () => makeHofCharacterDetail(1, {
+        name: '늦은 명령 상세',
+        revision: '2026-08-21T00:01:00Z',
+        detailSyncedAt: new Date().toISOString(),
+      }),
+      executeCommand: async () => ({
+        type: 'Completed',
+        characterId: 1,
+        revision: '2026-08-21T00:01:00Z',
+        messages: [],
+      }),
+      loadRoster: () => roster.promise,
+    }));
+    hub.activate('account-1');
+    hub.observeRoster([original]);
+    await hub.getSnapshot().actions.select(original);
+    const pending = hub.getSnapshot().actions.pray?.();
+    await settle();
+
+    hub.createObservationSink('account-1').observeCharacter(observed);
+    roster.resolve([original]);
+    await pending;
+
+    assert.equal(hub.getSnapshot().characters[0]?.name, 'SSE 최신 이름');
+    assert.equal(hub.getSnapshot().detail?.name, 'SSE 최신 이름');
+  });
+
+  it('keeps an archive mutation when an older list request completes later', async () => {
+    const active = makeHofCharacter(1);
+    const archived = makeHofCharacter(1, { lifecycle: 'ARCHIVED' });
+    const hub = new CharacterManagementHubModule(backend({
+      archiveCharacter: async () => [archived],
+    }));
+    hub.activate('account-1');
+    hub.observeRoster([active]);
+    const publishList = hub
+      .createObservationSink('account-1')
+      .beginRosterObservation();
+
+    await hub.getSnapshot().actions.archiveCharacter?.(1);
+    assert.equal(publishList([active]), false);
+
+    assert.equal(hub.getSnapshot().characters[0]?.lifecycle, 'ARCHIVED');
   });
 
   it('does not let an older detail response overwrite a newly selected character', async () => {
