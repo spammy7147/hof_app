@@ -30,7 +30,6 @@ import type {
   HofCharacter,
   MovePartyPresetFolderRequest,
   PartyPresetCatalogResponse,
-  PartyPresetFolderResponse,
   PartyPresetResponse,
   RenamePartyPresetFolderRequest,
   ReorderPartyPresetFoldersRequest,
@@ -56,7 +55,6 @@ type PartyPresetListProps = {
 
 type ExpandedPresetId = number | 'new' | null;
 type NewPresetDraft = { name: string; party: BattlePartyMember[]; folderId: number | null };
-type FolderMoveOverlay = { base: PartyPresetFolderResponse[]; value: PartyPresetFolderResponse[] };
 type PickerInvocation = { handle: ReturnType<typeof findNodeHandle> };
 
 /** 캐릭터 탭의 저장 파티 프리셋을 편집하고 정렬한다. */
@@ -74,7 +72,6 @@ export function PartyPresetList({
   onMovePartyPresetFolder,
   onDeletePartyPresetFolder,
 }: PartyPresetListProps) {
-  const [folderMoveOverlay, setFolderMoveOverlay] = useState<FolderMoveOverlay | null>(null);
   const [expandedPresetId, setExpandedPresetId] = useState<ExpandedPresetId>(null);
   const [newDraft, setNewDraft] = useState<NewPresetDraft | null>(null);
   const [activeSlotIndex, setActiveSlotIndex] = useState(0);
@@ -91,7 +88,7 @@ export function PartyPresetList({
   const canonicalPresets = authenticated ? partyPresetCatalog.catalog.presets : [];
   const canonicalFolders = authenticated ? partyPresetCatalog.catalog.folders : [];
   const presets = canonicalPresets;
-  const folders = folderMoveOverlay?.base === canonicalFolders ? folderMoveOverlay.value : canonicalFolders;
+  const folders = canonicalFolders;
   const mutationPendingRef = useRef(false);
   const authenticatedRef = useRef(authenticated);
   const previousAuthenticatedRef = useRef(authenticated);
@@ -184,7 +181,6 @@ export function PartyPresetList({
     setExpandedFolderIds(new Set());
     setFolderPickerOpen(false);
     setFolderEditMode(false);
-    setFolderMoveOverlay(null);
     setErrorMessage(null);
     pickerInvocationRef.current = null;
     pickerFocusGenerationRef.current += 1;
@@ -412,23 +408,8 @@ export function PartyPresetList({
   }
 
   async function moveFolder(folderId: number, request: MovePartyPresetFolderRequest) {
-    if (!authenticated || mutationPendingRef.current || !onMovePartyPresetFolder) return false;
-    const accountGeneration = accountGenerationRef.current;
-    setFolderMoveOverlay({
-      base: canonicalFolders,
-      value: optimisticallyMoveFolder(canonicalFolders, folderId, request),
-    });
-    const succeeded = await mutateFolder(() => onMovePartyPresetFolder(folderId, request));
-    if (!isCurrentAccountGeneration(accountGeneration)) return false;
-    setFolderMoveOverlay(null);
-    if (!succeeded) {
-      try {
-        partyPresetCatalog.retry();
-      } catch {
-        // Keep the authoritative pre-drag catalog when recovery is unavailable.
-      }
-    }
-    return succeeded;
+    if (!onMovePartyPresetFolder) return false;
+    return mutateFolder(() => onMovePartyPresetFolder(folderId, request));
   }
 
   function movePreset(presetId: number, offset: -1 | 1) {
@@ -967,40 +948,6 @@ function normalizeDraftParty(party: BattlePartyMember[]): BattlePartyMember[] {
 function formatDraftPartySummary(party: BattlePartyMember[]): string {
   const memberCount = normalizeDraftParty(party).filter((member) => member.characterId != null).length;
   return `${memberCount.toLocaleString('en-US')}명 설정`;
-}
-
-function optimisticallyMoveFolder(
-  folders: PartyPresetFolderResponse[],
-  folderId: number,
-  request: MovePartyPresetFolderRequest,
-): PartyPresetFolderResponse[] {
-  const moving = folders.find((folder) => folder.id === folderId);
-  if (!moving) return folders;
-  const byOrder = (left: PartyPresetFolderResponse, right: PartyPresetFolderResponse) => (
-    left.displayOrder - right.displayOrder || left.id - right.id
-  );
-  const orders = new Map<number, { parentFolderId: number | null; displayOrder: number }>();
-  const previousSiblings = folders
-    .filter((folder) => folder.parentFolderId === moving.parentFolderId && folder.id !== folderId)
-    .sort(byOrder);
-  previousSiblings.forEach((folder, displayOrder) => {
-    orders.set(folder.id, { parentFolderId: folder.parentFolderId, displayOrder });
-  });
-  const targetSiblings = (request.parentFolderId === moving.parentFolderId
-    ? previousSiblings
-    : folders
-        .filter((folder) => folder.parentFolderId === request.parentFolderId && folder.id !== folderId)
-        .sort(byOrder));
-  const insertionIndex = Math.max(0, Math.min(request.displayOrder, targetSiblings.length));
-  const nextTargetSiblings = [...targetSiblings];
-  nextTargetSiblings.splice(insertionIndex, 0, moving);
-  nextTargetSiblings.forEach((folder, displayOrder) => {
-    orders.set(folder.id, { parentFolderId: request.parentFolderId, displayOrder });
-  });
-  return folders.map((folder) => {
-    const order = orders.get(folder.id);
-    return order == null ? folder : { ...folder, ...order };
-  });
 }
 
 const styles = StyleSheet.create({

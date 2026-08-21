@@ -479,7 +479,7 @@ describe('PartyPresetList', () => {
     assert.equal(findHost(failedRenderer.root, 'PartyPresetFolderEditor').props.index.foldersById.get(10).parentFolderId, null);
   });
 
-  it('shows an optimistic full-tree move and rolls back with authoritative recovery on failure', async () => {
+  it('leaves folder optimism and recovery to the catalog owner snapshot', async () => {
     const pending = deferred<PartyPresetCatalogResponse>();
     let retries = 0;
     const renderer = await renderList({
@@ -492,61 +492,46 @@ describe('PartyPresetList', () => {
       void editor.props.onMove(10, { parentFolderId: 11, displayOrder: 0 });
       await Promise.resolve();
     });
-    assert.equal(findHost(renderer.root, 'PartyPresetFolderEditor').props.index.foldersById.get(10).parentFolderId, 11);
+    assert.equal(findHost(renderer.root, 'PartyPresetFolderEditor').props.index.foldersById.get(10).parentFolderId, null);
 
     await act(async () => pending.reject(new Error('move failed')));
-    assert.equal(retries, 1);
+    assert.equal(retries, 0);
     assert.equal(findHost(renderer.root, 'PartyPresetFolderEditor').props.index.foldersById.get(10).parentFolderId, null);
     assert.equal(textCount(renderer.root, 'move failed'), 1);
   });
 
-  it('orders same-parent and cross-parent folder siblings optimistically before the server resolves', async () => {
-    const sameParentPending = deferred<PartyPresetCatalogResponse>();
-    const sameParentCatalog: PartyPresetCatalogResponse = {
+  it('adopts the catalog owner projected folder order while a move is pending', async () => {
+    const pending = deferred<PartyPresetCatalogResponse>();
+    const initial: PartyPresetCatalogResponse = {
       folders: [folder(1, 'A', null, 0), folder(2, 'B', null, 1), folder(3, 'C', null, 2)],
       presets: [],
     };
-    const sameParent = await renderList({
-      partyPresetCatalog: catalogResource(sameParentCatalog),
-      onMovePartyPresetFolder: async () => sameParentPending.promise,
+    const projected: PartyPresetCatalogResponse = {
+      folders: [folder(2, 'B', null, 0), folder(3, 'C', null, 1), folder(1, 'A', null, 2)],
+      presets: [],
+    };
+    const props = listProps({
+      partyPresetCatalog: catalogResource(initial),
+      onMovePartyPresetFolder: async () => pending.promise,
     });
-    await act(async () => sameParent.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
+    const renderer = await renderListProps(props);
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
     await act(async () => {
-      void findHost(sameParent.root, 'PartyPresetFolderEditor').props.onMove(1, { parentFolderId: null, displayOrder: 2 });
+      void findHost(renderer.root, 'PartyPresetFolderEditor').props.onMove(1, { parentFolderId: null, displayOrder: 2 });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      renderer.update(React.createElement(PartyPresetList, {
+        ...props,
+        partyPresetCatalog: catalogResource(projected),
+      }));
       await Promise.resolve();
     });
     assert.deepEqual(
-      findHost(sameParent.root, 'PartyPresetFolderEditor').props.index.childFolderIdsByParent.get(null),
+      findHost(renderer.root, 'PartyPresetFolderEditor').props.index.childFolderIdsByParent.get(null),
       [2, 3, 1],
     );
-
-    const crossParentPending = deferred<PartyPresetCatalogResponse>();
-    const crossParentCatalog: PartyPresetCatalogResponse = {
-      folders: [
-        folder(10, '왼쪽', null, 0), folder(20, '오른쪽', null, 1),
-        folder(11, '이동', 10, 0), folder(12, '남음', 10, 1),
-        folder(21, '앞', 20, 0), folder(22, '뒤', 20, 1),
-      ],
-      presets: [],
-    };
-    const crossParent = await renderList({
-      partyPresetCatalog: catalogResource(crossParentCatalog),
-      onMovePartyPresetFolder: async () => crossParentPending.promise,
-    });
-    await act(async () => crossParent.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
-    await act(async () => {
-      void findHost(crossParent.root, 'PartyPresetFolderEditor').props.onMove(11, { parentFolderId: 20, displayOrder: 1 });
-      await Promise.resolve();
-    });
-    const index = findHost(crossParent.root, 'PartyPresetFolderEditor').props.index;
-    assert.deepEqual(index.childFolderIdsByParent.get(10), [12]);
-    assert.deepEqual(index.childFolderIdsByParent.get(20), [21, 11, 22]);
-
-    await act(async () => {
-      sameParentPending.resolve(sameParentCatalog);
-      crossParentPending.resolve(crossParentCatalog);
-      await Promise.all([sameParentPending.promise, crossParentPending.promise]);
-    });
+    await act(async () => pending.resolve(projected));
   });
 
   it('keeps multiple character-catalog folders open independently', async () => {

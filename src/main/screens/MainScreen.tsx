@@ -242,12 +242,42 @@ export function MainScreen({
         makePresetPrimary: onMakePartyPresetPrimary,
         reorderPresets: onReorderPartyPresets,
         deletePreset: onDeletePartyPreset,
+        createFolder: (request) => {
+          if (!onCreatePartyPresetFolder)
+            return Promise.reject(new Error("폴더 만들기를 사용할 수 없습니다."));
+          return onCreatePartyPresetFolder(request);
+        },
+        renameFolder: (folderId, request) => {
+          if (!onRenamePartyPresetFolder)
+            return Promise.reject(new Error("폴더 이름 변경을 사용할 수 없습니다."));
+          return onRenamePartyPresetFolder(folderId, request);
+        },
+        reorderFolders: (request) => {
+          if (!onReorderPartyPresetFolders)
+            return Promise.reject(new Error("폴더 순서 변경을 사용할 수 없습니다."));
+          return onReorderPartyPresetFolders(request);
+        },
+        moveFolder: (folderId, request) => {
+          if (!onMovePartyPresetFolder)
+            return Promise.reject(new Error("폴더 이동을 사용할 수 없습니다."));
+          return onMovePartyPresetFolder(folderId, request);
+        },
+        deleteFolder: (folderId) => {
+          if (!onDeletePartyPresetFolder)
+            return Promise.reject(new Error("폴더 삭제를 사용할 수 없습니다."));
+          return onDeletePartyPresetFolder(folderId);
+        },
       }),
     [
+      onCreatePartyPresetFolder,
       onCreatePartyPreset,
+      onDeletePartyPresetFolder,
       onDeletePartyPreset,
       onGetPartyPresetCatalog,
       onMakePartyPresetPrimary,
+      onMovePartyPresetFolder,
+      onRenamePartyPresetFolder,
+      onReorderPartyPresetFolders,
       onReorderPartyPresets,
       onUpdatePartyPreset,
     ],
@@ -294,64 +324,28 @@ export function MainScreen({
     [partyPresetCatalogModule],
   );
   const createPresetFolder = useCallback(
-    (request: CreatePartyPresetFolderRequest) => {
-      if (!onCreatePartyPresetFolder)
-        throw new Error("폴더 만들기를 사용할 수 없습니다.");
-      return partyPresetCatalogModule.runCompatibilityMutation(
-        () => onCreatePartyPresetFolder(request),
-        (_, catalog) => catalog,
-        false,
-      );
-    },
-    [onCreatePartyPresetFolder, partyPresetCatalogModule],
+    (request: CreatePartyPresetFolderRequest) =>
+      partyPresetCatalogModule.createFolder(request),
+    [partyPresetCatalogModule],
   );
   const renamePresetFolder = useCallback(
-    (folderId: number, request: RenamePartyPresetFolderRequest) => {
-      if (!onRenamePartyPresetFolder)
-        throw new Error("폴더 이름 변경을 사용할 수 없습니다.");
-      return partyPresetCatalogModule.runCompatibilityMutation(
-        () => onRenamePartyPresetFolder(folderId, request),
-        (_, catalog) => catalog,
-        false,
-      );
-    },
-    [onRenamePartyPresetFolder, partyPresetCatalogModule],
+    (folderId: number, request: RenamePartyPresetFolderRequest) =>
+      partyPresetCatalogModule.renameFolder(folderId, request),
+    [partyPresetCatalogModule],
   );
   const reorderPresetFolders = useCallback(
-    (request: ReorderPartyPresetFoldersRequest) => {
-      if (!onReorderPartyPresetFolders)
-        throw new Error("폴더 순서 변경을 사용할 수 없습니다.");
-      return partyPresetCatalogModule.runCompatibilityMutation(
-        () => onReorderPartyPresetFolders(request),
-        (_, catalog) => catalog,
-        false,
-      );
-    },
-    [onReorderPartyPresetFolders, partyPresetCatalogModule],
+    (request: ReorderPartyPresetFoldersRequest) =>
+      partyPresetCatalogModule.reorderFolders(request),
+    [partyPresetCatalogModule],
   );
   const movePresetFolder = useCallback(
-    (folderId: number, request: MovePartyPresetFolderRequest) => {
-      if (!onMovePartyPresetFolder)
-        throw new Error("폴더 이동을 사용할 수 없습니다.");
-      return partyPresetCatalogModule.runCompatibilityMutation(
-        () => onMovePartyPresetFolder(folderId, request),
-        (_, catalog) => catalog,
-        false,
-      );
-    },
-    [onMovePartyPresetFolder, partyPresetCatalogModule],
+    (folderId: number, request: MovePartyPresetFolderRequest) =>
+      partyPresetCatalogModule.moveFolder(folderId, request),
+    [partyPresetCatalogModule],
   );
   const deletePresetFolder = useCallback(
-    (folderId: number) => {
-      if (!onDeletePartyPresetFolder)
-        throw new Error("폴더 삭제를 사용할 수 없습니다.");
-      return partyPresetCatalogModule.runCompatibilityMutation(
-        () => onDeletePartyPresetFolder(folderId),
-        (_, catalog) => catalog,
-        false,
-      );
-    },
-    [onDeletePartyPresetFolder, partyPresetCatalogModule],
+    (folderId: number) => partyPresetCatalogModule.deleteFolder(folderId),
+    [partyPresetCatalogModule],
   );
   const [activeTabId, setActiveTabId] =
     useState<MainRouteId>(DEFAULT_MAIN_TAB_ID);

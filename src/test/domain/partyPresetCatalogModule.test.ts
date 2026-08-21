@@ -5,7 +5,11 @@ import {
   PartyPresetCatalogModule,
   type PartyPresetCatalogBackend,
 } from '../../main/domain/partyPresetCatalogModule';
-import type { PartyPresetCatalogResponse, PartyPresetResponse } from '../../main/types/api';
+import type {
+  PartyPresetCatalogResponse,
+  PartyPresetFolderResponse,
+  PartyPresetResponse,
+} from '../../main/types/api';
 
 describe('party preset catalog module', () => {
   it('exposes initial load, failure, and retry through one observable snapshot', async () => {
@@ -334,6 +338,238 @@ describe('party preset catalog module', () => {
     assert.equal(module.getSnapshot().error, '파티 프리셋을 불러오지 못했습니다.');
     assert.equal(module.getSnapshot().mutationError, '파티 프리셋을 변경하지 못했습니다.');
   });
+
+  it('serializes folder creation and rename through the same observable catalog', async () => {
+    const created = deferred<PartyPresetCatalogResponse>();
+    const renamed = deferred<PartyPresetCatalogResponse>();
+    const calls: string[] = [];
+    const initial = catalogWithFolders(folder(1, '전투', null, 0));
+    const afterCreate = catalogWithFolders(
+      folder(2, '레이드', null, 0),
+      folder(1, '전투', null, 1),
+    );
+    const afterRename = catalogWithFolders(
+      folder(2, '레이드', null, 0),
+      folder(1, '보스전', null, 1),
+    );
+    const module = createModule({
+      loadCatalog: async () => initial,
+      createFolder: async () => {
+        calls.push('create');
+        return created.promise;
+      },
+      renameFolder: async () => {
+        calls.push('rename');
+        return renamed.promise;
+      },
+    });
+    await module.activate('account-a');
+
+    const creating = module.createFolder({ name: '레이드', parentFolderId: null });
+    const renaming = module.renameFolder(1, { name: '보스전' });
+    assert.equal(module.getSnapshot().catalog.folders.find(({ id }) => id === 1)?.name, '보스전');
+    await Promise.resolve();
+    assert.deepEqual(calls, ['create']);
+
+    created.resolve(afterCreate);
+    await creating;
+    await waitFor(() => calls.length === 2);
+    assert.equal(module.getSnapshot().catalog.folders.find(({ id }) => id === 1)?.name, '보스전');
+
+    renamed.resolve(afterRename);
+    await renaming;
+    assert.deepEqual(module.getSnapshot().catalog, afterRename);
+  });
+
+  it('keeps the latest folder order while rapid move and reorder requests converge', async () => {
+    const moved = deferred<PartyPresetCatalogResponse>();
+    const reordered = deferred<PartyPresetCatalogResponse>();
+    const calls: string[] = [];
+    const initial = catalogWithFolders(
+      folder(1, 'A', null, 0),
+      folder(2, 'B', null, 1),
+      folder(3, 'C', null, 2),
+    );
+    const afterMove = catalogWithFolders(
+      folder(2, 'B', null, 0),
+      folder(3, 'C', null, 1),
+      folder(1, 'A', null, 2),
+    );
+    const finalOrder = catalogWithFolders(
+      folder(2, 'B', null, 0),
+      folder(1, 'A', null, 1),
+      folder(3, 'C', null, 2),
+    );
+    const module = createModule({
+      loadCatalog: async () => initial,
+      moveFolder: async () => {
+        calls.push('move');
+        return moved.promise;
+      },
+      reorderFolders: async () => {
+        calls.push('reorder');
+        return reordered.promise;
+      },
+    });
+    await module.activate('account-a');
+
+    const moving = module.moveFolder(1, { parentFolderId: null, displayOrder: 2 });
+    const reordering = module.reorderFolders({ parentFolderId: null, folderIds: [2, 1, 3] });
+    assert.deepEqual(folderIds(module, null), [2, 1, 3]);
+    await Promise.resolve();
+    assert.deepEqual(calls, ['move']);
+
+    moved.resolve(afterMove);
+    await moving;
+    await waitFor(() => calls.length === 2);
+    assert.deepEqual(folderIds(module, null), [2, 1, 3]);
+
+    reordered.resolve(finalOrder);
+    await reordering;
+    assert.deepEqual(folderIds(module, null), [2, 1, 3]);
+  });
+
+  it('projects folder deletion and affected preset membership in one snapshot', async () => {
+    const deletion = deferred<PartyPresetCatalogResponse>();
+    const initial: PartyPresetCatalogResponse = {
+      folders: [
+        folder(1, '삭제', null, 0),
+        folder(2, '유지', null, 1),
+        folder(3, '자식', 1, 0),
+      ],
+      presets: [
+        { ...preset(1, '미분류'), displayOrder: 0 },
+        { ...preset(2, '직속'), folderId: 1, displayOrder: 0 },
+      ],
+    };
+    const authoritative: PartyPresetCatalogResponse = {
+      folders: [
+        folder(2, '유지', null, 0),
+        folder(3, '자식', null, 1),
+      ],
+      presets: [
+        { ...preset(1, '미분류'), displayOrder: 0 },
+        { ...preset(2, '직속'), displayOrder: 1 },
+      ],
+    };
+    const module = createModule({
+      loadCatalog: async () => initial,
+      deleteFolder: () => deletion.promise,
+    });
+    await module.activate('account-a');
+
+    const deleting = module.deleteFolder(1);
+    assert.deepEqual(module.getSnapshot().catalog, authoritative);
+
+    deletion.resolve(authoritative);
+    await deleting;
+    assert.deepEqual(module.getSnapshot().catalog, authoritative);
+  });
+
+  it('ignores a late folder result after an account switch', async () => {
+    const oldMove = deferred<PartyPresetCatalogResponse>();
+    const oldCatalog = catalogWithFolders(folder(1, 'old', null, 0));
+    const newCatalog = catalogWithFolders(folder(9, 'new', null, 0));
+    const module = createModule({
+      loadCatalog: sequence(Promise.resolve(oldCatalog), Promise.resolve(newCatalog)),
+      moveFolder: () => oldMove.promise,
+    });
+    await module.activate('account-a');
+    const moving = module.moveFolder(1, { parentFolderId: null, displayOrder: 0 });
+    await Promise.resolve();
+    await module.activate('account-b');
+
+    oldMove.resolve(catalogWithFolders(folder(1, 'late-old', null, 0)));
+    await moving;
+    assert.deepEqual(module.getSnapshot().catalog, newCatalog);
+  });
+
+  it('recovers a failed folder mutation through the common authority retry policy', async () => {
+    const initial = catalogWithFolders(folder(1, 'before', null, 0));
+    const recovered = catalogWithFolders(folder(1, 'server', null, 0));
+    const module = createModule({
+      loadCatalog: sequence(Promise.resolve(initial), Promise.resolve(recovered)),
+      renameFolder: async () => {
+        throw new Error('rename failed');
+      },
+    });
+    await module.activate('account-a');
+
+    await assert.rejects(module.renameFolder(1, { name: 'optimistic' }), /rename failed/);
+
+    assert.deepEqual(module.getSnapshot().catalog, recovered);
+    assert.equal(module.getSnapshot().error, null);
+    assert.equal(module.getSnapshot().mutationError, '파티 프리셋을 변경하지 못했습니다.');
+  });
+
+  it('cancels a queued folder reorder when recovery invalidates its sibling set', async () => {
+    const deletion = deferred<PartyPresetCatalogResponse>();
+    let reorderCalls = 0;
+    const initial: PartyPresetCatalogResponse = {
+      folders: [
+        folder(1, '삭제 시도', null, 0),
+        folder(2, '루트 유지', null, 1),
+        folder(3, '자식', 1, 0),
+      ],
+      presets: [],
+    };
+    const module = createModule({
+      loadCatalog: sequence(Promise.resolve(initial), Promise.resolve(initial)),
+      deleteFolder: () => deletion.promise,
+      reorderFolders: async () => {
+        reorderCalls += 1;
+        return initial;
+      },
+    });
+    await module.activate('account-a');
+
+    const deleting = module.deleteFolder(1);
+    const dependentReorder = module.reorderFolders({
+      parentFolderId: null,
+      folderIds: [2, 3],
+    });
+    deletion.reject(new Error('delete failed'));
+
+    await assert.rejects(deleting, /delete failed/);
+    await assert.rejects(dependentReorder, /catalog changed/);
+    assert.equal(reorderCalls, 0);
+    assert.deepEqual(module.getSnapshot().catalog, initial);
+    assert.equal(module.getSnapshot().mutationError, '파티 프리셋을 변경하지 못했습니다.');
+  });
+
+  it('cancels a queued folder move when recovery changes its source or target siblings', async () => {
+    const deletion = deferred<PartyPresetCatalogResponse>();
+    let moveCalls = 0;
+    const initial: PartyPresetCatalogResponse = {
+      folders: [
+        folder(1, '삭제 시도', null, 0),
+        folder(2, '루트 유지', null, 1),
+        folder(3, '자식', 1, 0),
+      ],
+      presets: [],
+    };
+    const module = createModule({
+      loadCatalog: sequence(Promise.resolve(initial), Promise.resolve(initial)),
+      deleteFolder: () => deletion.promise,
+      moveFolder: async () => {
+        moveCalls += 1;
+        return initial;
+      },
+    });
+    await module.activate('account-a');
+
+    const deleting = module.deleteFolder(1);
+    const dependentMove = module.moveFolder(2, {
+      parentFolderId: null,
+      displayOrder: 1,
+    });
+    deletion.reject(new Error('delete failed'));
+
+    await assert.rejects(deleting, /delete failed/);
+    await assert.rejects(dependentMove, /catalog changed/);
+    assert.equal(moveCalls, 0);
+    assert.deepEqual(module.getSnapshot().catalog, initial);
+  });
 });
 
 function createModule(overrides: Partial<PartyPresetCatalogBackend> = {}) {
@@ -344,6 +580,11 @@ function createModule(overrides: Partial<PartyPresetCatalogBackend> = {}) {
     makePresetPrimary: async (presetId) => preset(presetId, `preset-${presetId}`, true),
     reorderPresets: async (request) => orderedPresets(request.presetIds),
     deletePreset: async () => null,
+    createFolder: async () => emptyCatalog(),
+    renameFolder: async () => emptyCatalog(),
+    reorderFolders: async () => emptyCatalog(),
+    moveFolder: async () => emptyCatalog(),
+    deleteFolder: async () => emptyCatalog(),
     ...overrides,
   };
   return new PartyPresetCatalogModule(backend);
@@ -362,6 +603,19 @@ function catalog(folderId: number): PartyPresetCatalogResponse {
 
 function catalogWithPresets(...presets: PartyPresetResponse[]): PartyPresetCatalogResponse {
   return { folders: [], presets };
+}
+
+function catalogWithFolders(...folders: PartyPresetFolderResponse[]): PartyPresetCatalogResponse {
+  return { folders, presets: [] };
+}
+
+function folder(
+  id: number,
+  name: string,
+  parentFolderId: number | null,
+  displayOrder: number,
+): PartyPresetFolderResponse {
+  return { id, name, parentFolderId, displayOrder, createdAt: '', updatedAt: '' };
 }
 
 function preset(id: number, name: string, isPrimary = false): PartyPresetResponse {
@@ -387,6 +641,13 @@ function orderedPresets(ids: number[]): PartyPresetResponse[] {
 
 function presetIds(module: PartyPresetCatalogModule): number[] {
   return [...module.getSnapshot().catalog.presets]
+    .sort((left, right) => left.displayOrder - right.displayOrder)
+    .map(({ id }) => id);
+}
+
+function folderIds(module: PartyPresetCatalogModule, parentFolderId: number | null): number[] {
+  return [...module.getSnapshot().catalog.folders]
+    .filter((folder) => folder.parentFolderId === parentFolderId)
     .sort((left, right) => left.displayOrder - right.displayOrder)
     .map(({ id }) => id);
 }

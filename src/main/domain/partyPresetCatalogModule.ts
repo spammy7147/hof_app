@@ -1,10 +1,19 @@
 import type {
+  CreatePartyPresetFolderRequest,
   CreatePartyPresetRequest,
+  MovePartyPresetFolderRequest,
   PartyPresetCatalogResponse,
+  PartyPresetFolderResponse,
   PartyPresetResponse,
+  RenamePartyPresetFolderRequest,
+  ReorderPartyPresetFoldersRequest,
   ReorderPartyPresetsRequest,
   UpdatePartyPresetRequest,
 } from '../types/api';
+import {
+  canMovePartyPresetFolder,
+  indexPartyPresetCatalog,
+} from './partyPresetCatalog';
 
 const LOAD_ERROR_MESSAGE = '파티 프리셋을 불러오지 못했습니다.';
 const MUTATION_ERROR_MESSAGE = '파티 프리셋을 변경하지 못했습니다.';
@@ -31,6 +40,21 @@ export type PartyPresetCatalogBackend = {
     request: ReorderPartyPresetsRequest,
   ) => Promise<PartyPresetResponse[]>;
   deletePreset: (presetId: number) => Promise<null>;
+  createFolder: (
+    request: CreatePartyPresetFolderRequest,
+  ) => Promise<PartyPresetCatalogResponse>;
+  renameFolder: (
+    folderId: number,
+    request: RenamePartyPresetFolderRequest,
+  ) => Promise<PartyPresetCatalogResponse>;
+  reorderFolders: (
+    request: ReorderPartyPresetFoldersRequest,
+  ) => Promise<PartyPresetCatalogResponse>;
+  moveFolder: (
+    folderId: number,
+    request: MovePartyPresetFolderRequest,
+  ) => Promise<PartyPresetCatalogResponse>;
+  deleteFolder: (folderId: number) => Promise<PartyPresetCatalogResponse>;
 };
 
 type CatalogProjector<T> = (
@@ -43,9 +67,19 @@ type OptimisticMutation = {
   project: (catalog: PartyPresetCatalogResponse) => PartyPresetCatalogResponse;
 };
 
+type CatalogMutationPrecondition = (
+  catalog: PartyPresetCatalogResponse,
+) => boolean;
+
 class CatalogMutationBlockedError extends Error {
   constructor() {
     super('Party preset catalog refresh required');
+  }
+}
+
+class CatalogMutationStaleError extends Error {
+  constructor() {
+    super('Party preset catalog changed before queued mutation');
   }
 }
 
@@ -176,13 +210,71 @@ export class PartyPresetCatalogModule {
     );
   }
 
-  /** expand 단계 동안 아직 이전되지 않은 동작도 같은 queue를 사용한다. */
-  runCompatibilityMutation<T>(
-    operation: () => Promise<T>,
-    project: CatalogProjector<T>,
-    reload = true,
-  ): Promise<T> {
-    return this.enqueueMutation(operation, project, reload);
+  createFolder(
+    request: CreatePartyPresetFolderRequest,
+  ): Promise<PartyPresetCatalogResponse> {
+    return this.enqueueMutation(
+      () => this.backend.createFolder(request),
+      replaceWithReturnedCatalog,
+      false,
+      undefined,
+      (catalog) => request.parentFolderId == null
+        || catalog.folders.some(({ id }) => id === request.parentFolderId),
+    );
+  }
+
+  renameFolder(
+    folderId: number,
+    request: RenamePartyPresetFolderRequest,
+  ): Promise<PartyPresetCatalogResponse> {
+    return this.enqueueMutation(
+      () => this.backend.renameFolder(folderId, request),
+      replaceWithReturnedCatalog,
+      false,
+      (catalog) => projectFolderRename(catalog, folderId, request.name),
+      (catalog) => catalog.folders.some(({ id }) => id === folderId),
+    );
+  }
+
+  reorderFolders(
+    request: ReorderPartyPresetFoldersRequest,
+  ): Promise<PartyPresetCatalogResponse> {
+    return this.enqueueMutation(
+      () => this.backend.reorderFolders(request),
+      replaceWithReturnedCatalog,
+      false,
+      (catalog) => projectFolderReorder(catalog, request),
+      (catalog) => isFolderReorderApplicable(catalog, request),
+    );
+  }
+
+  moveFolder(
+    folderId: number,
+    request: MovePartyPresetFolderRequest,
+  ): Promise<PartyPresetCatalogResponse> {
+    const expectedContext = folderMoveContext(
+      this.snapshot.catalog,
+      folderId,
+      request,
+    );
+    return this.enqueueMutation(
+      () => this.backend.moveFolder(folderId, request),
+      replaceWithReturnedCatalog,
+      false,
+      (catalog) => projectFolderMove(catalog, folderId, request),
+      (catalog) => expectedContext != null
+        && folderMoveContext(catalog, folderId, request) === expectedContext,
+    );
+  }
+
+  deleteFolder(folderId: number): Promise<PartyPresetCatalogResponse> {
+    return this.enqueueMutation(
+      () => this.backend.deleteFolder(folderId),
+      replaceWithReturnedCatalog,
+      false,
+      (catalog) => projectFolderDelete(catalog, folderId),
+      (catalog) => catalog.folders.some(({ id }) => id === folderId),
+    );
   }
 
   private async load(force: boolean): Promise<CatalogLoadOutcome> {
@@ -221,6 +313,7 @@ export class PartyPresetCatalogModule {
     optimisticProject?: (
       catalog: PartyPresetCatalogResponse,
     ) => PartyPresetCatalogResponse,
+    precondition?: CatalogMutationPrecondition,
   ): Promise<T> {
     if (!this.active) return Promise.reject(new Error('Party preset mutation cancelled'));
     if (this.mutationBlocked) return Promise.reject(new CatalogMutationBlockedError());
@@ -235,6 +328,9 @@ export class PartyPresetCatalogModule {
       try {
         this.requireCurrentAccount(accountGeneration);
         if (this.mutationBlocked) throw new CatalogMutationBlockedError();
+        if (precondition != null && !precondition(this.authoritativeCatalog)) {
+          throw new CatalogMutationStaleError();
+        }
         this.mutationError = null;
         this.publishProjection(this.snapshot.loading);
         const result = await operation();
@@ -248,6 +344,9 @@ export class PartyPresetCatalogModule {
         if (this.isCurrentAccount(accountGeneration)) {
           this.removeOptimisticMutation(optimisticMutation?.id);
           if (error instanceof CatalogMutationBlockedError) {
+            this.publishProjection(this.snapshot.loading);
+          } else if (error instanceof CatalogMutationStaleError) {
+            this.mutationError = MUTATION_ERROR_MESSAGE;
             this.publishProjection(this.snapshot.loading);
           } else {
             this.mutationError = MUTATION_ERROR_MESSAGE;
@@ -435,9 +534,241 @@ function projectPresetDelete(
   };
 }
 
+function replaceWithReturnedCatalog(
+  _catalog: PartyPresetCatalogResponse,
+  returned: PartyPresetCatalogResponse,
+): PartyPresetCatalogResponse {
+  return returned;
+}
+
+function projectFolderRename(
+  catalog: PartyPresetCatalogResponse,
+  folderId: number,
+  name: string,
+): PartyPresetCatalogResponse {
+  if (!catalog.folders.some(({ id }) => id === folderId)) return catalog;
+  return {
+    ...catalog,
+    folders: catalog.folders.map((folder) =>
+      folder.id === folderId ? { ...folder, name } : folder,
+    ),
+  };
+}
+
+function projectFolderReorder(
+  catalog: PartyPresetCatalogResponse,
+  request: ReorderPartyPresetFoldersRequest,
+): PartyPresetCatalogResponse {
+  const displayOrderById = new Map(
+    request.folderIds.map((folderId, displayOrder) => [folderId, displayOrder]),
+  );
+  return {
+    ...catalog,
+    folders: catalog.folders.map((folder) => {
+      if (folder.parentFolderId !== request.parentFolderId) return folder;
+      const displayOrder = displayOrderById.get(folder.id);
+      return displayOrder == null ? folder : { ...folder, displayOrder };
+    }),
+  };
+}
+
+function isFolderReorderApplicable(
+  catalog: PartyPresetCatalogResponse,
+  request: ReorderPartyPresetFoldersRequest,
+): boolean {
+  if (
+    request.parentFolderId != null
+    && !catalog.folders.some(({ id }) => id === request.parentFolderId)
+  ) return false;
+  if (new Set(request.folderIds).size !== request.folderIds.length) return false;
+  const currentIds = catalog.folders
+    .filter((folder) => folder.parentFolderId === request.parentFolderId)
+    .map(({ id }) => id);
+  return currentIds.length === request.folderIds.length
+    && currentIds.every((id) => request.folderIds.includes(id));
+}
+
+function projectFolderMove(
+  catalog: PartyPresetCatalogResponse,
+  folderId: number,
+  request: MovePartyPresetFolderRequest,
+): PartyPresetCatalogResponse {
+  const moving = catalog.folders.find((folder) => folder.id === folderId);
+  if (moving == null) return catalog;
+
+  const nextPositions = new Map<
+    number,
+    Pick<PartyPresetFolderResponse, 'parentFolderId' | 'displayOrder'>
+  >();
+  const sourceSiblings = catalog.folders
+    .filter((folder) => folder.parentFolderId === moving.parentFolderId && folder.id !== folderId)
+    .sort(compareFolderOrder);
+  sourceSiblings.forEach((folder, displayOrder) => {
+    nextPositions.set(folder.id, {
+      parentFolderId: folder.parentFolderId,
+      displayOrder,
+    });
+  });
+  const targetSiblings = request.parentFolderId === moving.parentFolderId
+    ? sourceSiblings
+    : catalog.folders
+        .filter((folder) => folder.parentFolderId === request.parentFolderId && folder.id !== folderId)
+        .sort(compareFolderOrder);
+  const insertionIndex = Math.max(
+    0,
+    Math.min(request.displayOrder, targetSiblings.length),
+  );
+  const nextTargetSiblings = [...targetSiblings];
+  nextTargetSiblings.splice(insertionIndex, 0, moving);
+  nextTargetSiblings.forEach((folder, displayOrder) => {
+    nextPositions.set(folder.id, {
+      parentFolderId: request.parentFolderId,
+      displayOrder,
+    });
+  });
+  return {
+    ...catalog,
+    folders: catalog.folders.map((folder) => {
+      const position = nextPositions.get(folder.id);
+      return position == null ? folder : { ...folder, ...position };
+    }),
+  };
+}
+
+function isFolderMoveApplicable(
+  catalog: PartyPresetCatalogResponse,
+  folderId: number,
+  request: MovePartyPresetFolderRequest,
+): boolean {
+  const moving = catalog.folders.find((folder) => folder.id === folderId);
+  if (moving == null) return false;
+  const index = indexPartyPresetCatalog(catalog);
+  if (!canMovePartyPresetFolder(index, folderId, request.parentFolderId)) return false;
+  const targetSiblingCount = catalog.folders.filter(
+    (folder) => folder.parentFolderId === request.parentFolderId && folder.id !== folderId,
+  ).length;
+  const normalizedMovingName = moving.name.trim().toLocaleLowerCase();
+  const hasNameCollision = catalog.folders.some((folder) =>
+    folder.id !== folderId
+    && folder.parentFolderId === request.parentFolderId
+    && folder.name.trim().toLocaleLowerCase() === normalizedMovingName,
+  );
+  return !hasNameCollision
+    && Number.isInteger(request.displayOrder)
+    && request.displayOrder >= 0
+    && request.displayOrder <= targetSiblingCount;
+}
+
+function folderMoveContext(
+  catalog: PartyPresetCatalogResponse,
+  folderId: number,
+  request: MovePartyPresetFolderRequest,
+): string | null {
+  if (!isFolderMoveApplicable(catalog, folderId, request)) return null;
+  const moving = catalog.folders.find((folder) => folder.id === folderId)!;
+  const sourceSiblings = catalog.folders
+    .filter((folder) => folder.parentFolderId === moving.parentFolderId && folder.id !== folderId)
+    .sort(compareFolderOrder)
+    .map(folderMoveContextRow);
+  const targetSiblings = catalog.folders
+    .filter((folder) => folder.parentFolderId === request.parentFolderId && folder.id !== folderId)
+    .sort(compareFolderOrder)
+    .map(folderMoveContextRow);
+  const ancestorIds: number[] = [];
+  const byId = new Map(catalog.folders.map((folder) => [folder.id, folder]));
+  let ancestorId = request.parentFolderId;
+  while (ancestorId != null) {
+    ancestorIds.push(ancestorId);
+    ancestorId = byId.get(ancestorId)?.parentFolderId ?? null;
+  }
+  const subtreeRows: Array<[number, number | null]> = [];
+  const pending = [folderId];
+  const visited = new Set<number>();
+  while (pending.length > 0) {
+    const currentId = pending.shift();
+    if (currentId == null || visited.has(currentId)) continue;
+    visited.add(currentId);
+    const current = byId.get(currentId);
+    if (current == null) continue;
+    subtreeRows.push([current.id, current.parentFolderId]);
+    pending.push(
+      ...catalog.folders
+        .filter((folder) => folder.parentFolderId === currentId)
+        .sort(compareFolderOrder)
+        .map(({ id }) => id),
+    );
+  }
+  return JSON.stringify({
+    moving: folderMoveContextRow(moving),
+    sourceSiblings,
+    targetSiblings,
+    ancestorIds,
+    subtreeRows,
+  });
+}
+
+function folderMoveContextRow(
+  folder: PartyPresetFolderResponse,
+): [number, number | null, number, string] {
+  return [
+    folder.id,
+    folder.parentFolderId,
+    folder.displayOrder,
+    folder.name.trim().toLocaleLowerCase(),
+  ];
+}
+
+function projectFolderDelete(
+  catalog: PartyPresetCatalogResponse,
+  folderId: number,
+): PartyPresetCatalogResponse {
+  const deleting = catalog.folders.find((folder) => folder.id === folderId);
+  if (deleting == null) return catalog;
+
+  const unassignedPresets = catalog.presets
+    .filter((preset) => preset.folderId == null)
+    .sort(comparePresetOrder);
+  const directPresets = catalog.presets
+    .filter((preset) => preset.folderId === folderId)
+    .sort(comparePresetOrder);
+  const nextPresetsById = new Map<number, PartyPresetResponse>();
+  [...unassignedPresets, ...directPresets].forEach((preset, displayOrder) => {
+    nextPresetsById.set(preset.id, { ...preset, folderId: null, displayOrder });
+  });
+
+  const destinationSiblings = catalog.folders
+    .filter((folder) => folder.parentFolderId === deleting.parentFolderId && folder.id !== folderId)
+    .sort(compareFolderOrder);
+  const immediateChildren = catalog.folders
+    .filter((folder) => folder.parentFolderId === folderId)
+    .sort(compareFolderOrder);
+  const nextFoldersById = new Map<number, PartyPresetFolderResponse>();
+  [...destinationSiblings, ...immediateChildren].forEach((folder, displayOrder) => {
+    nextFoldersById.set(folder.id, {
+      ...folder,
+      parentFolderId: deleting.parentFolderId,
+      displayOrder,
+    });
+  });
+
+  return {
+    folders: catalog.folders
+      .filter((folder) => folder.id !== folderId)
+      .map((folder) => nextFoldersById.get(folder.id) ?? folder),
+    presets: catalog.presets.map((preset) => nextPresetsById.get(preset.id) ?? preset),
+  };
+}
+
 function comparePresetOrder(
   left: PartyPresetResponse,
   right: PartyPresetResponse,
+): number {
+  return left.displayOrder - right.displayOrder || left.id - right.id;
+}
+
+function compareFolderOrder(
+  left: PartyPresetFolderResponse,
+  right: PartyPresetFolderResponse,
 ): number {
   return left.displayOrder - right.displayOrder || left.id - right.id;
 }
