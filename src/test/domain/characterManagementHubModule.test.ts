@@ -7,6 +7,7 @@ import {
 } from '../../main/domain/characterManagementHubModule';
 import { makeHofCharacter, makeHofCharacterDetail } from '../fixtures/api';
 import type {
+  CharacterCommand,
   CharacterCommandResult,
   CharacterDeepSyncResponse,
   CharacterPatternOperationResult,
@@ -336,6 +337,59 @@ describe('character management hub module', () => {
 
     assert.equal(result, commandResult);
     assert.equal(hub.getSnapshot().detail?.name, '명령 반영');
+  });
+
+  it('builds revision commands from the selected detail and publishes identity resolution as resource state', async () => {
+    const commands: CharacterCommand[] = [];
+    const character = makeHofCharacter(1, { revision: 'roster-revision' });
+    const detail = makeHofCharacterDetail(1, {
+      revision: 'detail-revision',
+      detailSyncedAt: new Date().toISOString(),
+    });
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async () => detail,
+      executeCommand: async (command) => {
+        commands.push(command);
+        return command.type === 'KNOCKBACK'
+          ? {
+              type: 'IdentityResolutionRequired',
+              characterId: 1,
+              candidates: [],
+              message: '새 HOF ID를 선택해 주세요.',
+            }
+          : {
+              type: 'Completed',
+              characterId: 1,
+              revision: 'next-revision',
+              messages: [],
+            };
+      },
+    }));
+    hub.activate('account-1');
+    hub.observeRoster([character]);
+    await hub.getSnapshot().actions.select(character);
+
+    await hub.getSnapshot().actions.allocateStats?.({ STR: 3 });
+    await hub.getSnapshot().actions.knockback?.('캐릭터 1');
+
+    assert.deepEqual(commands, [
+      {
+        type: 'ALLOCATE_STATS',
+        characterId: 1,
+        expectedRevision: 'detail-revision',
+        amounts: { STR: 3 },
+      },
+      {
+        type: 'KNOCKBACK',
+        characterId: 1,
+        expectedRevision: 'detail-revision',
+        confirmationName: '캐릭터 1',
+      },
+    ]);
+    assert.equal(
+      hub.getSnapshot().identityResolution?.message,
+      '새 HOF ID를 선택해 주세요.',
+    );
   });
 
   it('does not project a late command result or reload another selected character', async () => {

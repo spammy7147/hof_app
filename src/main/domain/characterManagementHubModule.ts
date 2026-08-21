@@ -3,6 +3,7 @@ import type {
   CharacterCommand,
   CharacterCommandResult,
   CharacterDeepSyncResponse,
+  CharacterIdentityCandidate,
   CharacterPatternApplyRequest,
   CharacterPatternOperationResult,
   CharacterTransferExecutionResult,
@@ -10,6 +11,7 @@ import type {
   CharacterTransferPreviewRequest,
   HofCharacter,
   HofCharacterDetail,
+  CharacterStat,
 } from '../types/api';
 
 const DEFAULT_FRESHNESS_MS = 30 * 60 * 1000;
@@ -64,6 +66,22 @@ export type CharacterManagementHubActions = {
   executeCommand?: (
     command: CharacterCommand,
   ) => Promise<CharacterCommandResult | void>;
+  rename?: (newName: string) => Promise<void>;
+  kick?: (confirmationName: string) => Promise<void>;
+  knockback?: (confirmationName: string) => Promise<void>;
+  pray?: () => Promise<void>;
+  prepareItems?: () => Promise<void>;
+  removeAllEquipment?: () => Promise<void>;
+  useItem?: (itemValue: string) => Promise<void>;
+  learnSkill?: (skillValue: string) => Promise<void>;
+  changeClass?: (classValue: string) => Promise<void>;
+  allocateStats?: (
+    amounts: Partial<Record<CharacterStat, number>>,
+  ) => Promise<void>;
+  equipItem?: (itemValue: string) => Promise<void>;
+  removeEquipment?: (equipmentPart: string) => Promise<void>;
+  saveEquipmentPreset?: (slotNumber: 1 | 2) => Promise<void>;
+  loadEquipmentPreset?: (slotNumber: 1 | 2) => Promise<void>;
   applyPattern?: (
     request: CharacterPatternApplyRequest,
   ) => Promise<CharacterPatternOperationResult>;
@@ -110,6 +128,10 @@ export type CharacterManagementHubResource = {
   isLoading: boolean;
   errorMessage: string | null;
   warningMessage: string | null;
+  identityResolution: {
+    candidates: CharacterIdentityCandidate[];
+    message: string;
+  } | null;
   patternConflict: CharacterPatternOperationResult | null;
   deepSync: CharacterManagementDeepSyncState;
   transfer: CharacterManagementTransferState;
@@ -120,6 +142,24 @@ type CharacterManagementHubOptions = {
   now?: () => number;
   freshnessMs?: number;
 };
+
+type CharacterManagementCommandIntent =
+  | { type: 'RENAME'; newName: string }
+  | { type: 'KICK' | 'KNOCKBACK'; confirmationName: string }
+  | { type: 'PRAY' | 'PREPARE_ITEMS' | 'REMOVE_ALL_EQUIPMENT' }
+  | { type: 'USE_ITEM'; itemValue: string }
+  | { type: 'LEARN_SKILL'; skillValue: string }
+  | { type: 'CHANGE_CLASS'; classValue: string }
+  | {
+      type: 'ALLOCATE_STATS';
+      amounts: Partial<Record<CharacterStat, number>>;
+    }
+  | { type: 'EQUIP_ITEM'; itemValue: string }
+  | { type: 'REMOVE_EQUIPMENT'; equipmentPart: string }
+  | {
+      type: 'SAVE_EQUIPMENT_PRESET' | 'LOAD_EQUIPMENT_PRESET';
+      slotNumber: 1 | 2;
+    };
 
 /**
  * 선택 캐릭터와 저장·권위 상세의 freshness 정책을 하나의 observable 상태로 관리한다.
@@ -277,6 +317,7 @@ export class CharacterManagementHubModule {
       isLoading: true,
       errorMessage: null,
       warningMessage: null,
+      identityResolution: null,
       patternConflict: null,
       deepSync: idleDeepSync(),
       transfer: observedTransferSource
@@ -491,6 +532,76 @@ export class CharacterManagementHubModule {
     if (this.backend.executeCommand) {
       actions.executeCommand = (command) =>
         this.executeCommand(command, generation, selectionGeneration);
+      actions.rename = (newName) => this.executeCommandIntent(
+        { type: 'RENAME', newName },
+        generation,
+        selectionGeneration,
+      );
+      actions.kick = (confirmationName) => this.executeCommandIntent(
+        { type: 'KICK', confirmationName },
+        generation,
+        selectionGeneration,
+      );
+      actions.knockback = (confirmationName) => this.executeCommandIntent(
+        { type: 'KNOCKBACK', confirmationName },
+        generation,
+        selectionGeneration,
+      );
+      actions.pray = () => this.executeCommandIntent(
+        { type: 'PRAY' },
+        generation,
+        selectionGeneration,
+      );
+      actions.prepareItems = () => this.executeCommandIntent(
+        { type: 'PREPARE_ITEMS' },
+        generation,
+        selectionGeneration,
+      );
+      actions.removeAllEquipment = () => this.executeCommandIntent(
+        { type: 'REMOVE_ALL_EQUIPMENT' },
+        generation,
+        selectionGeneration,
+      );
+      actions.useItem = (itemValue) => this.executeCommandIntent(
+        { type: 'USE_ITEM', itemValue },
+        generation,
+        selectionGeneration,
+      );
+      actions.learnSkill = (skillValue) => this.executeCommandIntent(
+        { type: 'LEARN_SKILL', skillValue },
+        generation,
+        selectionGeneration,
+      );
+      actions.changeClass = (classValue) => this.executeCommandIntent(
+        { type: 'CHANGE_CLASS', classValue },
+        generation,
+        selectionGeneration,
+      );
+      actions.allocateStats = (amounts) => this.executeCommandIntent(
+        { type: 'ALLOCATE_STATS', amounts },
+        generation,
+        selectionGeneration,
+      );
+      actions.equipItem = (itemValue) => this.executeCommandIntent(
+        { type: 'EQUIP_ITEM', itemValue },
+        generation,
+        selectionGeneration,
+      );
+      actions.removeEquipment = (equipmentPart) => this.executeCommandIntent(
+        { type: 'REMOVE_EQUIPMENT', equipmentPart },
+        generation,
+        selectionGeneration,
+      );
+      actions.saveEquipmentPreset = (slotNumber) => this.executeCommandIntent(
+        { type: 'SAVE_EQUIPMENT_PRESET', slotNumber },
+        generation,
+        selectionGeneration,
+      );
+      actions.loadEquipmentPreset = (slotNumber) => this.executeCommandIntent(
+        { type: 'LOAD_EQUIPMENT_PRESET', slotNumber },
+        generation,
+        selectionGeneration,
+      );
     }
     if (this.backend.applyPattern) {
       actions.applyPattern = (request) =>
@@ -579,7 +690,16 @@ export class CharacterManagementHubModule {
     )) {
       return undefined;
     }
-    if (result.type !== 'IdentityResolutionRequired') {
+    if (result.type === 'IdentityResolutionRequired') {
+      this.replace({
+        ...this.resource,
+        identityResolution: {
+          candidates: result.candidates,
+          message: result.message,
+        },
+      });
+    } else {
+      this.replace({ ...this.resource, identityResolution: null });
       const roster = await this.backend.loadRoster?.();
       if (!this.isCurrentTarget(
         command.characterId,
@@ -605,6 +725,24 @@ export class CharacterManagementHubModule {
       }
     }
     return result;
+  }
+
+  private async executeCommandIntent(
+    intent: CharacterManagementCommandIntent,
+    expectedGeneration: number,
+    expectedSelectionGeneration: number,
+  ): Promise<void> {
+    const target = this.currentTarget(
+      expectedGeneration,
+      expectedSelectionGeneration,
+    );
+    const detail = this.resource.detail;
+    if (!target || !detail || detail.id !== target.id) return;
+    await this.executeCommand(
+      toCharacterCommand(intent, target.id, detail.revision),
+      expectedGeneration,
+      expectedSelectionGeneration,
+    );
   }
 
   private async applyPattern(
@@ -775,6 +913,7 @@ export class CharacterManagementHubModule {
       expectedGeneration,
       expectedSelectionGeneration,
     )) return;
+    this.replace({ ...this.resource, identityResolution: null });
     await this.refresh(expectedGeneration, expectedSelectionGeneration);
   }
 
@@ -1121,6 +1260,7 @@ function emptyResource(
     isLoading: false,
     errorMessage: null,
     warningMessage: null,
+    identityResolution: null,
     patternConflict: null,
     deepSync: idleDeepSync(),
     transfer: idleTransfer(),
@@ -1130,6 +1270,39 @@ function emptyResource(
 
 function isActive(character: HofCharacter): boolean {
   return (character.lifecycle ?? 'ACTIVE') === 'ACTIVE';
+}
+
+function toCharacterCommand(
+  intent: CharacterManagementCommandIntent,
+  characterId: number,
+  expectedRevision: string,
+): CharacterCommand {
+  switch (intent.type) {
+    case 'RENAME':
+      return { ...intent, characterId, expectedRevision };
+    case 'KICK':
+    case 'KNOCKBACK':
+      return { ...intent, characterId, expectedRevision };
+    case 'PRAY':
+    case 'PREPARE_ITEMS':
+    case 'REMOVE_ALL_EQUIPMENT':
+      return { ...intent, characterId, expectedRevision };
+    case 'USE_ITEM':
+      return { ...intent, characterId, expectedRevision };
+    case 'LEARN_SKILL':
+      return { ...intent, characterId, expectedRevision };
+    case 'CHANGE_CLASS':
+      return { ...intent, characterId, expectedRevision };
+    case 'ALLOCATE_STATS':
+      return { ...intent, characterId, expectedRevision };
+    case 'EQUIP_ITEM':
+      return { ...intent, characterId, expectedRevision };
+    case 'REMOVE_EQUIPMENT':
+      return { ...intent, characterId, expectedRevision };
+    case 'SAVE_EQUIPMENT_PRESET':
+    case 'LOAD_EQUIPMENT_PRESET':
+      return { ...intent, characterId, expectedRevision };
+  }
 }
 
 function isPatternConflict(result: CharacterPatternOperationResult): boolean {
