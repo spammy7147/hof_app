@@ -44,8 +44,6 @@ export type CharacterManagementHubBackend = {
   restoreCharacter?: (characterId: number) => Promise<HofCharacter[]>;
   deleteCharacterPermanently?: (characterId: number) => Promise<HofCharacter[]>;
   loadRoster?: () => Promise<HofCharacter[]>;
-  publishRoster?: (characters: HofCharacter[]) => void;
-  publishDetail?: (detail: HofCharacterDetail) => void;
   previewTransfer?: (
     request: CharacterTransferPreviewRequest,
   ) => Promise<CharacterTransferPreview>;
@@ -483,7 +481,6 @@ export class CharacterManagementHubModule {
         errorMessage: null,
         warningMessage: null,
       });
-      this.backend.publishDetail?.(mergedDetail);
       if (this.isStale(mergedDetail)) {
         void this.refreshAuthority(
           characterId,
@@ -548,7 +545,6 @@ export class CharacterManagementHubModule {
         errorMessage: null,
         warningMessage: null,
       });
-      this.backend.publishDetail?.(mergedDetail);
     } catch (error: unknown) {
       if (
         !reportError ||
@@ -788,7 +784,7 @@ export class CharacterManagementHubModule {
       });
     } else {
       this.replace({ ...this.resource, identityResolution: null });
-      const publishRoster = this
+      const acceptRoster = this
         .createObservationSink(this.accountKey)
         .beginRosterObservation();
       const roster = await this.backend.loadRoster?.();
@@ -798,7 +794,7 @@ export class CharacterManagementHubModule {
         expectedSelectionGeneration,
       )) return undefined;
       if (roster) {
-        if (publishRoster(roster)) this.backend.publishRoster?.(roster);
+        acceptRoster(roster);
       }
       if (!this.isCurrentTarget(
         command.characterId,
@@ -1040,7 +1036,6 @@ export class CharacterManagementHubModule {
     )) return;
     if (roster) {
       this.observeRoster(roster);
-      this.backend.publishRoster?.(roster);
     }
     if (!this.isCurrentTarget(
       selected.id,
@@ -1062,7 +1057,6 @@ export class CharacterManagementHubModule {
     if (!this.isActiveGeneration(expectedGeneration)) return;
     if (roster) {
       this.observeRoster(roster);
-      this.backend.publishRoster?.(roster);
     }
     const selected = this.resource.selectedCharacter;
     if (selected?.id === characterId) await this.resource.actions.refresh();
@@ -1079,7 +1073,6 @@ export class CharacterManagementHubModule {
     const roster = await mutation(characterId);
     if (!this.isActiveGeneration(expectedGeneration)) return;
     this.observeRoster(roster);
-    this.backend.publishRoster?.(roster);
   }
 
   private async beginPatternEdit(

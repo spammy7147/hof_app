@@ -52,11 +52,9 @@ moduleWithLoader._load = (request, parent, isMain) => {
       useCharacterSync: ({ onNotice }: { onNotice: (message: string | null) => void }) => {
         publishNotice = onNotice;
         return {
-          characters: [],
           characterSyncLabel: null,
           loadSavedCharacters: syncCharacters,
           startAutomaticSyncIfRequired: syncCharacters,
-          upsertCharacter: () => undefined,
           resetCharacterSync: () => undefined,
         };
       },
@@ -65,19 +63,26 @@ moduleWithLoader._load = (request, parent, isMain) => {
   if (request.endsWith('/features/characters/useCharacterManagementHub')) {
     return {
       useCharacterManagementHub: () => ({
-        characters: [],
-        selectedCharacter: null,
-        detail: null,
-        isLoading: false,
-        errorMessage: null,
-        warningMessage: null,
-        patternConflict: null,
-        deepSync: { status: 'idle', progress: null, errorMessage: null },
-        transfer: {
-          status: 'idle', sourceCharacter: null, targetCharacterId: null,
-          request: null, preview: null, progress: null, result: null, errorMessage: null,
+        resource: {
+          characters: [],
+          selectedCharacter: null,
+          detail: null,
+          isLoading: false,
+          errorMessage: null,
+          warningMessage: null,
+          identityResolution: null,
+          patternConflict: null,
+          deepSync: { status: 'idle', progress: null, errorMessage: null },
+          transfer: {
+            status: 'idle', sourceCharacter: null, targetCharacterId: null,
+            request: null, preview: null, progress: null, result: null, errorMessage: null,
+          },
+          actions: {},
         },
-        actions: {},
+        observations: {
+          beginRosterObservation: () => () => true,
+          observeCharacter: () => true,
+        },
       }),
     };
   }

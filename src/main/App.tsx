@@ -116,20 +116,6 @@ function AppContent({ api }: { api: BackendApiClient }) {
     return () => clearTimeout(timer);
   }, [notice]);
 
-  const {
-    characters,
-    characterSyncLabel,
-    characterSyncJob,
-    syncCharacterRoster,
-    startCharacterFullSync,
-    stopCharacterSync,
-    resumeCharacterSync,
-    loadSavedCharacters,
-    startAutomaticSyncIfRequired,
-    upsertCharacter,
-    replaceCharacters,
-    resetCharacterSync,
-  } = useCharacterSync({ api, describeError, onNotice: setNotice });
   const beginCharacterPatternEdit = useCallback(
     () => automationController.changeState("pause"),
     [automationController],
@@ -138,17 +124,33 @@ function AppContent({ api }: { api: BackendApiClient }) {
     () => partyPresetCatalog.actions.refresh(),
     [partyPresetCatalog.actions],
   );
-  const characterHub = useCharacterManagementHub(
+  const {
+    resource: characterHub,
+    observations: characterObservations,
+  } = useCharacterManagementHub(
     api,
     session?.loggedIn === true ? session : null,
-    characters,
     {
-      publishRoster: replaceCharacters,
-      publishDetail: upsertCharacter,
       reloadRelatedPresets: reloadRelatedPartyPresets,
       beginPatternEdit: beginCharacterPatternEdit,
     },
   );
+  const {
+    characterSyncLabel,
+    characterSyncJob,
+    syncCharacterRoster,
+    startCharacterFullSync,
+    stopCharacterSync,
+    resumeCharacterSync,
+    loadSavedCharacters,
+    startAutomaticSyncIfRequired,
+    resetCharacterSync,
+  } = useCharacterSync({
+    api,
+    describeError,
+    onNotice: setNotice,
+    observations: characterObservations,
+  });
   const {
     visible: captchaModalVisible,
     blocking: captchaModalBlocking,

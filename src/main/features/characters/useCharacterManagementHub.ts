@@ -3,10 +3,10 @@ import { useLayoutEffect, useMemo, useSyncExternalStore } from 'react';
 import {
   CharacterManagementHubModule,
   type CharacterManagementHubBackend,
+  type CharacterManagementObservationSink,
   type CharacterManagementHubResource,
 } from '../../domain/characterManagementHubModule';
 import type { BackendApiClient } from '../../services/backendApi';
-import type { HofCharacter, HofCharacterDetail } from '../../types/api';
 
 export type CharacterManagementHubApi = Pick<
   BackendApiClient,
@@ -27,10 +27,13 @@ export type CharacterManagementHubApi = Pick<
 >;
 
 export type CharacterManagementHubIntegration = {
-  publishRoster: (characters: HofCharacter[]) => void;
-  publishDetail: (detail: HofCharacterDetail) => void;
   reloadRelatedPresets: () => Promise<void>;
   beginPatternEdit: () => Promise<void>;
+};
+
+export type CharacterManagementHubBinding = {
+  resource: CharacterManagementHubResource;
+  observations: CharacterManagementObservationSink;
 };
 
 /** Backend API와 앱 전역 projection을 캐릭터 관리 허브의 단일 외부 경계로 바꾼다. */
@@ -67,8 +70,6 @@ export function createCharacterManagementHubBackend(
     restoreCharacter: (characterId) => api.restoreCharacter(characterId),
     deleteCharacterPermanently: (characterId) =>
       api.deleteCharacterPermanently(characterId),
-    publishRoster: integration.publishRoster,
-    publishDetail: integration.publishDetail,
     previewTransfer: (request) => api.previewCharacterTransfer(request),
     executeTransfer: (request, onProgress) =>
       api.executeCharacterTransfer(request, [], onProgress),
@@ -81,9 +82,8 @@ export function createCharacterManagementHubBackend(
 export function useCharacterManagementHub(
   api: CharacterManagementHubApi,
   accountKey: unknown | null,
-  characters: HofCharacter[],
   integration: CharacterManagementHubIntegration,
-): CharacterManagementHubResource {
+): CharacterManagementHubBinding {
   const module = useMemo(
     () => new CharacterManagementHubModule(
       createCharacterManagementHubBackend(api, integration),
@@ -91,8 +91,6 @@ export function useCharacterManagementHub(
     [
       api,
       integration.beginPatternEdit,
-      integration.publishDetail,
-      integration.publishRoster,
       integration.reloadRelatedPresets,
     ],
   );
@@ -111,9 +109,10 @@ export function useCharacterManagementHub(
     return () => module.deactivate();
   }, [accountKey, module]);
 
-  useLayoutEffect(() => {
-    module.observeRoster(accountKey == null ? [] : characters);
-  }, [accountKey, characters, module]);
+  const observations = useMemo(
+    () => module.createObservationSink(accountKey),
+    [accountKey, module],
+  );
 
-  return resource;
+  return { resource, observations };
 }

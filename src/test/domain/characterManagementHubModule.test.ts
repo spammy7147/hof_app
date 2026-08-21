@@ -20,12 +20,11 @@ import type {
 } from '../../main/types/api';
 
 describe('character management hub module', () => {
-  it('publishes the authoritative roster and owns roster lifecycle mutations', async () => {
+  it('owns the authoritative roster and its lifecycle mutations', async () => {
     const initial = [makeHofCharacter(1), makeHofCharacter(2, { lifecycle: 'ARCHIVED' })];
     const archived = [makeHofCharacter(1, { lifecycle: 'ARCHIVED' }), initial[1]!];
     const restored = [initial[0]!, makeHofCharacter(2)];
     const deleted = [initial[0]!];
-    const published: HofCharacter[][] = [];
     const hub = new CharacterManagementHubModule(backend({
       archiveCharacter: async (characterId) => {
         assert.equal(characterId, 1);
@@ -39,7 +38,6 @@ describe('character management hub module', () => {
         assert.equal(characterId, 2);
         return deleted;
       },
-      publishRoster: (characters) => published.push(characters),
     }));
     hub.activate('account-1');
     hub.observeRoster(initial);
@@ -51,7 +49,6 @@ describe('character management hub module', () => {
     assert.equal(hub.getSnapshot().characters, restored);
     await hub.getSnapshot().actions.deleteCharacterPermanently?.(2);
     assert.equal(hub.getSnapshot().characters, deleted);
-    assert.deepEqual(published, [archived, restored, deleted]);
   });
 
   it('opens a transfer by selecting the exact stable target and retaining the source in the hub', async () => {
@@ -704,9 +701,7 @@ describe('character management hub module', () => {
     assert.equal(hub.getSnapshot().detail?.id, second.id);
   });
 
-  it('publishes command roster and detail only after the current selection fence', async () => {
-    const publishedRoster: HofCharacter[][] = [];
-    const publishedDetails: HofCharacterDetail[] = [];
+  it('projects command roster and detail behind the current selection fence', async () => {
     const updated = makeHofCharacter(1, {
       name: '명령 후 이름',
       revision: 'revision-2',
@@ -722,84 +717,68 @@ describe('character management hub module', () => {
         type: 'Completed', characterId: 1, revision: 'revision-2', messages: [],
       }),
       loadRoster: async () => [updated],
-      publishRoster: (roster) => publishedRoster.push(roster),
-      publishDetail: (next) => publishedDetails.push(next),
     }));
     const character = makeHofCharacter(1);
     hub.activate('account-1');
     hub.observeRoster([character]);
     await hub.getSnapshot().actions.select(character);
-    publishedDetails.length = 0;
 
     await hub.getSnapshot().actions.pray?.();
 
-    assert.deepEqual(publishedRoster, [[updated]]);
-    assert.equal(publishedDetails.at(-1)?.revision, 'revision-2');
+    assert.equal(hub.getSnapshot().characters[0]?.name, '명령 후 이름');
+    assert.equal(hub.getSnapshot().detail?.revision, 'revision-2');
   });
 
-  it('does not publish late command observations after selection changes', async () => {
+  it('does not project late command observations after selection changes', async () => {
     const command = deferred<CharacterCommandResult>();
-    const publishedRoster: HofCharacter[][] = [];
-    const publishedDetails: HofCharacterDetail[] = [];
     const hub = new CharacterManagementHubModule(backend({
       loadStoredDetail: async (characterId) => freshDetail(characterId),
       executeCommand: () => command.promise,
       loadRoster: async () => [makeHofCharacter(1, { revision: 'revision-2' })],
-      publishRoster: (roster) => publishedRoster.push(roster),
-      publishDetail: (detail) => publishedDetails.push(detail),
     }));
     const first = makeHofCharacter(1);
     const second = makeHofCharacter(2);
     hub.activate('account-1');
     hub.observeRoster([first, second]);
     await hub.getSnapshot().actions.select(first);
-    publishedDetails.length = 0;
     const pending = hub.getSnapshot().actions.pray?.();
     await hub.getSnapshot().actions.select(second);
-    publishedDetails.length = 0;
 
     command.resolve({
       type: 'Completed', characterId: 1, revision: 'revision-2', messages: [],
     });
     await pending;
 
-    assert.deepEqual(publishedRoster, []);
-    assert.deepEqual(publishedDetails, []);
     assert.equal(hub.getSnapshot().selectedCharacter?.id, second.id);
+    assert.equal(hub.getSnapshot().detail?.id, second.id);
   });
 
-  it('does not publish a late authoritative refresh after selection changes', async () => {
+  it('does not project a late authoritative refresh after selection changes', async () => {
     const refresh = deferred<HofCharacterDetail>();
-    const publishedDetails: HofCharacterDetail[] = [];
     const hub = new CharacterManagementHubModule(backend({
       loadStoredDetail: async (characterId) => freshDetail(characterId),
       refreshAuthoritativeDetail: () => refresh.promise,
-      publishDetail: (detail) => publishedDetails.push(detail),
     }));
     const first = makeHofCharacter(1);
     const second = makeHofCharacter(2);
     hub.activate('account-1');
     hub.observeRoster([first, second]);
     await hub.getSnapshot().actions.select(first);
-    publishedDetails.length = 0;
 
     const pending = hub.getSnapshot().actions.refresh();
     await hub.getSnapshot().actions.select(second);
-    publishedDetails.length = 0;
     refresh.resolve(freshDetail(1));
     await pending;
 
-    assert.deepEqual(publishedDetails, []);
     assert.equal(hub.getSnapshot().selectedCharacter?.id, second.id);
+    assert.equal(hub.getSnapshot().detail?.id, second.id);
   });
 
-  it('does not publish a late identity link after the account changes', async () => {
+  it('does not project a late identity link after the account changes', async () => {
     const link = deferred<HofCharacter[]>();
-    const publishedRoster: HofCharacter[][] = [];
     const hub = new CharacterManagementHubModule(backend({
       loadStoredDetail: async (characterId) => freshDetail(characterId),
       linkCharacter: () => link.promise,
-      publishRoster: (roster) => publishedRoster.push(roster),
     }));
     const first = makeHofCharacter(1);
     const second = makeHofCharacter(2);
@@ -814,7 +793,6 @@ describe('character management hub module', () => {
     link.resolve([makeHofCharacter(1, { hofCharacterId: 'new-hof-id' })]);
     await pending;
 
-    assert.deepEqual(publishedRoster, []);
     assert.equal(hub.getSnapshot().selectedCharacter?.id, second.id);
   });
 
@@ -857,7 +835,6 @@ describe('character management hub module', () => {
       nextStepIndex: 2,
     };
     const refreshedIds: number[] = [];
-    const publishedDetails: HofCharacterDetail[] = [];
     let presetReloads = 0;
     const hub = new CharacterManagementHubModule(backend({
       loadStoredDetail: async (characterId) => freshDetail(characterId),
@@ -872,14 +849,12 @@ describe('character management hub module', () => {
         return makeHofCharacterDetail(characterId, { revision: 'revision-2' });
       },
       reloadRelatedPresets: async () => { presetReloads += 1; },
-      publishDetail: (detail) => publishedDetails.push(detail),
     }));
     const target = makeHofCharacter(1);
     const source = makeHofCharacter(2);
     hub.activate('account-1');
     hub.observeRoster([target, source]);
     await hub.getSnapshot().actions.select(target);
-    publishedDetails.length = 0;
     await hub.getSnapshot().actions.previewTransfer?.(request);
 
     const completed = await hub.getSnapshot().actions.executeTransfer?.();
@@ -889,7 +864,7 @@ describe('character management hub module', () => {
     assert.equal(hub.getSnapshot().transfer.progress, result);
     assert.equal(hub.getSnapshot().transfer.result, result);
     assert.deepEqual(refreshedIds, [target.id]);
-    assert.equal(publishedDetails.at(-1)?.id, target.id);
+    assert.equal(hub.getSnapshot().detail?.id, target.id);
     assert.equal(presetReloads, 1);
     assert.equal(hub.getSnapshot().transfer.sourceCharacter, source);
   });

@@ -4,6 +4,7 @@ import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { useCharacterSync } from '../../../main/features/characters/useCharacterSync';
+import type { CharacterManagementObservationSink } from '../../../main/domain/characterManagementHubModule';
 import type { BackendApiClient, CharacterSyncEventHandlers } from '../../../main/services/backendApi';
 import type { CharacterSyncEventResponse, CharacterSyncJobResponse, HofCharacter, HofObservedStatusResponse } from '../../../main/types/api';
 import { makeHofCharacter } from '../../fixtures/api';
@@ -12,13 +13,13 @@ import { makeHofCharacter } from '../../fixtures/api';
 
 describe('useCharacterSync roster observation', () => {
   it('reloads characters only for a newer observed home roster', async () => {
-    let sync!: ReturnType<typeof useCharacterSync>;
     let publishStatus: ((status: HofObservedStatusResponse) => void) | null = null;
     let listCalls = 0;
     const rosters: HofCharacter[][] = [
       [makeHofCharacter(1, { name: '첫 목록' })],
       [makeHofCharacter(2, { name: '다음 목록' })],
     ];
+    const observations = recordingObservations();
     const api = {
       subscribeHofStatus(listener: (status: HofObservedStatusResponse) => void) {
         publishStatus = listener;
@@ -31,7 +32,12 @@ describe('useCharacterSync roster observation', () => {
       },
     } as unknown as BackendApiClient;
     const Harness = () => {
-      sync = useCharacterSync({ api, describeError: String, onNotice: () => undefined });
+      useCharacterSync({
+        api,
+        describeError: String,
+        onNotice: () => undefined,
+        observations: observations.sink,
+      });
       return null;
     };
     let renderer!: ReactTestRenderer;
@@ -42,7 +48,7 @@ describe('useCharacterSync roster observation', () => {
       await Promise.resolve();
     });
     assert.equal(listCalls, 1);
-    assert.equal(sync.characters[0]?.name, '첫 목록');
+    assert.equal(observations.rosters[0]?.[0]?.name, '첫 목록');
 
     await act(async () => {
       publishStatus?.(observedStatus('2026-08-18T07:00:00Z'));
@@ -56,7 +62,7 @@ describe('useCharacterSync roster observation', () => {
       await Promise.resolve();
     });
     assert.equal(listCalls, 2);
-    assert.equal(sync.characters[0]?.name, '다음 목록');
+    assert.equal(observations.rosters[1]?.[0]?.name, '다음 목록');
     await act(async () => { renderer.unmount(); });
   });
 
@@ -65,6 +71,7 @@ describe('useCharacterSync roster observation', () => {
     let rosterSyncCalls = 0;
     let fullSyncCalls = 0;
     const roster = deferred<HofCharacter[]>();
+    const observations = recordingObservations();
     const api = {
       subscribeHofStatus: () => () => undefined,
       async syncCharacterRoster() {
@@ -77,7 +84,12 @@ describe('useCharacterSync roster observation', () => {
       },
     } as unknown as BackendApiClient;
     const Harness = () => {
-      sync = useCharacterSync({ api, describeError: String, onNotice: () => undefined });
+      sync = useCharacterSync({
+        api,
+        describeError: String,
+        onNotice: () => undefined,
+        observations: observations.sink,
+      });
       return null;
     };
     let renderer!: ReactTestRenderer;
@@ -98,155 +110,41 @@ describe('useCharacterSync roster observation', () => {
       roster.resolve([makeHofCharacter(1, { name: '목록 전용' })]);
       await Promise.all([first, second]);
     });
-    assert.equal(sync.characters[0]?.name, '목록 전용');
+    assert.equal(observations.rosters[0]?.[0]?.name, '목록 전용');
     assert.equal(sync.characterSyncLabel, null);
     await act(async () => { renderer.unmount(); });
   });
 
-  it('does not let an in-flight roster load overwrite a lifecycle mutation', async () => {
-    let sync!: ReturnType<typeof useCharacterSync>;
-    const staleLoad = deferred<HofCharacter[]>();
-    const api = {
-      subscribeHofStatus: () => () => undefined,
-      listCharacters: () => staleLoad.promise,
-    } as unknown as BackendApiClient;
-    const Harness = () => {
-      sync = useCharacterSync({ api, describeError: String, onNotice: () => undefined });
-      return null;
-    };
-    let renderer!: ReactTestRenderer;
-    await act(async () => { renderer = create(React.createElement(Harness)); });
-
-    let pending!: Promise<void>;
-    await act(async () => {
-      pending = sync.loadSavedCharacters();
-      await Promise.resolve();
-    });
-    const afterMutation = [makeHofCharacter(1, { lifecycle: 'ARCHIVED' })];
-    await act(async () => { sync.replaceCharacters(afterMutation); });
-
-    await act(async () => {
-      staleLoad.resolve([makeHofCharacter(1)]);
-      await pending;
-    });
-
-    assert.equal(sync.characters, afterMutation);
-    await act(async () => { renderer.unmount(); });
-  });
-
-  it('does not let a roster load started before a detail projection regress it', async () => {
-    let sync!: ReturnType<typeof useCharacterSync>;
-    const staleLoad = deferred<HofCharacter[]>();
-    const api = {
-      subscribeHofStatus: () => () => undefined,
-      listCharacters: () => staleLoad.promise,
-    } as unknown as BackendApiClient;
-    const Harness = () => {
-      sync = useCharacterSync({ api, describeError: String, onNotice: () => undefined });
-      return null;
-    };
-    let renderer!: ReactTestRenderer;
-    await act(async () => { renderer = create(React.createElement(Harness)); });
-
-    let pending!: Promise<void>;
-    await act(async () => {
-      pending = sync.loadSavedCharacters();
-      await Promise.resolve();
-    });
-    const detailProjection = makeHofCharacter(1, {
-      name: '최신 상세',
-      revision: '2026-08-18T07:00:02Z',
-      detailSyncedAt: '2026-08-18T07:00:02Z',
-    });
-    await act(async () => { sync.upsertCharacter(detailProjection); });
-    await act(async () => {
-      staleLoad.resolve([makeHofCharacter(1, { name: '오래된 목록' })]);
-      await pending;
-    });
-
-    assert.equal(sync.characters[0], detailProjection);
-    await act(async () => { renderer.unmount(); });
-  });
-
-  it('drops a retained pre-mutation SSE callback and accepts the rebound subscription', async () => {
+  it('forwards SSE character observations while retaining only the job snapshot', async () => {
     let sync!: ReturnType<typeof useCharacterSync>;
     let handlers: CharacterSyncEventHandlers | null = null;
-    let subscriptions = 0;
+    const observations = recordingObservations();
     const api = {
       subscribeHofStatus: () => () => undefined,
       async startCharacterSyncJob() { return syncJob(); },
       subscribeCharacterSyncJob(_jobId: number, nextHandlers: CharacterSyncEventHandlers) {
-        subscriptions += 1;
         handlers = nextHandlers;
         return { close: () => undefined };
       },
     } as unknown as BackendApiClient;
     const Harness = () => {
-      sync = useCharacterSync({ api, describeError: String, onNotice: () => undefined });
+      sync = useCharacterSync({
+        api,
+        describeError: String,
+        onNotice: () => undefined,
+        observations: observations.sink,
+      });
       return null;
     };
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(React.createElement(Harness)); });
     await act(async () => { await sync.startCharacterFullSync(); });
-    const olderHandlers = requireHandlers(handlers);
+    const observed = makeHofCharacter(1, { name: 'SSE 관측' });
 
-    const afterMutation = [makeHofCharacter(1, { lifecycle: 'ARCHIVED' })];
-    await act(async () => { sync.replaceCharacters(afterMutation); });
-    await act(async () => {
-      olderHandlers?.onEvent(syncEvent(makeHofCharacter(1)));
-    });
+    await act(async () => { requireHandlers(handlers).onEvent(syncEvent(observed)); });
 
-    assert.equal(sync.characters, afterMutation);
-    assert.equal(subscriptions, 2);
-    await act(async () => {
-      requireHandlers(handlers).onEvent(
-        syncEvent(makeHofCharacter(2, { name: '재연결 반영' })),
-      );
-    });
-    assert.equal(sync.characters[1]?.name, '재연결 반영');
-    await act(async () => { renderer.unmount(); });
-  });
-
-  it('keeps the current full-sync subscription when a detail projection is upserted', async () => {
-    let sync!: ReturnType<typeof useCharacterSync>;
-    let handlers: CharacterSyncEventHandlers | null = null;
-    let subscriptions = 0;
-    const api = {
-      subscribeHofStatus: () => () => undefined,
-      async startCharacterSyncJob() { return syncJob(); },
-      subscribeCharacterSyncJob(_jobId: number, nextHandlers: CharacterSyncEventHandlers) {
-        subscriptions += 1;
-        handlers = nextHandlers;
-        return { close: () => undefined };
-      },
-    } as unknown as BackendApiClient;
-    const Harness = () => {
-      sync = useCharacterSync({ api, describeError: String, onNotice: () => undefined });
-      return null;
-    };
-    let renderer!: ReactTestRenderer;
-    await act(async () => { renderer = create(React.createElement(Harness)); });
-    await act(async () => { await sync.startCharacterFullSync(); });
-    const currentHandlers = requireHandlers(handlers);
-
-    const detailProjection = makeHofCharacter(1, {
-      name: '상세 투영',
-      revision: '2026-08-18T07:00:02Z',
-      detailSyncedAt: '2026-08-18T07:00:02Z',
-    });
-    await act(async () => {
-      sync.upsertCharacter(detailProjection);
-      currentHandlers.onEvent(syncEvent(makeHofCharacter(1, {
-        name: '오래된 동기화',
-        revision: '2026-08-18T07:00:01Z',
-        detailSyncedAt: '2026-08-18T07:00:01Z',
-      })));
-      currentHandlers.onEvent(syncEvent(makeHofCharacter(2, { name: '동기화 반영' })));
-    });
-
-    assert.equal(subscriptions, 1);
-    assert.equal(sync.characters[0], detailProjection);
-    assert.equal(sync.characters[1]?.name, '동기화 반영');
+    assert.equal(observations.characters[0], observed);
+    assert.equal(sync.characterSyncJob?.characters[0], observed);
     await act(async () => { renderer.unmount(); });
   });
 
@@ -264,7 +162,12 @@ describe('useCharacterSync roster observation', () => {
       },
     } as unknown as BackendApiClient;
     const Harness = () => {
-      sync = useCharacterSync({ api, describeError: String, onNotice: () => undefined });
+      sync = useCharacterSync({
+        api,
+        describeError: String,
+        onNotice: () => undefined,
+        observations: noOpObservations,
+      });
       return null;
     };
     let renderer!: ReactTestRenderer;
@@ -283,7 +186,6 @@ describe('useCharacterSync roster observation', () => {
 
     assert.equal(sync.characterSyncJob, null);
     assert.equal(sync.characterSyncLabel, null);
-    assert.deepEqual(sync.characters, []);
     assert.equal(subscriptions, 1);
     await act(async () => { renderer.unmount(); });
   });
@@ -304,7 +206,12 @@ describe('useCharacterSync roster observation', () => {
       },
     } as unknown as BackendApiClient;
     const Harness = () => {
-      sync = useCharacterSync({ api, describeError: String, onNotice: () => undefined });
+      sync = useCharacterSync({
+        api,
+        describeError: String,
+        onNotice: () => undefined,
+        observations: noOpObservations,
+      });
       return null;
     };
     let renderer!: ReactTestRenderer;
@@ -322,7 +229,6 @@ describe('useCharacterSync roster observation', () => {
 
     assert.equal(sync.characterSyncJob, null);
     assert.equal(sync.characterSyncLabel, null);
-    assert.deepEqual(sync.characters, []);
     assert.equal(subscriptions, 1);
     await act(async () => { renderer.unmount(); });
   });
@@ -340,7 +246,12 @@ describe('useCharacterSync roster observation', () => {
       subscribeCharacterSyncJob: () => ({ close: () => undefined }),
     } as unknown as BackendApiClient;
     const Harness = () => {
-      sync = useCharacterSync({ api, describeError: String, onNotice: () => undefined });
+      sync = useCharacterSync({
+        api,
+        describeError: String,
+        onNotice: () => undefined,
+        observations: noOpObservations,
+      });
       return null;
     };
     let renderer!: ReactTestRenderer;
@@ -378,6 +289,7 @@ describe('useCharacterSync roster observation', () => {
         api,
         describeError: (error) => error instanceof Error ? error.message : String(error),
         onNotice: (message) => notices.push(message),
+        observations: noOpObservations,
       });
       return null;
     };
@@ -450,4 +362,25 @@ function requireHandlers(
 ): CharacterSyncEventHandlers {
   if (!handlers) throw new Error('character sync subscription was not opened');
   return handlers;
+}
+
+const noOpObservations: CharacterManagementObservationSink = {
+  beginRosterObservation: () => () => true,
+  observeCharacter: () => true,
+};
+
+function recordingObservations() {
+  const rosters: HofCharacter[][] = [];
+  const characters: HofCharacter[] = [];
+  const sink: CharacterManagementObservationSink = {
+    beginRosterObservation: () => (roster) => {
+      rosters.push(roster);
+      return true;
+    },
+    observeCharacter: (character) => {
+      characters.push(character);
+      return true;
+    },
+  };
+  return { sink, rosters, characters };
 }
