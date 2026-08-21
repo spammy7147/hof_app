@@ -2,12 +2,6 @@ import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ArrowLeft, RefreshCw } from "lucide-react-native";
 
-import type {
-  CharacterTransferExecutionResult,
-  CharacterTransferPreview,
-  CharacterTransferPreviewRequest,
-  HofCharacter,
-} from "../../types/api";
 import type { CharacterManagementHubResource } from "../../domain/characterManagementHubModule";
 import { theme } from "../../styles/theme";
 import { CharacterStatusScreen } from "./status/CharacterStatusScreen";
@@ -28,38 +22,26 @@ const tabs: Array<[Tab, string]> = [
 
 export type CharacterSettingsNavigatorProps = {
   characterHub: CharacterManagementHubResource;
-  onBack?: () => void;
-  characters?: HofCharacter[];
-  onPreviewTransfer?: (
-    request: CharacterTransferPreviewRequest,
-  ) => Promise<CharacterTransferPreview>;
-  onExecuteTransfer?: (
-    request: CharacterTransferPreviewRequest,
-    onProgress?: (progress: CharacterTransferExecutionResult) => void,
-  ) => Promise<CharacterTransferExecutionResult>;
-  initialTransferSourceId?: number | null;
 };
 
 export function CharacterSettingsNavigator(
   props: CharacterSettingsNavigatorProps,
 ) {
   const [tab, setTab] = useState<Tab>(
-    props.initialTransferSourceId ? "management" : "status",
+    props.characterHub.transfer.sourceCharacter ? "management" : "status",
   );
   const [statusHelpOpen, setStatusHelpOpen] = useState(false);
   const [patternTransferOpen, setPatternTransferOpen] = useState(false);
   const detail = props.characterHub.detail;
-  const usesHubTransfer = props.characterHub.actions.previewTransfer != null
+  const canTransfer = props.characterHub.actions.previewTransfer != null
     && props.characterHub.actions.executeTransfer != null;
-  const canTransfer = usesHubTransfer
-    || (props.onPreviewTransfer != null && props.onExecuteTransfer != null);
   if (!detail) return null;
   return (
     <View style={styles.root}>
       <View style={styles.top}>
         <Pressable
           accessibilityRole="button"
-          onPress={props.onBack}
+          onPress={props.characterHub.actions.close}
           accessibilityLabel="캐릭터 목록으로"
           style={styles.iconButton}
         >
@@ -100,12 +82,8 @@ export function CharacterSettingsNavigator(
       )}
       {tab === "pattern" && patternTransferOpen && canTransfer ? (
         <CharacterSettingsTransferScreen
-          characterHub={usesHubTransfer ? props.characterHub : undefined}
-          target={usesHubTransfer ? undefined : detail}
-          characters={props.characters ?? []}
+          characterHub={props.characterHub}
           onBack={() => setPatternTransferOpen(false)}
-          onPreview={usesHubTransfer ? undefined : props.onPreviewTransfer}
-          onExecute={usesHubTransfer ? undefined : props.onExecuteTransfer}
         />
       ) : tab === "pattern" && (
         <CharacterPatternScreen
@@ -126,10 +104,6 @@ export function CharacterSettingsNavigator(
       {tab === "management" && (
         <CharacterManagementScreen
           characterHub={props.characterHub}
-          characters={props.characters ?? []}
-          initialTransferSourceId={props.initialTransferSourceId}
-          onPreviewTransfer={usesHubTransfer ? undefined : props.onPreviewTransfer}
-          onExecuteTransfer={usesHubTransfer ? undefined : props.onExecuteTransfer}
         />
       )}
     </View>

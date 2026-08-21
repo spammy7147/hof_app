@@ -3,136 +3,20 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { CharacterSettingsNavigator } from "../features/characters/CharacterSettingsNavigator";
 import type { CharacterManagementHubResource } from "../domain/characterManagementHubModule";
 import { theme } from "../styles/theme";
-import type {
-  CharacterCommand,
-  CharacterCommandResult,
-  CharacterDeepSyncResponse,
-  CharacterPatternApplyRequest,
-  CharacterPatternOperationResult,
-  CharacterTransferExecutionResult,
-  CharacterTransferPreview,
-  CharacterTransferPreviewRequest,
-  HofCharacter,
-  HofCharacterDetail,
-} from "../types/api";
 
 type CharacterDetailProps = {
-  characterHub?: CharacterManagementHubResource;
-  /** #29에서 제거할 구형 화면 fixture 호환 입력이다. */
-  character?: HofCharacter;
-  detail?: HofCharacterDetail | null;
-  isLoading?: boolean;
-  errorMessage?: string | null;
-  warningMessage?: string | null;
-  onCommand?: (
-    command: CharacterCommand,
-  ) => Promise<CharacterCommandResult | void>;
-  onApplyPattern?: (
-    request: CharacterPatternApplyRequest,
-  ) => Promise<CharacterPatternOperationResult>;
-  onLoadSavedPattern?: (
-    characterId: number,
-    slotCode: string,
-  ) => Promise<CharacterPatternOperationResult>;
-  onDeleteSavedPattern?: (
-    characterId: number,
-    slotCode: string,
-  ) => Promise<CharacterPatternOperationResult>;
-  onRefresh?: () => Promise<void>;
-  onBack?: () => void;
-  characters?: HofCharacter[];
-  onPreviewTransfer?: (
-    request: CharacterTransferPreviewRequest,
-  ) => Promise<CharacterTransferPreview>;
-  onExecuteTransfer?: (
-    request: CharacterTransferPreviewRequest,
-    onProgress?: (progress: CharacterTransferExecutionResult) => void,
-  ) => Promise<CharacterTransferExecutionResult>;
-  initialTransferSourceId?: number | null;
-  onDeepSync?: (
-    characterId: number,
-    onProgress?: (progress: CharacterDeepSyncResponse) => void,
-  ) => Promise<CharacterDeepSyncResponse>;
-  onBeginPatternEdit?: () => Promise<void>;
-  onLinkCharacter?: (
-    characterId: number,
-    newHofCharacterId: string,
-  ) => Promise<void>;
+  characterHub: CharacterManagementHubResource;
 };
 
 /** 캐릭터 설정 전용 화면의 loading/error 경계와 탭 navigator만 소유한다. */
-export function CharacterDetail({
-  characterHub,
-  character: legacyCharacter,
-  detail: legacyDetail,
-  isLoading: legacyLoading = false,
-  errorMessage: legacyError = null,
-  warningMessage: legacyWarning = null,
-  onCommand,
-  onApplyPattern,
-  onLoadSavedPattern,
-  onDeleteSavedPattern,
-  onRefresh,
-  onBack,
-  characters,
-  onPreviewTransfer,
-  onExecuteTransfer,
-  initialTransferSourceId,
-  onDeepSync,
-  onBeginPatternEdit,
-  onLinkCharacter,
-}: CharacterDetailProps) {
-  const legacyActions = {
-    select: async () => undefined,
-    close: () => undefined,
-    reloadStored: async () => undefined,
-    refresh: onRefresh ?? (async () => undefined),
-    dismissPatternConflict: () => undefined,
-    clearTransfer: () => undefined,
-    executeCommand: onCommand,
-    applyPattern: onApplyPattern,
-    loadSavedPattern: onLoadSavedPattern && legacyDetail
-      ? (slotCode: string) => onLoadSavedPattern(legacyDetail.id, slotCode)
-      : undefined,
-    deleteSavedPattern: onDeleteSavedPattern && legacyDetail
-      ? (slotCode: string) => onDeleteSavedPattern(legacyDetail.id, slotCode)
-      : undefined,
-    deepSync: onDeepSync && legacyDetail
-      ? () => onDeepSync(legacyDetail.id)
-      : undefined,
-    beginPatternEdit: onBeginPatternEdit,
-    linkCharacter: onLinkCharacter && legacyDetail
-      ? (newHofCharacterId: string) =>
-          onLinkCharacter(legacyDetail.id, newHofCharacterId)
-      : undefined,
-  };
-  const resolvedHub = characterHub ?? {
-    selectedCharacter: legacyCharacter ?? null,
-    detail: legacyDetail ?? null,
-    isLoading: legacyLoading,
-    errorMessage: legacyError,
-    warningMessage: legacyWarning,
-    patternConflict: null,
-    deepSync: { status: "idle" as const, progress: null, errorMessage: null },
-    transfer: {
-      status: "idle" as const,
-      sourceCharacter: null,
-      targetCharacterId: null,
-      request: null,
-      preview: null,
-      progress: null,
-      result: null,
-      errorMessage: null,
-    },
-    actions: legacyActions,
-  };
+export function CharacterDetail({ characterHub }: CharacterDetailProps) {
   const {
     selectedCharacter: character,
     detail,
     isLoading,
     errorMessage,
     warningMessage,
-  } = resolvedHub;
+  } = characterHub;
   if (isLoading)
     return (
       <View style={styles.loading}>
@@ -155,12 +39,7 @@ export function CharacterDetail({
         </Text>
       ) : null}
       <CharacterSettingsNavigator
-        characterHub={resolvedHub}
-        characters={characters}
-        initialTransferSourceId={initialTransferSourceId}
-        onBack={onBack}
-        onPreviewTransfer={onPreviewTransfer}
-        onExecuteTransfer={onExecuteTransfer}
+        characterHub={characterHub}
       />
     </View>
   );

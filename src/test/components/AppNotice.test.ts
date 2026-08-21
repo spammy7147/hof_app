@@ -62,6 +62,25 @@ moduleWithLoader._load = (request, parent, isMain) => {
       },
     };
   }
+  if (request.endsWith('/features/characters/useCharacterManagementHub')) {
+    return {
+      useCharacterManagementHub: () => ({
+        characters: [],
+        selectedCharacter: null,
+        detail: null,
+        isLoading: false,
+        errorMessage: null,
+        warningMessage: null,
+        patternConflict: null,
+        deepSync: { status: 'idle', progress: null, errorMessage: null },
+        transfer: {
+          status: 'idle', sourceCharacter: null, targetCharacterId: null,
+          request: null, preview: null, progress: null, result: null, errorMessage: null,
+        },
+        actions: {},
+      }),
+    };
+  }
   if (request.endsWith('/features/captcha/useCaptchaGate')) {
     return {
       useCaptchaGate: () => ({

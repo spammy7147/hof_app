@@ -20,17 +20,11 @@ import type { CharacterManagementHubResource } from "../../../domain/characterMa
 
 export function CharacterEquipmentScreen({
   characterHub,
-  detail: legacyDetail,
-  onCommand: legacyCommand,
 }: {
-  characterHub?: CharacterManagementHubResource;
-  detail?: HofCharacterDetail;
-  onCommand?: (
-    command: CharacterCommand,
-  ) => Promise<CharacterCommandResult | void>;
+  characterHub: CharacterManagementHubResource;
 }) {
-  const detail = (characterHub?.detail ?? legacyDetail) as HofCharacterDetail;
-  const onCommand = characterHub?.actions.executeCommand ?? legacyCommand;
+  const detail = characterHub.detail!;
+  const onCommand = characterHub.actions.executeCommand;
   const [part, setPart] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const revision = detail.revision;

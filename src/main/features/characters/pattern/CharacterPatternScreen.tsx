@@ -13,12 +13,7 @@ import {
   NestableDraggableFlatList,
   type RenderItemParams,
 } from "react-native-draggable-flatlist";
-import type {
-  CharacterPatternApplyRequest,
-  CharacterPatternOperationResult,
-  HofCharacterDetail,
-  HofCharacterPatternOption,
-} from "../../../types/api";
+import type { HofCharacterPatternOption } from "../../../types/api";
 import { theme } from "../../../styles/theme";
 import { FixedBottomAction } from "../../../components/FixedBottomAction";
 import type { CharacterManagementHubResource } from "../../../domain/characterManagementHubModule";
@@ -41,40 +36,18 @@ const GUARD_OPTIONS = [
 ];
 export function CharacterPatternScreen({
   characterHub,
-  detail: legacyDetail,
-  onApply: legacyApply,
-  onLoadSaved: legacyLoadSaved,
-  onDeleteSaved: legacyDeleteSaved,
-  onBeginEdit: legacyBeginEdit,
   onImportSettings,
 }: {
-  characterHub?: CharacterManagementHubResource;
-  detail?: HofCharacterDetail;
-  onApply?: (
-    request: CharacterPatternApplyRequest,
-  ) => Promise<CharacterPatternOperationResult>;
-  onLoadSaved?: (
-    characterId: number,
-    slotCode: string,
-  ) => Promise<CharacterPatternOperationResult>;
-  onDeleteSaved?: (
-    characterId: number,
-    slotCode: string,
-  ) => Promise<CharacterPatternOperationResult>;
-  onBeginEdit?: () => Promise<void>;
+  characterHub: CharacterManagementHubResource;
   onImportSettings?: () => void;
 }) {
-  const detail = (characterHub?.detail ?? legacyDetail) as HofCharacterDetail;
-  const onApply = characterHub?.actions.applyPattern ?? legacyApply;
-  const onLoadSaved = characterHub?.actions.loadSavedPattern
-    ? (_characterId: number, slotCode: string) =>
-        characterHub.actions.loadSavedPattern?.(slotCode) ?? Promise.resolve({})
-    : legacyLoadSaved;
-  const onDeleteSaved = characterHub?.actions.deleteSavedPattern
-    ? (_characterId: number, slotCode: string) =>
-        characterHub.actions.deleteSavedPattern?.(slotCode) ?? Promise.resolve({})
-    : legacyDeleteSaved;
-  const onBeginEdit = characterHub?.actions.beginPatternEdit ?? legacyBeginEdit;
+  const detail = characterHub.detail!;
+  const onApply = characterHub.actions.applyPattern;
+  const onLoadSaved = (_characterId: number, slotCode: string) =>
+    characterHub.actions.loadSavedPattern?.(slotCode) ?? Promise.resolve({});
+  const onDeleteSaved = (_characterId: number, slotCode: string) =>
+    characterHub.actions.deleteSavedPattern?.(slotCode) ?? Promise.resolve({});
+  const onBeginEdit = characterHub.actions.beginPatternEdit;
   const initial = useMemo<Row[]>(
     () =>
       detail.actionPatterns.map((row, index) => ({
@@ -102,13 +75,8 @@ export function CharacterPatternScreen({
   const [alsoSave, setAlsoSave] = useState(false);
   const [slotName, setSlotName] = useState("");
   const [pendingSlot, setPendingSlot] = useState<string | null>(null);
-  const [legacyConflict, setLegacyConflict] =
-    useState<CharacterPatternOperationResult | null>(null);
-  const visibleConflict = characterHub?.patternConflict ?? legacyConflict;
-  const dismissConflict = () => {
-    if (characterHub) characterHub.actions.dismissPatternConflict();
-    else setLegacyConflict(null);
-  };
+  const visibleConflict = characterHub.patternConflict;
+  const dismissConflict = characterHub.actions.dismissPatternConflict;
   const [conflictedApply, setConflictedApply] = useState<PendingApply | null>(
     null,
   );
@@ -213,9 +181,7 @@ export function CharacterPatternScreen({
       (result.currentRevision || (result.rowDiffs?.length ?? 0) > 0)
     ) {
       setConflictedApply({ slotAction, targetSlotCode, name });
-      if (!characterHub) setLegacyConflict(result);
     } else {
-      if (!characterHub) setLegacyConflict(null);
       setConflictedApply(null);
       setPendingSlot(null);
       setSlotName("");

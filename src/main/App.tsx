@@ -23,14 +23,6 @@ import type {
   BattleResultResponse,
   BattleStatsResponse,
   AdventureMapStatsPeriod,
-  CharacterCommand,
-  CharacterCommandResult,
-  CharacterPatternApplyRequest,
-  CharacterPatternOperationResult,
-  CharacterTransferPreviewRequest,
-  CharacterTransferExecutionResult,
-  CharacterDeepSyncResponse,
-  HofCharacterDetail,
   HofStatusResponse,
   HofObservedStatusResponse,
   RunBattleRequest,
@@ -38,6 +30,7 @@ import type {
 import { theme } from "./styles/theme";
 import { createTownApi } from "./features/town/api/townApi";
 import { usePartyPresetCatalog } from "./features/partyPresets/usePartyPresetCatalog";
+import { useCharacterManagementHub } from "./features/characters/useCharacterManagementHub";
 
 type ScreenMode = "boot" | "login" | "main";
 
@@ -137,6 +130,25 @@ function AppContent({ api }: { api: BackendApiClient }) {
     replaceCharacters,
     resetCharacterSync,
   } = useCharacterSync({ api, describeError, onNotice: setNotice });
+  const beginCharacterPatternEdit = useCallback(
+    () => automationController.changeState("pause"),
+    [automationController],
+  );
+  const reloadRelatedPartyPresets = useCallback(
+    () => partyPresetCatalog.actions.refresh(),
+    [partyPresetCatalog.actions],
+  );
+  const characterHub = useCharacterManagementHub(
+    api,
+    session?.loggedIn === true ? session : null,
+    characters,
+    {
+      publishRoster: replaceCharacters,
+      publishDetail: upsertCharacter,
+      reloadRelatedPresets: reloadRelatedPartyPresets,
+      beginPatternEdit: beginCharacterPatternEdit,
+    },
+  );
   const {
     visible: captchaModalVisible,
     blocking: captchaModalBlocking,
@@ -252,103 +264,6 @@ function AppContent({ api }: { api: BackendApiClient }) {
   const loadBattleStats = useCallback(
     (period?: AdventureMapStatsPeriod): Promise<BattleStatsResponse> =>
       api.fetchBattleStats(period),
-    [api],
-  );
-
-  const loadCharacterDetail = useCallback(
-    (characterId: number): Promise<HofCharacterDetail> =>
-      api.fetchCharacterDetail(characterId),
-    [api],
-  );
-
-  const executeTypedCharacterCommand = useCallback(
-    async (command: CharacterCommand): Promise<CharacterCommandResult> => {
-      const result = await api.executeCharacterCommand(command);
-      if (result.type === "IdentityResolutionRequired") return result;
-      if (result.type && result.type !== "Completed") {
-        if ("message" in result) throw new Error(result.message);
-        throw new Error(
-          "서버에서 캐릭터 설정이 변경되었습니다. 동기화 후 다시 시도해 주세요.",
-        );
-      }
-      return result;
-    },
-    [api],
-  );
-
-  const applyTypedCharacterPattern = useCallback(
-    (
-      request: CharacterPatternApplyRequest,
-    ): Promise<CharacterPatternOperationResult> =>
-      api.applyCharacterPattern(request),
-    [api],
-  );
-  const loadSavedCharacterPattern = useCallback(
-    (
-      characterId: number,
-      slotCode: string,
-    ): Promise<CharacterPatternOperationResult> =>
-      api.loadSavedCharacterPattern(characterId, slotCode),
-    [api],
-  );
-  const deleteSavedCharacterPattern = useCallback(
-    (
-      characterId: number,
-      slotCode: string,
-    ): Promise<CharacterPatternOperationResult> =>
-      api.deleteSavedCharacterPattern(characterId, slotCode),
-    [api],
-  );
-
-  const refreshCharacterDetail = useCallback(
-    (characterId: number): Promise<HofCharacterDetail> =>
-      api.refreshCharacterDetail(characterId),
-    [api],
-  );
-  const deepSyncCharacter = useCallback(
-    async (
-      characterId: number,
-      onProgress?: (progress: CharacterDeepSyncResponse) => void,
-    ): Promise<CharacterDeepSyncResponse> => {
-      return api.deepSyncCharacter(characterId, onProgress);
-    },
-    [api],
-  );
-
-  const archiveCharacter = useCallback(
-    async (characterId: number) => {
-      replaceCharacters(await api.archiveCharacter(characterId));
-    },
-    [api, replaceCharacters],
-  );
-  const restoreCharacter = useCallback(
-    async (characterId: number) => {
-      replaceCharacters(await api.restoreCharacter(characterId));
-    },
-    [api, replaceCharacters],
-  );
-  const deleteCharacterPermanently = useCallback(
-    async (characterId: number) => {
-      replaceCharacters(await api.deleteCharacterPermanently(characterId));
-    },
-    [api, replaceCharacters],
-  );
-  const linkCharacter = useCallback(
-    (characterId: number, newHofCharacterId: string) =>
-      api.linkCharacter(characterId, newHofCharacterId),
-    [api],
-  );
-  const loadCharacterRoster = useCallback(() => api.listCharacters(), [api]);
-  const previewCharacterTransfer = useCallback(
-    (request: CharacterTransferPreviewRequest) =>
-      api.previewCharacterTransfer(request),
-    [api],
-  );
-  const executeCharacterTransfer = useCallback(
-    (
-      request: CharacterTransferPreviewRequest,
-      onProgress?: (progress: CharacterTransferExecutionResult) => void,
-    ) => api.executeCharacterTransfer(request, [], onProgress),
     [api],
   );
 
@@ -495,7 +410,7 @@ function AppContent({ api }: { api: BackendApiClient }) {
         areBattleCategoriesLoaded={areBattleCategoriesLoaded}
         isBattleCategoriesLoading={isBattleCategoriesLoading}
         battleCategoriesError={battleCategoriesError}
-        characters={characters}
+        characterHub={characterHub}
         characterSyncLabel={characterSyncLabel}
         characterSyncJob={characterSyncJob}
         onSyncCharacterRoster={syncCharacterRoster}
@@ -512,22 +427,6 @@ function AppContent({ api }: { api: BackendApiClient }) {
         onStatusObserved={handleStatusObserved}
         automationController={automationController}
         partyPresetCatalog={partyPresetCatalog}
-        onLoadCharacterDetail={loadCharacterDetail}
-        onExecuteCharacterCommand={executeTypedCharacterCommand}
-        onApplyCharacterPattern={applyTypedCharacterPattern}
-        onLoadSavedCharacterPattern={loadSavedCharacterPattern}
-        onDeleteSavedCharacterPattern={deleteSavedCharacterPattern}
-        onRefreshCharacterDetail={refreshCharacterDetail}
-        onDeepSyncCharacter={deepSyncCharacter}
-        onArchiveCharacter={archiveCharacter}
-        onRestoreCharacter={restoreCharacter}
-        onDeleteCharacterPermanently={deleteCharacterPermanently}
-        onLinkCharacter={linkCharacter}
-        onLoadCharacterRoster={loadCharacterRoster}
-        onPublishCharacterRoster={replaceCharacters}
-        onPublishCharacterDetail={upsertCharacter}
-        onPreviewCharacterTransfer={previewCharacterTransfer}
-        onExecuteCharacterTransfer={executeCharacterTransfer}
         onLogout={handleLogout}
         onOpenLogin={() => setMode("login")}
         townApi={townApi}

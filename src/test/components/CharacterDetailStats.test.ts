@@ -115,6 +115,7 @@ describe('CharacterDetail stat allocation', () => {
       },
     };
     const characterHub = makeCharacterManagementHubResource({
+      characters: [target, source],
       selectedCharacter: target,
       detail: makeHofCharacterDetail(target.id, { name: '대상' }),
       transfer: {
@@ -146,8 +147,6 @@ describe('CharacterDetail stat allocation', () => {
     await act(async () => {
       renderer = create(React.createElement(CharacterDetail, {
         characterHub,
-        characters: [target, source],
-        initialTransferSourceId: source.id,
       }));
     });
     const text = renderer.root
@@ -164,8 +163,19 @@ describe('CharacterDetail stat allocation', () => {
     const source = makeHofCharacter(2, { name: '원본' });
     let submitted: unknown = null;
     const characterHub = makeCharacterManagementHubResource({
+      characters: [target, source],
       selectedCharacter: target,
       detail: makeHofCharacterDetail(target.id, { name: '대상' }),
+      transfer: {
+        status: 'idle',
+        sourceCharacter: source,
+        targetCharacterId: target.id,
+        request: null,
+        preview: null,
+        progress: null,
+        result: null,
+        errorMessage: null,
+      },
       actions: {
         previewTransfer: async (request) => {
           submitted = request;
@@ -178,8 +188,6 @@ describe('CharacterDetail stat allocation', () => {
     await act(async () => {
       renderer = create(React.createElement(CharacterDetail, {
         characterHub,
-        characters: [target, source],
-        initialTransferSourceId: source.id,
       }));
     });
     const previewButton = renderer.root
@@ -210,6 +218,7 @@ describe('CharacterDetail stat allocation', () => {
     let previews = 0;
     let executions = 0;
     const characterHub = makeCharacterManagementHubResource({
+      characters: [target, source],
       selectedCharacter: target,
       detail: makeHofCharacterDetail(target.id, { name: '대상' }),
       transfer: {
@@ -253,8 +262,6 @@ describe('CharacterDetail stat allocation', () => {
     await act(async () => {
       renderer = create(React.createElement(CharacterDetail, {
         characterHub,
-        characters: [target, source],
-        initialTransferSourceId: source.id,
       }));
     });
     const primaryButton = renderer.root
@@ -274,11 +281,9 @@ describe('CharacterDetail stat allocation', () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(CharacterDetail, {
-        character: makeHofCharacter(),
-        detail: makeHofCharacterDetail(),
-        isLoading: false,
-        errorMessage: null,
-        warningMessage: '최신 상태를 다시 확인하지 못했습니다.',
+        characterHub: hubWithDetail(makeHofCharacterDetail(), {
+          warningMessage: '최신 상태를 다시 확인하지 못했습니다.',
+        }),
       }));
     });
 
@@ -297,7 +302,9 @@ describe('CharacterDetail stat allocation', () => {
     });
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
-      renderer = create(React.createElement(CharacterSkillsScreen, { detail }));
+      renderer = create(React.createElement(CharacterSkillsScreen, {
+        characterHub: hubWithDetail(detail),
+      }));
     });
 
     const text = () => renderer.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join(''));
@@ -330,13 +337,10 @@ describe('CharacterDetail stat allocation', () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(CharacterDetail, {
-        character: makeHofCharacter(),
-        detail: makeHofCharacterDetail(1, { stats: { ...makeHofCharacterDetail().stats, statusPoints: 25, dexReal: 34, dexBonus: 9 } }),
-        isLoading: false,
-        errorMessage: null,
-        onCommand: async (request: CharacterCommand) => {
-          requests.push(request);
-        },
+        characterHub: hubWithDetail(
+          makeHofCharacterDetail(1, { stats: { ...makeHofCharacterDetail().stats, statusPoints: 25, dexReal: 34, dexBonus: 9 } }),
+          { actions: { executeCommand: async (request: CharacterCommand) => { requests.push(request); } } },
+        ),
       }));
     });
 
@@ -378,12 +382,9 @@ describe('CharacterDetail stat allocation', () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(CharacterDetail, {
-        character: makeHofCharacter(),
-        detail: makeHofCharacterDetail(1, {
+        characterHub: hubWithDetail(makeHofCharacterDetail(1, {
           stats: { ...makeHofCharacterDetail().stats, statusPoints: 25 },
-        }),
-        isLoading: false,
-        errorMessage: null,
+        })),
       }));
     });
 
@@ -404,16 +405,13 @@ describe('CharacterDetail stat allocation', () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(CharacterDetail, {
-        character: makeHofCharacter(),
-        detail: makeHofCharacterDetail(1, {
+        characterHub: hubWithDetail(makeHofCharacterDetail(1, {
           statusEffects: [
             { type: 'EFFECT', name: 'gauge', valueText: '||||||||', description: '', active: null },
             { type: 'EFFECT', name: 'separator', valueText: '________________________________ [SET:작은 짐승들의 잔치]', description: '세트 효과', active: false },
             { type: 'EFFECT', name: 'defence', valueText: '방어숙련 +29%', description: '', active: null },
           ],
-        }),
-        isLoading: false,
-        errorMessage: null,
+        })),
       }));
     });
 
@@ -428,10 +426,7 @@ describe('CharacterDetail stat allocation', () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(CharacterDetail, {
-        character: makeHofCharacter(),
-        detail: makeHofCharacterDetail(),
-        isLoading: false,
-        errorMessage: null,
+        characterHub: hubWithDetail(makeHofCharacterDetail()),
       }));
     });
 
@@ -453,15 +448,16 @@ describe('CharacterDetail stat allocation', () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(CharacterDetail, {
-        character: makeHofCharacter(),
-        detail: makeHofCharacterDetail(1, { actionPatterns: [{ index: 0, judge: 'always', judgeText: '항상', quantity: '0', quantityText: '', skill: 'slash', skillText: 'Quick Slash' }], patternOptions: [{ type: 'CONDITION', value: 'always', label: '항상', category: null }, { type: 'CONDITION', value: '1099', label: 'HP', category: 'HP' }, { type: 'CONDITION', value: 'hp', label: 'HP가 낮을 때', category: null }, { type: 'SKILL', value: 'slash', label: 'Quick Slash', category: null }], positionGuard: { positions: [{ value: 'front', checked: true }], selectedPosition: 'front', guardValue: 'always', guardText: '항상' } }),
-        isLoading: false,
-        errorMessage: null,
-        onApplyPattern: async (request: CharacterPatternApplyRequest) => {
-          requests.push(request);
-          return {};
-        },
-        onBeginPatternEdit: async () => { pauseRequests += 1; },
+        characterHub: hubWithDetail(
+          makeHofCharacterDetail(1, { actionPatterns: [{ index: 0, judge: 'always', judgeText: '항상', quantity: '0', quantityText: '', skill: 'slash', skillText: 'Quick Slash' }], patternOptions: [{ type: 'CONDITION', value: 'always', label: '항상', category: null }, { type: 'CONDITION', value: '1099', label: 'HP', category: 'HP' }, { type: 'CONDITION', value: 'hp', label: 'HP가 낮을 때', category: null }, { type: 'SKILL', value: 'slash', label: 'Quick Slash', category: null }], positionGuard: { positions: [{ value: 'front', checked: true }], selectedPosition: 'front', guardValue: 'always', guardText: '항상' } }),
+          { actions: {
+            applyPattern: async (request: CharacterPatternApplyRequest) => {
+              requests.push(request);
+              return {};
+            },
+            beginPatternEdit: async () => { pauseRequests += 1; },
+          } },
+        ),
       }));
     });
 
@@ -520,14 +516,11 @@ describe('CharacterDetail stat allocation', () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(CharacterDetail, {
-        character: makeHofCharacter(),
-        detail: makeHofCharacterDetail(1, {
+        characterHub: hubWithDetail(makeHofCharacterDetail(1, {
           actionPatterns: [{ index: 0, judge: 'always', judgeText: '반드시', quantity: '0', quantityText: '', skill: 'attack', skillText: 'Attack' }],
           patternOptions: [{ type: 'CONDITION', value: 'always', label: '반드시', category: null }, { type: 'SKILL', value: 'attack', label: 'Attack', category: null }],
           positionGuard: { positions: [{ value: 'front', checked: true }], selectedPosition: 'front', guardValue: 'always', guardText: '반드시 지킨다' },
-        }),
-        isLoading: false,
-        errorMessage: null,
+        })),
       }));
     });
     const patternTab = renderer.root.findAllByProps({ accessibilityRole: 'tab' }).find((node) => (
@@ -560,7 +553,9 @@ describe('CharacterDetail stat allocation', () => {
     });
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
-      renderer = create(React.createElement(CharacterEquipmentScreen, { detail }));
+      renderer = create(React.createElement(CharacterEquipmentScreen, {
+        characterHub: hubWithDetail(detail),
+      }));
     });
 
     await act(async () => {
@@ -583,7 +578,9 @@ describe('CharacterDetail stat allocation', () => {
     });
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
-      renderer = create(React.createElement(CharacterEquipmentScreen, { detail }));
+      renderer = create(React.createElement(CharacterEquipmentScreen, {
+        characterHub: hubWithDetail(detail),
+      }));
     });
 
     const change = renderer.root.findByProps({ accessibilityLabel: 'Weapon 장비 변경' });
@@ -604,7 +601,7 @@ describe('CharacterDetail stat allocation', () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(CharacterDetail, {
-        character: makeHofCharacter(), detail, isLoading: false, errorMessage: null,
+        characterHub: hubWithDetail(detail),
       }));
     });
     const openTab = async (label: string) => {
@@ -676,12 +673,12 @@ describe('CharacterDetail stat allocation', () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(CharacterDetail, {
-        character: makeHofCharacter(1, { name: '소셜' }),
-        detail,
-        isLoading: false,
-        errorMessage: null,
-        onPreviewTransfer: async () => { throw new Error('not called'); },
-        onExecuteTransfer: async () => { throw new Error('not called'); },
+        characterHub: hubWithDetail(detail, {
+          actions: {
+            previewTransfer: async () => { throw new Error('not called'); },
+            executeTransfer: async () => { throw new Error('not called'); },
+          },
+        }),
       }));
     });
     const text = () => renderer.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join(''));
@@ -730,8 +727,14 @@ describe('CharacterDetail stat allocation', () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(CharacterDetail, {
-        character: makeHofCharacter(), detail, isLoading: false, errorMessage: null,
-        onApplyPattern: async (request: CharacterPatternApplyRequest) => { requests.push(request); return {}; },
+        characterHub: hubWithDetail(detail, {
+          actions: {
+            applyPattern: async (request: CharacterPatternApplyRequest) => {
+              requests.push(request);
+              return {};
+            },
+          },
+        }),
       }));
     });
     const findButton = (label: string) => renderer.root.findAllByProps({ accessibilityRole: 'button' }).find((node) => (
@@ -767,13 +770,16 @@ describe('CharacterDetail stat allocation', () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(CharacterDetail, {
-        character: makeHofCharacter(), detail, isLoading: false, errorMessage: null,
-        onApplyPattern: async (request: CharacterPatternApplyRequest) => {
-          requests.push(request);
-          return requests.length === 1
-            ? { currentRevision: '2026-08-17T00:01:00Z', rowDiffs: [{ rowNumber: 1, before: request.base.rows[0] ?? null, current: { judge: 'changed', quantity: '1', skill: 'slash' } }] }
-            : { revision: '2026-08-17T00:02:00Z' };
-        },
+        characterHub: hubWithDetail(detail, {
+          actions: {
+            applyPattern: async (request: CharacterPatternApplyRequest) => {
+              requests.push(request);
+              return requests.length === 1
+                ? { currentRevision: '2026-08-17T00:01:00Z', rowDiffs: [{ rowNumber: 1, before: request.base.rows[0] ?? null, current: { judge: 'changed', quantity: '1', skill: 'slash' } }] }
+                : { revision: '2026-08-17T00:02:00Z' };
+            },
+          },
+        }),
       }));
     });
     const patternTab = renderer.root.findAllByProps({ accessibilityRole: 'tab' }).find((node) => node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '패턴').length > 0);
@@ -809,17 +815,19 @@ describe('CharacterDetail stat allocation', () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(CharacterManagementScreen, {
-        detail: makeHofCharacterDetail(),
-        characters: [makeHofCharacter()],
-        onCommand: async (command: CharacterCommand) => {
-          commandTypes.push(command.type);
-          return {
-            type: 'Completed' as const,
-            characterId: command.characterId,
-            revision: '2026-08-17T00:01:00Z',
-            messages: [],
-          };
-        },
+        characterHub: hubWithDetail(makeHofCharacterDetail(), {
+          actions: {
+            executeCommand: async (command: CharacterCommand) => {
+              commandTypes.push(command.type);
+              return {
+                type: 'Completed' as const,
+                characterId: command.characterId,
+                revision: '2026-08-17T00:01:00Z',
+                messages: [],
+              };
+            },
+          },
+        }),
       }));
     });
 
@@ -845,7 +853,7 @@ describe('CharacterDetail stat allocation', () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(CharacterItemsScreen, {
-        detail,
+        characterHub: hubWithDetail(detail),
         onBack: () => undefined,
       }));
     });
@@ -879,7 +887,7 @@ describe('CharacterDetail stat allocation', () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(CharacterItemsScreen, {
-        detail,
+        characterHub: hubWithDetail(detail),
         onBack: () => undefined,
       }));
     });
@@ -908,7 +916,9 @@ describe('CharacterDetail stat allocation', () => {
     });
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
-      renderer = create(React.createElement(CharacterEquipmentScreen, { detail }));
+      renderer = create(React.createElement(CharacterEquipmentScreen, {
+        characterHub: hubWithDetail(detail),
+      }));
     });
 
     await act(async () => {
@@ -924,20 +934,22 @@ describe('CharacterDetail stat allocation', () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(CharacterManagementScreen, {
-        detail,
-        characters: [makeHofCharacter()],
-        onCommand: async () => ({
-          type: 'IdentityResolutionRequired' as const,
-          characterId: detail.id,
-          message: '새 캐릭터 연결을 선택해 주세요.',
-          candidates: [
-            { hofCharacterId: 'recommended', name: '추천 후보', job: 'Knight', level: 60, matchingFields: ['name', 'job', 'level'] },
-            { hofCharacterId: 'other', name: '다른 캐릭터', job: 'Mage', level: 42, matchingFields: [] },
-          ],
+        characterHub: hubWithDetail(detail, {
+          actions: {
+            executeCommand: async () => ({
+              type: 'IdentityResolutionRequired' as const,
+              characterId: detail.id,
+              message: '새 캐릭터 연결을 선택해 주세요.',
+              candidates: [
+                { hofCharacterId: 'recommended', name: '추천 후보', job: 'Knight', level: 60, matchingFields: ['name', 'job', 'level'] },
+                { hofCharacterId: 'other', name: '다른 캐릭터', job: 'Mage', level: 42, matchingFields: [] },
+              ],
+            }),
+            linkCharacter: async (hofCharacterId: string) => {
+              linked.push([detail.id, hofCharacterId]);
+            },
+          },
         }),
-        onLinkCharacter: async (characterId: number, hofCharacterId: string) => {
-          linked.push([characterId, hofCharacterId]);
-        },
       }));
     });
 
@@ -960,3 +972,16 @@ describe('CharacterDetail stat allocation', () => {
     assert.deepEqual(linked, [[detail.id, 'other']]);
   });
 });
+
+function hubWithDetail(
+  detail: ReturnType<typeof makeHofCharacterDetail>,
+  overrides: Parameters<typeof makeCharacterManagementHubResource>[0] = {},
+) {
+  const character = makeHofCharacter(detail.id, { name: detail.name });
+  return makeCharacterManagementHubResource({
+    characters: [character],
+    selectedCharacter: character,
+    detail,
+    ...overrides,
+  });
+}

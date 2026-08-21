@@ -9,6 +9,7 @@ import {
 } from '../../main/features/partyPresets/usePartyPresetCatalog';
 import type { PartyPresetResponse } from '../../main/types/api';
 import { makeHofCharacter } from '../fixtures/api';
+import { makeCharacterManagementHubResource } from '../fixtures/characterManagementHub';
 import { makePartyPresetCatalogResource } from '../fixtures/partyPresetCatalog';
 
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => (
@@ -100,6 +101,39 @@ function CatalogMainScreen(props: CatalogHarnessProps) {
 }
 
 describe('MainScreen automation editor chrome', () => {
+  it('passes one supplied character hub to roster and detail without callback relays', async () => {
+    const character = makeHofCharacter();
+    const listHub = makeCharacterManagementHubResource({ characters: [character] });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(MainScreen, mainProps({
+        characterHub: listHub,
+      })));
+    });
+    await act(async () => renderer.root
+      .find((node) => String(node.type) === 'BottomTabBar')
+      .props.onChangeTab('characters'));
+    const list = renderer.root.find((node) => String(node.type) === 'CharacterList');
+    assert.equal(list.props.characterHub, listHub);
+    assert.equal(list.props.onSelectCharacter, undefined);
+    assert.equal(list.props.onArchiveCharacter, undefined);
+
+    const detailHub = makeCharacterManagementHubResource({
+      characters: [character],
+      selectedCharacter: character,
+      detail: { ...character, revision: 'revision-1' } as never,
+    });
+    await act(async () => renderer.update(React.createElement(MainScreen, mainProps({
+      characterHub: detailHub,
+    }))));
+    const detail = renderer.root.find((node) => String(node.type) === 'CharacterDetail');
+    assert.equal(detail.props.characterHub, detailHub);
+    assert.deepEqual(
+      Object.keys(detail.props).filter((key) => !['children', 'ref'].includes(key)),
+      ['characterHub'],
+    );
+  });
+
   it('consumes one supplied catalog resource without owning backend callbacks', async () => {
     const resource = makePartyPresetCatalogResource({
       folders: [],
@@ -430,18 +464,31 @@ describe('MainScreen automation editor chrome', () => {
 
   it('opens character details without the global header, tabs, or a sticky footer', async () => {
     const character = makeHofCharacter();
-    const props = mainProps({ characters: [character] });
+    let closes = 0;
+    const listHub = makeCharacterManagementHubResource({ characters: [character] });
+    const detailHub = makeCharacterManagementHubResource({
+      characters: [character],
+      selectedCharacter: character,
+      detail: { ...character, revision: 'revision-1' } as never,
+      actions: { close: () => { closes += 1; } },
+    });
+    const props = mainProps({ characterHub: listHub });
     let renderer!: ReturnType<typeof create>;
     await act(async () => { renderer = create(React.createElement(MainScreen, props)); });
 
     await act(async () => renderer.root.find((node) => String(node.type) === 'BottomTabBar').props.onChangeTab('characters'));
-    await act(async () => renderer.root.find((node) => String(node.type) === 'CharacterList').props.onSelectCharacter(character));
+    await act(async () => renderer.update(React.createElement(MainScreen, {
+      ...props,
+      characterHub: detailHub,
+    })));
 
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 0);
     assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '캐릭터 상세 전체 화면' }).length > 0);
 
     const detail = renderer.root.find((node) => String(node.type) === 'CharacterDetail');
-    await act(async () => detail.props.onBack());
+    await act(async () => detail.props.characterHub.actions.close());
+    assert.equal(closes, 1);
+    await act(async () => renderer.update(React.createElement(MainScreen, props)));
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 1);
   });
 
@@ -466,7 +513,7 @@ describe('MainScreen automation editor chrome', () => {
   });
 });
 
-function mainProps(overrides: Record<string, unknown> = {}) {
+  function mainProps(overrides: Record<string, unknown> = {}) {
   return {
       session: { loggedIn: true },
       status: null,
@@ -474,7 +521,7 @@ function mainProps(overrides: Record<string, unknown> = {}) {
       areBattleCategoriesLoaded: true,
       isBattleCategoriesLoading: false,
       battleCategoriesError: null,
-      characters: [],
+      characterHub: makeCharacterManagementHubResource(),
       characterSyncLabel: null,
       notice: null,
       onLoadBattleCategories: () => undefined,
@@ -491,8 +538,6 @@ function mainProps(overrides: Record<string, unknown> = {}) {
       onMakePartyPresetPrimary: async () => ({}) as never,
       onReorderPartyPresets: async () => [],
       onDeletePartyPreset: async () => null,
-      onLoadCharacterDetail: async () => ({}) as never,
-      onLoadPattern: async () => ({}) as never,
       onLogout: () => undefined,
       onOpenLogin: () => undefined,
     ...overrides,

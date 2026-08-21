@@ -10,6 +10,7 @@ export function makeCharacterManagementHubResource(
 ): CharacterManagementHubResource {
   const actions: CharacterManagementHubActions = {
     select: async () => undefined,
+    openTransfer: async () => undefined,
     close: () => undefined,
     reloadStored: async () => undefined,
     refresh: async () => undefined,
@@ -18,6 +19,7 @@ export function makeCharacterManagementHubResource(
     ...overrides.actions,
   };
   return {
+    characters: [],
     selectedCharacter: null,
     detail: null,
     isLoading: false,

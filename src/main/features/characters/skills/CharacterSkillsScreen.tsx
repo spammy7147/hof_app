@@ -1,27 +1,18 @@
 import { useMemo, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
-import type {
-  CharacterCommand,
-  CharacterCommandResult,
-  HofCharacterDetail,
-  HofCharacterSkill,
-} from "../../../types/api";
+import type { HofCharacterSkill } from "../../../types/api";
 import { theme } from "../../../styles/theme";
 import { FixedBottomAction } from "../../../components/FixedBottomAction";
 import type { CharacterManagementHubResource } from "../../../domain/characterManagementHubModule";
 
 export function CharacterSkillsScreen({
   characterHub,
-  detail: legacyDetail,
-  onCommand: legacyCommand,
 }: {
-  characterHub?: CharacterManagementHubResource;
-  detail?: HofCharacterDetail;
-  onCommand?: (command: CharacterCommand) => Promise<CharacterCommandResult | void>;
+  characterHub: CharacterManagementHubResource;
 }) {
-  const detail = (characterHub?.detail ?? legacyDetail) as HofCharacterDetail;
-  const onCommand = characterHub?.actions.executeCommand ?? legacyCommand;
+  const detail = characterHub.detail!;
+  const onCommand = characterHub.actions.executeCommand;
   const [mode, setMode] = useState<"owned" | "learn">("owned");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<HofCharacterSkill | null>(null);

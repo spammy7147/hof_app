@@ -25,11 +25,6 @@ import type {
   CharacterCommand,
   CharacterCommandResult,
   CharacterDeepSyncResponse,
-  CharacterTransferExecutionResult,
-  CharacterTransferPreview,
-  CharacterTransferPreviewRequest,
-  HofCharacter,
-  HofCharacterDetail,
 } from "../../../types/api";
 import { theme } from "../../../styles/theme";
 import { toUserFacingErrorMessage } from "../../../domain/userFacingErrors";
@@ -39,44 +34,11 @@ import { CharacterSettingsTransferScreen } from "../transfer/CharacterSettingsTr
 
 export function CharacterManagementScreen({
   characterHub,
-  detail: legacyDetail,
-  characters,
-  initialTransferSourceId,
-  onCommand: legacyCommand,
-  onDeepSync: legacyDeepSync,
-  onPreviewTransfer,
-  onExecuteTransfer,
-  onLinkCharacter: legacyLinkCharacter,
 }: {
-  characterHub?: CharacterManagementHubResource;
-  detail?: HofCharacterDetail;
-  characters: HofCharacter[];
-  initialTransferSourceId?: number | null;
-  onCommand?: (
-    command: CharacterCommand,
-  ) => Promise<CharacterCommandResult | void>;
-  onDeepSync?: (
-    characterId: number,
-    onProgress?: (progress: CharacterDeepSyncResponse) => void,
-  ) => Promise<CharacterDeepSyncResponse>;
-  onPreviewTransfer?: (
-    request: CharacterTransferPreviewRequest,
-  ) => Promise<CharacterTransferPreview>;
-  onExecuteTransfer?: (
-    request: CharacterTransferPreviewRequest,
-    onProgress?: (progress: CharacterTransferExecutionResult) => void,
-  ) => Promise<CharacterTransferExecutionResult>;
-  onLinkCharacter?: (
-    characterId: number,
-    newHofCharacterId: string,
-  ) => Promise<void>;
+  characterHub: CharacterManagementHubResource;
 }) {
-  const detail = (characterHub?.detail ?? legacyDetail) as HofCharacterDetail;
-  const onCommand = characterHub?.actions.executeCommand ?? legacyCommand;
-  const onLinkCharacter = characterHub?.actions.linkCharacter
-    ? (_characterId: number, newHofCharacterId: string) =>
-        characterHub.actions.linkCharacter?.(newHofCharacterId) ?? Promise.resolve()
-    : legacyLinkCharacter;
+  const detail = characterHub.detail!;
+  const onCommand = characterHub.actions.executeCommand;
   const [newName, setNewName] = useState("");
   const [renameOpen, setRenameOpen] = useState(false);
   const [kickName, setKickName] = useState("");
@@ -87,7 +49,7 @@ export function CharacterManagementScreen({
   const [classOpen, setClassOpen] = useState(false);
   const [selectedClass, setSelectedClass] = useState<string | null>(null);
   const [transferOpen, setTransferOpen] = useState(
-    initialTransferSourceId != null,
+    characterHub.transfer.sourceCharacter != null,
   );
   const [identityResolution, setIdentityResolution] = useState<Extract<
     CharacterCommandResult,
@@ -95,19 +57,11 @@ export function CharacterManagementScreen({
   > | null>(null);
   const [showAllIdentityCandidates, setShowAllIdentityCandidates] =
     useState(false);
-  const [legacyDeepSyncProgress, setLegacyDeepSyncProgress] =
-    useState<CharacterDeepSyncResponse | null>(null);
-  const [legacyDeepSyncBusy, setLegacyDeepSyncBusy] = useState(false);
-  const [legacyDeepSyncError, setLegacyDeepSyncError] = useState<string | null>(null);
-  const deepSyncProgress = characterHub?.deepSync.progress ?? legacyDeepSyncProgress;
-  const deepSyncBusy = characterHub
-    ? characterHub.deepSync.status === "running"
-    : legacyDeepSyncBusy;
-  const deepSyncError = characterHub?.deepSync.errorMessage ?? legacyDeepSyncError;
-  const usesHubTransfer = characterHub?.actions.previewTransfer != null
+  const deepSyncProgress = characterHub.deepSync.progress;
+  const deepSyncBusy = characterHub.deepSync.status === "running";
+  const deepSyncError = characterHub.deepSync.errorMessage;
+  const canTransfer = characterHub.actions.previewTransfer != null
     && characterHub.actions.executeTransfer != null;
-  const canTransfer = usesHubTransfer
-    || (onPreviewTransfer != null && onExecuteTransfer != null);
   const revision = detail.revision;
   const classOptions = (detail.patternOptions ?? []).filter(
     (option) => option.type === "CLASS",
@@ -135,13 +89,8 @@ export function CharacterManagementScreen({
   if (transferOpen && canTransfer)
     return (
       <CharacterSettingsTransferScreen
-        characterHub={usesHubTransfer ? characterHub : undefined}
-        target={usesHubTransfer ? undefined : detail}
-        characters={characters}
-        initialSourceId={initialTransferSourceId}
+        characterHub={characterHub}
         onBack={() => setTransferOpen(false)}
-        onPreview={usesHubTransfer ? undefined : onPreviewTransfer}
-        onExecute={usesHubTransfer ? undefined : onExecuteTransfer}
       />
     );
   return (
@@ -156,9 +105,7 @@ export function CharacterManagementScreen({
           <SafeAreaView edges={["top", "bottom"]} style={styles.itemsModal}>
             <CharacterItemsScreen
               characterHub={characterHub}
-              detail={characterHub ? undefined : detail}
               onBack={() => setItemsOpen(false)}
-              onCommand={characterHub ? undefined : onCommand}
             />
           </SafeAreaView>
         </Modal>
@@ -237,17 +184,7 @@ export function CharacterManagementScreen({
           description="현재 설정과 저장 패턴·장비 저장 1·2를 다시 확인합니다."
           disabled={deepSyncBusy}
           onPress={() => {
-            if (characterHub?.actions.deepSync) {
-              void characterHub.actions.deepSync();
-              return;
-            }
-            if (!legacyDeepSync) return;
-            setLegacyDeepSyncBusy(true);
-            setLegacyDeepSyncError(null);
-            setLegacyDeepSyncProgress({ characterId: detail.id, progress: [] });
-            void legacyDeepSync(detail.id, setLegacyDeepSyncProgress)
-              .catch((error) => setLegacyDeepSyncError(toUserFacingErrorMessage(error)))
-              .finally(() => setLegacyDeepSyncBusy(false));
+            void characterHub.actions.deepSync?.();
           }}
         />
       </View>
@@ -378,12 +315,9 @@ export function CharacterManagementScreen({
                 key={candidate.hofCharacterId}
                 accessibilityRole="button"
                 onPress={() => {
-                  if (onLinkCharacter) {
-                    void onLinkCharacter(
-                      detail.id,
-                      candidate.hofCharacterId,
-                    ).then(() => setIdentityResolution(null));
-                  }
+                  void characterHub.actions.linkCharacter?.(
+                    candidate.hofCharacterId,
+                  ).then(() => setIdentityResolution(null));
                 }}
                 style={styles.classChoice}
               >

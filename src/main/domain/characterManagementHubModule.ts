@@ -37,6 +37,9 @@ export type CharacterManagementHubBackend = {
     characterId: number,
     newHofCharacterId: string,
   ) => Promise<HofCharacter[] | void>;
+  archiveCharacter?: (characterId: number) => Promise<HofCharacter[]>;
+  restoreCharacter?: (characterId: number) => Promise<HofCharacter[]>;
+  deleteCharacterPermanently?: (characterId: number) => Promise<HofCharacter[]>;
   loadRoster?: () => Promise<HofCharacter[]>;
   publishRoster?: (characters: HofCharacter[]) => void;
   publishDetail?: (detail: HofCharacterDetail) => void;
@@ -53,6 +56,7 @@ export type CharacterManagementHubBackend = {
 
 export type CharacterManagementHubActions = {
   select: (character: HofCharacter) => Promise<void>;
+  openTransfer: (source: HofCharacter, target: HofCharacter) => Promise<void>;
   close: () => void;
   reloadStored: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -71,6 +75,9 @@ export type CharacterManagementHubActions = {
     characterId: number,
     newHofCharacterId: string,
   ) => Promise<void>;
+  archiveCharacter?: (characterId: number) => Promise<void>;
+  restoreCharacter?: (characterId: number) => Promise<void>;
+  deleteCharacterPermanently?: (characterId: number) => Promise<void>;
   previewTransfer?: (
     request: CharacterTransferPreviewRequest,
   ) => Promise<CharacterTransferPreview | void>;
@@ -97,6 +104,7 @@ export type CharacterManagementTransferState = {
 };
 
 export type CharacterManagementHubResource = {
+  characters: HofCharacter[];
   selectedCharacter: HofCharacter | null;
   detail: HofCharacterDetail | null;
   isLoading: boolean;
@@ -186,54 +194,77 @@ export class CharacterManagementHubModule {
   }
 
   observeRoster(characters: HofCharacter[]): void {
-    this.roster = new Map(characters.map((character) => [character.id, character]));
+    const roster = new Map(characters.map((character) => [character.id, character]));
     const selected = this.resource.selectedCharacter;
     const transferSource = this.resource.transfer.sourceCharacter;
+    let transfer = this.resource.transfer;
+    let actions = this.resource.actions;
     if (transferSource) {
-      const observedSource = this.roster.get(transferSource.id);
+      const observedSource = roster.get(transferSource.id);
       if (!observedSource) {
         this.transferGeneration += 1;
-        this.replace({
-          ...this.resource,
-          transfer: {
-            ...this.resource.transfer,
-            status: 'error',
-            errorMessage: '설정 원본 캐릭터를 더 이상 찾을 수 없습니다.',
-          },
-          actions: this.actionsFor(
-            this.generation,
-            this.selectionGeneration,
-            this.transferGeneration,
-          ),
-        });
+        transfer = {
+          ...idleTransfer(),
+          status: 'error',
+          errorMessage: '설정 원본 캐릭터를 더 이상 찾을 수 없습니다.',
+        };
+        actions = this.actionsFor(
+          this.generation,
+          this.selectionGeneration,
+          this.transferGeneration,
+        );
       } else if (observedSource !== transferSource) {
-        this.replace({
-          ...this.resource,
-          transfer: { ...this.resource.transfer, sourceCharacter: observedSource },
-        });
+        transfer = { ...transfer, sourceCharacter: observedSource };
       }
     }
-    if (!selected) return;
-    const observed = this.roster.get(selected.id);
-    if (!observed || !isActive(observed)) {
-      this.close(this.generation, this.selectionGeneration);
+    if (!selected) {
+      this.roster = roster;
+      this.replace({ ...this.resource, characters, transfer, actions });
       return;
     }
-    if (observed === selected) return;
-    const detail = this.resource.detail?.id === observed.id
+    const observed = roster.get(selected.id);
+    if (!observed || !isActive(observed)) {
+      this.selectionGeneration += 1;
+      this.transferGeneration += 1;
+      this.requestGeneration += 1;
+      this.roster = roster;
+      this.replace(emptyResource(
+        this.actionsFor(
+          this.generation,
+          this.selectionGeneration,
+          this.transferGeneration,
+        ),
+        characters,
+      ));
+      return;
+    }
+    const detail = observed !== selected && this.resource.detail?.id === observed.id
       ? { ...this.resource.detail, ...observed }
       : this.resource.detail;
-    this.replace({ ...this.resource, selectedCharacter: observed, detail });
+    this.roster = roster;
+    this.replace({
+      ...this.resource,
+      characters,
+      selectedCharacter: observed,
+      detail,
+      transfer,
+      actions,
+    });
   }
 
   private async select(
     candidate: HofCharacter,
     expectedGeneration: number,
     expectedSelectionGeneration: number,
+    transferSource?: HofCharacter,
   ): Promise<void> {
     if (!this.isActiveLease(expectedGeneration, expectedSelectionGeneration)) return;
     const selected = this.roster.get(candidate.id);
     if (!selected || !isActive(selected)) return;
+    const observedTransferSource = transferSource
+      ? this.roster.get(transferSource.id)
+      : undefined;
+    if (transferSource && !observedTransferSource) return;
     this.selectionGeneration += 1;
     this.transferGeneration += 1;
     const request = ++this.requestGeneration;
@@ -248,7 +279,13 @@ export class CharacterManagementHubModule {
       warningMessage: null,
       patternConflict: null,
       deepSync: idleDeepSync(),
-      transfer: idleTransfer(),
+      transfer: observedTransferSource
+        ? {
+            ...idleTransfer(),
+            sourceCharacter: observedTransferSource,
+            targetCharacterId: selected.id,
+          }
+        : idleTransfer(),
       actions: this.actionsFor(
         generation,
         selectionGeneration,
@@ -279,6 +316,7 @@ export class CharacterManagementHubModule {
         this.selectionGeneration,
         this.transferGeneration,
       ),
+      [...this.roster.values()],
     ));
   }
 
@@ -436,6 +474,12 @@ export class CharacterManagementHubModule {
   ): CharacterManagementHubActions {
     const actions: CharacterManagementHubActions = {
       select: (character) => this.select(character, generation, selectionGeneration),
+      openTransfer: (source, target) => this.select(
+        target,
+        generation,
+        selectionGeneration,
+        source,
+      ),
       close: () => this.close(generation, selectionGeneration),
       reloadStored: () => this.reloadStored(generation, selectionGeneration),
       refresh: () => this.refresh(generation, selectionGeneration),
@@ -468,6 +512,27 @@ export class CharacterManagementHubModule {
         this.linkCharacter(newHofCharacterId, generation, selectionGeneration);
       actions.linkRosterCharacter = (characterId, newHofCharacterId) =>
         this.linkRosterCharacter(characterId, newHofCharacterId, generation);
+    }
+    if (this.backend.archiveCharacter) {
+      actions.archiveCharacter = (characterId) => this.mutateRoster(
+        characterId,
+        this.backend.archiveCharacter!,
+        generation,
+      );
+    }
+    if (this.backend.restoreCharacter) {
+      actions.restoreCharacter = (characterId) => this.mutateRoster(
+        characterId,
+        this.backend.restoreCharacter!,
+        generation,
+      );
+    }
+    if (this.backend.deleteCharacterPermanently) {
+      actions.deleteCharacterPermanently = (characterId) => this.mutateRoster(
+        characterId,
+        this.backend.deleteCharacterPermanently!,
+        generation,
+      );
     }
     if (this.backend.beginPatternEdit) {
       actions.beginPatternEdit = () =>
@@ -728,6 +793,20 @@ export class CharacterManagementHubModule {
     }
     const selected = this.resource.selectedCharacter;
     if (selected?.id === characterId) await this.resource.actions.refresh();
+  }
+
+  private async mutateRoster(
+    characterId: number,
+    mutation: (characterId: number) => Promise<HofCharacter[]>,
+    expectedGeneration: number,
+  ): Promise<void> {
+    if (!this.isActiveGeneration(expectedGeneration) || !this.roster.has(characterId)) {
+      return;
+    }
+    const roster = await mutation(characterId);
+    if (!this.isActiveGeneration(expectedGeneration)) return;
+    this.observeRoster(roster);
+    this.backend.publishRoster?.(roster);
   }
 
   private async beginPatternEdit(
@@ -1033,8 +1112,10 @@ export class CharacterManagementHubModule {
 
 function emptyResource(
   actions: CharacterManagementHubActions,
+  characters: HofCharacter[] = [],
 ): CharacterManagementHubResource {
   return {
+    characters,
     selectedCharacter: null,
     detail: null,
     isLoading: false,

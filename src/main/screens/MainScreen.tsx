@@ -32,17 +32,7 @@ import type {
   BattleStatsResponse,
   AdventureMapStatsPeriod,
   FishingBattleTarget,
-  CharacterCommand,
-  CharacterCommandResult,
-  CharacterPatternApplyRequest,
-  CharacterPatternOperationResult,
-  CharacterTransferExecutionResult,
-  CharacterTransferPreview,
-  CharacterTransferPreviewRequest,
   CharacterSyncJobResponse,
-  CharacterDeepSyncResponse,
-  HofCharacter,
-  HofCharacterDetail,
   HofObservedStatusResponse,
   HofStatusResponse,
   RunBattleRequest,
@@ -53,7 +43,6 @@ import { HomeTabScreen } from "./HomeTabScreen";
 import { SettingsTabScreen } from "./SettingsTabScreen";
 import { TownTabScrollContainer } from "./TownTabScrollContainer";
 import type { TownApi } from "../features/town/api/townApi";
-import { useCharacterManagementHub } from "../features/characters/useCharacterManagementHub";
 
 type MainSession = {
   loggedIn: boolean;
@@ -68,7 +57,7 @@ type MainScreenProps = {
   areBattleCategoriesLoaded: boolean;
   isBattleCategoriesLoading: boolean;
   battleCategoriesError: string | null;
-  characters: HofCharacter[];
+  characterHub: CharacterManagementHubResource;
   characterSyncLabel: string | null;
   characterSyncJob?: CharacterSyncJobResponse | null;
   onSyncCharacterRoster?: () => Promise<void>;
@@ -87,45 +76,6 @@ type MainScreenProps = {
   onStatusObserved?: (status: HofObservedStatusResponse) => void;
   automationController: UnifiedAutomationController;
   partyPresetCatalog: PartyPresetCatalogResource;
-  onLoadCharacterDetail: (characterId: number) => Promise<HofCharacterDetail>;
-  onExecuteCharacterCommand?: (
-    command: CharacterCommand,
-  ) => Promise<CharacterCommandResult>;
-  onApplyCharacterPattern?: (
-    request: CharacterPatternApplyRequest,
-  ) => Promise<CharacterPatternOperationResult>;
-  onLoadSavedCharacterPattern?: (
-    characterId: number,
-    slotCode: string,
-  ) => Promise<CharacterPatternOperationResult>;
-  onDeleteSavedCharacterPattern?: (
-    characterId: number,
-    slotCode: string,
-  ) => Promise<CharacterPatternOperationResult>;
-  onRefreshCharacterDetail?: (
-    characterId: number,
-  ) => Promise<HofCharacterDetail>;
-  onDeepSyncCharacter?: (
-    characterId: number,
-    onProgress?: (progress: CharacterDeepSyncResponse) => void,
-  ) => Promise<CharacterDeepSyncResponse>;
-  onArchiveCharacter?: (characterId: number) => Promise<void>;
-  onRestoreCharacter?: (characterId: number) => Promise<void>;
-  onDeleteCharacterPermanently?: (characterId: number) => Promise<void>;
-  onLinkCharacter?: (
-    characterId: number,
-    newHofCharacterId: string,
-  ) => Promise<HofCharacter[] | void>;
-  onLoadCharacterRoster?: () => Promise<HofCharacter[]>;
-  onPublishCharacterRoster?: (characters: HofCharacter[]) => void;
-  onPublishCharacterDetail?: (detail: HofCharacterDetail) => void;
-  onPreviewCharacterTransfer?: (
-    request: CharacterTransferPreviewRequest,
-  ) => Promise<CharacterTransferPreview>;
-  onExecuteCharacterTransfer?: (
-    request: CharacterTransferPreviewRequest,
-    onProgress?: (progress: CharacterTransferExecutionResult) => void,
-  ) => Promise<CharacterTransferExecutionResult>;
   onLogout: () => void;
   onOpenLogin: () => void;
   townApi?: TownApi;
@@ -144,7 +94,7 @@ export function MainScreen({
   areBattleCategoriesLoaded,
   isBattleCategoriesLoading,
   battleCategoriesError,
-  characters,
+  characterHub,
   characterSyncLabel,
   characterSyncJob,
   onSyncCharacterRoster,
@@ -161,22 +111,6 @@ export function MainScreen({
   onStatusObserved,
   automationController,
   partyPresetCatalog,
-  onLoadCharacterDetail,
-  onExecuteCharacterCommand,
-  onApplyCharacterPattern,
-  onLoadSavedCharacterPattern,
-  onDeleteSavedCharacterPattern,
-  onRefreshCharacterDetail,
-  onDeepSyncCharacter,
-  onArchiveCharacter,
-  onRestoreCharacter,
-  onDeleteCharacterPermanently,
-  onLinkCharacter,
-  onLoadCharacterRoster,
-  onPublishCharacterRoster,
-  onPublishCharacterDetail,
-  onPreviewCharacterTransfer,
-  onExecuteCharacterTransfer,
   onLogout,
   onOpenLogin,
   townApi,
@@ -192,38 +126,6 @@ export function MainScreen({
   );
   const [characterSubTabId, setCharacterSubTabId] =
     useState<CharacterSubTabId>("characters");
-  const [transferSourceCharacterId, setTransferSourceCharacterId] = useState<
-    number | null
-  >(null);
-  const beginCharacterPatternEdit = useCallback(
-    () => automationController.changeState("pause"),
-    [automationController],
-  );
-  const reloadRelatedPartyPresets = useCallback(
-    () => partyPresetCatalog.actions.refresh(),
-    [partyPresetCatalog.actions],
-  );
-  const characterHub = useCharacterManagementHub(
-    {
-      loadStoredDetail: onLoadCharacterDetail,
-      refreshAuthoritativeDetail: onRefreshCharacterDetail,
-      executeCommand: onExecuteCharacterCommand,
-      applyPattern: onApplyCharacterPattern,
-      loadSavedPattern: onLoadSavedCharacterPattern,
-      deleteSavedPattern: onDeleteSavedCharacterPattern,
-      deepSync: onDeepSyncCharacter,
-      linkCharacter: onLinkCharacter,
-      loadRoster: onLoadCharacterRoster,
-      publishRoster: onPublishCharacterRoster,
-      publishDetail: onPublishCharacterDetail,
-      previewTransfer: onPreviewCharacterTransfer,
-      executeTransfer: onExecuteCharacterTransfer,
-      reloadRelatedPresets: reloadRelatedPartyPresets,
-      beginPatternEdit: beginCharacterPatternEdit,
-    },
-    session?.loggedIn === true ? session : null,
-    characters,
-  );
   const selectedCharacter = characterHub.selectedCharacter;
   const [automationEditorOpen, setAutomationEditorOpen] = useState(false);
   const [dataLogOpen, setDataLogOpen] = useState(false);
@@ -264,7 +166,6 @@ export function MainScreen({
           areBattleCategoriesLoaded,
           isBattleCategoriesLoading,
           battleCategoriesError,
-          characters,
           characterSyncLabel,
           characterSyncJob,
           onSyncCharacterRoster,
@@ -286,23 +187,6 @@ export function MainScreen({
           onLogout,
           characterSubTabId,
           setCharacterSubTabId,
-          setSelectedCharacter: (character) => {
-            setTransferSourceCharacterId(null);
-            if (character) void characterHub.actions.select(character);
-            else characterHub.actions.close();
-          },
-          transferSourceCharacterId,
-          onCopyCharacterSettings: (source, target) => {
-            setTransferSourceCharacterId(source.id);
-            void characterHub.actions.select(target);
-          },
-          closeCharacterDetail: () => {
-            setTransferSourceCharacterId(null);
-            characterHub.actions.close();
-          },
-          onArchiveCharacter,
-          onRestoreCharacter,
-          onDeleteCharacterPermanently,
           townApi,
           resolveCaptcha,
           pendingBattleTarget,
@@ -333,7 +217,6 @@ type RenderActiveTabArgs = {
   areBattleCategoriesLoaded: boolean;
   isBattleCategoriesLoading: boolean;
   battleCategoriesError: string | null;
-  characters: HofCharacter[];
   characterSyncLabel: string | null;
   characterSyncJob?: CharacterSyncJobResponse | null;
   onSyncCharacterRoster?: () => Promise<void>;
@@ -357,13 +240,6 @@ type RenderActiveTabArgs = {
   onLogout: () => void;
   characterSubTabId: CharacterSubTabId;
   setCharacterSubTabId: (tabId: CharacterSubTabId) => void;
-  setSelectedCharacter: (character: HofCharacter | null) => void;
-  transferSourceCharacterId: number | null;
-  onCopyCharacterSettings: (source: HofCharacter, target: HofCharacter) => void;
-  closeCharacterDetail: () => void;
-  onArchiveCharacter?: (characterId: number) => Promise<void>;
-  onRestoreCharacter?: (characterId: number) => Promise<void>;
-  onDeleteCharacterPermanently?: (characterId: number) => Promise<void>;
   onAutomationEditorModeChange: (active: boolean) => void;
   onDataLogModeChange: (active: boolean) => void;
   onTownDetailOpenChange: (open: boolean) => void;
@@ -387,7 +263,6 @@ function renderActiveTab({
   areBattleCategoriesLoaded,
   isBattleCategoriesLoading,
   battleCategoriesError,
-  characters,
   characterSyncLabel,
   characterSyncJob,
   onSyncCharacterRoster,
@@ -409,13 +284,6 @@ function renderActiveTab({
   onLogout,
   characterSubTabId,
   setCharacterSubTabId,
-  setSelectedCharacter,
-  transferSourceCharacterId,
-  onCopyCharacterSettings,
-  closeCharacterDetail,
-  onArchiveCharacter,
-  onRestoreCharacter,
-  onDeleteCharacterPermanently,
   onAutomationEditorModeChange,
   onTownDetailOpenChange,
   townApi,
@@ -426,6 +294,7 @@ function renderActiveTab({
   onDataLogModeChange,
 }: RenderActiveTabArgs) {
   const selectedCharacter = characterHub.selectedCharacter;
+  const characters = characterHub.characters;
   switch (activeTabId) {
     case "home":
       return (
@@ -469,9 +338,6 @@ function renderActiveTab({
           <CharacterDetailScroll>
             <CharacterDetail
               characterHub={characterHub}
-              characters={characters}
-              initialTransferSourceId={transferSourceCharacterId}
-              onBack={closeCharacterDetail}
             />
           </CharacterDetailScroll>
         </View>
@@ -555,13 +421,7 @@ function renderActiveTab({
           </View>
           {characterSubTabId === "characters" ? (
             <CharacterList
-              characters={characters}
-              onSelectCharacter={setSelectedCharacter}
-              onArchiveCharacter={onArchiveCharacter}
-              onRestoreCharacter={onRestoreCharacter}
-              onDeleteCharacterPermanently={onDeleteCharacterPermanently}
-              onLinkCharacter={characterHub.actions.linkRosterCharacter}
-              onCopySettings={onCopyCharacterSettings}
+              characterHub={characterHub}
             />
           ) : (
             <PartyPresetList

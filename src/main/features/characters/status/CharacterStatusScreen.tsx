@@ -1,13 +1,7 @@
 import { useMemo, useState } from "react";
 import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
-import type {
-  CharacterCommand,
-  CharacterCommandResult,
-  CharacterStat,
-  HofCharacterDetail,
-  HofCharacterStatusEffect,
-} from "../../../types/api";
+import type { CharacterStat, HofCharacterStatusEffect } from "../../../types/api";
 import { theme } from "../../../styles/theme";
 import { CHARACTER_PATTERN_THRESHOLDS, recommendPatternStats } from "../../../domain/characterStats";
 import type { CharacterManagementHubResource } from "../../../domain/characterManagementHubModule";
@@ -22,21 +16,17 @@ const STAT_GUIDES: Array<[CharacterStat, string, string]> = [
 
 export function CharacterStatusScreen({
   characterHub,
-  detail: legacyDetail,
-  onCommand: legacyCommand,
   helpOpen = false,
   onOpenHelp,
   onCloseHelp,
 }: {
-  characterHub?: CharacterManagementHubResource;
-  detail?: HofCharacterDetail;
-  onCommand?: (command: CharacterCommand) => Promise<CharacterCommandResult | void>;
+  characterHub: CharacterManagementHubResource;
   helpOpen?: boolean;
   onOpenHelp?: () => void;
   onCloseHelp?: () => void;
 }) {
-  const detail = (characterHub?.detail ?? legacyDetail) as HofCharacterDetail;
-  const onCommand = characterHub?.actions.executeCommand ?? legacyCommand;
+  const detail = characterHub.detail!;
+  const onCommand = characterHub.actions.executeCommand;
   const [targetOpen, setTargetOpen] = useState(false);
   const [targetPatterns, setTargetPatterns] = useState<number | null>(null);
   const [effectDetail, setEffectDetail] = useState<HofCharacterStatusEffect | null>(null);

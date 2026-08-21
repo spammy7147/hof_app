@@ -19,32 +19,19 @@ import {
 import { normalizeHofAssetUrl } from "../domain/hofAssets";
 import { theme } from "../styles/theme";
 import type { HofCharacter } from "../types/api";
+import type { CharacterManagementHubResource } from "../domain/characterManagementHubModule";
 
 type CharacterListProps = {
-  characters: HofCharacter[];
-  onSelectCharacter: (character: HofCharacter) => void;
-  onArchiveCharacter?: (characterId: number) => Promise<void>;
-  onRestoreCharacter?: (characterId: number) => Promise<void>;
-  onDeleteCharacterPermanently?: (characterId: number) => Promise<void>;
-  onLinkCharacter?: (
-    characterId: number,
-    newHofCharacterId: string,
-  ) => Promise<void>;
-  onCopySettings?: (source: HofCharacter, target: HofCharacter) => void;
+  characterHub: CharacterManagementHubResource;
 };
 
 /**
  * 동기화된 캐릭터 목록을 HOF roster 원본 순서로 보여주는 화면 조각이다.
  */
 export function CharacterList({
-  characters,
-  onSelectCharacter,
-  onArchiveCharacter,
-  onRestoreCharacter,
-  onDeleteCharacterPermanently,
-  onLinkCharacter,
-  onCopySettings,
+  characterHub,
 }: CharacterListProps) {
+  const { characters } = characterHub;
   const [lifecycle, setLifecycle] = useState<"ACTIVE" | "MISSING" | "ARCHIVED">(
     "ACTIVE",
   );
@@ -94,17 +81,17 @@ export function CharacterList({
     (characterId: number) => {
       const character = charactersById.get(characterId);
       if (character) {
-        onSelectCharacter(character);
+        void characterHub.actions.select(character);
       }
     },
-    [charactersById, onSelectCharacter],
+    [characterHub.actions, charactersById],
   );
   const handleRestoreCharacter = useCallback(
     async (characterId: number) => {
-      if (!onRestoreCharacter || restoringCharacterId !== null) return;
+      if (!characterHub.actions.restoreCharacter || restoringCharacterId !== null) return;
       setRestoringCharacterId(characterId);
       try {
-        await onRestoreCharacter(characterId);
+        await characterHub.actions.restoreCharacter(characterId);
       } catch (error) {
         Alert.alert(
           "복원 실패",
@@ -114,7 +101,7 @@ export function CharacterList({
         setRestoringCharacterId(null);
       }
     },
-    [onRestoreCharacter, restoringCharacterId],
+    [characterHub.actions, restoringCharacterId],
   );
   /**
    * SectionList의 캐릭터 한 명 row를 렌더링한다.
@@ -129,7 +116,7 @@ export function CharacterList({
         name={displayCharacterName(item)}
         lifecycle={item.lifecycle ?? "ACTIVE"}
         onPressCharacter={handlePressCharacter}
-        onArchive={() => void onArchiveCharacter?.(item.id)}
+        onArchive={() => void characterHub.actions.archiveCharacter?.(item.id)}
         restoring={restoringCharacterId === item.id}
         restoreDisabled={restoringCharacterId !== null}
         onRestore={() => void handleRestoreCharacter(item.id)}
@@ -142,7 +129,7 @@ export function CharacterList({
               {
                 text: "삭제",
                 style: "destructive",
-                onPress: () => void onDeleteCharacterPermanently?.(item.id),
+                onPress: () => void characterHub.actions.deleteCharacterPermanently?.(item.id),
               },
             ],
           )
@@ -159,9 +146,7 @@ export function CharacterList({
     ),
     [
       handlePressCharacter,
-      onArchiveCharacter,
-      onCopySettings,
-      onDeleteCharacterPermanently,
+      characterHub.actions,
       handleRestoreCharacter,
       restoringCharacterId,
     ],
@@ -265,7 +250,10 @@ export function CharacterList({
                   const target = linkTarget;
                   setLinkTarget(null);
                   if (target)
-                    void onLinkCharacter?.(target.id, newHofCharacterId.trim());
+                    void characterHub.actions.linkRosterCharacter?.(
+                      target.id,
+                      newHofCharacterId.trim(),
+                    );
                 }}
                 style={[
                   styles.actionButton,
@@ -312,7 +300,7 @@ export function CharacterList({
                   onPress={() => {
                     const source = copySource;
                     setCopySource(null);
-                    if (source) onCopySettings?.(source, target);
+                    if (source) void characterHub.actions.openTransfer(source, target);
                   }}
                   style={styles.targetRow}
                 >

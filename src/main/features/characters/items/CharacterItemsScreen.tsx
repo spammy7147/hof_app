@@ -11,7 +11,6 @@ import {
 } from "react-native";
 import type {
   CharacterCommand,
-  CharacterCommandResult,
   HofCharacterDetail,
   HofCharacterEquipmentCandidate,
 } from "../../../types/api";
@@ -20,19 +19,13 @@ import type { CharacterManagementHubResource } from "../../../domain/characterMa
 
 export function CharacterItemsScreen({
   characterHub,
-  detail: legacyDetail,
   onBack,
-  onCommand: legacyCommand,
 }: {
-  characterHub?: CharacterManagementHubResource;
-  detail?: HofCharacterDetail;
+  characterHub: CharacterManagementHubResource;
   onBack: () => void;
-  onCommand?: (
-    command: CharacterCommand,
-  ) => Promise<CharacterCommandResult | void>;
 }) {
-  const detail = (characterHub?.detail ?? legacyDetail) as HofCharacterDetail;
-  const onCommand = characterHub?.actions.executeCommand ?? legacyCommand;
+  const detail = characterHub.detail!;
+  const onCommand = characterHub.actions.executeCommand;
   const [tab, setTab] = useState<"growth" | "other">("growth");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);

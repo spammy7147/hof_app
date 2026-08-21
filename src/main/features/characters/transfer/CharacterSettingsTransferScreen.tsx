@@ -10,46 +10,27 @@ import {
 } from "react-native";
 
 import type {
-  CharacterTransferExecutionResult,
   CharacterTransferPreview,
   CharacterTransferPreviewRequest,
-  HofCharacter,
-  HofCharacterDetail,
 } from "../../../types/api";
 import { theme } from "../../../styles/theme";
-import { toUserFacingErrorMessage } from "../../../domain/userFacingErrors";
 import { FixedBottomAction } from "../../../components/FixedBottomAction";
 import type { CharacterManagementHubResource } from "../../../domain/characterManagementHubModule";
 
 type Props = {
-  characterHub?: CharacterManagementHubResource;
-  target?: HofCharacterDetail;
-  characters: HofCharacter[];
+  characterHub: CharacterManagementHubResource;
   onBack: () => void;
-  onPreview?: (
-    request: CharacterTransferPreviewRequest,
-  ) => Promise<CharacterTransferPreview>;
-  onExecute?: (
-    request: CharacterTransferPreviewRequest,
-    onProgress?: (progress: CharacterTransferExecutionResult) => void,
-  ) => Promise<CharacterTransferExecutionResult>;
-  initialSourceId?: number | null;
 };
 
 export function CharacterSettingsTransferScreen({
   characterHub,
-  target: legacyTarget,
-  characters,
-  initialSourceId,
   onBack,
-  onPreview,
-  onExecute,
 }: Props) {
-  const target = (characterHub?.detail ?? legacyTarget) as HofCharacterDetail;
-  const transfer = characterHub?.transfer;
-  const transferRequest = transfer?.request;
+  const target = characterHub.detail!;
+  const { characters, transfer } = characterHub;
+  const transferRequest = transfer.request;
   const resolvedInitialSourceId =
-    transferRequest?.sourceCharacterId ?? initialSourceId ?? null;
+    transferRequest?.sourceCharacterId ?? transfer.sourceCharacter?.id ?? null;
   const initialSource = characters.find(
     (item) => item.id === resolvedInitialSourceId,
   );
@@ -83,20 +64,12 @@ export function CharacterSettingsTransferScreen({
   const [includeEquipment, setIncludeEquipment] = useState(
     transferRequest?.transfer.includeEquipment ?? false,
   );
-  const [legacyPreview, setLegacyPreview] = useState<CharacterTransferPreview | null>(null);
-  const [legacyResult, setLegacyResult] = useState<CharacterTransferExecutionResult | null>(
-    null,
-  );
-  const [legacyBusy, setLegacyBusy] = useState(false);
-  const [legacyError, setLegacyError] = useState<string | null>(null);
-  const preview = transfer?.preview ?? legacyPreview;
-  const result = transfer?.progress ?? transfer?.result ?? legacyResult;
-  const busy = transfer
-    ? transfer.status === "previewing" || transfer.status === "running"
-    : legacyBusy;
-  const error = transfer?.errorMessage ?? legacyError;
+  const preview = transfer.preview;
+  const result = transfer.progress ?? transfer.result;
+  const busy = transfer.status === "previewing" || transfer.status === "running";
+  const error = transfer.errorMessage;
   const primaryRunsPreview = preview == null
-    || (transfer != null && transfer.status !== "ready");
+    || transfer.status !== "ready";
   const sources = useMemo(() => {
     const normalized = sourceQuery.trim().toLowerCase();
     return characters.filter(
@@ -147,14 +120,7 @@ export function CharacterSettingsTransferScreen({
     ],
   );
 
-  const clearTransfer = () => {
-    if (characterHub) characterHub.actions.clearTransfer();
-    else {
-      setLegacyPreview(null);
-      setLegacyResult(null);
-      setLegacyError(null);
-    }
-  };
+  const clearTransfer = characterHub.actions.clearTransfer;
   const toggleSlot = (slot: string) => {
     if (busy) return;
     clearTransfer();
@@ -178,21 +144,7 @@ export function CharacterSettingsTransferScreen({
   };
   const previewTransfer = async () => {
     if (!request) return;
-    if (characterHub?.actions.previewTransfer) {
-      await characterHub.actions.previewTransfer(request);
-      return;
-    }
-    if (!onPreview) return;
-    setLegacyBusy(true);
-    setLegacyError(null);
-    setLegacyResult(null);
-    try {
-      setLegacyPreview(await onPreview(request));
-    } catch (caught) {
-      setLegacyError(toUserFacingErrorMessage(caught));
-    } finally {
-      setLegacyBusy(false);
-    }
+    await characterHub.actions.previewTransfer?.(request);
   };
   const executeTransfer = async () => {
     if (!request || !preview?.executable) return;
@@ -204,20 +156,7 @@ export function CharacterSettingsTransferScreen({
         {
           text: "가져오기",
           onPress: async () => {
-            if (characterHub?.actions.executeTransfer) {
-              await characterHub.actions.executeTransfer();
-              return;
-            }
-            if (!onExecute) return;
-            setLegacyBusy(true);
-            setLegacyError(null);
-            try {
-              setLegacyResult(await onExecute(request, setLegacyResult));
-            } catch (caught) {
-              setLegacyError(toUserFacingErrorMessage(caught));
-            } finally {
-              setLegacyBusy(false);
-            }
+            await characterHub.actions.executeTransfer?.();
           },
         },
       ],
@@ -229,7 +168,7 @@ export function CharacterSettingsTransferScreen({
       <View style={styles.header}>
         <Pressable
           onPress={() => {
-            characterHub?.actions.clearTransfer();
+            characterHub.actions.clearTransfer();
             onBack();
           }}
           style={styles.touch}

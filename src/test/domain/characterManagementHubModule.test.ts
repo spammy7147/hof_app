@@ -18,6 +18,56 @@ import type {
 } from '../../main/types/api';
 
 describe('character management hub module', () => {
+  it('publishes the authoritative roster and owns roster lifecycle mutations', async () => {
+    const initial = [makeHofCharacter(1), makeHofCharacter(2, { lifecycle: 'ARCHIVED' })];
+    const archived = [makeHofCharacter(1, { lifecycle: 'ARCHIVED' }), initial[1]!];
+    const restored = [initial[0]!, makeHofCharacter(2)];
+    const deleted = [initial[0]!];
+    const published: HofCharacter[][] = [];
+    const hub = new CharacterManagementHubModule(backend({
+      archiveCharacter: async (characterId) => {
+        assert.equal(characterId, 1);
+        return archived;
+      },
+      restoreCharacter: async (characterId) => {
+        assert.equal(characterId, 2);
+        return restored;
+      },
+      deleteCharacterPermanently: async (characterId) => {
+        assert.equal(characterId, 2);
+        return deleted;
+      },
+      publishRoster: (characters) => published.push(characters),
+    }));
+    hub.activate('account-1');
+    hub.observeRoster(initial);
+
+    assert.equal(hub.getSnapshot().characters, initial);
+    await hub.getSnapshot().actions.archiveCharacter?.(1);
+    assert.equal(hub.getSnapshot().characters, archived);
+    await hub.getSnapshot().actions.restoreCharacter?.(2);
+    assert.equal(hub.getSnapshot().characters, restored);
+    await hub.getSnapshot().actions.deleteCharacterPermanently?.(2);
+    assert.equal(hub.getSnapshot().characters, deleted);
+    assert.deepEqual(published, [archived, restored, deleted]);
+  });
+
+  it('opens a transfer by selecting the exact stable target and retaining the source in the hub', async () => {
+    const source = makeHofCharacter(2, { lifecycle: 'MISSING' });
+    const target = makeHofCharacter(1);
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async (characterId) => freshDetail(characterId),
+    }));
+    hub.activate('account-1');
+    hub.observeRoster([target, source]);
+
+    await hub.getSnapshot().actions.openTransfer(source, target);
+
+    assert.equal(hub.getSnapshot().selectedCharacter?.id, target.id);
+    assert.equal(hub.getSnapshot().transfer.sourceCharacter?.id, source.id);
+    assert.equal(hub.getSnapshot().transfer.targetCharacterId, target.id);
+  });
+
   it('publishes one selected-character snapshot and keeps a fresh stored detail', async () => {
     const character = makeHofCharacter(1);
     const stored = makeHofCharacterDetail(1, {
@@ -92,6 +142,29 @@ describe('character management hub module', () => {
     assert.equal(hub.getSnapshot().selectedCharacter, null);
     assert.equal(hub.getSnapshot().detail, null);
     assert.equal(hub.getSnapshot().isLoading, false);
+  });
+
+  it('publishes a roster observation and every dependent lifecycle change atomically', async () => {
+    const source = makeHofCharacter(2, { lifecycle: 'MISSING' });
+    const target = makeHofCharacter(1);
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async (characterId) => freshDetail(characterId),
+    }));
+    hub.activate('account-1');
+    hub.observeRoster([target, source]);
+    await hub.getSnapshot().actions.openTransfer(source, target);
+
+    const observed = [makeHofCharacter(1, { lifecycle: 'ARCHIVED' })];
+    const snapshots: ReturnType<typeof hub.getSnapshot>[] = [];
+    hub.subscribe(() => snapshots.push(hub.getSnapshot()));
+
+    hub.observeRoster(observed);
+
+    assert.equal(snapshots.length, 1);
+    assert.equal(snapshots[0]?.characters, observed);
+    assert.equal(snapshots[0]?.selectedCharacter, null);
+    assert.equal(snapshots[0]?.detail, null);
+    assert.equal(snapshots[0]?.transfer.sourceCharacter, null);
   });
 
   it('does not let an older detail response overwrite a newly selected character', async () => {
