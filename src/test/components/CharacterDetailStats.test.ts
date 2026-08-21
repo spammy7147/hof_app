@@ -322,6 +322,51 @@ describe('CharacterDetail stat allocation', () => {
     assert.equal(text().includes('Quick Slash'), false);
   });
 
+  it('submits only the selected skill value through the semantic hub action', async () => {
+    const learned: string[] = [];
+    const detail = makeHofCharacterDetail(1, {
+      learnableSkills: [{
+        value: 'quick-slash',
+        name: 'Quick Slash',
+        iconUrl: '',
+        category: 'Attack',
+        targetText: 'enemy',
+        scopeText: 'individual',
+        spCost: 5,
+        description: '빠른 공격',
+      }],
+    });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(CharacterSkillsScreen, {
+        characterHub: hubWithDetail(detail, {
+          actions: { learnSkill: async (skillValue) => { learned.push(skillValue); } },
+        }),
+      }));
+    });
+
+    const pressableWithText = (label: string) => renderer.root
+      .findAll((node) => String(node.type) === 'Pressable')
+      .find((node) => node.findAll((child) => (
+        String(child.type) === 'Text' && child.children.join('') === label
+      )).length > 0);
+    const learnTab = renderer.root.findAll((node) => (
+      String(node.type) === 'Pressable' && node.props.accessibilityRole === 'tab'
+    )).find((node) => node.findAll((child) => (
+      String(child.type) === 'Text' && child.children.join('') === '배우기'
+    )).length > 0);
+    await act(async () => learnTab?.props.onPress());
+    await act(async () => pressableWithText('Quick Slash')?.props.onPress());
+    const learnAction = renderer.root.findAll((node) => (
+      String(node.type) === 'Pressable' && node.props.accessibilityRole === 'button'
+    )).find((node) => node.findAll((child) => (
+      String(child.type) === 'Text' && child.children.join('') === '배우기'
+    )).length > 0);
+    await act(async () => learnAction?.props.onPress());
+
+    assert.deepEqual(learned, ['quick-slash']);
+  });
+
   it('normalizes the malformed point line and stat group names', () => {
     assert.equal(extractAvailableStatPoints(['Status ?Point : 25']), 25);
     assert.equal(statGroupLabel('upStr'), 'STR');
@@ -333,13 +378,13 @@ describe('CharacterDetail stat allocation', () => {
   });
 
   it('keeps hundreds of server candidates in five compact controls and submits a directly entered value', async () => {
-    const requests: CharacterCommand[] = [];
+    const requests: Array<Partial<Record<'STR' | 'INT' | 'DEX' | 'SPD' | 'LUK', number>>> = [];
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(CharacterDetail, {
         characterHub: hubWithDetail(
           makeHofCharacterDetail(1, { stats: { ...makeHofCharacterDetail().stats, statusPoints: 25, dexReal: 34, dexBonus: 9 } }),
-          { actions: { executeCommand: async (request: CharacterCommand) => { requests.push(request); } } },
+          { actions: { allocateStats: async (amounts) => { requests.push(amounts); } } },
         ),
       }));
     });
@@ -374,8 +419,7 @@ describe('CharacterDetail stat allocation', () => {
     await act(async () => apply?.props.onPress());
 
     assert.equal(requests.length, 1);
-    assert.equal(requests[0].type, 'ALLOCATE_STATS');
-    assert.equal(requests[0].type === 'ALLOCATE_STATS' ? requests[0].amounts.DEX : null, 2);
+    assert.equal(requests[0]?.DEX, 2);
   });
 
   it('lets the nested character scroller take vertical gestures from numeric inputs', async () => {

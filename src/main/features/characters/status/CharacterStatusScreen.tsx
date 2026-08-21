@@ -26,7 +26,7 @@ export function CharacterStatusScreen({
   onCloseHelp?: () => void;
 }) {
   const detail = characterHub.detail!;
-  const onCommand = characterHub.actions.executeCommand;
+  const allocateStats = characterHub.actions.allocateStats;
   const [targetOpen, setTargetOpen] = useState(false);
   const [targetPatterns, setTargetPatterns] = useState<number | null>(null);
   const [effectDetail, setEffectDetail] = useState<HofCharacterStatusEffect | null>(null);
@@ -173,12 +173,11 @@ export function CharacterStatusScreen({
         <Pressable
           accessibilityRole="button"
           disabled={used <= 0 || used > (stats.statusPoints ?? 0)}
-          onPress={() => onCommand?.({
-            type: "ALLOCATE_STATS",
-            characterId: detail.id,
-            expectedRevision: detail.revision,
-            amounts: Object.fromEntries(Object.entries(amounts).map(([key, value]) => [key, Number(value) || 0])),
-          })}
+          onPress={() => allocateStats?.(
+            Object.fromEntries(
+              Object.entries(amounts).map(([key, value]) => [key, Number(value) || 0]),
+            ),
+          )}
           style={[styles.apply, (used <= 0 || used > (stats.statusPoints ?? 0)) && styles.disabled]}
         >
           <Text style={styles.applyText}>스탯 올리기{used > 0 ? ` · ${used}pt` : ""}</Text>

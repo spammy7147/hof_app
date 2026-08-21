@@ -12,7 +12,7 @@ export function CharacterSkillsScreen({
   characterHub: CharacterManagementHubResource;
 }) {
   const detail = characterHub.detail!;
-  const onCommand = characterHub.actions.executeCommand;
+  const learnSkill = characterHub.actions.learnSkill;
   const [mode, setMode] = useState<"owned" | "learn">("owned");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<HofCharacterSkill | null>(null);
@@ -116,12 +116,7 @@ export function CharacterSkillsScreen({
             </View>
             <Pressable
               accessibilityRole="button"
-              onPress={() => onCommand?.({
-                type: "LEARN_SKILL",
-                characterId: detail.id,
-                expectedRevision: detail.revision,
-                skillValue: selected.value,
-              })}
+              onPress={() => learnSkill?.(selected.value)}
               style={styles.learn}
             >
               <Text style={styles.learnText}>배우기</Text>
