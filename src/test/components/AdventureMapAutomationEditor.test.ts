@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import Module from 'node:module';
-import { describe, it } from 'node:test';
+import { afterEach, describe, it } from 'node:test';
 import React from 'react';
-import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
+import { act, create as createRenderer, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 
 import { theme } from '../../main/styles/theme';
 import type {
@@ -13,6 +13,22 @@ import type {
   UpdateAdventureMapAutomationRequest,
 } from '../../main/types/api';
 import { makePartyPresetCatalogResource } from '../fixtures/partyPresetCatalog';
+
+const activeRenderers = new Set<ReactTestRenderer>();
+
+function create(element: React.ReactElement): ReactTestRenderer {
+  const renderer = createRenderer(element);
+  activeRenderers.add(renderer);
+  return renderer;
+}
+
+afterEach(async () => {
+  const renderers = [...activeRenderers];
+  activeRenderers.clear();
+  for (const renderer of renderers) {
+    await act(async () => { renderer.unmount(); });
+  }
+});
 
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
   const nodeRef = React.useRef<Record<string, unknown>>({});
