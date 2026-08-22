@@ -750,6 +750,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
     assert.equal(saves[1]?.quests[0]?.maps[0]?.presetMode, 'PRIMARY');
     assert.equal(saves[1]?.quests[0]?.maps[0]?.partyPresetId, null);
+    await act(async () => { renderer.unmount(); });
   });
 
   it('deduplicates repeated stored map identities in the shared quest pool', async () => {
