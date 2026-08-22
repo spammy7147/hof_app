@@ -4,13 +4,34 @@ import { ArrowLeft } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
 import { AUTOMATION_TYPE_METADATA } from '../../../domain/typedAutomation';
 import { theme } from '../../../styles/theme';
-import type { AutomationHistoryCycle, AutomationHistoryPage } from '../../../types/api';
+import type {
+  AutomationConvergenceActionKind,
+  AutomationConvergenceStatus,
+  AutomationHistoryCycle,
+  AutomationHistoryPage,
+} from '../../../types/api';
 
-export function AutomationHistoryScreen({ onBack, load }: { onBack: () => void; load: (cursor?: number) => Promise<AutomationHistoryPage> }) {
+type AutomationHistoryScreenProps = {
+  onBack: () => void;
+  load: (cursor?: number) => Promise<AutomationHistoryPage>;
+  loadConvergence?: () => Promise<AutomationConvergenceStatus>;
+  allowFreshDecision?: (attemptId: number) => Promise<AutomationConvergenceStatus>;
+};
+
+export function AutomationHistoryScreen({
+  onBack,
+  load,
+  loadConvergence,
+  allowFreshDecision,
+}: AutomationHistoryScreenProps) {
   const [cycles, setCycles] = useState<AutomationHistoryCycle[]>([]);
   const [cursor, setCursor] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [convergence, setConvergence] = useState<AutomationConvergenceStatus | null>(null);
+  const [convergenceLoading, setConvergenceLoading] = useState(false);
+  const [convergenceError, setConvergenceError] = useState<string | null>(null);
+  const [releasingAttemptId, setReleasingAttemptId] = useState<number | null>(null);
   const fetchPage = useCallback(async (next?: number) => {
     setLoading(true); setError(null);
     try { const page = await load(next); setCycles((current) => next == null ? page.cycles : [...current, ...page.cycles]); setCursor(page.nextCursor); }
@@ -18,9 +39,52 @@ export function AutomationHistoryScreen({ onBack, load }: { onBack: () => void; 
     finally { setLoading(false); }
   }, [load]);
   useEffect(() => { void fetchPage(); }, [fetchPage]);
+  const refreshConvergence = useCallback(async () => {
+    if (!loadConvergence) return;
+    setConvergenceLoading(true); setConvergenceError(null);
+    try { setConvergence(await loadConvergence()); }
+    catch (reason) { setConvergenceError(reason instanceof Error ? reason.message : '결과 확인 상태를 불러오지 못했습니다.'); }
+    finally { setConvergenceLoading(false); }
+  }, [loadConvergence]);
+  useEffect(() => { void refreshConvergence(); }, [refreshConvergence]);
+  const release = useCallback(async (attemptId: number) => {
+    if (!allowFreshDecision || releasingAttemptId != null) return;
+    setReleasingAttemptId(attemptId); setConvergenceError(null);
+    try { setConvergence(await allowFreshDecision(attemptId)); }
+    catch (reason) { setConvergenceError(reason instanceof Error ? reason.message : '새 행동 판단을 허용하지 못했습니다.'); }
+    finally { setReleasingAttemptId(null); }
+  }, [allowFreshDecision, releasingAttemptId]);
   const latestEvent = cycles[0]?.events.at(-1);
   return <NestableScrollContainer contentContainerStyle={styles.container} style={styles.scroller}>
     <View style={styles.header}><Pressable accessibilityLabel="통합 자동화로" accessibilityRole="button" onPress={onBack} style={styles.back}><ArrowLeft color={theme.colors.text} size={20} /></Pressable><View><Text style={styles.title}>자동화 기록</Text><Text style={styles.subtitle}>실제 판단 순서와 실행·스킵 결과를 시간순으로 확인합니다.</Text></View></View>
+    {loadConvergence ? <View accessibilityLabel="자동화 결과 확인 상태" style={styles.convergenceSection}>
+      <View style={styles.convergenceHeader}><View><Text style={styles.convergenceEyebrow}>현재 결과 확인</Text><Text style={styles.convergenceHeading}>중복 실행 방지 상태</Text></View><Pressable accessibilityLabel="수렴 상태 새로고침" accessibilityRole="button" disabled={convergenceLoading} onPress={() => { void refreshConvergence(); }} style={styles.refreshButton}><Text style={styles.refreshText}>{convergenceLoading ? '확인 중' : '새로고침'}</Text></Pressable></View>
+      {convergenceError ? <Text accessibilityRole="alert" style={styles.error}>{convergenceError}</Text> : null}
+      {convergence?.battleGate ? <View style={styles.gateCard}>
+        <Text style={styles.gateTitle}>전투 캡차 대기</Text>
+        <Text style={styles.convergenceMessage}>{convergence.battleGate.reason}</Text>
+        <Text style={styles.scope}>영향  {convergence.battleGate.impactScope}</Text>
+        <Text style={styles.releaseCondition}>{convergence.battleGate.releaseCondition}</Text>
+        <Text style={styles.nonBattleNotice}>다른 비전투 자동화는 계속 진행됩니다.</Text>
+      </View> : null}
+      {convergence?.items.map((item) => <View key={item.attemptId} style={styles.convergenceCard}>
+        <Text style={styles.convergenceResult}>{convergenceResultLabel(item.result)}</Text>
+        <Text style={styles.convergenceTitle}>{convergenceActionLabel(item.actionKind)}</Text>
+        <Text style={styles.scope}>영향  {item.impactScope}</Text>
+        {item.result === 'PENDING' ? <Text style={styles.observation}>관측 {item.successfulObservationCount}/5</Text> : null}
+        <Text style={styles.convergenceMessage}>{convergenceReasonLabel(item.reasonCode)}</Text>
+        <Text style={styles.releaseCondition}>{item.releaseCondition}</Text>
+        {item.nextProbeAt ? <Text style={styles.next}>다음 확인 {new Date(item.nextProbeAt).toLocaleString('ko-KR')}</Text> : null}
+        {item.canAllowFreshDecision && allowFreshDecision ? <Pressable
+          accessibilityLabel={`${convergenceActionLabel(item.actionKind)} 새 행동 판단 허용`}
+          accessibilityRole="button"
+          disabled={releasingAttemptId != null}
+          onPress={() => { void release(item.attemptId); }}
+          style={styles.releaseButton}
+        ><Text style={styles.releaseButtonText}>{releasingAttemptId === item.attemptId ? '처리 중' : '새 행동 판단 허용'}</Text></Pressable> : null}
+      </View>)}
+      {!convergenceLoading && convergence && !convergence.battleGate && convergence.items.length === 0 ? <Text style={styles.convergenceEmpty}>현재 결과를 재확인 중인 행동이 없습니다.</Text> : null}
+    </View> : null}
     {error ? <><Text accessibilityRole="alert" style={styles.error}>{error}</Text><Pressable accessibilityRole="button" onPress={() => { void fetchPage(); }}><Text style={styles.link}>다시 시도</Text></Pressable></> : null}
     {!loading && cycles.length === 0 && !error ? <Text style={styles.empty}>아직 자동화 기록이 없습니다.</Text> : null}
     {latestEvent ? <View accessibilityLabel="최근 자동화 상태" style={styles.statusSummary}>
@@ -90,4 +154,17 @@ function reasonLabel(value: string) {
   if (value === 'ACTION_FAILED') return '실행 중 오류가 발생해 자동 재시도 대상으로 전환됨';
   return '해당 시점의 자동화 판단 결과';
 }
-const styles = StyleSheet.create({ scroller: { flex: 1 }, container: { gap: theme.spacing.md, padding: theme.spacing.lg, paddingBottom: theme.spacing.xl }, header: { alignItems: 'center', flexDirection: 'row', gap: 8 }, back: { alignItems: 'center', height: 40, justifyContent: 'center', width: 40 }, title: { color: theme.colors.text, fontSize: 21, fontWeight: '900' }, subtitle: { color: theme.colors.textMuted, fontSize: 12, marginTop: 3 }, statusSummary: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.accentBlue, borderRadius: theme.radius.md, borderWidth: 1, padding: theme.spacing.md }, statusEyebrow: { color: theme.colors.accentBlue, fontSize: 11, fontWeight: '900' }, statusTitle: { color: theme.colors.text, fontSize: 16, fontWeight: '900', marginTop: 5 }, statusMessage: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18, marginTop: 7 }, statusDiagnostic: { color: theme.colors.accentBlue, fontSize: 10, lineHeight: 15, marginTop: 5 }, cycle: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: 7, padding: theme.spacing.md }, cycleHeader: { alignItems: 'flex-start', flexDirection: 'row', justifyContent: 'space-between' }, time: { color: theme.colors.text, fontSize: 12, fontWeight: '800' }, cycleMeta: { color: theme.colors.textMuted, fontSize: 10, marginTop: 3 }, result: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '800' }, event: { alignItems: 'flex-start', borderTopColor: theme.colors.border, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: 8, paddingTop: 8 }, sequence: { color: theme.colors.textMuted, fontSize: 11, width: 18 }, eventCopy: { flex: 1 }, eventTitle: { color: theme.colors.text, fontSize: 12, fontWeight: '800' }, eventTime: { color: theme.colors.textMuted, fontSize: 10, marginTop: 3 }, target: { color: theme.colors.accentGreen, fontSize: 12, fontWeight: '800', marginTop: 5 }, factGroup: { backgroundColor: theme.colors.surfaceAlt, borderRadius: 7, gap: 3, marginTop: 6, padding: 7 }, fact: { color: theme.colors.text, fontSize: 11 }, factLabel: { color: theme.colors.textMuted, fontWeight: '700' }, details: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 5 }, detailChip: { backgroundColor: theme.colors.surfaceAlt, borderRadius: 7, color: theme.colors.text, fontSize: 11, paddingHorizontal: 7, paddingVertical: 4 }, criteria: { color: theme.colors.text, fontWeight: '700' }, message: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18, marginTop: 5 }, diagnostic: { color: theme.colors.textMuted, fontSize: 10, marginTop: 3 }, next: { color: theme.colors.accentBlue, fontSize: 11, marginTop: 3 }, empty: { color: theme.colors.textMuted, padding: theme.spacing.xl, textAlign: 'center' }, error: { color: theme.colors.danger }, link: { color: theme.colors.accentGreen, fontWeight: '800' }, more: { alignItems: 'center', borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, minHeight: 46, justifyContent: 'center' }, moreText: { color: theme.colors.text, fontWeight: '800' } });
+function convergenceActionLabel(value: AutomationConvergenceActionKind) {
+  return ({ QUEST_ACCEPT: '퀘스트 수락', QUEST_CLAIM: '퀘스트 보상', QUEST_BATTLE: '퀘스트 전투', HOME_ACCEPT: '자택 퀘스트 수락', HOME_CLAIM: '자택 퀘스트 완료', MAP_BATTLE: '전투 맵 실행', ADVENTURE_BATTLE: '모험 맵 전투', UNION_BATTLE: '유니온 전투', FISHING_START: '낚시 시작', FISHING_CATCH: '낚기', FISHING_OBSTRUCTION_BATTLE: '낚시 방해 전투', RAID_RESET: '레이드 리셋', RAID_REGISTER: '레이드 등록', RAID_START: '레이드 시작', RAID_REWARD: '레이드 보상', RAID_REFRESH: '레이드 상태 갱신', RAID_BATTLE: '레이드 전투', RAID_CYCLE_ABORT: '레이드 사이클 종료' } as const)[value];
+}
+function convergenceResultLabel(value: AutomationConvergenceStatus['items'][number]['result']) {
+  return value === 'PENDING' ? '결과 확인 중' : value === 'HELD' ? '보류된 결과' : value === 'RESULT_UNOBSERVED' ? '결과 미관측' : '확인 완료';
+}
+function convergenceReasonLabel(value: string | null) {
+  if (!value) return '행동별 후속 상태를 확인하고 있습니다.';
+  if (value.includes('INCOMPLETE')) return '최신 상태가 완전하지 않아 아직 적용 여부를 확정하지 못했습니다.';
+  if (value.includes('MAX') || value.includes('TIME')) return '안전한 관측 한도 안에서 결과를 확정하지 못했습니다.';
+  if (value.includes('NETWORK')) return '상태 확인 중 연결 오류가 발생했습니다. 관측 횟수에는 포함하지 않습니다.';
+  return '중복 실행 없이 최신 상태를 기준으로 적용 여부를 확인합니다.';
+}
+const styles = StyleSheet.create({ scroller: { flex: 1 }, container: { gap: theme.spacing.md, padding: theme.spacing.lg, paddingBottom: theme.spacing.xl }, header: { alignItems: 'center', flexDirection: 'row', gap: 8 }, back: { alignItems: 'center', height: 40, justifyContent: 'center', width: 40 }, title: { color: theme.colors.text, fontSize: 21, fontWeight: '900' }, subtitle: { color: theme.colors.textMuted, fontSize: 12, marginTop: 3 }, convergenceSection: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: 8, padding: theme.spacing.md }, convergenceHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, convergenceEyebrow: { color: theme.colors.accentBlue, fontSize: 10, fontWeight: '900' }, convergenceHeading: { color: theme.colors.text, fontSize: 14, fontWeight: '900', marginTop: 3 }, refreshButton: { borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 7 }, refreshText: { color: theme.colors.text, fontSize: 11, fontWeight: '800' }, gateCard: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.danger, borderRadius: 9, borderWidth: 1, padding: 10 }, gateTitle: { color: theme.colors.danger, fontSize: 14, fontWeight: '900' }, convergenceCard: { backgroundColor: theme.colors.surfaceAlt, borderRadius: 9, padding: 10 }, convergenceResult: { color: theme.colors.accentBlue, fontSize: 10, fontWeight: '900' }, convergenceTitle: { color: theme.colors.text, fontSize: 14, fontWeight: '900', marginTop: 3 }, convergenceMessage: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 17, marginTop: 5 }, scope: { color: theme.colors.text, fontSize: 11, fontWeight: '700', marginTop: 5 }, observation: { color: theme.colors.accentBlue, fontSize: 11, fontWeight: '900', marginTop: 5 }, releaseCondition: { color: theme.colors.textMuted, fontSize: 10, lineHeight: 15, marginTop: 4 }, nonBattleNotice: { color: theme.colors.accentGreen, fontSize: 10, fontWeight: '800', marginTop: 5 }, releaseButton: { alignItems: 'center', borderColor: theme.colors.accentBlue, borderRadius: 8, borderWidth: 1, marginTop: 8, minHeight: 40, justifyContent: 'center' }, releaseButtonText: { color: theme.colors.accentBlue, fontSize: 11, fontWeight: '900' }, convergenceEmpty: { color: theme.colors.textMuted, fontSize: 11, paddingVertical: 6, textAlign: 'center' }, statusSummary: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.accentBlue, borderRadius: theme.radius.md, borderWidth: 1, padding: theme.spacing.md }, statusEyebrow: { color: theme.colors.accentBlue, fontSize: 11, fontWeight: '900' }, statusTitle: { color: theme.colors.text, fontSize: 16, fontWeight: '900', marginTop: 5 }, statusMessage: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18, marginTop: 7 }, statusDiagnostic: { color: theme.colors.accentBlue, fontSize: 10, lineHeight: 15, marginTop: 5 }, cycle: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: 7, padding: theme.spacing.md }, cycleHeader: { alignItems: 'flex-start', flexDirection: 'row', justifyContent: 'space-between' }, time: { color: theme.colors.text, fontSize: 12, fontWeight: '800' }, cycleMeta: { color: theme.colors.textMuted, fontSize: 10, marginTop: 3 }, result: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '800' }, event: { alignItems: 'flex-start', borderTopColor: theme.colors.border, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: 8, paddingTop: 8 }, sequence: { color: theme.colors.textMuted, fontSize: 11, width: 18 }, eventCopy: { flex: 1 }, eventTitle: { color: theme.colors.text, fontSize: 12, fontWeight: '800' }, eventTime: { color: theme.colors.textMuted, fontSize: 10, marginTop: 3 }, target: { color: theme.colors.accentGreen, fontSize: 12, fontWeight: '800', marginTop: 5 }, factGroup: { backgroundColor: theme.colors.surfaceAlt, borderRadius: 7, gap: 3, marginTop: 6, padding: 7 }, fact: { color: theme.colors.text, fontSize: 11 }, factLabel: { color: theme.colors.textMuted, fontWeight: '700' }, details: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 5 }, detailChip: { backgroundColor: theme.colors.surfaceAlt, borderRadius: 7, color: theme.colors.text, fontSize: 11, paddingHorizontal: 7, paddingVertical: 4 }, criteria: { color: theme.colors.text, fontWeight: '700' }, message: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18, marginTop: 5 }, diagnostic: { color: theme.colors.textMuted, fontSize: 10, marginTop: 3 }, next: { color: theme.colors.accentBlue, fontSize: 11, marginTop: 3 }, empty: { color: theme.colors.textMuted, padding: theme.spacing.xl, textAlign: 'center' }, error: { color: theme.colors.danger }, link: { color: theme.colors.accentGreen, fontWeight: '800' }, more: { alignItems: 'center', borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, minHeight: 46, justifyContent: 'center' }, moreText: { color: theme.colors.text, fontWeight: '800' } });

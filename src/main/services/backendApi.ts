@@ -55,6 +55,7 @@ import type {
   UpdateUnionAutomationRequest,
   UpdateHomeQuestAutomationRequest,
   AutomationHistoryPage,
+  AutomationConvergenceStatus,
 } from '../types/api';
 import { refreshTokenStorage, type RefreshTokenStorage } from '../platform/tokenStorage';
 import { createSseConnection, type SseSubscription } from './sseClient';
@@ -381,6 +382,14 @@ export class BackendApiClient {
   }
   fetchAutomationHistory(cursor?: number): Promise<AutomationHistoryPage> {
     return this.request(`/api/automation/unified/history${cursor == null ? '' : `?cursor=${cursor}`}`);
+  }
+  /** GET만 사용해 저장 행동을 재생하지 않고 현재 수렴 상태를 읽는다. */
+  fetchAutomationConvergence(): Promise<AutomationConvergenceStatus> {
+    return this.request('/api/automation/unified/convergence');
+  }
+  /** 보류된 요청 자체를 재생하지 않고 해당 억제만 닫아 새 상태 판단을 허용한다. */
+  allowFreshAutomationDecision(attemptId: number): Promise<AutomationConvergenceStatus> {
+    return this.request(`/api/automation/unified/convergence/${attemptId}/allow-fresh-decision`, { method: 'POST' });
   }
 
   async fetchQuests(): Promise<QuestSnapshot[]> {

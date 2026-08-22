@@ -296,7 +296,12 @@ export function HomeTabScreen({
     />;
   }
 
-  if (route === 'history') return <AutomationHistoryScreen onBack={() => { onDetailModeChange?.(false); setRoute('dashboard'); }} load={(cursor) => automationController.fetchHistory(cursor)} />;
+  if (route === 'history') return <AutomationHistoryScreen
+    onBack={() => { onDetailModeChange?.(false); setRoute('dashboard'); }}
+    load={(cursor) => automationController.fetchHistory(cursor)}
+    loadConvergence={() => automationController.fetchConvergence()}
+    allowFreshDecision={(attemptId) => automationController.allowFreshDecision(attemptId)}
+  />;
 
   const showPageHeader = route !== 'editor';
   return (

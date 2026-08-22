@@ -653,6 +653,41 @@ export type AutomationHistoryCycle = {
 };
 export type AutomationHistoryPage = { cycles: AutomationHistoryCycle[]; nextCursor: number | null };
 
+export type AutomationConvergenceResult = 'APPLIED' | 'NOT_APPLIED' | 'SUPERSEDED' | 'PENDING' | 'HELD' | 'RESULT_UNOBSERVED';
+export type AutomationConvergenceActionKind = 'QUEST_ACCEPT' | 'QUEST_CLAIM' | 'QUEST_BATTLE'
+  | 'HOME_ACCEPT' | 'HOME_CLAIM' | 'MAP_BATTLE' | 'ADVENTURE_BATTLE' | 'UNION_BATTLE'
+  | 'FISHING_START' | 'FISHING_CATCH' | 'FISHING_OBSTRUCTION_BATTLE'
+  | 'RAID_RESET' | 'RAID_REGISTER' | 'RAID_START' | 'RAID_REWARD' | 'RAID_REFRESH'
+  | 'RAID_BATTLE' | 'RAID_CYCLE_ABORT';
+export type AutomationConvergenceScopeKind = 'QUEST_TARGET' | 'HOME_TARGET' | 'BATTLE_COOLDOWN_SCOPE'
+  | 'UNION_ENTRY' | 'FISHING_ENTRY' | 'RAID_ENTRY';
+export type AutomationBattleGateStatus = {
+  challengeId: number | null;
+  reason: string;
+  openedAt: string;
+  impactScope: string;
+  releaseCondition: string;
+};
+export type AutomationConvergenceItem = {
+  attemptId: number;
+  entryId: number | null;
+  actionKind: AutomationConvergenceActionKind;
+  scopeKind: AutomationConvergenceScopeKind;
+  scopeKey: string;
+  result: AutomationConvergenceResult;
+  successfulObservationCount: number;
+  nextProbeAt: string | null;
+  reasonCode: string | null;
+  evidenceCaseId: string | null;
+  impactScope: string;
+  releaseCondition: string;
+  canAllowFreshDecision: boolean;
+};
+export type AutomationConvergenceStatus = {
+  battleGate: AutomationBattleGateStatus | null;
+  items: AutomationConvergenceItem[];
+};
+
 export type TypedAutomationLifecycle = 'RUNNING' | 'DRAINING' | 'PAUSED' | 'STOPPED';
 export type AutomationWaitReason = 'SCHEDULED' | 'HOF_CONNECTION';
 export type AutomationStopReason =

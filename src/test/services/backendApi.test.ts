@@ -671,6 +671,10 @@ describe('BackendApiClient', () => {
     await client.acceptQuest('quest 351');
     mockFetchWithCapture([], requests);
     await client.claimQuest('R/610');
+    mockFetchWithCapture({ battleGate: null, items: [] }, requests);
+    await client.fetchAutomationConvergence();
+    mockFetchWithCapture({ battleGate: null, items: [] }, requests);
+    await client.allowFreshAutomationDecision(77);
 
     assert.deepEqual(
       requests.map((request) => [request.url, request.init.method ?? 'GET']),
@@ -689,6 +693,8 @@ describe('BackendApiClient', () => {
         ['http://backend.test/api/quests', 'GET'],
         ['http://backend.test/api/quests/quest%20351/accept', 'POST'],
         ['http://backend.test/api/quests/R%2F610/claim', 'POST'],
+        ['http://backend.test/api/automation/unified/convergence', 'GET'],
+        ['http://backend.test/api/automation/unified/convergence/77/allow-fresh-decision', 'POST'],
       ],
     );
     assert.equal(requests[1]?.init.body, '{"type":"QUEST"}');

@@ -72,6 +72,8 @@ function AppContent({ api }: { api: BackendApiClient }) {
         updateUnion: (request) => api.updateUnionAutomation(request),
         updateRaid: (request) => api.updateRaidAutomation(request),
         fetchHistory: (cursor) => api.fetchAutomationHistory(cursor),
+        fetchConvergence: () => api.fetchAutomationConvergence(),
+        allowFreshDecision: (attemptId) => api.allowFreshAutomationDecision(attemptId),
         fetchQuests: () => api.fetchQuests(),
         changeState: (action) => api.changeUnifiedAutomationState(action),
       }),

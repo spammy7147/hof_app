@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import React from 'react';
 import { act, create, type ReactTestInstance } from 'react-test-renderer';
 import type { AutomationHistoryPage } from '../../main/types/api';
+import type { AutomationConvergenceStatus } from '../../main/types/api';
 
 const host = (name: string) => (props: Record<string, unknown>) => React.createElement(name, props, props.children as React.ReactNode);
 type Loader = (request: string, parent: NodeModule | undefined, isMain: boolean) => unknown;
@@ -78,6 +79,81 @@ describe('AutomationHistoryScreen', () => {
     assert.ok(text.includes('낚시 화면에서 ‘낚시 시작’ 버튼을 확인했습니다.'));
     assert.ok(!text.includes('FISHING_TOWN'));
     assert.ok(!text.includes('START입니다'));
+  });
+
+  it('shows battle captcha and scoped convergence without blocking unrelated automation', async () => {
+    const load = async (): Promise<AutomationHistoryPage> => ({ cycles: [], nextCursor: null });
+    const convergence: AutomationConvergenceStatus = {
+      battleGate: {
+        challengeId: 91,
+        reason: '전투 요청에 캡차가 필요합니다.',
+        openedAt: '2026-08-22T00:00:00Z',
+        impactScope: '모든 전투 자동화',
+        releaseCondition: '캡차 완료 후 최신 상태에서 다시 판단',
+      },
+      items: [{
+        attemptId: 77,
+        entryId: 5,
+        actionKind: 'UNION_BATTLE',
+        scopeKind: 'UNION_ENTRY',
+        scopeKey: '5',
+        result: 'PENDING',
+        successfulObservationCount: 2,
+        nextProbeAt: '2026-08-22T00:00:10Z',
+        reasonCode: 'OBSERVATION_INCOMPLETE',
+        evidenceCaseId: null,
+        impactScope: '유니온 자동화 5',
+        releaseCondition: '최대 5회 또는 2분까지 읽기 전용으로 재확인',
+        canAllowFreshDecision: false,
+      }],
+    };
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(AutomationHistoryScreen, {
+        onBack: () => undefined,
+        load,
+        loadConvergence: async () => convergence,
+        allowFreshDecision: async () => convergence,
+      }));
+    });
+
+    const text = treeText(renderer.root);
+    assert.ok(text.includes('전투 캡차 대기'));
+    assert.ok(text.includes('다른 비전투 자동화는 계속 진행됩니다.'));
+    assert.ok(text.includes('유니온 전투'));
+    assert.ok(text.includes('관측 2/5'));
+    assert.ok(text.includes('읽기 전용으로 재확인'));
+    assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '수렴 상태 새로고침' }).length >= 1);
+  });
+
+  it('allows a held scope to close without replaying its saved request', async () => {
+    const load = async (): Promise<AutomationHistoryPage> => ({ cycles: [], nextCursor: null });
+    const held: AutomationConvergenceStatus = {
+      battleGate: null,
+      items: [{
+        attemptId: 88, entryId: 9, actionKind: 'RAID_START', scopeKind: 'RAID_ENTRY', scopeKey: 'Raid001',
+        result: 'HELD', successfulObservationCount: 5, nextProbeAt: null, reasonCode: 'MAX_OBSERVATIONS',
+        evidenceCaseId: 'evidence-1', impactScope: '레이드 사이클 Raid001',
+        releaseCondition: '상태 변경 또는 사용자의 새 행동 판단 허용', canAllowFreshDecision: true,
+      }],
+    };
+    const released: AutomationConvergenceStatus = { battleGate: null, items: [] };
+    const calls: number[] = [];
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(AutomationHistoryScreen, {
+        onBack: () => undefined,
+        load,
+        loadConvergence: async () => held,
+        allowFreshDecision: async (attemptId: number) => { calls.push(attemptId); return released; },
+      }));
+    });
+
+    const button = renderer.root.findByProps({ accessibilityLabel: '레이드 시작 새 행동 판단 허용' });
+    await act(async () => { button.props.onPress(); });
+
+    assert.deepEqual(calls, [88]);
+    assert.ok(!treeText(renderer.root).includes('보류된 결과'));
   });
 });
 
