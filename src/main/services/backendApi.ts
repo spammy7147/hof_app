@@ -74,6 +74,7 @@ export class BackendApiError extends Error {
     readonly statusCode: number,
     readonly code: string | null,
     message: string,
+    readonly retryAfterSeconds: number | null = null,
   ) {
     super(message);
     this.name = 'BackendApiError';
@@ -86,6 +87,17 @@ export class ManualActionBusyError extends Error {
     this.name = 'ManualActionBusyError';
   }
 }
+
+export class SessionRecoveryMutationBlockedError extends Error {
+  constructor() {
+    super('로그인 상태를 복구한 뒤 다시 시도해 주세요.');
+    this.name = 'SessionRecoveryMutationBlockedError';
+  }
+}
+
+export type SessionRefreshEvent =
+  | { type: 'refresh-succeeded' }
+  | { type: 'refresh-failed'; error: unknown };
 
 function normalizeQuestSnapshot(
   snapshot: Omit<QuestSnapshot, 'rewards'> & { rewards?: unknown },
@@ -111,10 +123,16 @@ export class BackendApiClient {
   private accessToken: string | null = null;
   private refreshPromise: Promise<void> | null = null;
   private readonly sessionChannel: BroadcastChannel | null;
+  private tokenMutationPromise: Promise<void> = Promise.resolve();
+  private authEpoch = 0;
+  private disposed = false;
+  private acceptsSessionTokenBroadcasts = true;
   private readonly tokenBroadcastListeners = new Set<(token: string | null) => void>();
   private readonly manualActionListeners = new Set<(pending: boolean) => void>();
   private readonly hofStatusListeners = new Set<(status: HofObservedStatusResponse) => void>();
+  private readonly sessionRefreshListeners = new Set<(event: SessionRefreshEvent) => void>();
   private manualActionPending = false;
+  private sessionMutationsBlocked = false;
 
   constructor(
     baseUrl = resolveBackendBaseUrl(),
@@ -128,6 +146,8 @@ export class BackendApiClient {
    * HOF 계정으로 로그인하고 플랫폼에 맞게 refresh token을 보관한다.
    */
   async login(request: HofLoginRequest): Promise<TokenResponse> {
+    this.acceptsSessionTokenBroadcasts = true;
+    const epoch = this.beginAuthMutation();
     const response = await this.requestWithoutRefresh<TokenResponse>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({
@@ -135,28 +155,68 @@ export class BackendApiClient {
         clientType: Platform.OS === 'web' ? 'WEB' : 'NATIVE',
       }),
     });
-    await this.acceptTokenResponse(response);
+    await this.acceptTokenResponse(response, epoch);
     return response;
   }
 
   /** 저장된 네이티브 토큰 또는 웹 HttpOnly 쿠키로 앱 시작 세션을 복원한다. */
   async restoreSession(): Promise<void> {
+    this.acceptsSessionTokenBroadcasts = true;
     await this.refreshAccessToken();
   }
 
   /** 현재 refresh token 패밀리를 서버에서 폐기하고 로컬 토큰 상태도 비운다. */
   async logout(): Promise<void> {
-    const refreshToken = await this.tokenStorage.load();
+    this.acceptsSessionTokenBroadcasts = false;
+    const epoch = this.beginAuthMutation();
+    const refreshToken = await this.tokenStorage.load().catch(() => null);
+    let localClearError: unknown = null;
+    try {
+      await this.clearTokenState(epoch);
+    } catch (error) {
+      localClearError = error;
+    }
     try {
       await this.requestWithoutRefresh<null>('/api/auth/logout', {
         method: 'POST',
         body: JSON.stringify(refreshToken ? { refreshToken } : {}),
       });
     } finally {
-      this.accessToken = null;
-      await this.tokenStorage.remove();
-      this.sessionChannel?.postMessage({ type: 'logout' });
+      if (localClearError) throw localClearError;
     }
+  }
+
+  /** 앱 runtime 종료 뒤 web broadcast와 보류 중인 인증 결과를 더 이상 받지 않는다. */
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.authEpoch += 1;
+    if (this.sessionChannel) {
+      this.sessionChannel.onmessage = null;
+      this.sessionChannel.close();
+    }
+    this.tokenBroadcastListeners.clear();
+    this.manualActionListeners.clear();
+    this.hofStatusListeners.clear();
+    this.sessionRefreshListeners.clear();
+  }
+
+  /** refresh 성공·실패를 React 인증 수명주기에 전달한다. */
+  subscribeSessionRefreshEvents(listener: (event: SessionRefreshEvent) => void): () => void {
+    this.sessionRefreshListeners.add(listener);
+    return () => this.sessionRefreshListeners.delete(listener);
+  }
+
+  /** 일시적인 세션 복구 중에는 새 상태 변경 요청을 전송하지 않는다. */
+  setSessionMutationsBlocked(blocked: boolean): void {
+    this.sessionMutationsBlocked = blocked;
+  }
+
+  /** 원격 요청 없이 현재 기기의 인증 자격과 web 탭 상태를 무효화한다. */
+  async clearLocalSession(): Promise<void> {
+    this.acceptsSessionTokenBroadcasts = false;
+    const epoch = this.beginAuthMutation();
+    await this.clearTokenState(epoch);
   }
 
   /** SSE 연결에서도 같은 Bearer 값을 사용할 수 있도록 현재 메모리 Access Token을 읽는다. */
@@ -755,6 +815,9 @@ export class BackendApiClient {
    * JSON 직렬화/역직렬화, 기본 헤더, HTTP 에러를 BackendApiError로 바꾸는 일을 담당한다.
    */
   private async request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
+    if (this.sessionMutationsBlocked && isMutationRequest(init)) {
+      throw new SessionRecoveryMutationBlockedError();
+    }
     const response = await this.fetchResponse(path, init, this.accessToken);
     if (response.status === 401 && retry) {
       await this.refreshAccessToken();
@@ -787,13 +850,21 @@ export class BackendApiClient {
 
   /** 동시에 들어온 401 요청들이 하나의 refresh 요청을 공유하도록 single-flight를 적용한다. */
   private async refreshAccessToken(): Promise<void> {
-    this.refreshPromise ??= this.performRefresh().finally(() => {
-      this.refreshPromise = null;
-    });
+    if (this.refreshPromise == null) {
+      const operation = this.performRefresh();
+      void operation.then(
+        () => this.publishSessionRefreshEvent({ type: 'refresh-succeeded' }),
+        (error: unknown) => this.publishSessionRefreshEvent({ type: 'refresh-failed', error }),
+      );
+      this.refreshPromise = operation.finally(() => {
+        this.refreshPromise = null;
+      });
+    }
     return this.refreshPromise;
   }
 
   private async performRefresh(): Promise<void> {
+    const epoch = this.authEpoch;
     const refreshToken = await this.tokenStorage.load();
     if (Platform.OS !== 'web' && !refreshToken) {
       throw new BackendApiError(401, 'AUTH_TOKEN_INVALID', '저장된 로그인 정보가 없습니다.');
@@ -804,7 +875,7 @@ export class BackendApiClient {
         method: 'POST',
         body: JSON.stringify(refreshToken ? { refreshToken } : {}),
       });
-      await this.acceptTokenResponse(response);
+      await this.acceptTokenResponse(response, epoch);
     } catch (error) {
       if (
         Platform.OS === 'web' &&
@@ -819,14 +890,24 @@ export class BackendApiClient {
   }
 
   /** 새 Access Token은 메모리에 두고 네이티브 refresh token만 SecureStore에 저장한다. */
-  private async acceptTokenResponse(response: TokenResponse): Promise<void> {
-    this.accessToken = response.accessToken;
-    if (response.refreshToken) await this.tokenStorage.save(response.refreshToken);
-    this.sessionChannel?.postMessage({ type: 'token', accessToken: response.accessToken });
+  private async acceptTokenResponse(response: TokenResponse, epoch: number): Promise<void> {
+    await this.mutateTokenState(async () => {
+      if (!this.isCurrentAuthEpoch(epoch)) return;
+      if (response.refreshToken) await this.tokenStorage.save(response.refreshToken);
+      if (!this.isCurrentAuthEpoch(epoch)) return;
+      this.accessToken = response.accessToken;
+      this.sessionChannel?.postMessage({ type: 'token', accessToken: response.accessToken });
+    });
   }
 
   /** 다른 브라우저 탭에서 회전된 Access Token을 현재 탭 메모리와 대기 중 요청에 반영한다. */
   private receiveBroadcastToken(token: string | null): void {
+    if (this.disposed) return;
+    if (token == null) {
+      this.acceptsSessionTokenBroadcasts = false;
+    } else if (!this.acceptsSessionTokenBroadcasts) {
+      return;
+    }
     this.accessToken = token;
     for (const listener of this.tokenBroadcastListeners) listener(token);
   }
@@ -885,10 +966,45 @@ export class BackendApiClient {
         response.status,
         readErrorCode(body),
         readErrorMessage(body) ?? `요청을 처리하지 못했습니다. 잠시 후 다시 시도해주세요. (HTTP ${response.status})`,
+        parseRetryAfterSeconds(response.headers?.get('Retry-After')),
       );
     }
 
     return body as T;
+  }
+
+  private beginAuthMutation(): number {
+    this.authEpoch += 1;
+    return this.authEpoch;
+  }
+
+  private isCurrentAuthEpoch(epoch: number): boolean {
+    return !this.disposed && epoch === this.authEpoch;
+  }
+
+  private mutateTokenState(operation: () => Promise<void>): Promise<void> {
+    const result = this.tokenMutationPromise.then(operation, operation);
+    this.tokenMutationPromise = result.catch(() => undefined);
+    return result;
+  }
+
+  private clearTokenState(epoch: number): Promise<void> {
+    return this.mutateTokenState(async () => {
+      if (!this.isCurrentAuthEpoch(epoch)) return;
+      this.accessToken = null;
+      try {
+        await this.tokenStorage.remove();
+      } finally {
+        if (this.isCurrentAuthEpoch(epoch)) {
+          this.sessionChannel?.postMessage({ type: 'logout' });
+        }
+      }
+    });
+  }
+
+  private publishSessionRefreshEvent(event: SessionRefreshEvent): void {
+    if (this.disposed) return;
+    for (const listener of this.sessionRefreshListeners) listener(event);
   }
 
   private publishObservedHofStatus(encoded: string | null | undefined): void {
@@ -896,6 +1012,21 @@ export class BackendApiClient {
     if (!status) return;
     for (const listener of this.hofStatusListeners) listener(status);
   }
+}
+
+function isMutationRequest(init: RequestInit): boolean {
+  const method = (init.method ?? 'GET').toUpperCase();
+  return method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS';
+}
+
+function parseRetryAfterSeconds(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const deltaSeconds = Number(value);
+  if (Number.isFinite(deltaSeconds) && deltaSeconds >= 0) return Math.ceil(deltaSeconds);
+
+  const retryAt = Date.parse(value);
+  if (!Number.isFinite(retryAt)) return null;
+  return Math.max(0, Math.ceil((retryAt - Date.now()) / 1_000));
 }
 
 const HOF_STATUS_HEADER = 'X-HOF-Observed-Status';

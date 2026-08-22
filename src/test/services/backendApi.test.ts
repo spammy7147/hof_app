@@ -199,6 +199,8 @@ describe('BackendApiClient', () => {
         : mockResponse({ code: 'AUTH_TOKEN_INVALID', message: '로그인이 필요합니다.' }, 401);
     }) as unknown as typeof fetch;
     const client = new BackendApiClient('http://backend.test', storage);
+    const sessionEvents: unknown[] = [];
+    client.subscribeSessionRefreshEvents((event) => sessionEvents.push(event));
 
     const statuses = Promise.all([client.fetchStatus(), client.fetchStatus()]);
     await bothInitialRequestsCompleted.promise;
@@ -208,6 +210,27 @@ describe('BackendApiClient', () => {
     assert.equal(refreshCalls, 1);
     assert.equal(storage.value, 'refresh-new');
     assert.deepEqual(authorizationHeaders, [null, null, 'Bearer access-new', 'Bearer access-new']);
+    assert.deepEqual(sessionEvents, [{ type: 'refresh-succeeded' }]);
+  });
+
+  it('blocks authenticated mutations while session recovery is waiting', async () => {
+    const { BackendApiClient, SessionRecoveryMutationBlockedError } = await loadBackendApi();
+    let fetchCalls = 0;
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      return mockResponse({ entries: [] });
+    }) as unknown as typeof fetch;
+    const client = new BackendApiClient('http://backend.test');
+    client.setSessionMutationsBlocked(true);
+
+    await assert.rejects(
+      client.changeUnifiedAutomationState('pause'),
+      SessionRecoveryMutationBlockedError,
+    );
+
+    assert.equal(fetchCalls, 0);
+    await client.fetchUnifiedAutomation();
+    assert.equal(fetchCalls, 1);
   });
 
   it('recovers a web refresh grace conflict from the token broadcast by another tab', async () => {
@@ -427,6 +450,156 @@ describe('BackendApiClient', () => {
         return true;
       },
     );
+  });
+
+  it('preserves Retry-After seconds for session recovery scheduling', async () => {
+    const { BackendApiClient, BackendApiError } = await loadBackendApi();
+    globalThis.fetch = (async () => mockResponse(
+      { code: 'RATE_LIMITED', message: '잠시 후 다시 시도해 주세요.' },
+      429,
+      { 'Retry-After': '37' },
+    )) as unknown as typeof fetch;
+    const client = new BackendApiClient('http://backend.test', memoryTokenStorage('refresh-token'));
+
+    await assert.rejects(
+      client.restoreSession(),
+      (error) => {
+        assert.equal(error instanceof BackendApiError, true);
+        const backendError = error as BackendErrorShape;
+        assert.equal(backendError.retryAfterSeconds, 37);
+        return true;
+      },
+    );
+  });
+
+  it('discards a refresh result that finishes after logout starts', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const storage = memoryTokenStorage('refresh-old');
+    const refreshResponse = deferred<Response>();
+    globalThis.fetch = (async (url: RequestInfo | URL) => {
+      if (String(url).endsWith('/api/auth/refresh')) return refreshResponse.promise;
+      if (String(url).endsWith('/api/auth/logout')) return mockResponse(null, 204);
+      throw new Error(`Unexpected request: ${String(url)}`);
+    }) as unknown as typeof fetch;
+    const client = new BackendApiClient('http://backend.test', storage);
+
+    const restoring = client.restoreSession();
+    await client.logout();
+    refreshResponse.resolve(mockResponse(tokenResponse('stale-access', 'stale-refresh')));
+    await restoring;
+
+    assert.equal(client.getAccessToken(), null);
+    assert.equal(storage.value, null);
+  });
+
+  it('clears local credentials before waiting for remote logout', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const storage = memoryTokenStorage('refresh-old');
+    const logoutResponse = deferred<Response>();
+    const logoutRequested = deferred<void>();
+    globalThis.fetch = (async (url: RequestInfo | URL) => {
+      if (!String(url).endsWith('/api/auth/logout')) throw new Error(`Unexpected request: ${String(url)}`);
+      logoutRequested.resolve();
+      return logoutResponse.promise;
+    }) as unknown as typeof fetch;
+    const client = new BackendApiClient('http://backend.test', storage);
+
+    const loggingOut = client.logout();
+    await logoutRequested.promise;
+
+    assert.equal(client.getAccessToken(), null);
+    assert.equal(storage.value, null);
+    logoutResponse.resolve(mockResponse(null, 204));
+    await loggingOut;
+  });
+
+  it('still clears memory and attempts removal when refresh-token loading fails during logout', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    let removeCalls = 0;
+    const storage = {
+      async load(): Promise<string | null> {
+        throw new Error('secure storage read failed');
+      },
+      async save(): Promise<void> {},
+      async remove(): Promise<void> {
+        removeCalls += 1;
+      },
+    };
+    globalThis.fetch = (async () => mockResponse(null, 204)) as unknown as typeof fetch;
+    const client = new BackendApiClient('http://backend.test', storage);
+
+    await client.logout();
+
+    assert.equal(client.getAccessToken(), null);
+    assert.equal(removeCalls, 1);
+  });
+
+  it('ignores a late token broadcast after local logout until a new local login starts', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    platformOS = 'web';
+    globalThis.BroadcastChannel = FakeBroadcastChannel as unknown as typeof BroadcastChannel;
+    let loginCount = 0;
+    globalThis.fetch = (async (url: RequestInfo | URL) => {
+      if (String(url).endsWith('/api/auth/login')) {
+        loginCount += 1;
+        return mockResponse(tokenResponse(`access-${loginCount}`));
+      }
+      if (String(url).endsWith('/api/auth/logout')) return mockResponse(null, 204);
+      throw new Error(`Unexpected request: ${String(url)}`);
+    }) as unknown as typeof fetch;
+    const firstTab = new BackendApiClient('http://backend.test');
+    const secondTab = new BackendApiClient('http://backend.test');
+    await firstTab.login({ loginId: 'hof-id', password: 'hof-password' });
+    await secondTab.login({ loginId: 'hof-id', password: 'hof-password' });
+
+    await firstTab.logout();
+    await secondTab.login({ loginId: 'hof-id', password: 'hof-password' });
+
+    assert.equal(firstTab.getAccessToken(), null);
+  });
+
+  it('discards a refresh result that finishes after a new login starts', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const storage = memoryTokenStorage('refresh-old');
+    const refreshResponse = deferred<Response>();
+    globalThis.fetch = (async (url: RequestInfo | URL) => {
+      if (String(url).endsWith('/api/auth/refresh')) return refreshResponse.promise;
+      if (String(url).endsWith('/api/auth/login')) {
+        return mockResponse(tokenResponse('new-access', 'new-refresh'));
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    }) as unknown as typeof fetch;
+    const client = new BackendApiClient('http://backend.test', storage);
+
+    const restoring = client.restoreSession();
+    await client.login({ loginId: 'new-account', password: 'password' });
+    refreshResponse.resolve(mockResponse(tokenResponse('stale-access', 'stale-refresh')));
+    await restoring;
+
+    assert.equal(client.getAccessToken(), 'new-access');
+    assert.equal(storage.value, 'new-refresh');
+  });
+
+  it('stops accepting web token broadcasts after disposal', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    platformOS = 'web';
+    globalThis.BroadcastChannel = FakeBroadcastChannel as unknown as typeof BroadcastChannel;
+    const responses = [
+      tokenResponse('first-access'),
+      tokenResponse('second-access'),
+      tokenResponse('second-new-access'),
+    ];
+    globalThis.fetch = (async () => mockResponse(responses.shift())) as unknown as typeof fetch;
+    const firstTab = new BackendApiClient('http://backend.test');
+    const secondTab = new BackendApiClient('http://backend.test');
+    await firstTab.login({ loginId: 'same-account', password: 'password' });
+    await secondTab.login({ loginId: 'same-account', password: 'password' });
+    firstTab.dispose();
+
+    await secondTab.login({ loginId: 'same-account', password: 'password' });
+
+    assert.equal(firstTab.getAccessToken(), 'second-access');
+    assert.equal(secondTab.getAccessToken(), 'second-new-access');
   });
 
   it('uses null error code for non-JSON bodies or error bodies without a code', async () => {
@@ -958,6 +1131,7 @@ type BackendErrorShape = {
   statusCode: number;
   code: string | null;
   message: string;
+  retryAfterSeconds: number | null;
 };
 
 type CapturedRequest = {

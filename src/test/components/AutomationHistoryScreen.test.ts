@@ -101,6 +101,7 @@ describe('AutomationHistoryScreen', () => {
         successfulObservationCount: 2,
         nextProbeAt: '2026-08-22T00:00:10Z',
         reasonCode: 'OBSERVATION_INCOMPLETE',
+        reasonMessage: '백엔드가 제공한 정확한 관측 사유입니다.',
         evidenceCaseId: null,
         impactScope: '유니온 자동화 5',
         releaseCondition: '최대 5회 또는 2분까지 읽기 전용으로 재확인',
@@ -122,6 +123,7 @@ describe('AutomationHistoryScreen', () => {
     assert.ok(text.includes('다른 비전투 자동화는 계속 진행됩니다.'));
     assert.ok(text.includes('유니온 전투'));
     assert.ok(text.includes('관측 2/5'));
+    assert.ok(text.includes('백엔드가 제공한 정확한 관측 사유입니다.'));
     assert.ok(text.includes('읽기 전용으로 재확인'));
     assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '수렴 상태 새로고침' }).length >= 1);
   });
@@ -133,6 +135,7 @@ describe('AutomationHistoryScreen', () => {
       items: [{
         attemptId: 88, entryId: 9, actionKind: 'RAID_START', scopeKind: 'RAID_ENTRY', scopeKey: 'Raid001',
         result: 'HELD', successfulObservationCount: 5, nextProbeAt: null, reasonCode: 'MAX_OBSERVATIONS',
+        reasonMessage: '자동 관측 예산 안에 결과를 확정하지 못했습니다.',
         evidenceCaseId: 'evidence-1', impactScope: '레이드 사이클 Raid001',
         releaseCondition: '상태 변경 또는 사용자의 새 행동 판단 허용', canAllowFreshDecision: true,
       }],

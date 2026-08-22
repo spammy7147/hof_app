@@ -678,6 +678,7 @@ export type AutomationConvergenceItem = {
   successfulObservationCount: number;
   nextProbeAt: string | null;
   reasonCode: string | null;
+  reasonMessage: string;
   evidenceCaseId: string | null;
   impactScope: string;
   releaseCondition: string;

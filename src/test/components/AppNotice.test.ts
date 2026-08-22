@@ -9,15 +9,26 @@ const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>
 ));
 
 let publishNotice: ((message: string | null) => void) | null = null;
+let logoutCalls = 0;
 const syncCharacters = async () => undefined;
 const openCaptcha = async () => undefined;
 const waitForCaptcha = async () => undefined;
 
 class BackendApiClientMock {
-  async restoreSession() {}
+  private refreshListener: ((event: { type: 'refresh-succeeded' }) => void) | null = null;
+  async restoreSession() { this.refreshListener?.({ type: 'refresh-succeeded' }); }
+  async login() { return { accessToken: 'access' }; }
+  async logout() { logoutCalls += 1; }
+  async clearLocalSession() {}
+  subscribeSessionRefreshEvents(listener: (event: { type: 'refresh-succeeded' }) => void) {
+    this.refreshListener = listener;
+    return () => { this.refreshListener = null; };
+  }
+  setSessionMutationsBlocked() {}
   async fetchStatus() { return { characterSyncRequired: false }; }
   subscribeManualActionState(listener: (pending: boolean) => void) { listener(false); return () => undefined; }
 }
+const backendApiClient = new BackendApiClientMock();
 
 class UnifiedAutomationControllerMock {
   reset() {}
@@ -30,6 +41,7 @@ moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') {
     return {
       ActivityIndicator: host('ActivityIndicator'),
+      Pressable: host('Pressable'),
       StyleSheet: { create: <T,>(styles: T) => styles },
       Text: host('Text'),
       View: host('View'),
@@ -44,6 +56,9 @@ moduleWithLoader._load = (request, parent, isMain) => {
   if (request.endsWith('/screens/LoginScreen')) return { LoginScreen: host('LoginScreen') };
   if (request.endsWith('/screens/MainScreen')) return { MainScreen: host('MainScreen') };
   if (request.endsWith('/services/backendApi')) return { BackendApiClient: BackendApiClientMock };
+  if (request.endsWith('/services/appRuntime')) {
+    return { getAppBackendApiClient: () => backendApiClient };
+  }
   if (request.endsWith('/domain/unifiedAutomationController')) {
     return { UnifiedAutomationController: UnifiedAutomationControllerMock };
   }
@@ -119,6 +134,7 @@ const realClearTimeout = globalThis.clearTimeout;
 
 afterEach(() => {
   publishNotice = null;
+  logoutCalls = 0;
   globalThis.setTimeout = realSetTimeout;
   globalThis.clearTimeout = realClearTimeout;
 });
@@ -141,6 +157,20 @@ describe('App system notice', () => {
     await act(async () => { timers.runAll(); });
 
     assert.equal(mainScreen(renderer).props.notice, null);
+    await act(async () => { renderer.unmount(); });
+  });
+
+  it('ends the current login generation before opening account login', async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(React.createElement(App));
+      await Promise.resolve();
+    });
+
+    await act(async () => { await mainScreen(renderer).props.onOpenLogin(); });
+
+    assert.equal(logoutCalls, 1);
+    assert.equal(renderer.root.findAll((node) => String(node.type) === 'LoginScreen').length, 1);
     await act(async () => { renderer.unmount(); });
   });
 });

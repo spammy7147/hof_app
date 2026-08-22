@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { isCaptchaPending, isCaptchaResolved } from '../../domain/captchaGate';
 import type { BackendApiClient } from '../../services/backendApi';
@@ -201,6 +201,12 @@ export function useCaptchaGate({ authenticated, api, describeError }: UseCaptcha
     setIsSubmitting(false);
     setIsAutoSolving(false);
   }, [rejectPending]);
+
+  useEffect(() => () => {
+    const pending = pendingResumeRef.current;
+    pendingResumeRef.current = null;
+    pending?.reject(new Error('로그인 계정이 변경되었습니다.'));
+  }, []);
 
   return {
     visible,

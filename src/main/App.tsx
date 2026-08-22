@@ -1,12 +1,13 @@
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { LoginScreen } from "./screens/LoginScreen";
 import { MainScreen } from "./screens/MainScreen";
 import { AppProviders } from "./components/AppProviders";
 import { CaptchaChallengeModal } from "./components/CaptchaChallengeModal";
 import { BackendApiClient } from "./services/backendApi";
+import { getAppBackendApiClient } from "./services/appRuntime";
 import { useCharacterSync } from "./features/characters/useCharacterSync";
 import { useCaptchaGate } from "./features/captcha/useCaptchaGate";
 import { useAndroidPushRegistration } from "./features/push/useAndroidPushRegistration";
@@ -31,11 +32,15 @@ import { theme } from "./styles/theme";
 import { createTownApi } from "./features/town/api/townApi";
 import { usePartyPresetCatalog } from "./features/partyPresets/usePartyPresetCatalog";
 import { useCharacterManagementHub } from "./features/characters/useCharacterManagementHub";
-
-type ScreenMode = "boot" | "login" | "main";
+import { useAppSessionLifecycle } from "./features/auth/useAppSessionLifecycle";
+import {
+  useAuthenticatedBootstrap,
+  type BootstrapResource,
+} from "./features/auth/useAuthenticatedBootstrap";
 
 type AppSession = {
   loggedIn: boolean;
+  generation: number;
 };
 
 /**
@@ -45,7 +50,7 @@ type AppSession = {
  * 전투 중 캡차 모달 같은 전역 흐름을 여기에서 조립한다.
  */
 export default function App() {
-  const api = useMemo(() => new BackendApiClient(), []);
+  const api = getAppBackendApiClient();
   return (
     <AppProviders style={styles.container}>
       <RequiredUpdateGate api={api}>
@@ -56,6 +61,109 @@ export default function App() {
 }
 
 function AppContent({ api }: { api: BackendApiClient }) {
+  const sessionLifecycle = useAppSessionLifecycle(api);
+  const state = sessionLifecycle.state;
+  const activeGeneration = state.kind === "AUTHENTICATED"
+    ? state.generation
+    : state.kind === "RECOVERY_WAITING"
+      ? state.generation
+      : null;
+
+  let content: ReactNode;
+  if (activeGeneration != null) {
+    content = (
+      <AuthenticatedApp
+        api={api}
+        generation={activeGeneration}
+        key={activeGeneration}
+        onAccountSwitch={sessionLifecycle.endForAccountSwitch}
+        onLogout={sessionLifecycle.logout}
+      />
+    );
+  } else if (state.kind === "UNAUTHENTICATED" || state.kind === "AUTHENTICATING") {
+    content = (
+      <LoginScreen
+        errorMessage={state.kind === "UNAUTHENTICATED" && state.errorMessage
+          ? toUserFacingErrorMessage(state.errorMessage)
+          : null}
+        isSubmitting={state.kind === "AUTHENTICATING"}
+        onSubmit={sessionLifecycle.login}
+      />
+    );
+  } else {
+    content = (
+      <View style={styles.bootContainer}>
+        <ActivityIndicator color={theme.colors.accentGreen} />
+        <Text style={styles.bootText}>
+          {state.kind === "ENDING" ? "로그인 정리 중" : "로그인 상태 확인 중"}
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      {content}
+      {state.kind === "RECOVERY_WAITING" ? (
+        <SessionRecoveryOverlay
+          errorMessage={toUserFacingErrorMessage(state.errorMessage)}
+          onRetry={sessionLifecycle.retryRecovery}
+          retryDelaySeconds={state.retryDelaySeconds}
+        />
+      ) : null}
+      {activeGeneration == null ? <StatusBar style="light" /> : null}
+    </View>
+  );
+}
+
+function SessionRecoveryOverlay({
+  errorMessage,
+  retryDelaySeconds,
+  onRetry,
+}: {
+  errorMessage: string;
+  retryDelaySeconds: number;
+  onRetry: () => Promise<void>;
+}) {
+  return (
+    <View
+      accessibilityLabel="로그인 상태 복구 중"
+      accessibilityLiveRegion="polite"
+      accessibilityRole="alert"
+      style={styles.sessionRecoveryOverlay}
+    >
+      <View style={styles.sessionRecoveryCard}>
+        <ActivityIndicator color={theme.colors.accentGreen} />
+        <Text style={styles.sessionRecoveryTitle}>로그인 상태 복구 중</Text>
+        <Text style={styles.sessionRecoveryMessage}>
+          {errorMessage}{"\n"}
+          {retryDelaySeconds}초 뒤 다시 확인합니다.
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => { void onRetry(); }}
+          style={styles.sessionRecoveryButton}
+        >
+          <Text style={styles.sessionRecoveryButtonText}>지금 다시 시도</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+type AuthenticatedAppProps = {
+  api: BackendApiClient;
+  generation: number;
+  onLogout: () => Promise<void>;
+  onAccountSwitch: () => Promise<void>;
+};
+
+function AuthenticatedApp({
+  api,
+  generation,
+  onLogout,
+  onAccountSwitch,
+}: AuthenticatedAppProps) {
   const townApi = useMemo(() => createTownApi(api), [api]);
   const automationController = useMemo(
     () =>
@@ -79,8 +187,10 @@ function AppContent({ api }: { api: BackendApiClient }) {
       }),
     [api],
   );
-  const [mode, setMode] = useState<ScreenMode>("boot");
-  const [session, setSession] = useState<AppSession | null>(null);
+  const session = useMemo<AppSession | null>(
+    () => ({ loggedIn: true, generation }),
+    [generation],
+  );
   const partyPresetCatalog = usePartyPresetCatalog(
     api,
     session?.loggedIn === true ? session : null,
@@ -97,8 +207,6 @@ function AppContent({ api }: { api: BackendApiClient }) {
   >(null);
   const [status, setStatus] = useState<HofStatusResponse | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [loginError, setLoginError] = useState<string | null>(null);
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [manualActionPending, setManualActionPending] = useState(false);
   const describeError = useCallback(
     (error: unknown): string => toUserFacingErrorMessage(error),
@@ -271,143 +379,34 @@ function AppContent({ api }: { api: BackendApiClient }) {
     [api],
   );
 
-  /**
-   * 로그인 직후 필요한 초기 데이터들을 병렬로 불러온다.
-   */
-  const hydrateAfterLogin = useCallback(async () => {
-    const results = await Promise.allSettled([
-      refreshStatus(),
-      loadSavedCharacters(),
-    ]);
-
-    const failed = results.find((result) => result.status === "rejected");
-    if (failed?.status === "rejected") {
-      setNotice(describeError(failed.reason));
-      return;
-    }
-    const statusResult = results[0];
-    if (statusResult.status === "fulfilled") {
-      await startAutomaticSyncIfRequired(
-        statusResult.value.characterSyncRequired,
-      );
-    }
-  }, [
-    describeError,
-    loadSavedCharacters,
-    refreshStatus,
+  const bootstrap = useAuthenticatedBootstrap({
+    generation,
+    loadStatus: refreshStatus,
+    loadCharacters: loadSavedCharacters,
     startAutomaticSyncIfRequired,
-  ]);
+    describeError,
+  });
 
-  /**
-   * HOF 로그인 요청부터 저장 여부 처리, 초기 데이터 로딩까지 한 번에 수행한다.
-   */
-  const loginAndHydrate = useCallback(
-    async (loginId: string, password: string) => {
-      setIsLoggingIn(true);
-      setLoginError(null);
-
-      try {
-        const loginResponse = await api.login({ loginId, password });
-        const nextSession: AppSession = {
-          loggedIn: Boolean(loginResponse.accessToken),
-        };
-
-        // 같은 앱 프로세스에서 다른 계정으로 로그인해도 이전 계정의 진행 요청과 snapshot을 넘기지 않는다.
-        automationController.reset();
-        setSession(nextSession);
-        setMode("main");
-        setNotice(null);
-
-        await hydrateAfterLogin();
-      } catch (error) {
-        const message = describeError(error);
-        setLoginError(message);
-        setNotice(message);
-        throw error;
-      } finally {
-        setIsLoggingIn(false);
-      }
-    },
-    [api, automationController, describeError, hydrateAfterLogin],
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-
-    /**
-     * 앱 시작 시 refresh token으로 세션을 복원하고, 유효한 세션이 없으면 로그인 화면으로 이동한다.
-     */
-    async function boot() {
-      try {
-        await api.restoreSession();
-      } catch {
-        if (!cancelled) setMode("login");
-        return;
-      }
-      if (cancelled) return;
-
-      setSession({
-        loggedIn: true,
-      });
-      setMode("main");
-      setNotice(null);
-      await hydrateAfterLogin();
-    }
-
-    boot();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [api, hydrateAfterLogin]);
-
-  /**
-   * 로그인 화면에서 직접 입력한 ID/PW로 로그인할 때 호출된다.
-   */
-  const handleManualLogin = useCallback(
-    async (loginId: string, password: string) => {
-      await loginAndHydrate(loginId, password);
-    },
-    [loginAndHydrate],
-  );
-
-  /**
-   * 서버 token family와 앱의 세션 상태를 모두 지우고 로그인 화면으로 돌아간다.
-   */
-  const handleLogout = useCallback(async () => {
-    await api.logout().catch(() => undefined);
+  const resetAuthenticatedResources = useCallback((reason: string) => {
     automationController.reset();
-    resetCaptchaGate(new Error("로그아웃되었습니다."));
-    setSession(null);
+    resetCaptchaGate(new Error(reason));
     resetCharacterSync();
-    setBattleCategories([]);
-    setAreBattleCategoriesLoaded(false);
-    setBattleCategoriesError(null);
-    setStatus(null);
-    setNotice(null);
-    setLoginError(null);
-    setMode("login");
-  }, [api, automationController, resetCaptchaGate, resetCharacterSync]);
+  }, [automationController, resetCaptchaGate, resetCharacterSync]);
 
-  let content;
-  if (mode === "boot") {
-    content = (
-      <View style={styles.bootContainer}>
-        <ActivityIndicator color={theme.colors.accentGreen} />
-        <Text style={styles.bootText}>앱 준비 중</Text>
-      </View>
-    );
-  } else if (mode === "login") {
-    content = (
-      <LoginScreen
-        errorMessage={loginError}
-        isSubmitting={isLoggingIn}
-        onSubmit={handleManualLogin}
-      />
-    );
-  } else {
-    content = (
-      <MainScreen
+  /** 로컬 로그인 세대 resource를 먼저 닫고 server token family 폐기를 마무리한다. */
+  const handleLogout = useCallback(async () => {
+    resetAuthenticatedResources("로그아웃되었습니다.");
+    await onLogout();
+  }, [onLogout, resetAuthenticatedResources]);
+
+  /** 계정 전환은 이전 로그인 세대를 끝낸 뒤 비인증 로그인 화면으로 이동한다. */
+  const handleAccountSwitch = useCallback(async () => {
+    resetAuthenticatedResources("계정 전환을 시작했습니다.");
+    await onAccountSwitch();
+  }, [onAccountSwitch, resetAuthenticatedResources]);
+
+  const content = (
+    <MainScreen
         session={session}
         status={status}
         battleCategories={battleCategories}
@@ -432,16 +431,23 @@ function AppContent({ api }: { api: BackendApiClient }) {
         automationController={automationController}
         partyPresetCatalog={partyPresetCatalog}
         onLogout={handleLogout}
-        onOpenLogin={() => setMode("login")}
+        onOpenLogin={handleAccountSwitch}
         townApi={townApi}
         resolveCaptcha={waitForCaptchaResolution}
-      />
-    );
-  }
+    />
+  );
 
   return (
     <View style={styles.container}>
       {content}
+      {bootstrap.status.kind === "error" || bootstrap.characters.kind === "error" ? (
+        <AuthenticatedBootstrapRecovery
+          characters={bootstrap.characters}
+          onRetryCharacters={bootstrap.retryCharacters}
+          onRetryStatus={bootstrap.retryStatus}
+          status={bootstrap.status}
+        />
+      ) : null}
       {manualActionPending ? (
         <View
           accessibilityLabel="요청 처리 중"
@@ -475,6 +481,40 @@ function AppContent({ api }: { api: BackendApiClient }) {
         onRequestClose={closeCaptchaModal}
       />
       <StatusBar style="light" />
+    </View>
+  );
+}
+
+function AuthenticatedBootstrapRecovery({
+  status,
+  characters,
+  onRetryStatus,
+  onRetryCharacters,
+}: {
+  status: BootstrapResource<{ characterSyncRequired: boolean }>;
+  characters: BootstrapResource<true>;
+  onRetryStatus: () => Promise<void>;
+  onRetryCharacters: () => Promise<void>;
+}) {
+  return (
+    <View accessibilityRole="alert" style={styles.bootstrapRecovery}>
+      <Text style={styles.bootstrapRecoveryTitle}>일부 정보를 준비하지 못했습니다.</Text>
+      {status.kind === "error" ? (
+        <View style={styles.bootstrapRecoveryRow}>
+          <Text style={styles.bootstrapRecoveryMessage}>상태 · {status.errorMessage}</Text>
+          <Pressable accessibilityRole="button" onPress={() => { void onRetryStatus(); }}>
+            <Text style={styles.bootstrapRecoveryAction}>다시 시도</Text>
+          </Pressable>
+        </View>
+      ) : null}
+      {characters.kind === "error" ? (
+        <View style={styles.bootstrapRecoveryRow}>
+          <Text style={styles.bootstrapRecoveryMessage}>캐릭터 · {characters.errorMessage}</Text>
+          <Pressable accessibilityRole="button" onPress={() => { void onRetryCharacters(); }}>
+            <Text style={styles.bootstrapRecoveryAction}>다시 시도</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -517,5 +557,81 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     fontSize: 15,
     fontWeight: "700",
+  },
+  bootstrapRecovery: {
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.danger,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    gap: theme.spacing.xs,
+    left: theme.spacing.md,
+    padding: theme.spacing.md,
+    position: "absolute",
+    right: theme.spacing.md,
+    top: theme.spacing.md,
+    zIndex: 10,
+  },
+  bootstrapRecoveryTitle: {
+    color: theme.colors.text,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  bootstrapRecoveryRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: theme.spacing.sm,
+    justifyContent: "space-between",
+  },
+  bootstrapRecoveryMessage: {
+    color: theme.colors.textMuted,
+    flex: 1,
+    fontSize: 12,
+  },
+  bootstrapRecoveryAction: {
+    color: theme.colors.accentGreen,
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  sessionRecoveryOverlay: {
+    ...StyleSheet.absoluteFill,
+    alignItems: "center",
+    backgroundColor: theme.colors.overlay,
+    justifyContent: "center",
+    padding: theme.spacing.xl,
+  },
+  sessionRecoveryCard: {
+    alignItems: "center",
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.borderStrong,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    gap: theme.spacing.sm,
+    maxWidth: 420,
+    padding: theme.spacing.xl,
+    width: "100%",
+  },
+  sessionRecoveryTitle: {
+    color: theme.colors.text,
+    fontSize: 17,
+    fontWeight: "800",
+  },
+  sessionRecoveryMessage: {
+    color: theme.colors.textMuted,
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: "center",
+  },
+  sessionRecoveryButton: {
+    borderColor: theme.colors.accentGreen,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    marginTop: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.sm,
+  },
+  sessionRecoveryButtonText: {
+    color: theme.colors.accentGreen,
+    fontSize: 14,
+    fontWeight: "800",
   },
 });

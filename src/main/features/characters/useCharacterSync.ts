@@ -317,7 +317,12 @@ export function useCharacterSync({
     latestRosterObservationRef.current = null;
   }, [closeSubscription]);
 
-  useEffect(() => closeSubscription, [closeSubscription]);
+  useEffect(() => () => {
+    syncGenerationRef.current += 1;
+    rosterSyncPromiseRef.current = null;
+    fullSyncStartPromiseRef.current = null;
+    closeSubscription();
+  }, [closeSubscription]);
 
   return {
     characterSyncLabel,
