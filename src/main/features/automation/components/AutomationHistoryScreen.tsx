@@ -120,7 +120,8 @@ function messageLabel(value: AutomationHistoryCycle['events'][number]['kind']) {
 function statusSummaryLabel(kind: AutomationHistoryCycle['events'][number]['kind']) { return kind === 'ACTION_FAILED' ? '최근 막힘 사유' : kind === 'WAITING' ? '현재 대기 사유' : '최근 자동화 단계'; }
 function TypedWaitDiagnostic({ event }: { event: AutomationHistoryEvent }) {
   if (!event.diagnosticKind) return null;
-  return <View style={styles.typedDiagnostic}>
+  const isAlert = RAID_ALERT_DIAGNOSTICS.has(event.diagnosticKind);
+  return <View accessible={isAlert || undefined} accessibilityRole={isAlert ? 'alert' : undefined} accessibilityLiveRegion={isAlert ? 'assertive' : undefined} style={styles.typedDiagnostic}>
     <Text style={styles.typedDiagnosticTitle}>구분  {diagnosticKindLabel(event.diagnosticKind)}</Text>
     {event.cooldownSource ? <Text style={styles.diagnostic}>출처  {cooldownSourceLabel(event.cooldownSource)}</Text> : null}
     {event.impactScope ? <Text style={styles.scope}>영향  {impactScopeLabel(event.impactScope)}</Text> : null}
@@ -128,6 +129,12 @@ function TypedWaitDiagnostic({ event }: { event: AutomationHistoryEvent }) {
     {event.impactScope === 'RAID_ONLY' ? <Text style={styles.nonBattleNotice}>다른 자동화는 계속 진행됩니다.</Text> : null}
   </View>;
 }
+const RAID_ALERT_DIAGNOSTICS = new Set<NonNullable<AutomationHistoryEvent['diagnosticKind']>>([
+  'RAID_COOLDOWN_OBSERVATION_HELD',
+  'RAID_REWARD_OBSERVATION_HELD',
+  'RAID_BATTLE_RESULT_UNKNOWN',
+  'RAID_REWARD_RESULT_HELD',
+]);
 function diagnosticSummary(event: AutomationHistoryEvent) {
   return event.diagnosticKind ? diagnosticKindLabel(event.diagnosticKind) : reasonLabel(event.reasonCode);
 }
@@ -142,6 +149,7 @@ function diagnosticKindLabel(value: NonNullable<AutomationHistoryEvent['diagnost
     RAID_EXPLICIT_COOLDOWN_WAIT: '명시적 쿨타임 대기',
     RAID_REWARD_CONFIRMATION_WAIT: '보상 확인 대기',
     RAID_REWARD_RESULT_RECHECK: '보상 결과 재확인',
+    RAID_REWARD_OBSERVATION_HELD: '보상 상태 관측 수동 확인 필요',
     RAID_BATTLE_RESULT_UNKNOWN: '레이드 전투 결과 미확정',
     RAID_REWARD_RESULT_HELD: '레이드 보상 수동 확인 필요',
   } as const)[value];

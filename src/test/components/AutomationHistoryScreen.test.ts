@@ -115,6 +115,38 @@ describe('AutomationHistoryScreen', () => {
     assert.ok(text.includes('영향  레이드 전투만'));
     assert.ok(text.includes('다른 자동화는 계속 진행됩니다.'));
     assert.ok(!text.includes('설정 경고'));
+    assert.equal(renderer.root.findAllByProps({ accessibilityRole: 'alert' }).length, 0);
+  });
+
+  it('announces typed raid held and unknown diagnostics as accessibility alerts', async () => {
+    const load = async (): Promise<AutomationHistoryPage> => ({
+      nextCursor: null,
+      cycles: [{
+        id: 5, result: 'WAITING', selectedEntryId: null,
+        startedAt: '2026-08-23T00:00:00Z', finishedAt: '2026-08-23T00:00:01Z',
+        events: [{
+          id: 51, sequence: 0, entryId: 9, type: 'RAID', kind: 'CONFIGURATION_WARNING',
+          reasonCode: 'RAID_BATTLE_GATE_HELD_5', message: '레이드 전투 상태를 수동 확인해야 합니다.',
+          targetKey: null, targetName: '고블린 전투 마차', actionKind: 'HOLD',
+          presetId: null, presetName: null, nextRunAt: null,
+          occurredAt: '2026-08-23T00:00:00Z', diagnosticKind: 'RAID_COOLDOWN_OBSERVATION_HELD',
+          cooldownSource: null, impactScope: 'RAID_ONLY', releaseCondition: '수동 확인 뒤 새 판단',
+        }, {
+          id: 52, sequence: 1, entryId: 9, type: 'RAID', kind: 'CONFIGURATION_WARNING',
+          reasonCode: 'RAID_BATTLE_UNKNOWN_RESULT', message: '레이드 전투 결과를 확정하지 못했습니다.',
+          targetKey: null, targetName: '고블린 전투 마차', actionKind: 'BATTLE',
+          presetId: null, presetName: null, nextRunAt: null,
+          occurredAt: '2026-08-23T00:00:01Z', diagnosticKind: 'RAID_BATTLE_RESULT_UNKNOWN',
+          cooldownSource: null, impactScope: 'RAID_ONLY', releaseCondition: '수동 확인 뒤 새 판단',
+        }],
+      }],
+    });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => { renderer = create(React.createElement(AutomationHistoryScreen, { onBack: () => undefined, load })); });
+
+    const alerts = renderer.root.findAllByProps({ accessibilityRole: 'alert' });
+    assert.ok(alerts.length >= 2);
+    assert.ok(alerts.every((alert) => alert.props.accessibilityLiveRegion === 'assertive'));
   });
 
   it('shows battle captcha and scoped convergence without blocking unrelated automation', async () => {
