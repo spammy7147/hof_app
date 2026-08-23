@@ -641,11 +641,24 @@ export type TypedAutomationEntryResponse = {
 export type AutomationDecisionResult = 'ACTION_SELECTED' | 'WAITING' | 'IDLE' | 'FATAL';
 export type AutomationHistoryEventKind = 'EVALUATED' | 'SELECTED' | 'WAITING' | 'SKIPPED' | 'CONFIGURATION_WARNING'
   | 'ACTION_STARTED' | 'ACTION_SUCCEEDED' | 'ACTION_FAILED' | 'CYCLE_COMPLETED' | 'CYCLE_ABORTED';
+export type AutomationDiagnosticKind = 'RAID_HOF_COOLDOWN' | 'RAID_SINGLE_TARGET_TIMER'
+  | 'RAID_LOCAL_SAFETY_GATE' | 'RAID_DEPLOYMENT_SAFETY_GATE'
+  | 'RAID_COOLDOWN_OBSERVATION_AMBIGUOUS' | 'RAID_COOLDOWN_OBSERVATION_HELD'
+  | 'RAID_EXPLICIT_COOLDOWN_WAIT'
+  | 'RAID_REWARD_CONFIRMATION_WAIT' | 'RAID_REWARD_RESULT_RECHECK'
+  | 'RAID_BATTLE_RESULT_UNKNOWN' | 'RAID_REWARD_RESULT_HELD';
+export type RaidCooldownSource = 'HOF_DIRECT' | 'HOF_SINGLE_TARGET_INFERENCE'
+  | 'LOCAL_FALLBACK' | 'DEPLOYMENT_FALLBACK';
+export type AutomationImpactScope = 'RAID_ONLY';
 export type AutomationHistoryEvent = {
   id: number; sequence: number; entryId: number | null; type: AutomationType | null;
   kind: AutomationHistoryEventKind; reasonCode: string; message: string;
   targetKey: string | null; targetName: string | null; actionKind: string | null;
   presetId: number | null; presetName: string | null; nextRunAt: string | null; occurredAt: string;
+  diagnosticKind?: AutomationDiagnosticKind | null;
+  cooldownSource?: RaidCooldownSource | null;
+  impactScope?: AutomationImpactScope | null;
+  releaseCondition?: string | null;
 };
 export type AutomationHistoryCycle = {
   id: number; result: AutomationDecisionResult; selectedEntryId: number | null;

@@ -81,6 +81,42 @@ describe('AutomationHistoryScreen', () => {
     assert.ok(!text.includes('START입니다'));
   });
 
+  it('renders typed raid cooldown and reward waits as scoped normal waits', async () => {
+    const load = async (): Promise<AutomationHistoryPage> => ({
+      nextCursor: null,
+      cycles: [{
+        id: 4, result: 'WAITING', selectedEntryId: null,
+        startedAt: '2026-08-23T00:00:00Z', finishedAt: '2026-08-23T00:00:01Z',
+        events: [{
+          id: 41, sequence: 0, entryId: 9, type: 'RAID', kind: 'WAITING',
+          reasonCode: 'RAID_BATTLE_SAFETY_GATE', message: '레이드 전용 안전 시간까지 기다립니다.',
+          targetKey: null, targetName: '고블린 전투 마차', actionKind: 'WAIT',
+          presetId: null, presetName: null, nextRunAt: '2026-08-23T00:02:00Z',
+          occurredAt: '2026-08-23T00:00:00Z', diagnosticKind: 'RAID_LOCAL_SAFETY_GATE',
+          cooldownSource: 'LOCAL_FALLBACK', impactScope: 'RAID_ONLY',
+          releaseCondition: '마감 뒤 최신 레이드 상태에서 실행 가능 여부 확인',
+        }, {
+          id: 42, sequence: 1, entryId: 9, type: 'RAID', kind: 'WAITING',
+          reasonCode: 'RAID_REWARD_CONFIRMATION_WAIT', message: '보상 가능 시각까지 기다립니다.',
+          targetKey: null, targetName: '고블린 전투 마차', actionKind: 'WAIT',
+          presetId: null, presetName: null, nextRunAt: '2026-08-23T00:30:00Z',
+          occurredAt: '2026-08-23T00:00:01Z', diagnosticKind: 'RAID_REWARD_CONFIRMATION_WAIT',
+          cooldownSource: null, impactScope: 'RAID_ONLY',
+          releaseCondition: '마감 뒤 최신 보상 가능 상태 재확인',
+        }],
+      }],
+    });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => { renderer = create(React.createElement(AutomationHistoryScreen, { onBack: () => undefined, load })); });
+
+    const text = treeText(renderer.root);
+    assert.ok(text.includes('로컬 안전 게이트'));
+    assert.ok(text.includes('보상 확인 대기'));
+    assert.ok(text.includes('영향  레이드 전투만'));
+    assert.ok(text.includes('다른 자동화는 계속 진행됩니다.'));
+    assert.ok(!text.includes('설정 경고'));
+  });
+
   it('shows battle captcha and scoped convergence without blocking unrelated automation', async () => {
     const load = async (): Promise<AutomationHistoryPage> => ({ cycles: [], nextCursor: null });
     const convergence: AutomationConvergenceStatus = {
