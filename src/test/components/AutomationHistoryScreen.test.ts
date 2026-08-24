@@ -27,6 +27,43 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('AutomationHistoryScreen', () => {
+  it('counts configured decisions once and nests fishing START, CATCH, and obstruction battle below the selected entry', async () => {
+    const homeEvent = historyEvent(1, 0, 10, 'HOME_QUEST', 'SKIPPED', 'HOME_IDLE', null);
+    const fishingEvent = historyEvent(2, 1, 11, 'FISHING', 'SELECTED', 'RUNNABLE', 'FISHING_TOWN');
+    const startEvent = historyEvent(3, 2, 11, 'FISHING', 'ACTION_SUCCEEDED', 'FISHING_START_APPLIED', 'START');
+    const catchEvent = historyEvent(4, 3, 11, 'FISHING', 'ACTION_SUCCEEDED', 'FISHING_CATCH_APPLIED', 'CATCH');
+    const battleEvent = historyEvent(5, 4, 11, 'FISHING', 'ACTION_SUCCEEDED', 'FISHING_OBSTRUCTION_BATTLE_APPLIED', 'BATTLE');
+    const load = async (): Promise<AutomationHistoryPage> => ({
+      nextCursor: null,
+      cycles: [{
+        id: 9,
+        result: 'ACTION_SELECTED',
+        selectedEntryId: 11,
+        startedAt: '2026-08-24T00:00:00Z',
+        finishedAt: '2026-08-24T00:00:01Z',
+        events: [homeEvent, fishingEvent, startEvent, catchEvent, battleEvent],
+        topLevelStepCount: 2,
+        steps: [
+          { sequence: 1, event: homeEvent, executionEvents: [] },
+          { sequence: 2, event: fishingEvent, executionEvents: [startEvent, catchEvent, battleEvent] },
+        ],
+      }],
+    });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(AutomationHistoryScreen, { onBack: () => undefined, load }));
+    });
+
+    const text = treeText(renderer.root);
+    assert.ok(text.includes('판단 과정 2단계'));
+    assert.ok(text.includes('낚시 사이클 · 실행'));
+    assert.ok(text.includes('동작 낚시 시작'));
+    assert.ok(text.includes('동작 낚기'));
+    assert.ok(text.includes('동작 전투'));
+    assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '낚시 사이클 실행 단계' }).length >= 1);
+    assert.ok(!text.includes('패턴 로드'));
+  });
+
   it('summarizes the latest raid blockage without exposing backend identifiers', async () => {
     const load = async (): Promise<AutomationHistoryPage> => ({
       nextCursor: null,
@@ -227,6 +264,33 @@ describe('AutomationHistoryScreen', () => {
     assert.ok(!treeText(renderer.root).includes('보류된 결과'));
   });
 });
+
+function historyEvent(
+  id: number,
+  sequence: number,
+  entryId: number,
+  type: NonNullable<AutomationHistoryPage['cycles'][number]['events'][number]['type']>,
+  kind: AutomationHistoryPage['cycles'][number]['events'][number]['kind'],
+  reasonCode: string,
+  actionKind: string | null,
+): AutomationHistoryPage['cycles'][number]['events'][number] {
+  return {
+    id,
+    sequence,
+    entryId,
+    type,
+    kind,
+    reasonCode,
+    message: reasonCode,
+    targetKey: null,
+    targetName: null,
+    actionKind,
+    presetId: null,
+    presetName: null,
+    nextRunAt: null,
+    occurredAt: '2026-08-24T00:00:00Z',
+  };
+}
 
 function treeText(node: ReactTestInstance): string {
   return node.children.map((child) => typeof child === 'string' ? child : treeText(child)).join('');

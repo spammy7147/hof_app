@@ -10,6 +10,7 @@ import type {
   AutomationHistoryEvent,
   AutomationHistoryCycle,
   AutomationHistoryPage,
+  AutomationHistoryStep,
 } from '../../../types/api';
 
 type AutomationHistoryScreenProps = {
@@ -97,22 +98,67 @@ export function AutomationHistoryScreen({
       <TypedWaitDiagnostic event={latestEvent} />
       {latestEvent.nextRunAt ? <Text style={styles.next}>다음 확인 {new Date(latestEvent.nextRunAt).toLocaleString('ko-KR')}</Text> : null}
     </View> : null}
-    {cycles.map((cycle) => <View key={cycle.id} style={styles.cycle}>
-      <View style={styles.cycleHeader}><View><Text style={styles.time}>{new Date(cycle.startedAt).toLocaleString('ko-KR')}</Text><Text style={styles.cycleMeta}>판단 과정 {cycle.events.length}단계</Text></View><Text style={styles.result}>{resultLabel(cycle.result)}</Text></View>
-      {cycle.events.map((event) => <View key={event.id} style={styles.event}>
-        <Text style={styles.sequence}>{event.sequence + 1}</Text><View style={styles.eventCopy}><Text style={styles.eventTitle}>{event.entryDisplayName ?? (event.type ? AUTOMATION_TYPE_METADATA[event.type].label : '시스템')} · {kindLabel(event.kind)}</Text>
-          <Text style={styles.eventTime}>기록 시각  {new Date(event.occurredAt).toLocaleString('ko-KR')}</Text>
-          {event.targetName || event.targetKey ? <View style={styles.factGroup}><Text style={styles.fact}><Text style={styles.factLabel}>대상  </Text>{event.targetName ?? event.targetKey}</Text></View> : null}
-          {event.presetName || event.presetId || event.actionKind ? <View style={styles.details}>{event.actionKind ? <Text style={styles.detailChip}>동작 {actionLabel(event.actionKind, event.type)}</Text> : null}{event.presetName || event.presetId ? <Text style={styles.detailChip}>프리셋 {event.presetName ?? `저장된 프리셋 ${event.presetId}`}</Text> : null}</View> : null}
-          <Text style={styles.message}><Text style={styles.criteria}>{messageLabel(event.kind)}  </Text>{displayMessage(event)}</Text>
-          <Text style={styles.diagnostic}>판단 내용  {diagnosticSummary(event)}</Text>
-          <TypedWaitDiagnostic event={event} />
-          {event.nextRunAt ? <Text style={styles.next}>다음 확인 {new Date(event.nextRunAt).toLocaleString('ko-KR')}</Text> : null}</View>
-      </View>)}
-    </View>)}
+    {cycles.map((cycle) => {
+      const steps = historySteps(cycle);
+      return <View key={cycle.id} style={styles.cycle}>
+        <View style={styles.cycleHeader}><View><Text style={styles.time}>{new Date(cycle.startedAt).toLocaleString('ko-KR')}</Text><Text style={styles.cycleMeta}>판단 과정 {cycle.topLevelStepCount ?? steps.length}단계</Text></View><Text style={styles.result}>{resultLabel(cycle.result)}</Text></View>
+        {steps.map((step) => <View key={`step-${step.sequence}-${step.event.id}`} style={styles.event}>
+          <Text style={styles.sequence}>{step.sequence}</Text><View style={styles.eventCopy}>
+            <HistoryEventContent event={step.event} />
+            {step.executionEvents.length > 0 ? <View
+              accessibilityLabel={`${step.event.entryDisplayName ?? (step.event.type ? AUTOMATION_TYPE_METADATA[step.event.type].label : '자동화')} 사이클 실행 단계`}
+              style={styles.executionGroup}
+            >
+              <Text style={styles.executionHeading}>{step.event.type ? AUTOMATION_TYPE_METADATA[step.event.type].label : '자동화'} 사이클 · 실행</Text>
+              {step.executionEvents.map((event) => <View key={event.id} style={styles.executionEvent}>
+                <HistoryEventContent event={event} />
+              </View>)}
+            </View> : null}
+          </View>
+        </View>)}
+      </View>;
+    })}
     {loading ? <ActivityIndicator accessibilityLabel="자동화 기록 불러오는 중" color={theme.colors.accentGreen} /> : null}
     {cursor != null && !loading ? <Pressable accessibilityLabel="자동화 기록 더 보기" accessibilityRole="button" onPress={() => { void fetchPage(cursor); }} style={styles.more}><Text style={styles.moreText}>더 보기</Text></Pressable> : null}
   </NestableScrollContainer>;
+}
+function HistoryEventContent({ event }: { event: AutomationHistoryEvent }) {
+  return <>
+    <Text style={styles.eventTitle}>{event.entryDisplayName ?? (event.type ? AUTOMATION_TYPE_METADATA[event.type].label : '시스템')} · {kindLabel(event.kind)}</Text>
+    <Text style={styles.eventTime}>기록 시각  {new Date(event.occurredAt).toLocaleString('ko-KR')}</Text>
+    {event.targetName || event.targetKey ? <View style={styles.factGroup}><Text style={styles.fact}><Text style={styles.factLabel}>대상  </Text>{event.targetName ?? event.targetKey}</Text></View> : null}
+    {event.presetName || event.presetId || event.actionKind ? <View style={styles.details}>{event.actionKind ? <Text style={styles.detailChip}>동작 {actionLabel(event.actionKind, event.type)}</Text> : null}{event.presetName || event.presetId ? <Text style={styles.detailChip}>프리셋 {event.presetName ?? `저장된 프리셋 ${event.presetId}`}</Text> : null}</View> : null}
+    <Text style={styles.message}><Text style={styles.criteria}>{messageLabel(event.kind)}  </Text>{displayMessage(event)}</Text>
+    <Text style={styles.diagnostic}>판단 내용  {diagnosticSummary(event)}</Text>
+    <TypedWaitDiagnostic event={event} />
+    {event.nextRunAt ? <Text style={styles.next}>다음 확인 {new Date(event.nextRunAt).toLocaleString('ko-KR')}</Text> : null}
+  </>;
+}
+function historySteps(cycle: AutomationHistoryCycle): AutomationHistoryStep[] {
+  if (cycle.steps) return cycle.steps;
+  const selectedIndex = cycle.events.findIndex((event) => event.kind === 'SELECTED'
+    && (cycle.selectedEntryId == null || event.entryId === cycle.selectedEntryId));
+  if (selectedIndex < 0) {
+    return cycle.events.map((event, index) => ({ sequence: index + 1, event, executionEvents: [] }));
+  }
+  const decisionEvents = cycle.events.slice(0, selectedIndex + 1);
+  const selected = decisionEvents[selectedIndex];
+  const executionEvents = cycle.events.slice(selectedIndex + 1);
+  const children = executionEvents.filter((event) => event.entryId === selected.entryId
+    || (event.entryId == null && event.type === selected.type));
+  const standalone = executionEvents.filter((event) => !children.includes(event));
+  return [
+    ...decisionEvents.map((event, index) => ({
+      sequence: index + 1,
+      event,
+      executionEvents: index === selectedIndex ? children : [],
+    })),
+    ...standalone.map((event, index) => ({
+      sequence: decisionEvents.length + index + 1,
+      event,
+      executionEvents: [],
+    })),
+  ];
 }
 function resultLabel(value: AutomationHistoryCycle['result']) { return ({ ACTION_SELECTED: '행동 선택', WAITING: '대기', IDLE: '실행 없음', FATAL: '중지' } as const)[value]; }
 function kindLabel(value: AutomationHistoryCycle['events'][number]['kind']) { return ({ EVALUATED: '판단', SELECTED: '선택', WAITING: '대기', SKIPPED: '스킵', CONFIGURATION_WARNING: '설정 경고', ACTION_STARTED: '실행 시작', ACTION_SUCCEEDED: '성공', ACTION_FAILED: '실패', CYCLE_COMPLETED: '사이클 완료', CYCLE_ABORTED: '사이클 중단' } as const)[value]; }
@@ -210,4 +256,4 @@ function convergenceActionLabel(value: AutomationConvergenceActionKind) {
 function convergenceResultLabel(value: AutomationConvergenceStatus['items'][number]['result']) {
   return value === 'PENDING' ? '결과 확인 중' : value === 'HELD' ? '보류된 결과' : value === 'RESULT_UNOBSERVED' ? '결과 미관측' : '확인 완료';
 }
-const styles = StyleSheet.create({ scroller: { flex: 1 }, container: { gap: theme.spacing.md, padding: theme.spacing.lg, paddingBottom: theme.spacing.xl }, header: { alignItems: 'center', flexDirection: 'row', gap: 8 }, back: { alignItems: 'center', height: 40, justifyContent: 'center', width: 40 }, title: { color: theme.colors.text, fontSize: 21, fontWeight: '900' }, subtitle: { color: theme.colors.textMuted, fontSize: 12, marginTop: 3 }, convergenceSection: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: 8, padding: theme.spacing.md }, convergenceHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, convergenceEyebrow: { color: theme.colors.accentBlue, fontSize: 10, fontWeight: '900' }, convergenceHeading: { color: theme.colors.text, fontSize: 14, fontWeight: '900', marginTop: 3 }, refreshButton: { borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 7 }, refreshText: { color: theme.colors.text, fontSize: 11, fontWeight: '800' }, gateCard: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.danger, borderRadius: 9, borderWidth: 1, padding: 10 }, gateTitle: { color: theme.colors.danger, fontSize: 14, fontWeight: '900' }, convergenceCard: { backgroundColor: theme.colors.surfaceAlt, borderRadius: 9, padding: 10 }, convergenceResult: { color: theme.colors.accentBlue, fontSize: 10, fontWeight: '900' }, convergenceTitle: { color: theme.colors.text, fontSize: 14, fontWeight: '900', marginTop: 3 }, convergenceMessage: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 17, marginTop: 5 }, scope: { color: theme.colors.text, fontSize: 11, fontWeight: '700', marginTop: 5 }, observation: { color: theme.colors.accentBlue, fontSize: 11, fontWeight: '900', marginTop: 5 }, releaseCondition: { color: theme.colors.textMuted, fontSize: 10, lineHeight: 15, marginTop: 4 }, nonBattleNotice: { color: theme.colors.accentGreen, fontSize: 10, fontWeight: '800', marginTop: 5 }, releaseButton: { alignItems: 'center', borderColor: theme.colors.accentBlue, borderRadius: 8, borderWidth: 1, marginTop: 8, minHeight: 40, justifyContent: 'center' }, releaseButtonText: { color: theme.colors.accentBlue, fontSize: 11, fontWeight: '900' }, convergenceEmpty: { color: theme.colors.textMuted, fontSize: 11, paddingVertical: 6, textAlign: 'center' }, statusSummary: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.accentBlue, borderRadius: theme.radius.md, borderWidth: 1, padding: theme.spacing.md }, statusEyebrow: { color: theme.colors.accentBlue, fontSize: 11, fontWeight: '900' }, statusTitle: { color: theme.colors.text, fontSize: 16, fontWeight: '900', marginTop: 5 }, statusMessage: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18, marginTop: 7 }, statusDiagnostic: { color: theme.colors.accentBlue, fontSize: 10, lineHeight: 15, marginTop: 5 }, typedDiagnostic: { backgroundColor: theme.colors.surface, borderRadius: 7, marginTop: 7, padding: 8 }, typedDiagnosticTitle: { color: theme.colors.accentBlue, fontSize: 11, fontWeight: '900' }, cycle: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: 7, padding: theme.spacing.md }, cycleHeader: { alignItems: 'flex-start', flexDirection: 'row', justifyContent: 'space-between' }, time: { color: theme.colors.text, fontSize: 12, fontWeight: '800' }, cycleMeta: { color: theme.colors.textMuted, fontSize: 10, marginTop: 3 }, result: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '800' }, event: { alignItems: 'flex-start', borderTopColor: theme.colors.border, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: 8, paddingTop: 8 }, sequence: { color: theme.colors.textMuted, fontSize: 11, width: 18 }, eventCopy: { flex: 1 }, eventTitle: { color: theme.colors.text, fontSize: 12, fontWeight: '800' }, eventTime: { color: theme.colors.textMuted, fontSize: 10, marginTop: 3 }, target: { color: theme.colors.accentGreen, fontSize: 12, fontWeight: '800', marginTop: 5 }, factGroup: { backgroundColor: theme.colors.surfaceAlt, borderRadius: 7, gap: 3, marginTop: 6, padding: 7 }, fact: { color: theme.colors.text, fontSize: 11 }, factLabel: { color: theme.colors.textMuted, fontWeight: '700' }, details: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 5 }, detailChip: { backgroundColor: theme.colors.surfaceAlt, borderRadius: 7, color: theme.colors.text, fontSize: 11, paddingHorizontal: 7, paddingVertical: 4 }, criteria: { color: theme.colors.text, fontWeight: '700' }, message: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18, marginTop: 5 }, diagnostic: { color: theme.colors.textMuted, fontSize: 10, marginTop: 3 }, next: { color: theme.colors.accentBlue, fontSize: 11, marginTop: 3 }, empty: { color: theme.colors.textMuted, padding: theme.spacing.xl, textAlign: 'center' }, error: { color: theme.colors.danger }, link: { color: theme.colors.accentGreen, fontWeight: '800' }, more: { alignItems: 'center', borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, minHeight: 46, justifyContent: 'center' }, moreText: { color: theme.colors.text, fontWeight: '800' } });
+const styles = StyleSheet.create({ scroller: { flex: 1 }, container: { gap: theme.spacing.md, padding: theme.spacing.lg, paddingBottom: theme.spacing.xl }, header: { alignItems: 'center', flexDirection: 'row', gap: 8 }, back: { alignItems: 'center', height: 40, justifyContent: 'center', width: 40 }, title: { color: theme.colors.text, fontSize: 21, fontWeight: '900' }, subtitle: { color: theme.colors.textMuted, fontSize: 12, marginTop: 3 }, convergenceSection: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: 8, padding: theme.spacing.md }, convergenceHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, convergenceEyebrow: { color: theme.colors.accentBlue, fontSize: 10, fontWeight: '900' }, convergenceHeading: { color: theme.colors.text, fontSize: 14, fontWeight: '900', marginTop: 3 }, refreshButton: { borderColor: theme.colors.border, borderRadius: 8, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 7 }, refreshText: { color: theme.colors.text, fontSize: 11, fontWeight: '800' }, gateCard: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.danger, borderRadius: 9, borderWidth: 1, padding: 10 }, gateTitle: { color: theme.colors.danger, fontSize: 14, fontWeight: '900' }, convergenceCard: { backgroundColor: theme.colors.surfaceAlt, borderRadius: 9, padding: 10 }, convergenceResult: { color: theme.colors.accentBlue, fontSize: 10, fontWeight: '900' }, convergenceTitle: { color: theme.colors.text, fontSize: 14, fontWeight: '900', marginTop: 3 }, convergenceMessage: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 17, marginTop: 5 }, scope: { color: theme.colors.text, fontSize: 11, fontWeight: '700', marginTop: 5 }, observation: { color: theme.colors.accentBlue, fontSize: 11, fontWeight: '900', marginTop: 5 }, releaseCondition: { color: theme.colors.textMuted, fontSize: 10, lineHeight: 15, marginTop: 4 }, nonBattleNotice: { color: theme.colors.accentGreen, fontSize: 10, fontWeight: '800', marginTop: 5 }, releaseButton: { alignItems: 'center', borderColor: theme.colors.accentBlue, borderRadius: 8, borderWidth: 1, marginTop: 8, minHeight: 40, justifyContent: 'center' }, releaseButtonText: { color: theme.colors.accentBlue, fontSize: 11, fontWeight: '900' }, convergenceEmpty: { color: theme.colors.textMuted, fontSize: 11, paddingVertical: 6, textAlign: 'center' }, statusSummary: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.accentBlue, borderRadius: theme.radius.md, borderWidth: 1, padding: theme.spacing.md }, statusEyebrow: { color: theme.colors.accentBlue, fontSize: 11, fontWeight: '900' }, statusTitle: { color: theme.colors.text, fontSize: 16, fontWeight: '900', marginTop: 5 }, statusMessage: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18, marginTop: 7 }, statusDiagnostic: { color: theme.colors.accentBlue, fontSize: 10, lineHeight: 15, marginTop: 5 }, typedDiagnostic: { backgroundColor: theme.colors.surface, borderRadius: 7, marginTop: 7, padding: 8 }, typedDiagnosticTitle: { color: theme.colors.accentBlue, fontSize: 11, fontWeight: '900' }, cycle: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: 7, padding: theme.spacing.md }, cycleHeader: { alignItems: 'flex-start', flexDirection: 'row', justifyContent: 'space-between' }, time: { color: theme.colors.text, fontSize: 12, fontWeight: '800' }, cycleMeta: { color: theme.colors.textMuted, fontSize: 10, marginTop: 3 }, result: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '800' }, event: { alignItems: 'flex-start', borderTopColor: theme.colors.border, borderTopWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: 8, paddingTop: 8 }, sequence: { color: theme.colors.textMuted, fontSize: 11, width: 18 }, eventCopy: { flex: 1 }, eventTitle: { color: theme.colors.text, fontSize: 12, fontWeight: '800' }, eventTime: { color: theme.colors.textMuted, fontSize: 10, marginTop: 3 }, target: { color: theme.colors.accentGreen, fontSize: 12, fontWeight: '800', marginTop: 5 }, factGroup: { backgroundColor: theme.colors.surfaceAlt, borderRadius: 7, gap: 3, marginTop: 6, padding: 7 }, fact: { color: theme.colors.text, fontSize: 11 }, factLabel: { color: theme.colors.textMuted, fontWeight: '700' }, details: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 5 }, detailChip: { backgroundColor: theme.colors.surfaceAlt, borderRadius: 7, color: theme.colors.text, fontSize: 11, paddingHorizontal: 7, paddingVertical: 4 }, criteria: { color: theme.colors.text, fontWeight: '700' }, message: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18, marginTop: 5 }, diagnostic: { color: theme.colors.textMuted, fontSize: 10, marginTop: 3 }, executionGroup: { borderLeftColor: theme.colors.accentGreen, borderLeftWidth: 2, gap: 7, marginTop: 9, paddingLeft: 9 }, executionHeading: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '900' }, executionEvent: { borderTopColor: theme.colors.border, borderTopWidth: StyleSheet.hairlineWidth, paddingTop: 7 }, next: { color: theme.colors.accentBlue, fontSize: 11, marginTop: 3 }, empty: { color: theme.colors.textMuted, padding: theme.spacing.xl, textAlign: 'center' }, error: { color: theme.colors.danger }, link: { color: theme.colors.accentGreen, fontWeight: '800' }, more: { alignItems: 'center', borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, minHeight: 46, justifyContent: 'center' }, moreText: { color: theme.colors.text, fontWeight: '800' } });

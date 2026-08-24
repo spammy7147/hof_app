@@ -682,6 +682,14 @@ export type AutomationHistoryEvent = {
 export type AutomationHistoryCycle = {
   id: number; result: AutomationDecisionResult; selectedEntryId: number | null;
   startedAt: string; finishedAt: string; events: AutomationHistoryEvent[];
+  /** 새 backend는 판단 항목만 세고, 선택된 항목의 실행 event는 해당 step 아래에 묶는다. */
+  topLevelStepCount?: number;
+  steps?: AutomationHistoryStep[];
+};
+export type AutomationHistoryStep = {
+  sequence: number;
+  event: AutomationHistoryEvent;
+  executionEvents: AutomationHistoryEvent[];
 };
 export type AutomationHistoryPage = { cycles: AutomationHistoryCycle[]; nextCursor: number | null };
 
