@@ -44,8 +44,9 @@ export const AUTOMATION_TYPE_METADATA: Readonly<Record<AutomationType, {
 export function getAddableAutomationTypes(
   entries: readonly Pick<TypedAutomationEntryResponse, 'type'>[],
 ): AutomationType[] {
+  if (entries.length >= MAX_AUTOMATION_ENTRIES) return [];
   const existing = new Set(entries.map(({ type }) => type));
-  return AUTOMATION_TYPE_ORDER.filter((type) => !existing.has(type));
+  return AUTOMATION_TYPE_ORDER.filter((type) => isMapGroupType(type) || !existing.has(type));
 }
 
 export function hasAllAutomationTypes(
@@ -58,7 +59,24 @@ export function canAddAutomationType(
   entries: readonly Pick<TypedAutomationEntryResponse, 'type'>[],
   type: AutomationType,
 ): boolean {
-  return !entries.some((entry) => entry.type === type);
+  return entries.length < MAX_AUTOMATION_ENTRIES
+    && (isMapGroupType(type) || !entries.some((entry) => entry.type === type));
+}
+
+export function isMapGroupType(type: AutomationType): type is 'BATTLE_MAP' | 'ADVENTURE_MAP' {
+  return type === 'BATTLE_MAP' || type === 'ADVENTURE_MAP';
+}
+
+export function automationEntryDisplayName(
+  entry: TypedAutomationEntryResponse,
+  entries: readonly TypedAutomationEntryResponse[],
+): string {
+  const base = AUTOMATION_TYPE_METADATA[entry.type].label;
+  if (!isMapGroupType(entry.type)) return base;
+  const configured = entry.displayName?.trim();
+  if (configured) return configured;
+  const index = entries.filter(({ type }) => type === entry.type).findIndex(({ id }) => id === entry.id);
+  return `${base} ${Math.max(0, index) + 1}`;
 }
 
 export function reorderEntries(
@@ -136,3 +154,5 @@ export function buildRaidAutomationRequest(enabled: boolean, targets: readonly R
 function normalizeOrder<T extends { executionOrder: number }>(items: readonly T[]): T[] {
   return items.map((item, executionOrder) => ({ ...item, executionOrder }));
 }
+
+const MAX_AUTOMATION_ENTRIES = 100;

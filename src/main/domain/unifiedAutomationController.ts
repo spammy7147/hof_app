@@ -3,12 +3,15 @@ import { toUserFacingErrorMessage } from './userFacingErrors';
 import type {
   AutomationType,
   CreateAutomationEntryRequest,
+  MoveMapBetweenGroupsRequest,
   QuestSnapshot,
   TypedAutomationAggregateResponse,
   TypedAutomationEntryResponse,
   UnifiedAutomationAction,
   UpdateAdventureMapAutomationRequest,
+  UpdateAdventureMapGroupRequest,
   UpdateBattleMapAutomationRequest,
+  UpdateBattleMapGroupRequest,
   UpdateQuestAutomationRequest,
   UpdateFishingAutomationRequest,
   UpdateRaidAutomationRequest,
@@ -21,12 +24,15 @@ import type {
 export type UnifiedAutomationControllerApi = {
   fetch: () => Promise<TypedAutomationAggregateResponse>;
   create: (request: CreateAutomationEntryRequest) => Promise<TypedAutomationAggregateResponse>;
-  delete: (entryId: number) => Promise<TypedAutomationAggregateResponse>;
+  delete: (entryId: number, settingsRevision?: string) => Promise<TypedAutomationAggregateResponse>;
   reorder: (entryIds: number[]) => Promise<TypedAutomationAggregateResponse>;
+  moveMap?: (targetEntryId: number, request: MoveMapBetweenGroupsRequest) => Promise<TypedAutomationAggregateResponse>;
   updateQuest: (request: UpdateQuestAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
   updateHomeQuest?: (request: UpdateHomeQuestAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
   updateBattle: (request: UpdateBattleMapAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
   updateAdventure: (request: UpdateAdventureMapAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
+  updateBattleGroup?: (entryId: number, request: UpdateBattleMapGroupRequest) => Promise<TypedAutomationAggregateResponse>;
+  updateAdventureGroup?: (entryId: number, request: UpdateAdventureMapGroupRequest) => Promise<TypedAutomationAggregateResponse>;
   updateFishing?: (request: UpdateFishingAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
   updateUnion?: (request: UpdateUnionAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
   updateRaid?: (request: UpdateRaidAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
@@ -76,12 +82,14 @@ export class UnifiedAutomationController {
   private orderRevision = 0;
   private battleProgressRevision = 0;
   private battleProgressSnapshot: {
-    entryId: number;
+    sourceEntryIds: ReadonlySet<number>;
     progress: TypedAutomationEntryResponse['battleMapProgress'];
   } | null = null;
   private queuedReorderSequence = 0;
   private readonly typeRevisions = new Map<AutomationType, number>();
   private readonly typeTails = new Map<AutomationType, Promise<void>>();
+  private readonly entryRevisions = new Map<number, number>();
+  private readonly entryTails = new Map<number, Promise<void>>();
   private structuralTail: Promise<void> | null = null;
   private readonly savingEntryIds = new Set<number>();
   private readonly pendingTypeCounts = new Map<AutomationType, number>();
@@ -113,6 +121,8 @@ export class UnifiedAutomationController {
     this.queuedReorderSequence = 0;
     this.typeRevisions.clear();
     this.typeTails.clear();
+    this.entryRevisions.clear();
+    this.entryTails.clear();
     this.structuralTail = null;
     this.savingEntryIds.clear();
     this.pendingTypeCounts.clear();
@@ -179,12 +189,13 @@ export class UnifiedAutomationController {
   }
 
   deleteEntry(entryId: number): Promise<boolean> {
-    const type = this.snapshot.aggregate?.entries.find(({ id }) => id === entryId)?.type;
+    const entry = this.snapshot.aggregate?.entries.find(({ id }) => id === entryId);
+    const type = entry?.type;
     return this.runStructuralMutation(
       type ?? null,
       entryId,
       async (sequence, generation) => {
-        const response = await this.api.delete(entryId);
+        const response = await this.api.delete(entryId, entry?.settingsRevision);
         if (this.generation === generation) {
           this.mergeStructuralResponse(response, sequence, type ?? null);
         }
@@ -210,6 +221,38 @@ export class UnifiedAutomationController {
 
   saveAdventureMapSettings(request: UpdateAdventureMapAutomationRequest): Promise<boolean> {
     return this.saveSettings('ADVENTURE_MAP', request, (body) => this.api.updateAdventure(body));
+  }
+  saveBattleMapGroup(entryId: number, request: UpdateBattleMapGroupRequest): Promise<boolean> {
+    return this.saveEntrySettings(
+      'BATTLE_MAP',
+      entryId,
+      request,
+      (body) => this.requireApi(this.api.updateBattleGroup, '전투 맵 묶음')(entryId, body),
+    );
+  }
+  saveAdventureMapGroup(entryId: number, request: UpdateAdventureMapGroupRequest): Promise<boolean> {
+    return this.saveEntrySettings(
+      'ADVENTURE_MAP',
+      entryId,
+      request,
+      (body) => this.requireApi(this.api.updateAdventureGroup, '모험 맵 묶음')(entryId, body),
+    );
+  }
+  moveMapBetweenGroups(targetEntryId: number, request: MoveMapBetweenGroupsRequest): Promise<boolean> {
+    const entries = this.snapshot.aggregate?.entries ?? [];
+    const source = entries.find(({ id }) => id === request.sourceEntryId);
+    const target = entries.find(({ id }) => id === targetEntryId);
+    if (!source || !target || source.type !== target.type
+      || (target.type !== 'BATTLE_MAP' && target.type !== 'ADVENTURE_MAP')) {
+      this.showMessage('같은 유형의 맵 묶음 사이에서만 이동할 수 있어요.');
+      return Promise.resolve(false);
+    }
+    return this.runMapMove(source.type, [source.id, target.id], async (sequence, generation) => {
+      const response = await this.requireApi(this.api.moveMap, '맵 묶음 이동')(targetEntryId, request);
+      if (this.generation === generation) {
+        this.mergeEntriesByIdResponse(response, sequence, [source.id, target.id]);
+      }
+    });
   }
   saveFishingSettings(request: UpdateFishingAutomationRequest): Promise<boolean> {
     return this.saveSettings('FISHING', request, (body) => this.requireApi(this.api.updateFishing, '낚시')(body));
@@ -277,6 +320,82 @@ export class UnifiedAutomationController {
     });
   }
 
+  private saveEntrySettings<T>(
+    type: AutomationType,
+    entryId: number,
+    request: T,
+    persist: (request: T) => Promise<TypedAutomationAggregateResponse>,
+  ): Promise<boolean> {
+    return this.runEntryMutation(entryId, async (sequence, generation) => {
+      const response = await persist(request);
+      if (this.generation === generation) this.mergeEntrySettingsResponse(response, sequence, entryId, type);
+    });
+  }
+
+  private runEntryMutation(
+    entryId: number,
+    operation: (sequence: number, generation: number) => Promise<void>,
+  ): Promise<boolean> {
+    const generation = this.generation;
+    const sequence = ++this.operationSequence;
+    const previous = this.entryTails.get(entryId);
+    const execute = () => this.executeMutation(generation, sequence, entryId, operation);
+    const result = previous ? previous.catch(() => undefined).then(execute) : execute();
+    const tail = result.then(() => undefined);
+    this.entryTails.set(entryId, tail);
+    void tail.finally(() => {
+      if (this.entryTails.get(entryId) === tail) this.entryTails.delete(entryId);
+    });
+    return result;
+  }
+
+  private runMapMove(
+    type: AutomationType,
+    entryIds: readonly number[],
+    operation: (sequence: number, generation: number) => Promise<void>,
+  ): Promise<boolean> {
+    const generation = this.generation;
+    const sequence = ++this.operationSequence;
+    const predecessors = new Set<Promise<void>>();
+    if (this.structuralTail) predecessors.add(this.structuralTail);
+    const typeTail = this.typeTails.get(type);
+    if (typeTail) predecessors.add(typeTail);
+    for (const entryId of entryIds) {
+      const entryTail = this.entryTails.get(entryId);
+      if (entryTail) predecessors.add(entryTail);
+    }
+    const execute = async (): Promise<boolean> => {
+      if (this.generation !== generation) return false;
+      entryIds.forEach((entryId) => this.beginSaving(entryId));
+      try {
+        await operation(sequence, generation);
+        return this.generation === generation;
+      } catch (error) {
+        if (this.generation === generation && isAutomationSettingsConflict(error)) {
+          await this.reloadAfterSettingsConflict(generation);
+        } else if (this.generation === generation) {
+          this.setError(error);
+        }
+        return false;
+      } finally {
+        if (this.generation === generation) entryIds.forEach((entryId) => this.endSaving(entryId));
+      }
+    };
+    const result = predecessors.size === 0
+      ? execute()
+      : Promise.all([...predecessors].map((tail) => tail.catch(() => undefined))).then(execute);
+    const tail = result.then(() => undefined);
+    this.structuralTail = tail;
+    for (const entryId of entryIds) this.entryTails.set(entryId, tail);
+    void tail.finally(() => {
+      if (this.structuralTail === tail) this.structuralTail = null;
+      for (const entryId of entryIds) {
+        if (this.entryTails.get(entryId) === tail) this.entryTails.delete(entryId);
+      }
+    });
+    return result;
+  }
+
   private runTypedMutation(
     type: AutomationType,
     entryId: number | null,
@@ -312,6 +431,8 @@ export class UnifiedAutomationController {
     if (this.structuralTail) predecessors.add(this.structuralTail);
     const previousType = type ? this.typeTails.get(type) : null;
     if (previousType) predecessors.add(previousType);
+    const previousEntry = entryId == null ? null : this.entryTails.get(entryId);
+    if (previousEntry) predecessors.add(previousEntry);
     const execute = () => this.executeMutation(generation, sequence, entryId, operation);
     const result = predecessors.size === 0
       ? execute()
@@ -323,9 +444,11 @@ export class UnifiedAutomationController {
     const tail = completed.then(() => undefined);
     this.structuralTail = tail;
     if (type) this.typeTails.set(type, tail);
+    if (entryId != null) this.entryTails.set(entryId, tail);
     void tail.finally(() => {
       if (this.structuralTail === tail) this.structuralTail = null;
       if (type && this.typeTails.get(type) === tail) this.typeTails.delete(type);
+      if (entryId != null && this.entryTails.get(entryId) === tail) this.entryTails.delete(entryId);
     });
     return completed;
   }
@@ -342,7 +465,11 @@ export class UnifiedAutomationController {
       await operation(sequence, generation);
       return this.generation === generation;
     } catch (error) {
-      if (this.generation === generation) this.setError(error);
+      if (this.generation === generation && isAutomationSettingsConflict(error)) {
+        await this.reloadAfterSettingsConflict(generation);
+      } else if (this.generation === generation) {
+        this.setError(error);
+      }
       return false;
     } finally {
       if (this.generation === generation) this.endSaving(entryId);
@@ -381,6 +508,58 @@ export class UnifiedAutomationController {
     }
   }
 
+  private mergeEntriesByIdResponse(
+    response: TypedAutomationAggregateResponse,
+    sequence: number,
+    entryIds: readonly number[],
+  ): void {
+    const current = this.snapshot.aggregate;
+    if (!current) return;
+    const affected = new Set(entryIds);
+    const serverById = new Map(response.entries.filter(({ id }) => affected.has(id)).map((entry) => [entry.id, entry]));
+    let changed = false;
+    const entries = current.entries.map((currentEntry) => {
+      if (!affected.has(currentEntry.id) || (this.entryRevisions.get(currentEntry.id) ?? 0) > sequence) {
+        return currentEntry;
+      }
+      const serverEntry = serverById.get(currentEntry.id);
+      if (!serverEntry) return currentEntry;
+      changed = true;
+      this.entryRevisions.set(currentEntry.id, sequence);
+      return { ...serverEntry, priority: currentEntry.priority };
+    });
+    if (!changed) return;
+    this.entriesRevision = Math.max(this.entriesRevision, sequence);
+    this.applyAggregate({
+      entries: this.mergeBattleProgress(response, sequence, entries),
+      runtime: current.runtime,
+      hofStatus: response.hofStatus,
+    });
+  }
+
+  private mergeEntrySettingsResponse(
+    response: TypedAutomationAggregateResponse,
+    sequence: number,
+    entryId: number,
+    expectedType: AutomationType,
+  ): void {
+    const current = this.snapshot.aggregate;
+    if (!current || (this.entryRevisions.get(entryId) ?? 0) > sequence) return;
+    const serverEntry = response.entries.find((entry) => entry.id === entryId && entry.type === expectedType);
+    const currentIndex = current.entries.findIndex((entry) => entry.id === entryId && entry.type === expectedType);
+    const currentEntry = current.entries[currentIndex];
+    if (!serverEntry || currentIndex < 0 || !currentEntry) return;
+    const entries = [...current.entries];
+    entries[currentIndex] = { ...serverEntry, priority: currentEntry.priority };
+    this.entryRevisions.set(entryId, sequence);
+    this.entriesRevision = Math.max(this.entriesRevision, sequence);
+    this.applyAggregate({
+      entries: this.mergeBattleProgress(response, sequence, entries),
+      runtime: current.runtime,
+      hofStatus: response.hofStatus,
+    });
+  }
+
   private mergeStructuralResponse(
     response: TypedAutomationAggregateResponse,
     sequence: number,
@@ -400,20 +579,32 @@ export class UnifiedAutomationController {
     let entries = current.entries;
     let structureMerged = false;
     if (!targetType || (this.typeRevisions.get(targetType) ?? 0) <= sequence) {
+      const repeatableMapType = targetType === 'BATTLE_MAP' || targetType === 'ADVENTURE_MAP';
       const serverTarget = targetType
         ? response.entries.find((entry) => entry.type === targetType)
         : undefined;
       const currentTargetIndex = targetType
         ? current.entries.findIndex((entry) => entry.type === targetType)
         : -1;
-      entries = targetType
-        ? current.entries.filter((entry) => entry.type !== targetType)
-        : [...current.entries];
-      if (serverTarget) {
-        const insertionIndex = currentTargetIndex < 0
-          ? entries.length
-          : Math.min(currentTargetIndex, entries.length);
-        entries.splice(insertionIndex, 0, serverTarget);
+      if (targetType && repeatableMapType) {
+        const serverTargets = response.entries.filter((entry) => entry.type === targetType);
+        const serverIds = new Set(serverTargets.map(({ id }) => id));
+        const currentIds = new Set(current.entries.map(({ id }) => id));
+        entries = current.entries.filter((entry) => entry.type !== targetType || serverIds.has(entry.id));
+        for (const newEntry of serverTargets.filter(({ id }) => !currentIds.has(id))) {
+          entries.splice(Math.min(newEntry.priority, entries.length), 0, newEntry);
+          this.entryRevisions.set(newEntry.id, sequence);
+        }
+      } else {
+        entries = targetType
+          ? current.entries.filter((entry) => entry.type !== targetType)
+          : [...current.entries];
+        if (serverTarget) {
+          const insertionIndex = currentTargetIndex < 0
+            ? entries.length
+            : Math.min(currentTargetIndex, entries.length);
+          entries.splice(insertionIndex, 0, serverTarget);
+        }
       }
 
       entries = entries.map((entry, priority) => ({ ...entry, priority }));
@@ -581,6 +772,16 @@ export class UnifiedAutomationController {
     this.patchSnapshot({ error: message, message });
   }
 
+  private async reloadAfterSettingsConflict(generation: number): Promise<void> {
+    await this.load();
+    if (this.generation === generation && this.snapshot.error == null) {
+      this.patchSnapshot({
+        error: null,
+        message: '다른 곳에서 설정이 변경되어 최신 맵 묶음 설정을 다시 불러왔어요.',
+      });
+    }
+  }
+
   private isLatestLoad(generation: number, sequence: number): boolean {
     return this.generation === generation && this.loadSequence === sequence;
   }
@@ -590,33 +791,31 @@ export class UnifiedAutomationController {
     sequence: number,
     entries: TypedAutomationEntryResponse[],
   ): TypedAutomationEntryResponse[] {
-    const serverBattle = response.entries.find(({ type }) => type === 'BATTLE_MAP');
+    const serverBattles = response.entries.filter(({ type }) => type === 'BATTLE_MAP');
+    const serverBattle = serverBattles[0];
     if (serverBattle && sequence >= this.battleProgressRevision) {
       this.battleProgressRevision = sequence;
       this.battleProgressSnapshot = {
-        entryId: serverBattle.id,
+        sourceEntryIds: new Set(serverBattles.map(({ id }) => id)),
         progress: serverBattle.battleMapProgress,
       };
     }
 
-    const currentIndex = entries.findIndex(({ type }) => type === 'BATTLE_MAP');
-    const currentBattle = entries[currentIndex];
+    const currentBattleIds = entries
+      .filter(({ type }) => type === 'BATTLE_MAP')
+      .map(({ id }) => id);
     const progressSnapshot = this.battleProgressSnapshot;
     if (
-      currentIndex < 0
-      || !currentBattle
+      currentBattleIds.length === 0
       || !progressSnapshot
-      || progressSnapshot.entryId !== currentBattle.id
+      || !currentBattleIds.some((id) => progressSnapshot.sourceEntryIds.has(id))
     ) {
       return entries;
     }
 
-    const next = [...entries];
-    next[currentIndex] = {
-      ...currentBattle,
-      battleMapProgress: progressSnapshot.progress,
-    };
-    return next;
+    return entries.map((entry) => entry.type === 'BATTLE_MAP'
+      ? { ...entry, battleMapProgress: progressSnapshot.progress }
+      : entry);
   }
 
   private applyAggregate(aggregate: TypedAutomationAggregateResponse): void {
@@ -644,4 +843,11 @@ export class UnifiedAutomationController {
     this.snapshot = snapshot;
     this.listeners.forEach((listener) => listener());
   }
+}
+
+function isAutomationSettingsConflict(error: unknown): boolean {
+  return typeof error === 'object'
+    && error != null
+    && 'code' in error
+    && error.code === 'AUTOMATION_SETTINGS_CONFLICT';
 }

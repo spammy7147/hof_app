@@ -67,7 +67,14 @@ type Props = {
   onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
   partyPresetCatalog: PartyPresetCatalogResource;
   onClearMutationMessage: () => void;
-  onSave: (request: UpdateAdventureMapAutomationRequest) => Promise<boolean>;
+  onSave: (request: UpdateAdventureMapAutomationRequest & { displayName?: string | null }) => Promise<boolean>;
+  otherMapGroups?: readonly TypedAutomationEntryResponse[];
+  onMoveMap?: (
+    sourceEntryId: number,
+    categoryId: string,
+    mapCode: string,
+    targetExecutionOrder: number,
+  ) => Promise<boolean>;
 };
 
 type ResourceState = { loading: boolean; error: string | null };
@@ -94,8 +101,11 @@ export function AdventureMapAutomationEditor({
   partyPresetCatalog,
   onClearMutationMessage,
   onSave,
+  otherMapGroups = [],
+  onMoveMap,
 }: Props) {
   const [draft, setDraft] = useState<AdventureMapAutomationDraft>(() => buildAdventureMapAutomationDraft(entry, []));
+  const [groupName, setGroupName] = useState(entry.displayName ?? '');
   const [catalog, setCatalog] = useState<BattleMapResponse[]>([]);
   const [mapState, setMapState] = useState<ResourceState>({ loading: true, error: null });
   const presetState = { loading: partyPresetCatalog.loading, error: partyPresetCatalog.error };
@@ -111,6 +121,7 @@ export function AdventureMapAutomationEditor({
   const draftRef = useRef(draft);
   const queryRef = useRef(query);
   const baselineRef = useRef(serializeDraft(draft));
+  const baselineNameRef = useRef(entry.displayName ?? '');
   const entrySettingsRef = useRef(serializeEntrySettings(entry));
   const controlsDisabledRef = useRef(false);
   const busyRef = useRef(false);
@@ -229,7 +240,8 @@ export function AdventureMapAutomationEditor({
     void loadMaps();
   }, [loadMaps]);
 
-  const draftDirty = serializeDraft(draft) !== baselineRef.current;
+  const draftDirty = serializeDraft(draft) !== baselineRef.current
+    || groupName !== baselineNameRef.current;
   useEffect(() => {
     const source = serializeEntrySettings(entry);
     if (source === entrySettingsRef.current) return;
@@ -239,6 +251,9 @@ export function AdventureMapAutomationEditor({
     draftRef.current = next;
     setDraft(next);
     baselineRef.current = serializeDraft(next);
+    const nextName = entry.displayName ?? '';
+    baselineNameRef.current = nextName;
+    setGroupName(nextName);
   }, [catalog, draftDirty, entry]);
 
   const validPresetIds = useMemo(
@@ -258,7 +273,8 @@ export function AdventureMapAutomationEditor({
   busyRef.current = busy;
   queryRef.current = query;
   const hasExplicitPreset = draft.maps.some(({ presetMode }) => presetMode === 'EXPLICIT');
-  const saveDisabled = controlsDisabled || errors.length > 0
+  const nameInvalid = groupName.trim().length > 100;
+  const saveDisabled = controlsDisabled || errors.length > 0 || nameInvalid
     || (hasExplicitPreset && !presetsVerified);
   const activePresetIdentity = activePresetSession?.identity ?? null;
   const activePresetSetting = activePresetIdentity == null
@@ -372,7 +388,14 @@ export function AdventureMapAutomationEditor({
       const submittedDraft = draftRef.current;
       const request = buildAdventureMapAutomationRequest(submittedDraft, validPresetIds);
       const submittedBaseline = serializeDraft(submittedDraft);
-      if (await onSave(request)) baselineRef.current = submittedBaseline;
+      const submittedName = groupName.trim();
+      const payload = entry.settingsRevision == null && submittedName.length === 0
+        ? request
+        : { ...request, displayName: submittedName || null };
+      if (await onSave(payload)) {
+        baselineRef.current = submittedBaseline;
+        baselineNameRef.current = submittedName;
+      }
     } finally {
       if (mountedRef.current) setLocalBusy(false);
     }
@@ -439,17 +462,45 @@ export function AdventureMapAutomationEditor({
       );
     }
     if (item.kind === 'MAP') {
-      const selected = draft.maps.some((setting) => adventureMapIdentity(setting) === adventureMapIdentity(item.map));
+      const identity = adventureMapIdentity(item.map);
+      const selected = draft.maps.some((setting) => adventureMapIdentity(setting) === identity);
+      const owner = otherMapGroups.find((group) => group.adventureMaps.some(
+        (setting) => adventureMapIdentity(setting) === identity,
+      )) ?? null;
       return (
         <AdventureMapCatalogMapRow
           disabled={controlsDisabled}
           map={item.map}
-          onPress={() => updateEditableDraft((current) => {
+          onPress={() => {
+            if (!selected && owner && onMoveMap) {
+              Alert.alert(
+                `${item.map.name}을 이 묶음으로 이동할까요?`,
+                `${owner.displayName?.trim() || '다른 모험맵 묶음'}에서 제거하고 이 묶음의 마지막에 추가합니다.`,
+                [
+                  { text: '취소', style: 'cancel' },
+                  {
+                    text: '여기로 이동',
+                    onPress: () => {
+                      if (controlsDisabledRef.current) return;
+                      controlsDisabledRef.current = true;
+                      busyRef.current = true;
+                      setLocalBusy(true);
+                      onClearMutationMessage();
+                      void onMoveMap(owner.id, item.map.categoryId, item.map.mapCode, draftRef.current.maps.length)
+                        .finally(() => { if (mountedRef.current) setLocalBusy(false); });
+                    },
+                  },
+                ],
+              );
+              return;
+            }
+            updateEditableDraft((current) => {
             const currentlySelected = current.maps.some(
               (setting) => adventureMapIdentity(setting) === adventureMapIdentity(item.map),
             );
             return selectAdventureMap(current, item.map, !currentlySelected);
-          })}
+            });
+          }}
           selected={selected}
         />
       );
@@ -467,7 +518,7 @@ export function AdventureMapAutomationEditor({
         nested
       />
     );
-  }, [controlsDisabled, deleteSelectedMap, draft.maps, moveSelectedMap, query, renderSelectedMap, reorderSelectedMaps, searching, toggleCatalogGroup, updateEditableDraft]);
+  }, [controlsDisabled, deleteSelectedMap, draft.maps, moveSelectedMap, onClearMutationMessage, onMoveMap, otherMapGroups, query, renderSelectedMap, reorderSelectedMaps, searching, toggleCatalogGroup, updateEditableDraft]);
 
   return (
     <View style={styles.screen}>
@@ -479,6 +530,16 @@ export function AdventureMapAutomationEditor({
         </View>
         <Switch accessibilityLabel="모험맵 자동화 사용" disabled={controlsDisabled} value={draft.enabled} onValueChange={(enabled) => updateEditableDraft((current) => ({ ...current, enabled }))} />
       </View>
+      <TextInput
+        accessibilityLabel="모험맵 묶음 이름"
+        editable={!controlsDisabled}
+        maxLength={100}
+        onChangeText={setGroupName}
+        placeholder="묶음 이름 (선택)"
+        placeholderTextColor={theme.colors.textMuted}
+        style={styles.search}
+        value={groupName}
+      />
       <View style={styles.refreshBand}>
         <Text style={styles.refreshTitle}>한국 날짜 00시 초기화</Text>
         <Text style={styles.refreshText}>{formatAdventureDailyRefresh(dailyRefresh)}</Text>
@@ -521,7 +582,7 @@ export function AdventureMapAutomationEditor({
         selectedPresetMode={activePresetSetting?.presetMode ?? 'PRIMARY'}
         visible={activePresetSetting != null && !controlsDisabled}
       />
-      {errors.length > 0 ? <Text accessibilityRole="alert" style={styles.problem}>{errors[0]}</Text> : null}
+      {errors.length > 0 || nameInvalid ? <Text accessibilityRole="alert" style={styles.problem}>{nameInvalid ? '묶음 이름은 100자 이하여야 합니다.' : errors[0]}</Text> : null}
       <View style={styles.footer}>
         <Pressable accessibilityLabel="모험맵 자동화 저장" disabled={saveDisabled} onPress={() => save()} style={[styles.saveButton, saveDisabled && styles.disabled]}>{busy ? <ActivityIndicator color={theme.colors.buttonText} size="small" /> : <Save color={theme.colors.buttonText} size={17} />}<Text style={styles.saveText}>저장</Text></Pressable>
       </View>
@@ -537,7 +598,7 @@ function serializeDraft(draft: AdventureMapAutomationDraft): string {
   return JSON.stringify([draft.enabled, draft.maps.map(({ categoryId, mapCode, presetMode, partyPresetId, executionOrder }) => [categoryId, mapCode, presetMode, partyPresetId, executionOrder])]);
 }
 function serializeEntrySettings(entry: TypedAutomationEntryResponse): string {
-  return JSON.stringify([entry.enabled, entry.adventureMaps]);
+  return JSON.stringify([entry.enabled, entry.adventureMaps, entry.displayName]);
 }
 function isSamePresetSession(left: PresetSession | null, right: PresetSession | null): boolean {
   return left != null && right != null

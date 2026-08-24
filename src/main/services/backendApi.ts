@@ -34,6 +34,7 @@ import type {
   HofStatusResponse,
   QuestSnapshot,
   MovePartyPresetFolderRequest,
+  MoveMapBetweenGroupsRequest,
   PartyPresetCatalogResponse,
   PartyPresetResponse,
   RunBattleRequest,
@@ -47,7 +48,9 @@ import type {
   UnifiedAutomationAction,
   TypedAutomationAggregateResponse,
   UpdateAdventureMapAutomationRequest,
+  UpdateAdventureMapGroupRequest,
   UpdateBattleMapAutomationRequest,
+  UpdateBattleMapGroupRequest,
   UpdatePartyPresetRequest,
   UpdateQuestAutomationRequest,
   UpdateFishingAutomationRequest,
@@ -391,8 +394,11 @@ export class BackendApiClient {
   }
 
   /** 사용자 소유 typed entry를 삭제하고 정규화된 aggregate를 받는다. */
-  deleteAutomationEntry(entryId: number): Promise<TypedAutomationAggregateResponse> {
-    return this.request(`/api/automation/unified/entries/${entryId}`, { method: 'DELETE' });
+  deleteAutomationEntry(entryId: number, settingsRevision?: string): Promise<TypedAutomationAggregateResponse> {
+    const query = settingsRevision == null
+      ? ''
+      : `?settingsRevision=${encodeURIComponent(settingsRevision)}`;
+    return this.request(`/api/automation/unified/entries/${entryId}${query}`, { method: 'DELETE' });
   }
 
   /** 드래그가 끝난 뒤 전체 entry ID 순서를 한 번에 저장한다. */
@@ -400,6 +406,15 @@ export class BackendApiClient {
     return this.request('/api/automation/unified/entries/order', {
       method: 'PUT',
       body: JSON.stringify({ entryIds }),
+    });
+  }
+
+  moveMapBetweenGroups(
+    targetEntryId: number,
+    request: MoveMapBetweenGroupsRequest,
+  ): Promise<TypedAutomationAggregateResponse> {
+    return this.request(`/api/automation/unified/entries/${targetEntryId}/maps/move`, {
+      method: 'POST', body: JSON.stringify(request),
     });
   }
 
@@ -423,10 +438,28 @@ export class BackendApiClient {
     });
   }
 
+  updateBattleMapGroup(
+    entryId: number,
+    request: UpdateBattleMapGroupRequest,
+  ): Promise<TypedAutomationAggregateResponse> {
+    return this.request(`/api/automation/unified/entries/${entryId}/battle-maps`, {
+      method: 'PUT', body: JSON.stringify(request),
+    });
+  }
+
   updateAdventureMapAutomation(
     request: UpdateAdventureMapAutomationRequest,
   ): Promise<TypedAutomationAggregateResponse> {
     return this.request('/api/automation/unified/adventure-maps', {
+      method: 'PUT', body: JSON.stringify(request),
+    });
+  }
+
+  updateAdventureMapGroup(
+    entryId: number,
+    request: UpdateAdventureMapGroupRequest,
+  ): Promise<TypedAutomationAggregateResponse> {
+    return this.request(`/api/automation/unified/entries/${entryId}/adventure-maps`, {
       method: 'PUT', body: JSON.stringify(request),
     });
   }

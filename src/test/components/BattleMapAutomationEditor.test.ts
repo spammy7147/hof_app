@@ -271,6 +271,33 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(nestedList.props.activationDistance, 20);
   });
 
+  it('offers an atomic move when a catalog map belongs to another group', async () => {
+    const source = {
+      ...battleEntry([setting('a', 3, 0)]),
+      id: 21,
+      displayName: '재료 묶음',
+      settingsRevision: '4',
+    };
+    const moves: unknown[][] = [];
+    alertArguments = null;
+    const renderer = await renderEditor({
+      maps: [catalogMap('a', 'Alpha')],
+      otherMapGroups: [source],
+      onMoveMap: async (...args) => { moves.push(args); return true; },
+    });
+    await openCatalogGroup(renderer);
+
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: 'Alpha 맵 선택' }).props.onPress();
+    });
+    assert.equal(alertArguments?.[0], 'Alpha을 이 묶음으로 이동할까요?');
+    assert.match(String(alertArguments?.[1]), /재료 묶음/);
+    const buttons = alertArguments?.[2] as unknown as Array<{ text: string; onPress?: () => void }>;
+    await act(async () => { buttons.find(({ text }) => text === '여기로 이동')?.onPress?.(); });
+
+    assert.deepEqual(moves, [[21, 'battle', 'a', 0]]);
+  });
+
   it('separates selected maps from the grouped catalog and centers daily targets', async () => {
     const renderer = await renderEditor({
       entry: battleEntry([setting('a', 5, 0)]),
@@ -1028,6 +1055,8 @@ type Overrides = {
   partyPresetCatalog?: React.ComponentProps<typeof BattleMapAutomationEditor>['partyPresetCatalog'];
   onSave?: (request: UpdateBattleMapAutomationRequest) => Promise<boolean>;
   onBack?: () => void;
+  otherMapGroups?: readonly TypedAutomationEntryResponse[];
+  onMoveMap?: React.ComponentProps<typeof BattleMapAutomationEditor>['onMoveMap'];
   battleCategories?: Array<{ id: string; label: string; description: string; order: number; enabled: boolean }>;
   areBattleCategoriesLoaded?: boolean; isBattleCategoriesLoading?: boolean; battleCategoriesError?: string | null;
   onLoadBattleCategories?: () => void;
@@ -1054,6 +1083,8 @@ function editorProps(overrides: Overrides = {}) {
     partyPresetCatalog: overrides.partyPresetCatalog ?? presetCatalog([]),
     onClearMutationMessage: () => undefined,
     onSave: overrides.onSave ?? (async () => true), onBack: overrides.onBack ?? (() => undefined),
+    otherMapGroups: overrides.otherMapGroups,
+    onMoveMap: overrides.onMoveMap,
   };
 }
 function presetCatalog(presets: ReturnType<typeof preset>[], error: string | null = null, retry = () => undefined) {

@@ -1500,10 +1500,19 @@ describe('HomeTabScreen mounted typed editor routing', () => {
       fetchQuests: async () => [],
       saveQuestSettings: async (request: UpdateQuestAutomationRequest) => { saves.push(request); return true; },
       saveBattleMapSettings: async (battleRequest: UpdateBattleMapAutomationRequest) => { battleSaves.push(battleRequest); return battleSaveResult; },
+      saveBattleMapGroup: async (_entryId: number, battleRequest: UpdateBattleMapAutomationRequest) => {
+        battleSaves.push({ enabled: battleRequest.enabled, maps: battleRequest.maps });
+        return battleSaveResult;
+      },
       saveAdventureMapSettings: async (adventureRequest: UpdateAdventureMapAutomationRequest) => {
         adventureSaves.push(adventureRequest);
         return true;
       },
+      saveAdventureMapGroup: async (_entryId: number, adventureRequest: UpdateAdventureMapAutomationRequest) => {
+        adventureSaves.push({ enabled: adventureRequest.enabled, maps: adventureRequest.maps });
+        return true;
+      },
+      moveMapBetweenGroups: async () => true,
       deleteEntry: async () => true,
       createEntry: async () => true,
       reorderEntries: () => undefined,

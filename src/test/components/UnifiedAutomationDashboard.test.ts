@@ -114,7 +114,7 @@ describe('UnifiedAutomationDashboard', () => {
     );
 
     assert.equal(hasText(renderer.root, 'another'), false);
-    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투맵 설정 경고: missing' }).length, 0);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투 맵 1 설정 경고: missing' }).length, 0);
 
     await act(async () => {
       renderer.root.findByProps({ accessibilityLabel: '설정 경고 2개, 자세히 보기' }).props.onPress();
@@ -124,7 +124,7 @@ describe('UnifiedAutomationDashboard', () => {
     assert.equal(hasText(renderer.root, '해당 설정 열기'), true);
     assert.equal(hasText(renderer.root, '자동화 설정 확인'), true);
     await act(async () => {
-      renderer.root.findByProps({ accessibilityLabel: '전투맵 설정 경고: missing' }).props.onPress();
+      renderer.root.findByProps({ accessibilityLabel: '전투 맵 1 설정 경고: missing' }).props.onPress();
     });
     assert.equal(openedModule, 2);
 
@@ -238,6 +238,18 @@ describe('UnifiedAutomationDashboard', () => {
     assert.equal(hasText(renderer.root, '실행 중'), true);
     assert.equal(hasText(renderer.root, '전투맵 실행'), true);
     assert.equal(treeText(renderer.root).includes('서버 연결 대기'), false);
+  });
+
+  it('shows the owning map group name for the current action', async () => {
+    const aggregate = networkStopped();
+    aggregate.runtime.currentAction = {
+      ...requireCurrentAction(aggregate),
+      entryDisplayName: '최우선 보스',
+    };
+
+    const renderer = await renderDashboard(aggregate, () => undefined);
+
+    assert.equal(hasText(renderer.root, '최우선 보스'), true);
   });
 
   it('shows an active raid action as retrying when the runtime scheduled an error retry', async () => {
@@ -407,6 +419,10 @@ function runtimeWithCurrentAction(currentAction: TypedAutomationCurrentActionRes
   const aggregate = networkStopped();
   aggregate.runtime.currentAction = currentAction;
   return aggregate;
+}
+function requireCurrentAction(aggregate: TypedAutomationAggregateResponse): TypedAutomationCurrentActionResponse {
+  if (!aggregate.runtime.currentAction) throw new Error('current action fixture is missing');
+  return aggregate.runtime.currentAction;
 }
 function networkStopped(): TypedAutomationAggregateResponse {
   return {

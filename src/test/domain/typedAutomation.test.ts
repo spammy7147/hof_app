@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  automationEntryDisplayName,
   buildAdventureMapAutomationRequest,
   buildBattleMapAutomationRequest,
   buildExplicitPresetSelection,
@@ -16,11 +17,11 @@ import {
 import type { TypedAutomationEntryResponse } from '../../main/types/api';
 
 describe('typed automation domain', () => {
-  it('returns missing singleton types in stable display order', () => {
+  it('keeps map groups addable while singleton types remain unique', () => {
     assert.deepEqual(getAddableAutomationTypes([
       entry(1, 'QUEST', 0),
       entry(2, 'ADVENTURE_MAP', 1),
-    ]), ['HOME_QUEST', 'BATTLE_MAP', 'RAID', 'UNION', 'FISHING']);
+    ]), ['HOME_QUEST', 'BATTLE_MAP', 'ADVENTURE_MAP', 'RAID', 'UNION', 'FISHING']);
     assert.deepEqual(getAddableAutomationTypes([]), ['QUEST', 'HOME_QUEST', 'BATTLE_MAP', 'ADVENTURE_MAP', 'RAID', 'UNION', 'FISHING']);
     assert.equal(hasAllAutomationTypes([]), false);
     assert.equal(canAddAutomationType([entry(1, 'QUEST', 0)], 'QUEST'), false);
@@ -33,7 +34,14 @@ describe('typed automation domain', () => {
       entry(5, 'RAID', 4),
       entry(6, 'UNION', 5),
       entry(7, 'FISHING', 6),
-    ]), true);
+    ]), false);
+    assert.equal(canAddAutomationType([
+      entry(3, 'BATTLE_MAP', 0),
+      entry(4, 'BATTLE_MAP', 1),
+    ], 'BATTLE_MAP'), true);
+    const full = Array.from({ length: 100 }, (_, index) => entry(index + 1, 'BATTLE_MAP', index));
+    assert.deepEqual(getAddableAutomationTypes(full), []);
+    assert.equal(hasAllAutomationTypes(full), true);
   });
 
   it('reorders immutably and normalizes priorities without changing ids', () => {
@@ -57,6 +65,20 @@ describe('typed automation domain', () => {
     const entries = [entry(1, 'QUEST', 0)];
     assert.throws(() => reorderEntries(entries, -1, 0), RangeError);
     assert.throws(() => reorderEntries(entries, 0, 1), RangeError);
+  });
+
+  it('uses explicit map group names and stable per-type fallback positions', () => {
+    const entries = [
+      entry(1, 'BATTLE_MAP', 0),
+      entry(2, 'QUEST', 1),
+      { ...entry(3, 'BATTLE_MAP', 2), displayName: '  긴급 전투  ' },
+      entry(4, 'ADVENTURE_MAP', 3),
+    ];
+
+    assert.equal(automationEntryDisplayName(entries[0]!, entries), '전투 맵 1');
+    assert.equal(automationEntryDisplayName(entries[1]!, entries), '퀘스트');
+    assert.equal(automationEntryDisplayName(entries[2]!, entries), '긴급 전투');
+    assert.equal(automationEntryDisplayName(entries[3]!, entries), '모험 맵 1');
   });
 
   it('builds the exact PRIMARY and EXPLICIT preset discriminants', () => {

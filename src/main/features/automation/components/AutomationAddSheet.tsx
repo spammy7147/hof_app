@@ -17,6 +17,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   AUTOMATION_TYPE_METADATA,
   AUTOMATION_TYPE_ORDER,
+  canAddAutomationType,
+  isMapGroupType,
 } from '../../../domain/typedAutomation';
 import { theme } from '../../../styles/theme';
 import type { AutomationType, TypedAutomationEntryResponse } from '../../../types/api';
@@ -85,7 +87,7 @@ export function AutomationAddSheet({
   }, [visible]);
 
   async function handleAdd(type: AutomationType) {
-    if (existingTypes.has(type) || busyTypes.has(type) || submittingTypes.current.has(type)) return;
+    if (!canAddAutomationType(entries, type) || busyTypes.has(type) || submittingTypes.current.has(type)) return;
     const visibilityGeneration = visibilityGenerationRef.current;
     submittingTypes.current.add(type);
     setLocallyPending((current) => [...current, type]);
@@ -156,9 +158,9 @@ export function AutomationAddSheet({
             ) : null}
             {AUTOMATION_TYPE_ORDER.map((type) => {
               const metadata = AUTOMATION_TYPE_METADATA[type];
-              const exists = existingTypes.has(type);
+              const exists = !isMapGroupType(type) && existingTypes.has(type);
               const busy = busyTypes.has(type);
-              const disabled = exists || busy;
+              const disabled = !canAddAutomationType(entries, type) || busy;
               return (
                 <Pressable
                   key={type}

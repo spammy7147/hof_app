@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ChevronRight, History, Pause, Play, Settings, Square } from 'lucide-react-native';
 
 import { formatAdventureDailyRefresh } from '../../../domain/adventureMapAutomation';
-import { AUTOMATION_TYPE_METADATA } from '../../../domain/typedAutomation';
+import { AUTOMATION_TYPE_METADATA, automationEntryDisplayName } from '../../../domain/typedAutomation';
 import { theme } from '../../../styles/theme';
 import type {
   TypedAutomationAggregateResponse,
@@ -138,6 +138,7 @@ export function UnifiedAutomationDashboard({
                     <WarningRow
                       key={warning}
                       entries={aggregate.entries.filter((entry) => entry.warnings.includes(warning))}
+                      allEntries={aggregate.entries}
                       onOpenModule={onOpenModule}
                       onOpenSettings={onOpenSettings}
                       warning={warning}
@@ -174,7 +175,12 @@ export function UnifiedAutomationDashboard({
         <Text style={styles.sectionTitle}>자동화 구성</Text>
         {aggregate.entries.length === 0 ? <Text style={styles.emptyText}>자동화 구성을 추가해 주세요.</Text> : null}
         {aggregate.entries.map((entry) => (
-          <EntryRow key={entry.id} entry={entry} onPress={() => onOpenModule(entry.id)} />
+          <EntryRow
+            key={entry.id}
+            entry={entry}
+            label={automationEntryDisplayName(entry, aggregate.entries)}
+            onPress={() => onOpenModule(entry.id)}
+          />
         ))}
       </View>
     </View>
@@ -182,17 +188,19 @@ export function UnifiedAutomationDashboard({
 }
 
 function WarningRow({
+  allEntries,
   entries,
   onOpenModule,
   onOpenSettings,
   warning,
 }: {
+  allEntries: TypedAutomationEntryResponse[];
   entries: TypedAutomationEntryResponse[];
   onOpenModule: (entryId: number) => void;
   onOpenSettings: () => void;
   warning: string;
 }) {
-  const sourceLabels = [...new Set(entries.map((entry) => automationTypeLabel(entry.type)))];
+  const sourceLabels = [...new Set(entries.map((entry) => automationEntryDisplayName(entry, allEntries)))];
   const sourceLabel = sourceLabels.length > 0 ? sourceLabels.join(', ') : '자동화 실행';
   const openWarningSettings = () => {
     if (entries.length === 1) {
@@ -235,6 +243,7 @@ function CurrentAction({ current }: { current: TypedAutomationCurrentActionRespo
 
   return (
     <View testID="current-automation-action" style={styles.currentAction}>
+      {current.entryDisplayName ? <Text style={styles.currentGroup}>{current.entryDisplayName}</Text> : null}
       <Text style={styles.actionLabel}>{actionLabel}</Text>
       {current.questName ? <Text style={styles.currentTitle}>{current.questName}</Text> : null}
       {current.missionLabel ? (
@@ -257,17 +266,17 @@ function automationTypeLabel(type: AutomationType): string {
   return AUTOMATION_TYPE_METADATA[type].label;
 }
 
-function EntryRow({ entry, onPress }: { entry: TypedAutomationEntryResponse; onPress: () => void }) {
+function EntryRow({ entry, label, onPress }: { entry: TypedAutomationEntryResponse; label: string; onPress: () => void }) {
   return (
     <Pressable
-      accessibilityLabel={`${automationTypeLabel(entry.type)} 설정 열기`}
+      accessibilityLabel={`${label} 설정 열기`}
       accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => [styles.summaryRow, pressed && styles.pressed]}
     >
       <View style={[styles.moduleDot, !entry.enabled && styles.moduleDotOff]} />
       <View style={styles.summaryCopy}>
-        <Text style={styles.summaryTitle}>{automationTypeLabel(entry.type)}</Text>
+        <Text style={styles.summaryTitle}>{label}</Text>
         <Text style={entry.ready ? styles.summaryDetail : styles.warningText}>
           {entrySummary(entry)}
         </Text>
@@ -362,6 +371,7 @@ const styles = StyleSheet.create({
   warningText: { color: theme.colors.accentAmber, fontSize: 12, fontWeight: '700' },
   currentLabel: { color: theme.colors.textMuted, fontSize: 12, marginTop: 5 },
   currentAction: { gap: 3 },
+  currentGroup: { color: theme.colors.accentGreen, fontSize: 12, fontWeight: '800' },
   actionLabel: { color: theme.colors.text, fontSize: 17, fontWeight: '900', lineHeight: 24 },
   currentTitle: { color: theme.colors.text, fontSize: 19, fontWeight: '900', lineHeight: 27 },
   actionMeta: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18 },

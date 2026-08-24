@@ -19,7 +19,7 @@ import {
 } from 'react-native-draggable-flatlist';
 
 import {
-  AUTOMATION_TYPE_METADATA,
+  automationEntryDisplayName,
   hasAllAutomationTypes,
 } from '../../../domain/typedAutomation';
 import { theme } from '../../../styles/theme';
@@ -109,10 +109,10 @@ export function UnifiedAutomationSettings({
   }, [onAdd]);
 
   const confirmDelete = useCallback((entry: TypedAutomationEntryResponse) => {
-    const metadata = AUTOMATION_TYPE_METADATA[entry.type];
+    const displayName = automationEntryDisplayName(entry, entries);
     closeOpenSwipeable();
     Alert.alert(
-      `${metadata.label} 자동화를 삭제할까요?`,
+      `${displayName} 자동화를 삭제할까요?`,
       '저장한 세부 설정도 함께 삭제됩니다.',
       [
         { text: '취소', style: 'cancel' },
@@ -130,7 +130,7 @@ export function UnifiedAutomationSettings({
         },
       ],
     );
-  }, [closeOpenSwipeable, onDelete, restoreAddTriggerFocus]);
+  }, [closeOpenSwipeable, entries, onDelete, restoreAddTriggerFocus]);
 
   const renderItem = useCallback((params: RenderItemParams<TypedAutomationEntryResponse>) => (
     <AutomationEntryRow
@@ -160,6 +160,8 @@ export function UnifiedAutomationSettings({
       <View style={styles.listHeader}>
         <Text style={styles.sectionTitle}>실행 우선순위</Text>
         <Text style={styles.helper}>위에서부터 실행하며 변경은 다음 작업부터 적용돼요.</Text>
+        <Text style={styles.helper}>상위 항목이 계속 실행 가능하면 아래 항목은 기다릴 수 있어요.</Text>
+        <Text style={styles.helper}>자동화 항목은 계정당 100개, 맵은 유형별 전체 묶음 합계 100개까지 저장할 수 있어요.</Text>
       </View>
 
       {entries.length === 0 ? (
@@ -256,7 +258,7 @@ function AutomationEntryRow({
   onToggle,
 }: AutomationEntryRowProps) {
   const swipeableRef = useRef<SwipeableMethods>(null);
-  const metadata = AUTOMATION_TYPE_METADATA[item.type];
+  const displayName = automationEntryDisplayName(item, entries);
   const summary = getEntrySummary(item);
   const warning = item.warnings[0];
   const index = getIndex() ?? -1;
@@ -286,7 +288,7 @@ function AutomationEntryRow({
       renderRightActions={(_progress, _translation, _swipeable) => (
         <Pressable
           accessibilityHint="확인 후 선택한 자동화를 삭제합니다"
-          accessibilityLabel={`${metadata.label} 삭제`}
+          accessibilityLabel={`${displayName} 삭제`}
           accessibilityRole="button"
           accessibilityState={{ busy: saving, disabled: saving }}
           disabled={saving}
@@ -306,7 +308,7 @@ function AutomationEntryRow({
             ...(canMoveDown ? [{ name: 'increment' as const, label: '아래로 이동' }] : []),
           ]}
           accessibilityHint="길게 누르거나 접근성 동작으로 위아래로 이동하세요"
-          accessibilityLabel={`${metadata.label} 우선순위 이동`}
+          accessibilityLabel={`${displayName} 우선순위 이동`}
           accessibilityRole="adjustable"
           accessibilityState={{ disabled: reorderDisabled }}
           delayLongPress={120}
@@ -323,7 +325,7 @@ function AutomationEntryRow({
         <Pressable
           accessibilityActions={[{ name: 'delete', label: '삭제' }]}
           accessibilityHint="선택한 자동화의 세부 설정 화면을 엽니다"
-          accessibilityLabel={`${metadata.label} 상세 설정`}
+          accessibilityLabel={`${displayName} 상세 설정`}
           accessibilityRole="button"
           accessibilityState={{ disabled: saving || isActive }}
           disabled={saving || isActive}
@@ -342,7 +344,7 @@ function AutomationEntryRow({
           <View style={styles.typeIcon}><AutomationTypeIcon type={item.type} /></View>
           <View style={styles.rowCopy}>
             <View style={styles.rowTitleLine}>
-              <Text numberOfLines={1} style={styles.rowTitle}>{metadata.label}</Text>
+              <Text numberOfLines={1} style={styles.rowTitle}>{displayName}</Text>
               <Text style={[styles.statusChip, !item.ready && styles.warningChip]}>
                 {item.ready ? '준비됨' : '확인 필요'}
               </Text>
@@ -361,7 +363,7 @@ function AutomationEntryRow({
           </View>
         </Pressable>
         <Switch
-          accessibilityLabel={`${metadata.label} ${item.enabled ? '끄기' : '켜기'}`}
+          accessibilityLabel={`${displayName} ${item.enabled ? '끄기' : '켜기'}`}
           disabled={saving}
           onValueChange={() => onToggle(item)}
           thumbColor={item.enabled ? theme.colors.buttonText : theme.colors.textMuted}

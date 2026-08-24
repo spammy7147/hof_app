@@ -18,16 +18,6 @@ let windowHeight = 800;
 let safeAreaBottom = 0;
 let alertArguments: unknown[] | null = null;
 const focusCalls: unknown[] = [];
-const AUTOMATION_LABELS: Record<AutomationType, string> = {
-  QUEST: '퀘스트',
-  HOME_QUEST: '자택 관리',
-  BATTLE_MAP: '전투 맵',
-  ADVENTURE_MAP: '모험 맵',
-  RAID: '레이드',
-  UNION: '유니온',
-  FISHING: '낚시',
-};
-
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => (
   React.createElement(name, { ...props, ref }, props.children as React.ReactNode)
 ));
@@ -200,9 +190,9 @@ describe('AutomationAddSheet mounted interactions', () => {
     assert.equal(closes, 2);
   });
 
-  it('renders exactly three choices and disables an existing type as 추가됨', async () => {
+  it('keeps existing map types addable while disabling an existing singleton type', async () => {
     const renderer = await renderSheet({
-      entries: [entry(1, 'QUEST')],
+      entries: [entry(1, 'QUEST'), entry(2, 'BATTLE_MAP'), entry(3, 'ADVENTURE_MAP')],
       visible: true,
     });
     const choices = findAutomationChoices(renderer.root);
@@ -216,6 +206,8 @@ describe('AutomationAddSheet mounted interactions', () => {
     assert.equal(choices[0]?.props.disabled, true);
     assert.equal(choices[0]?.props.accessibilityState.disabled, true);
     assert.equal(hasText(choices[0]!, '추가됨'), true);
+    assert.equal(choices[1]?.props.disabled, false);
+    assert.equal(choices[2]?.props.disabled, false);
   });
 
   it('guards a deferred add from double taps and closes only after success', async () => {
@@ -318,9 +310,9 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
     assert.equal(visibleModals(renderer.root).length, 0);
   });
 
-  it('disables the single add trigger when all types exist', async () => {
+  it('disables the single add trigger at the account entry limit', async () => {
     const renderer = await renderSettings({
-      entries: [entry(1, 'QUEST'), entry(2, 'HOME_QUEST'), entry(3, 'BATTLE_MAP'), entry(4, 'ADVENTURE_MAP'), entry(5, 'RAID'), entry(6, 'UNION'), entry(7, 'FISHING')],
+      entries: Array.from({ length: 100 }, (_, index) => entry(index + 1, 'BATTLE_MAP')),
     });
     const trigger = renderer.root.findByProps({ accessibilityLabel: '모든 자동화가 추가되었습니다' });
 
@@ -452,8 +444,8 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
       onReorder: (items) => { reordered.push(items); },
     });
     const renderer = await renderElement(React.createElement(UnifiedAutomationSettings, props));
-    const handles = () => [first, second, third].map((item) => renderer.root.findByProps({
-      accessibilityLabel: `${AUTOMATION_LABELS[item.type]} 우선순위 이동`,
+    const handles = () => ['퀘스트', '전투 맵 1', '모험 맵 1'].map((label) => renderer.root.findByProps({
+      accessibilityLabel: `${label} 우선순위 이동`,
     }));
 
     assert.deepEqual(handles().map(({ props: handleProps }) => (

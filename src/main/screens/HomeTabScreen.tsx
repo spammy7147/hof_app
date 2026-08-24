@@ -158,9 +158,29 @@ export function HomeTabScreen({
       return automationController.saveHomeQuestSettings({ enabled: !entry.enabled, quests: entry.homeQuests ?? [] });
     }
     if (entry.type === 'BATTLE_MAP') {
-      return automationController.saveBattleMapSettings({ enabled: !entry.enabled, maps: entry.battleMaps });
+      if (!entry.enabled && entry.battleMaps.length === 0) {
+        automationController.showMessage('맵이 없는 묶음은 활성화할 수 없어요. 먼저 맵을 추가해 주세요.');
+        return Promise.resolve(false);
+      }
+      return automationController.saveBattleMapGroup(entry.id, {
+        settingsRevision: entry.settingsRevision ?? '0',
+        displayName: entry.displayName ?? null,
+        enabled: !entry.enabled,
+        maps: entry.battleMaps,
+      });
     }
-    if (entry.type === 'ADVENTURE_MAP') return automationController.saveAdventureMapSettings({ enabled: !entry.enabled, maps: entry.adventureMaps });
+    if (entry.type === 'ADVENTURE_MAP') {
+      if (!entry.enabled && entry.adventureMaps.length === 0) {
+        automationController.showMessage('맵이 없는 묶음은 활성화할 수 없어요. 먼저 맵을 추가해 주세요.');
+        return Promise.resolve(false);
+      }
+      return automationController.saveAdventureMapGroup(entry.id, {
+        settingsRevision: entry.settingsRevision ?? '0',
+        displayName: entry.displayName ?? null,
+        enabled: !entry.enabled,
+        maps: entry.adventureMaps,
+      });
+    }
     if (entry.type === 'FISHING') return automationController.saveFishingSettings({
       enabled: !entry.enabled,
       maps: entry.fishingMaps ?? [],
@@ -244,8 +264,29 @@ export function HomeTabScreen({
         onClearMutationMessage={() => automationController.clearMessage()}
         onLoadBattleCategories={onLoadBattleCategories}
         onLoadBattleMaps={onLoadBattleMaps}
+        otherMapGroups={aggregate.entries.filter((candidate) => candidate.type === 'BATTLE_MAP' && candidate.id !== entry.id)}
+        onMoveMap={(sourceEntryId, categoryId, mapCode, targetExecutionOrder) => {
+          const source = aggregate.entries.find((candidate) => candidate.id === sourceEntryId && candidate.type === 'BATTLE_MAP');
+          if (!source) {
+            automationController.showMessage('원본 전투 맵 묶음을 다시 확인해 주세요.');
+            return Promise.resolve(false);
+          }
+          return automationController.moveMapBetweenGroups(entry.id, {
+            sourceEntryId,
+            sourceSettingsRevision: source.settingsRevision ?? '0',
+            targetSettingsRevision: entry.settingsRevision ?? '0',
+            categoryId,
+            mapCode,
+            targetExecutionOrder,
+          });
+        }}
         onSave={async (request) => {
-          const saved = await automationController.saveBattleMapSettings(request);
+          const saved = await automationController.saveBattleMapGroup(entry.id, {
+            settingsRevision: entry.settingsRevision ?? '0',
+            displayName: request.displayName ?? entry.displayName ?? null,
+            enabled: request.enabled,
+            maps: request.maps,
+          });
           if (saved) closeEditor();
           return saved;
         }}
@@ -271,8 +312,29 @@ export function HomeTabScreen({
         onClearMutationMessage={() => automationController.clearMessage()}
         onLoadBattleCategories={onLoadBattleCategories}
         onLoadBattleMaps={onLoadBattleMaps}
+        otherMapGroups={aggregate.entries.filter((candidate) => candidate.type === 'ADVENTURE_MAP' && candidate.id !== entry.id)}
+        onMoveMap={(sourceEntryId, categoryId, mapCode, targetExecutionOrder) => {
+          const source = aggregate.entries.find((candidate) => candidate.id === sourceEntryId && candidate.type === 'ADVENTURE_MAP');
+          if (!source) {
+            automationController.showMessage('원본 모험맵 묶음을 다시 확인해 주세요.');
+            return Promise.resolve(false);
+          }
+          return automationController.moveMapBetweenGroups(entry.id, {
+            sourceEntryId,
+            sourceSettingsRevision: source.settingsRevision ?? '0',
+            targetSettingsRevision: entry.settingsRevision ?? '0',
+            categoryId,
+            mapCode,
+            targetExecutionOrder,
+          });
+        }}
         onSave={async (request) => {
-          const saved = await automationController.saveAdventureMapSettings(request);
+          const saved = await automationController.saveAdventureMapGroup(entry.id, {
+            settingsRevision: entry.settingsRevision ?? '0',
+            displayName: request.displayName ?? entry.displayName ?? null,
+            enabled: request.enabled,
+            maps: request.maps,
+          });
           if (saved) closeEditor();
           return saved;
         }}

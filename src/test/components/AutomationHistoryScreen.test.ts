@@ -34,7 +34,7 @@ describe('AutomationHistoryScreen', () => {
         id: 1, result: 'ACTION_SELECTED', selectedEntryId: 9,
         startedAt: '2026-08-14T00:00:00Z', finishedAt: '2026-08-14T00:00:01Z',
         events: [{
-          id: 2, sequence: 2, entryId: 9, type: 'RAID', kind: 'ACTION_FAILED',
+          id: 2, sequence: 2, entryId: 9, type: 'RAID', entryDisplayName: '최우선 레이드', kind: 'ACTION_FAILED',
           reasonCode: 'ACTION_FAILED', message: "전투 시작 단계 · 현재 해당 레이드에서 실행할 수 없는 동작입니다. · 관측 상태: 파티 모집 중",
           targetKey: 'Raid001', targetName: '고블린 전투 마차', actionKind: 'START',
           presetId: null, presetName: null, nextRunAt: null, occurredAt: '2026-08-14T00:00:01Z',
@@ -46,7 +46,7 @@ describe('AutomationHistoryScreen', () => {
 
     const text = treeText(renderer.root);
     assert.ok(text.includes('최근 막힘 사유'));
-    assert.ok(text.includes('레이드 · 전투 시작'));
+    assert.ok(text.includes('최우선 레이드 · 전투 시작'));
     assert.ok(text.includes('고블린 전투 마차'));
     assert.ok(text.includes('기록 시각'));
     assert.ok(text.includes('관측 상태: 파티 모집 중'));

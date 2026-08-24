@@ -27,6 +27,64 @@ describe('typed unified automation controller', () => {
     assert.deepEqual(controller.getSnapshot().aggregate?.hofStatus, newer);
   });
 
+  it('keeps an existing battle-map group when another group is created', async () => {
+    const first = battleEntryWithProgress(1, { id: 2, displayName: '상위 전투' });
+    const second = battleEntryWithProgress(1, { id: 3, priority: 2, displayName: '하위 전투' });
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([entry(1, 'QUEST', 0), first]),
+      create: async () => aggregate([entry(1, 'QUEST', 0), first, second]),
+    }));
+    await controller.load();
+
+    await controller.createEntry('BATTLE_MAP');
+
+    assert.deepEqual(
+      controller.getSnapshot().aggregate?.entries.map(({ id, displayName }) => ({ id, displayName })),
+      [
+        { id: 1, displayName: undefined },
+        { id: 2, displayName: '상위 전투' },
+        { id: 3, displayName: '하위 전투' },
+      ],
+    );
+  });
+
+  it('removes only the selected battle-map group', async () => {
+    const first = battleEntryWithProgress(1, { id: 2, displayName: '상위 전투' });
+    const second = battleEntryWithProgress(1, { id: 3, priority: 2, displayName: '하위 전투' });
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([entry(1, 'QUEST', 0), first, second]),
+      delete: async () => aggregate([entry(1, 'QUEST', 0), second]),
+    }));
+    await controller.load();
+
+    await controller.deleteEntry(2);
+
+    assert.deepEqual(controller.getSnapshot().aggregate?.entries.map(({ id }) => id), [1, 3]);
+  });
+
+  it('shares account battle progress with every current battle-map group', async () => {
+    const first = battleEntryWithProgress(1, { id: 2 });
+    const second = battleEntryWithProgress(1, { id: 3, priority: 2 });
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([entry(1, 'QUEST', 0), first, second]),
+      updateQuest: async () => aggregate([
+        entry(1, 'QUEST', 0),
+        battleEntryWithProgress(8, { id: 2 }),
+        battleEntryWithProgress(8, { id: 3, priority: 2 }),
+      ]),
+    }));
+    await controller.load();
+
+    await controller.saveQuestSettings({ enabled: true, quests: [] });
+
+    assert.deepEqual(
+      controller.getSnapshot().aggregate?.entries
+        .filter(({ type }) => type === 'BATTLE_MAP')
+        .map(({ battleMapProgress }) => battleMapProgress),
+      [battleProgress(8), battleProgress(8)],
+    );
+  });
+
   it('exposes typed quest discovery for the dedicated editor', async () => {
     const snapshots = [questSnapshot('quest-1', [mission('kill', 'MONSTER_KILL')])];
     const controller = new UnifiedAutomationController(apiStub({ fetchQuests: async () => snapshots }));
@@ -724,6 +782,127 @@ describe('typed unified automation controller', () => {
     assert.equal(controller.isEntryBusy(2), false);
   });
 
+  it('saves same-type map groups by entry id without cross-merging their responses', async () => {
+    const firstSave = deferred<TypedAutomationAggregateResponse>();
+    const secondSave = deferred<TypedAutomationAggregateResponse>();
+    const calls: number[] = [];
+    const initial = [
+      entry(2, 'BATTLE_MAP', 0, { displayName: '일반', settingsRevision: '3' }),
+      entry(4, 'BATTLE_MAP', 1, { displayName: '이벤트', settingsRevision: '7' }),
+    ];
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate(initial),
+      updateBattleGroup: (entryId) => {
+        calls.push(entryId);
+        return entryId === 2 ? firstSave.promise : secondSave.promise;
+      },
+    }));
+    await controller.load();
+
+    const savingFirst = controller.saveBattleMapGroup(2, {
+      settingsRevision: '3', displayName: '보스', enabled: false, maps: [],
+    });
+    const savingSecond = controller.saveBattleMapGroup(4, {
+      settingsRevision: '7', displayName: '재료', enabled: false, maps: [],
+    });
+
+    assert.deepEqual(calls, [2, 4]);
+    firstSave.resolve(aggregate([
+      entry(2, 'BATTLE_MAP', 0, { displayName: '보스', settingsRevision: '4' }),
+      initial[1]!,
+    ]));
+    secondSave.resolve(aggregate([
+      initial[0]!,
+      entry(4, 'BATTLE_MAP', 1, { displayName: '재료', settingsRevision: '8' }),
+    ]));
+    await Promise.all([savingFirst, savingSecond]);
+
+    assert.deepEqual(
+      controller.getSnapshot().aggregate?.entries.map(({ id, displayName, settingsRevision }) => (
+        { id, displayName, settingsRevision }
+      )),
+      [
+        { id: 2, displayName: '보스', settingsRevision: '4' },
+        { id: 4, displayName: '재료', settingsRevision: '8' },
+      ],
+    );
+  });
+
+  it('moves a map and merges both affected groups by entry id', async () => {
+    const initial = [
+      entry(2, 'BATTLE_MAP', 0, {
+        settingsRevision: '4',
+        battleMaps: [{ categoryId: 'battle', mapCode: 'map-1', dailyTargetCount: 3, presetMode: 'PRIMARY', partyPresetId: null, executionOrder: 0 }],
+      }),
+      entry(4, 'BATTLE_MAP', 1, { settingsRevision: '8' }),
+    ];
+    const calls: number[] = [];
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate(initial),
+      moveMap: async (targetEntryId) => {
+        calls.push(targetEntryId);
+        return aggregate([
+          entry(2, 'BATTLE_MAP', 0, { settingsRevision: '5', enabled: false }),
+          entry(4, 'BATTLE_MAP', 1, {
+            settingsRevision: '9',
+            battleMaps: initial[0]!.battleMaps,
+          }),
+        ]);
+      },
+    }));
+    await controller.load();
+
+    const moved = await controller.moveMapBetweenGroups(4, {
+      sourceEntryId: 2,
+      sourceSettingsRevision: '4',
+      targetSettingsRevision: '8',
+      categoryId: 'battle',
+      mapCode: 'map-1',
+      targetExecutionOrder: 0,
+    });
+
+    assert.equal(moved, true);
+    assert.deepEqual(calls, [4]);
+    assert.deepEqual(
+      controller.getSnapshot().aggregate?.entries.map(({ id, settingsRevision, battleMaps }) => ({
+        id, settingsRevision, maps: battleMaps.map(({ mapCode }) => mapCode),
+      })),
+      [
+        { id: 2, settingsRevision: '5', maps: [] },
+        { id: 4, settingsRevision: '9', maps: ['map-1'] },
+      ],
+    );
+  });
+
+  it('reloads authoritative map group settings after a revision conflict', async () => {
+    let fetches = 0;
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => {
+        fetches += 1;
+        return aggregate([
+          entry(2, 'BATTLE_MAP', 0, {
+            displayName: fetches === 1 ? '오래된 이름' : '다른 화면의 이름',
+            settingsRevision: fetches === 1 ? '3' : '4',
+          }),
+        ]);
+      },
+      updateBattleGroup: async () => {
+        throw { code: 'AUTOMATION_SETTINGS_CONFLICT' };
+      },
+    }));
+    await controller.load();
+
+    const saved = await controller.saveBattleMapGroup(2, {
+      settingsRevision: '3', displayName: '내 이름', enabled: false, maps: [],
+    });
+
+    assert.equal(saved, false);
+    assert.equal(fetches, 2);
+    assert.equal(controller.getSnapshot().aggregate?.entries[0]?.displayName, '다른 화면의 이름');
+    assert.equal(controller.getSnapshot().aggregate?.entries[0]?.settingsRevision, '4');
+    assert.match(controller.getSnapshot().message ?? '', /최신/);
+  });
+
   it('runs delete then save through the same type queue', async () => {
     const remove = deferred<TypedAutomationAggregateResponse>();
     const save = deferred<TypedAutomationAggregateResponse>();
@@ -737,6 +916,30 @@ describe('typed unified automation controller', () => {
 
     const deleting = controller.deleteEntry(2);
     const saving = controller.saveBattleMapSettings({ enabled: false, maps: [] });
+    assert.deepEqual(calls, ['delete']);
+    remove.resolve(aggregate([]));
+    await deleting;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(calls, ['delete', 'save']);
+    save.resolve(aggregate([]));
+    await saving;
+  });
+
+  it('serializes an entry-id group save started after deleting the same group', async () => {
+    const remove = deferred<TypedAutomationAggregateResponse>();
+    const save = deferred<TypedAutomationAggregateResponse>();
+    const calls: string[] = [];
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([entry(2, 'BATTLE_MAP', 0, { settingsRevision: '3' })]),
+      delete: () => { calls.push('delete'); return remove.promise; },
+      updateBattleGroup: () => { calls.push('save'); return save.promise; },
+    }));
+    await controller.load();
+
+    const deleting = controller.deleteEntry(2);
+    const saving = controller.saveBattleMapGroup(2, {
+      settingsRevision: '3', displayName: null, enabled: false, maps: [],
+    });
     assert.deepEqual(calls, ['delete']);
     remove.resolve(aggregate([]));
     await deleting;
@@ -1033,6 +1236,9 @@ function apiStub(overrides: Overrides): UnifiedAutomationControllerApi {
     updateQuest: overrides.updateQuest ?? (async () => aggregate([])),
     updateBattle: overrides.updateBattle ?? (async () => aggregate([])),
     updateAdventure: overrides.updateAdventure ?? (async () => aggregate([])),
+    updateBattleGroup: overrides.updateBattleGroup,
+    updateAdventureGroup: overrides.updateAdventureGroup,
+    moveMap: overrides.moveMap,
     fetchQuests: overrides.fetchQuests ?? (async () => []),
     changeState: overrides.changeState ?? (async () => aggregate([])),
   };

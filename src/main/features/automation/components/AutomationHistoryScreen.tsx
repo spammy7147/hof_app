@@ -90,7 +90,7 @@ export function AutomationHistoryScreen({
     {!loading && cycles.length === 0 && !error ? <Text style={styles.empty}>아직 자동화 기록이 없습니다.</Text> : null}
     {latestEvent ? <View accessibilityLabel="최근 자동화 상태" style={styles.statusSummary}>
       <Text style={styles.statusEyebrow}>{statusSummaryLabel(latestEvent.kind)}</Text>
-      <Text style={styles.statusTitle}>{latestEvent.type ? AUTOMATION_TYPE_METADATA[latestEvent.type].label : '시스템'}{latestEvent.actionKind ? ` · ${actionLabel(latestEvent.actionKind, latestEvent.type)}` : ''}</Text>
+      <Text style={styles.statusTitle}>{latestEvent.entryDisplayName ?? (latestEvent.type ? AUTOMATION_TYPE_METADATA[latestEvent.type].label : '시스템')}{latestEvent.actionKind ? ` · ${actionLabel(latestEvent.actionKind, latestEvent.type)}` : ''}</Text>
       {latestEvent.targetName || latestEvent.targetKey ? <Text style={styles.target}>대상  {latestEvent.targetName ?? latestEvent.targetKey}</Text> : null}
       <Text style={styles.statusMessage}>{displayMessage(latestEvent)}</Text>
       <Text style={styles.statusDiagnostic}>현재 판단  {diagnosticSummary(latestEvent)}</Text>
@@ -100,7 +100,7 @@ export function AutomationHistoryScreen({
     {cycles.map((cycle) => <View key={cycle.id} style={styles.cycle}>
       <View style={styles.cycleHeader}><View><Text style={styles.time}>{new Date(cycle.startedAt).toLocaleString('ko-KR')}</Text><Text style={styles.cycleMeta}>판단 과정 {cycle.events.length}단계</Text></View><Text style={styles.result}>{resultLabel(cycle.result)}</Text></View>
       {cycle.events.map((event) => <View key={event.id} style={styles.event}>
-        <Text style={styles.sequence}>{event.sequence + 1}</Text><View style={styles.eventCopy}><Text style={styles.eventTitle}>{event.type ? AUTOMATION_TYPE_METADATA[event.type].label : '시스템'} · {kindLabel(event.kind)}</Text>
+        <Text style={styles.sequence}>{event.sequence + 1}</Text><View style={styles.eventCopy}><Text style={styles.eventTitle}>{event.entryDisplayName ?? (event.type ? AUTOMATION_TYPE_METADATA[event.type].label : '시스템')} · {kindLabel(event.kind)}</Text>
           <Text style={styles.eventTime}>기록 시각  {new Date(event.occurredAt).toLocaleString('ko-KR')}</Text>
           {event.targetName || event.targetKey ? <View style={styles.factGroup}><Text style={styles.fact}><Text style={styles.factLabel}>대상  </Text>{event.targetName ?? event.targetKey}</Text></View> : null}
           {event.presetName || event.presetId || event.actionKind ? <View style={styles.details}>{event.actionKind ? <Text style={styles.detailChip}>동작 {actionLabel(event.actionKind, event.type)}</Text> : null}{event.presetName || event.presetId ? <Text style={styles.detailChip}>프리셋 {event.presetName ?? `저장된 프리셋 ${event.presetId}`}</Text> : null}</View> : null}

@@ -530,7 +530,7 @@ export type RaidPubResponse = {
 };
 export type RaidPubActionRequest = { action: RaidAction; raidId: string | null };
 
-/** 백엔드가 소유하는 일곱 singleton 자동화 유형. */
+/** 맵 유형은 복수 묶음을, 나머지 유형은 계정별 singleton을 사용한다. */
 export type AutomationType = 'QUEST' | 'HOME_QUEST' | 'BATTLE_MAP' | 'ADVENTURE_MAP' | 'RAID' | 'UNION' | 'FISHING';
 
 /** PRIMARY는 ID를 보내지 않고 EXPLICIT은 유효한 preset ID를 반드시 보낸다. */
@@ -540,6 +540,14 @@ export type PresetSelection =
 
 export type CreateAutomationEntryRequest = { type: AutomationType };
 export type ReorderAutomationEntriesRequest = { entryIds: number[] };
+export type MoveMapBetweenGroupsRequest = {
+  sourceEntryId: number;
+  sourceSettingsRevision: string;
+  targetSettingsRevision: string;
+  categoryId: string;
+  mapCode: string;
+  targetExecutionOrder: number;
+};
 
 export type QuestMapSettingRequest = PresetSelection & {
   missionKey: string;
@@ -583,6 +591,10 @@ export type UpdateBattleMapAutomationRequest = {
   enabled: boolean;
   maps: BattleMapSettingRequest[];
 };
+export type UpdateBattleMapGroupRequest = UpdateBattleMapAutomationRequest & {
+  settingsRevision: string;
+  displayName: string | null;
+};
 
 export type AdventureMapSettingRequest = PresetSelection & {
   categoryId: string;
@@ -593,6 +605,10 @@ export type AdventureMapSettingRequest = PresetSelection & {
 export type UpdateAdventureMapAutomationRequest = {
   enabled: boolean;
   maps: AdventureMapSettingRequest[];
+};
+export type UpdateAdventureMapGroupRequest = UpdateAdventureMapAutomationRequest & {
+  settingsRevision: string;
+  displayName: string | null;
 };
 export type FishingMapSettingRequest = PresetSelection & { categoryId: string; mapCode: string; executionOrder: number };
 export type FishingMapSettingResponse = FishingMapSettingRequest & { displayName?: string | null };
@@ -623,6 +639,8 @@ export type AdventureMapSettingResponse = AdventureMapSettingRequest & {
 export type TypedAutomationEntryResponse = {
   id: number;
   type: AutomationType;
+  displayName?: string | null;
+  settingsRevision?: string;
   enabled: boolean;
   priority: number;
   ready: boolean;
@@ -652,6 +670,7 @@ export type RaidCooldownSource = 'HOF_DIRECT' | 'HOF_SINGLE_TARGET_INFERENCE'
 export type AutomationImpactScope = 'RAID_ONLY';
 export type AutomationHistoryEvent = {
   id: number; sequence: number; entryId: number | null; type: AutomationType | null;
+  entryDisplayName?: string | null;
   kind: AutomationHistoryEventKind; reasonCode: string; message: string;
   targetKey: string | null; targetName: string | null; actionKind: string | null;
   presetId: number | null; presetName: string | null; nextRunAt: string | null; occurredAt: string;
@@ -727,6 +746,7 @@ export type TypedAutomationCurrentActionResponse = {
   source: AutomationType;
   kind: string;
   actionLabel: string;
+  entryDisplayName?: string | null;
   questName: string | null;
   missionLabel: string | null;
   missionCurrent: number | null;

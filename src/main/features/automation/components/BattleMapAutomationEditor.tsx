@@ -64,7 +64,14 @@ type Props = {
   onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
   partyPresetCatalog: PartyPresetCatalogResource;
   onClearMutationMessage: () => void;
-  onSave: (request: UpdateBattleMapAutomationRequest) => Promise<boolean>;
+  onSave: (request: UpdateBattleMapAutomationRequest & { displayName?: string | null }) => Promise<boolean>;
+  otherMapGroups?: readonly TypedAutomationEntryResponse[];
+  onMoveMap?: (
+    sourceEntryId: number,
+    categoryId: string,
+    mapCode: string,
+    targetExecutionOrder: number,
+  ) => Promise<boolean>;
 };
 
 type ResourceState = { loading: boolean; error: string | null };
@@ -89,8 +96,11 @@ export function BattleMapAutomationEditor({
   partyPresetCatalog,
   onClearMutationMessage,
   onSave,
+  otherMapGroups = [],
+  onMoveMap,
 }: Props) {
   const [draft, setDraft] = useState<BattleMapAutomationDraft>(() => buildBattleMapAutomationDraft(entry, []));
+  const [groupName, setGroupName] = useState(entry.displayName ?? '');
   const [catalog, setCatalog] = useState<BattleMapResponse[]>([]);
   const [query, setQuery] = useState('');
   const [activeTab, setActiveTab] = useState<AutomationMapEditorTab>('SELECTED');
@@ -105,6 +115,7 @@ export function BattleMapAutomationEditor({
   const draftRef = useRef(draft);
   const queryRef = useRef(query);
   const baselineRef = useRef(serializeEditableDraft(draft));
+  const baselineNameRef = useRef(entry.displayName ?? '');
   const entrySettingsRef = useRef(serializeEntrySettings(entry));
   const mountedGenerationRef = useRef(0);
   const mapGenerationRef = useRef<Record<string, number>>({});
@@ -239,16 +250,21 @@ export function BattleMapAutomationEditor({
     const settingsChanged = source !== entrySettingsRef.current;
     entrySettingsRef.current = source;
     const next = buildBattleMapAutomationDraft(entry, catalog);
-    if (settingsChanged && serializeEditableDraft(draftRef.current) === baselineRef.current) {
+    if (settingsChanged
+      && serializeEditableDraft(draftRef.current) === baselineRef.current
+      && groupName === baselineNameRef.current) {
       draftRef.current = next;
       setDraft(next);
       baselineRef.current = serializeEditableDraft(next);
+      const nextName = entry.displayName ?? '';
+      baselineNameRef.current = nextName;
+      setGroupName(nextName);
       setServerRefreshWarning(false);
     } else {
       updateDraft((current) => ({ ...current, dailyProgress: next.dailyProgress }));
       if (settingsChanged) setServerRefreshWarning(true);
     }
-  }, [catalog, entry, updateDraft]);
+  }, [catalog, entry, groupName, updateDraft]);
 
   const validPresetIds = useMemo(
     () => partyPresetCatalog.catalog.presets.map(({ id }) => id),
@@ -267,9 +283,11 @@ export function BattleMapAutomationEditor({
   const controlsDisabled = busy || !draftReady;
   controlsDisabledRef.current = controlsDisabled;
   queryRef.current = query;
-  const dirty = serializeEditableDraft(draft) !== baselineRef.current;
+  const dirty = serializeEditableDraft(draft) !== baselineRef.current
+    || groupName !== baselineNameRef.current;
+  const nameInvalid = groupName.trim().length > 100;
   const hasExplicitPreset = draft.maps.some(({ presetMode }) => presetMode === 'EXPLICIT');
-  const saveDisabled = controlsDisabled || validationErrors.length > 0
+  const saveDisabled = controlsDisabled || validationErrors.length > 0 || nameInvalid
     || (hasExplicitPreset && (presetState.loading || presetState.error != null));
   const catalogResult = useMemo(() => buildBattleMapCatalogRows({
     categories: eligibleCategories,
@@ -398,7 +416,14 @@ export function BattleMapAutomationEditor({
       const submittedDraft = draftRef.current;
       const request = buildBattleMapAutomationRequest(submittedDraft, validPresetIds);
       const submittedBaseline = serializeEditableDraft(submittedDraft);
-      if (await onSave(request)) baselineRef.current = submittedBaseline;
+      const submittedName = groupName.trim();
+      const payload = entry.settingsRevision == null && submittedName.length === 0
+        ? request
+        : { ...request, displayName: submittedName || null };
+      if (await onSave(payload)) {
+        baselineRef.current = submittedBaseline;
+        baselineNameRef.current = submittedName;
+      }
     } finally {
       setLocalBusy(false);
     }
@@ -500,8 +525,32 @@ export function BattleMapAutomationEditor({
       const { map } = row;
       const identity = map.mapCode == null ? null : battleMapIdentity({ categoryId: map.categoryId, mapCode: map.mapCode });
       const selected = identity != null && draft.maps.some((setting) => battleMapIdentity(setting) === identity);
+      const owner = identity == null ? null : otherMapGroups.find((group) => group.battleMaps.some(
+        (setting) => battleMapIdentity(setting) === identity,
+      )) ?? null;
       return <BattleMapCatalogMapRow disabled={controlsDisabled} map={map} onPress={() => {
         if (controlsDisabledRef.current) return;
+        if (!selected && owner && onMoveMap && map.mapCode != null) {
+          Alert.alert(
+            `${map.name}을 이 묶음으로 이동할까요?`,
+            `${owner.displayName?.trim() || '다른 전투 맵 묶음'}에서 제거하고 이 묶음의 마지막에 추가합니다.`,
+            [
+              { text: '취소', style: 'cancel' },
+              {
+                text: '여기로 이동',
+                onPress: () => {
+                  if (controlsDisabledRef.current) return;
+                  controlsDisabledRef.current = true;
+                  setLocalBusy(true);
+                  onClearMutationMessage();
+                  void onMoveMap(owner.id, map.categoryId, map.mapCode!, draftRef.current.maps.length)
+                    .finally(() => { if (mountedRef.current) setLocalBusy(false); });
+                },
+              },
+            ],
+          );
+          return;
+        }
         updateDraft((current) => {
           if (controlsDisabledRef.current) return current;
           const currentlySelected = identity != null
@@ -524,7 +573,7 @@ export function BattleMapAutomationEditor({
         nested
       />
     );
-  }, [controlsDisabled, deleteSelectedMap, draft.maps, loadCategoryMaps, moveSelectedMap, query, renderSelectedMap, reorderSelectedMaps, toggleCatalogCategory, toggleCatalogGroup, updateDraft]);
+  }, [controlsDisabled, deleteSelectedMap, draft.maps, loadCategoryMaps, moveSelectedMap, onClearMutationMessage, onMoveMap, otherMapGroups, query, renderSelectedMap, reorderSelectedMaps, toggleCatalogCategory, toggleCatalogGroup, updateDraft]);
 
   return (
     <View style={styles.screen}>
@@ -538,6 +587,17 @@ export function BattleMapAutomationEditor({
         </View>
         <Switch accessibilityLabel="전투 맵 자동화 사용" disabled={controlsDisabled} value={draft.enabled} onValueChange={(enabled) => updateEditableDraft((current) => ({ ...current, enabled }))} />
       </View>
+
+      <TextInput
+        accessibilityLabel="전투 맵 묶음 이름"
+        editable={!controlsDisabled}
+        maxLength={100}
+        onChangeText={setGroupName}
+        placeholder="묶음 이름 (선택)"
+        placeholderTextColor={theme.colors.textMuted}
+        style={styles.search}
+        value={groupName}
+      />
 
       {mutationMessage ? <Text accessibilityLabel="전투 맵 자동화 작업 오류" accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.problem}>{mutationMessage}</Text> : null}
       {serverRefreshWarning ? <Text accessibilityLabel="전투 맵 자동화 서버 갱신 알림" accessibilityLiveRegion="polite" accessibilityRole="alert" style={styles.problem}>새 서버 설정이 있지만 편집 중인 변경은 유지했습니다.</Text> : null}
@@ -578,7 +638,7 @@ export function BattleMapAutomationEditor({
         visible={activePresetSetting != null && !controlsDisabled}
       />
 
-      {validationErrors.length > 0 ? <Text accessibilityLabel="전투 맵 자동화 입력 오류" accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.problem}>{validationErrors[0]}</Text> : null}
+      {validationErrors.length > 0 || nameInvalid ? <Text accessibilityLabel="전투 맵 자동화 입력 오류" accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.problem}>{nameInvalid ? '묶음 이름은 100자 이하여야 합니다.' : validationErrors[0]}</Text> : null}
       <View style={styles.footer}>
         <Pressable accessibilityLabel="전투 맵 자동화 저장" accessibilityRole="button" accessibilityState={{ busy, disabled: saveDisabled }} disabled={saveDisabled} onPress={() => save()} style={[styles.saveButton, saveDisabled && styles.disabled]}>{busy ? <ActivityIndicator color={theme.colors.buttonText} size="small" /> : <Save color={theme.colors.buttonText} size={17} />}<Text style={styles.saveText}>저장</Text></Pressable>
       </View>
@@ -641,7 +701,7 @@ function serializeEditableDraft(draft: BattleMapAutomationDraft): string {
   ]);
 }
 function serializeEntrySettings(entry: TypedAutomationEntryResponse): string {
-  return JSON.stringify([entry.enabled, entry.battleMaps]);
+  return JSON.stringify([entry.enabled, entry.battleMaps, entry.displayName]);
 }
 
 const styles = StyleSheet.create({

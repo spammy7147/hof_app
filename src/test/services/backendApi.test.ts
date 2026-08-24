@@ -825,7 +825,7 @@ describe('BackendApiClient', () => {
     mockFetchWithCapture(aggregate, requests);
     await client.createAutomationEntry({ type: 'QUEST' });
     mockFetchWithCapture(aggregate, requests);
-    await client.deleteAutomationEntry(31);
+    await client.deleteAutomationEntry(31, '7');
     mockFetchWithCapture(aggregate, requests);
     await client.reorderAutomationEntries([31, 18]);
     mockFetchWithCapture(aggregate, requests);
@@ -854,7 +854,7 @@ describe('BackendApiClient', () => {
       [
         ['http://backend.test/api/automation/unified', 'GET'],
         ['http://backend.test/api/automation/unified/entries', 'POST'],
-        ['http://backend.test/api/automation/unified/entries/31', 'DELETE'],
+        ['http://backend.test/api/automation/unified/entries/31?settingsRevision=7', 'DELETE'],
         ['http://backend.test/api/automation/unified/entries/order', 'PUT'],
         ['http://backend.test/api/automation/unified/quest', 'PUT'],
         ['http://backend.test/api/automation/unified/battle-maps', 'PUT'],
