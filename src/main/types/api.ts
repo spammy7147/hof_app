@@ -590,6 +590,7 @@ export type BattleMapSettingRequest = PresetSelection & {
 export type UpdateBattleMapAutomationRequest = {
   enabled: boolean;
   maps: BattleMapSettingRequest[];
+  minimumRemainingTime?: number | null;
 };
 export type UpdateBattleMapGroupRequest = UpdateBattleMapAutomationRequest & {
   settingsRevision: string;
@@ -641,6 +642,7 @@ export type TypedAutomationEntryResponse = {
   type: AutomationType;
   displayName?: string | null;
   settingsRevision?: string;
+  minimumRemainingTime?: number | null;
   enabled: boolean;
   priority: number;
   ready: boolean;

@@ -252,7 +252,7 @@ describe('AdventureMapAutomationEditor', () => {
     });
 
     const presetChoice = renderer.root.findByProps({ accessibilityLabel: '압축 모험 프리셋 선택 열기' });
-    assert.equal(flattenStyle(presetChoice.props.style).minHeight, 32);
+    assert.equal(flattenStyle(presetChoice.props.style).minHeight, 44);
     assert.equal(hasText(renderer.root, '압축 모험'), true);
     const selectedCard = presetChoice.parent!;
     const summary = findTextNode(selectedCard, '수정 동굴 · 실행 가능 · 키 114개 · 가능 3회');
@@ -373,7 +373,12 @@ describe('AdventureMapAutomationEditor', () => {
     const lists = renderer.root.findAll((node) => (node.type as unknown) === 'NestableScrollContainer');
     assert.equal(lists.length, 1);
     assert.equal(flattenStyle(lists[0]!.props.contentContainerStyle).gap, 6);
-    assert.equal(hasText(renderer.root, '오늘 초기화 완료 · 오전 12:03'), true);
+    assert.equal(hasText(renderer.root, '초기화 완료 · 오전 12:03'), true);
+    assert.equal(hasText(renderer.root, '상태와 관계없이 선택하고 실행 순서를 정하세요.'), false);
+    const refresh = renderer.root.findByProps({ accessibilityLabel: '한국 날짜 00시 초기화. 초기화 완료 · 오전 12:03' });
+    assert.equal(refresh.props.numberOfLines, 1);
+    assert.equal(refresh.props.ellipsizeMode, 'tail');
+    assert.equal(flattenStyle(renderer.root.findByProps({ accessibilityRole: 'tablist' }).props.style).padding, 2);
     await openAdventureGroup(renderer, '기타');
     const cooldown = renderer.root.findByProps({ accessibilityLabel: '쿨다운 맵 모험맵 선택' });
     assert.equal(cooldown.props.disabled, false);
@@ -393,6 +398,15 @@ describe('AdventureMapAutomationEditor', () => {
         { categoryId: 'adventure_map', mapCode: 'cooldown', presetMode: 'PRIMARY', partyPresetId: null, executionOrder: 1 },
       ],
     }]);
+  });
+
+  it('does not expose an invalid daily refresh timestamp in the compact status line', async () => {
+    const renderer = await renderEditor({
+      dailyRefresh: { status: 'COMPLETE', refreshDate: '2026-07-16', refreshedAt: 'invalid timestamp' },
+    });
+
+    assert.equal(hasText(renderer.root, '초기화 완료 · 시간 확인 불가'), true);
+    assert.equal(hasText(renderer.root, 'invalid timestamp'), false);
   });
 
   it('updates PRIMARY labels from the latest preset list while keeping explicit labels fixed', async () => {

@@ -88,7 +88,7 @@ describe('AutomationMapOrderList', () => {
       draggable.props.onLayout({ nativeEvent: { layout: { width: 300 } } });
     });
     draggable = findHost(renderer.root, 'DraggableFlatList');
-    assert.deepEqual(draggable.props.dragHitSlop, { right: -252 });
+    assert.deepEqual(draggable.props.dragHitSlop, { right: -256 });
     await act(async () => {
       draggable.props.onDragEnd({ data: [row('b', 'Beta'), row('a', 'Alpha')], from: 0, to: 1 });
     });
@@ -103,6 +103,24 @@ describe('AutomationMapOrderList', () => {
     assert.ok(Separator);
     const separator = Separator() as React.ReactElement<{ style: { height?: number } }>;
     assert.equal(separator.props.style.height, 8);
+  });
+
+  it('compacts only non-interactive card spacing while preserving real touch bounds', async () => {
+    const renderer = await renderList({ compact: true });
+    const draggable = findHost(renderer.root, 'DraggableFlatList');
+    const Separator = draggable.props.ItemSeparatorComponent as () => React.ReactElement;
+    const separator = Separator() as React.ReactElement<{ style: { height?: number } }>;
+    assert.equal(separator.props.style.height, 4);
+
+    const handle = renderer.root.findByProps({ accessibilityLabel: 'Alpha 1번째 맵 순서 이동' });
+    const handleStyle = flattenStyle(handle.props.style({ pressed: false }));
+    assert.ok(handleStyle.minWidth as number >= 44);
+    assert.ok(handleStyle.minHeight as number >= 44);
+
+    const content = findHosts(renderer.root, 'Content')[0]!.parent!;
+    const contentStyle = flattenStyle(content.props.style);
+    assert.equal(contentStyle.paddingTop, 2);
+    assert.equal(contentStyle.paddingBottom, 2);
   });
 
   it('offers bounded accessible movement and deletion from the drag handle', async () => {
@@ -235,4 +253,14 @@ function findHost(root: ReactTestInstance, name: string): ReactTestInstance {
 
 function findHosts(root: ReactTestInstance, name: string): ReactTestInstance[] {
   return root.findAll((node) => (node.type as unknown) === name);
+}
+
+function flattenStyle(style: unknown): Record<string, unknown> {
+  if (Array.isArray(style)) {
+    return style.reduce<Record<string, unknown>>(
+      (flattened, entry) => ({ ...flattened, ...flattenStyle(entry) }),
+      {},
+    );
+  }
+  return style != null && typeof style === 'object' ? style as Record<string, unknown> : {};
 }

@@ -9,6 +9,7 @@ import {
   filterBattleAutomationCategories,
   filterBattleMapCatalog,
   moveBattleMapSetting,
+  parseBattleMinimumRemainingTime,
   selectBattleMap,
   validateBattleMapAutomationDraft,
 } from '../../main/domain/battleMapAutomation';
@@ -88,6 +89,7 @@ describe('battle map automation domain', () => {
     draft.maps[0]!.dailyTargetCount = 9;
     assert.deepEqual(buildBattleMapAutomationRequest(draft, [4]), {
       enabled: true,
+      minimumRemainingTime: null,
       maps: [{
         categoryId: 'battle', mapCode: 'a', dailyTargetCount: 9,
         presetMode: 'PRIMARY', partyPresetId: null, executionOrder: 0,
@@ -101,6 +103,25 @@ describe('battle map automation domain', () => {
     const unresolvedCatalog = buildBattleMapAutomationDraft(stored, [map('battle', 'a', 'Unresolved Alpha', { resolved: false, keyMode: 'UNKNOWN' })]);
     assert.equal(unresolvedCatalog.maps[0]?.displayName, 'a');
     assert.equal(unresolvedCatalog.maps[0]?.resolved, false);
+  });
+
+  it('hydrates, validates, and serializes the optional minimum remaining Time without a fixed default', () => {
+    const stored = { ...entry(), minimumRemainingTime: 1500 };
+    const draft = buildBattleMapAutomationDraft(stored, []);
+    assert.equal(draft.minimumRemainingTime, '1500');
+    assert.equal(buildBattleMapAutomationRequest(draft, [4]).minimumRemainingTime, 1500);
+
+    for (const unlimited of ['', '0', '000']) {
+      draft.minimumRemainingTime = unlimited;
+      assert.equal(parseBattleMinimumRemainingTime(unlimited), null);
+      assert.deepEqual(validateBattleMapAutomationDraft(draft, [4]), []);
+      assert.equal(buildBattleMapAutomationRequest(draft, [4]).minimumRemainingTime, null);
+    }
+
+    for (const invalid of ['-1', '1.5', '1e3', '9007199254740992', '2147483348']) {
+      draft.minimumRemainingTime = invalid;
+      assert.notDeepEqual(validateBattleMapAutomationDraft(draft, [4]), [], invalid);
+    }
   });
 
   it('accepts only trimmed ASCII decimal digits and normalizes leading zeros in the request', () => {
@@ -155,17 +176,20 @@ describe('battle map automation domain', () => {
     assert.deepEqual(selected.maps.map(({ mapCode }) => mapCode), ['a', 'later']);
   });
 
-  it('filters only the exact adventure and union categories rejected for battle automation', () => {
+  it('filters only the exact adventure, union, and raid categories rejected for battle automation', () => {
     const categories = [
       { id: 'battle_map', label: '전투맵', description: '', order: 0, enabled: true },
       { id: 'adventure_map', label: '모험맵', description: '', order: 1, enabled: true },
       { id: 'union', label: '유니온', description: '', order: 2, enabled: true },
-      { id: 'scenario_union', label: '유니온 이름을 포함한 별도 카테고리', description: '', order: 3, enabled: true },
+      { id: 'raid', label: '레이드', description: '', order: 3, enabled: true },
+      { id: 'scenario_union', label: '유니온 이름을 포함한 별도 카테고리', description: '', order: 4, enabled: true },
+      { id: 'raid_event', label: '레이드 이름을 포함한 별도 카테고리', description: '', order: 5, enabled: true },
     ];
 
     assert.deepEqual(filterBattleAutomationCategories(categories).map(({ id }) => id), [
       'battle_map',
       'scenario_union',
+      'raid_event',
     ]);
   });
 });

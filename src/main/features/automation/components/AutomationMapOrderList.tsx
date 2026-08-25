@@ -18,11 +18,12 @@ export type AutomationMapOrderListProps<T extends object> = {
   onMove: (id: string, offset: -1 | 1) => void;
   onReorder: (orderedIds: string[]) => void;
   renderContent: (item: T, context: { disabled: boolean; index: number }) => ReactNode;
+  compact?: boolean;
   nested?: boolean;
 };
 
 type Row<T> = { id: string; item: T };
-const DRAG_HANDLE_GESTURE_WIDTH = 48;
+const DRAG_HANDLE_GESTURE_WIDTH = 44;
 
 export function AutomationMapOrderList<T extends object>({
   data,
@@ -33,6 +34,7 @@ export function AutomationMapOrderList<T extends object>({
   onMove,
   onReorder,
   renderContent,
+  compact = false,
   nested = false,
 }: AutomationMapOrderListProps<T>) {
   const [dragging, setDragging] = useState(false);
@@ -158,7 +160,7 @@ export function AutomationMapOrderList<T extends object>({
           >
             <GripVertical color={theme.colors.textMuted} size={18} />
           </Pressable>
-          <View style={styles.content}>{renderContent(row.item, { disabled: interactionDisabled, index })}</View>
+          <View style={[styles.content, compact && styles.compactContent]}>{renderContent(row.item, { disabled: interactionDisabled, index })}</View>
         </View>
       </ReanimatedSwipeable>
     );
@@ -170,7 +172,7 @@ export function AutomationMapOrderList<T extends object>({
     dragHitSlop: listWidth > DRAG_HANDLE_GESTURE_WIDTH
       ? { right: -(listWidth - DRAG_HANDLE_GESTURE_WIDTH) }
       : undefined,
-    ItemSeparatorComponent: MapRowSeparator,
+    ItemSeparatorComponent: compact ? CompactMapRowSeparator : MapRowSeparator,
     keyExtractor: ({ id }: Row<T>) => id,
     onLayout: (event: { nativeEvent: { layout: { width: number } } }) => {
       setListWidth(event.nativeEvent.layout.width);
@@ -206,6 +208,10 @@ function MapRowSeparator() {
   return <View style={styles.separator} />;
 }
 
+function CompactMapRowSeparator() {
+  return <View style={styles.compactSeparator} />;
+}
+
 const styles = StyleSheet.create({
   swipeContainer: { borderCurve: 'continuous', borderRadius: theme.radius.md, overflow: 'hidden' },
   card: {
@@ -218,7 +224,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   activeCard: { borderColor: theme.colors.accentGreen, opacity: 0.82 },
-  handle: { alignItems: 'center', justifyContent: 'center', minHeight: 44, width: 36 },
+  handle: { alignItems: 'center', justifyContent: 'center', minHeight: 44, minWidth: 44 },
   content: {
     flex: 1,
     minWidth: 0,
@@ -226,8 +232,10 @@ const styles = StyleSheet.create({
     paddingRight: theme.spacing.xs,
     paddingTop: theme.spacing.xs,
   },
+  compactContent: { paddingBottom: 2, paddingTop: 2 },
   deleteAction: { alignItems: 'center', backgroundColor: theme.colors.danger, justifyContent: 'center', width: 72 },
   deleteText: { color: theme.colors.buttonText, fontSize: 11, fontWeight: '900', marginTop: 2 },
   separator: { height: theme.spacing.sm },
+  compactSeparator: { height: theme.spacing.xs },
   pressed: { opacity: 0.72 },
 });

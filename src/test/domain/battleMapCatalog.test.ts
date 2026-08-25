@@ -12,6 +12,7 @@ describe('battle map automation catalog rows', () => {
       map('battle_map', 'g1', '약한 고블린', '고블린 부락', 0, 0),
       map('battle_map', 'c1', '동굴 입구', '고대의 동굴', 1, 0),
       map('scenario_ocean', 's1', '연안', '연안 항로', 0, 0),
+      map('raid', 'raid1', '고블린 전투 마차', '레이드', 0, 0),
       map('adventure_map', 'daily', '일일 모험', '모험', 0, 0),
       map('union', 'union-map', '유니온', '유니온', 0, 0),
     ];
@@ -32,7 +33,6 @@ describe('battle map automation catalog rows', () => {
       ['MAP', `map:${buildBattleMapStateKey(catalog[0]!)}`],
       ['GROUP', 'group:10:battle_map|1:1|6:고대의 동굴'],
       ['CATEGORY', 'category:scenario_ocean'],
-      ['CATEGORY', 'category:raid'],
     ]);
     assert.equal(result.matchCount, 4);
   });

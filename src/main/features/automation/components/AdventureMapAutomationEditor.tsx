@@ -507,6 +507,7 @@ export function AdventureMapAutomationEditor({
     }
     return (
       <AutomationMapOrderList
+        compact
         data={draft.maps}
         disabled={controlsDisabled}
         getId={adventureMapIdentity}
@@ -526,7 +527,6 @@ export function AdventureMapAutomationEditor({
         <Pressable accessibilityLabel="모험맵 자동화 뒤로" disabled={busy} onPress={requestBack} style={styles.iconButton}><ArrowLeft color={theme.colors.text} size={21} /></Pressable>
         <View style={styles.copy}>
           <Text style={styles.title}>모험맵 자동화</Text>
-          <Text style={styles.subtitle}>상태와 관계없이 선택하고 실행 순서를 정하세요.</Text>
         </View>
         <Switch accessibilityLabel="모험맵 자동화 사용" disabled={controlsDisabled} value={draft.enabled} onValueChange={(enabled) => updateEditableDraft((current) => ({ ...current, enabled }))} />
       </View>
@@ -541,14 +541,18 @@ export function AdventureMapAutomationEditor({
         value={groupName}
       />
       <View style={styles.refreshBand}>
-        <Text style={styles.refreshTitle}>한국 날짜 00시 초기화</Text>
-        <Text style={styles.refreshText}>{formatAdventureDailyRefresh(dailyRefresh)}</Text>
+        <Text
+          accessibilityLabel={`한국 날짜 00시 초기화. ${formatCompactAdventureDailyRefresh(dailyRefresh)}`}
+          ellipsizeMode="tail"
+          numberOfLines={1}
+          style={styles.refreshText}
+        >{formatCompactAdventureDailyRefresh(dailyRefresh)}</Text>
       </View>
       {mutationMessage ? <Text accessibilityRole="alert" style={styles.problem}>{mutationMessage}</Text> : null}
       {battleCategoriesError ? <ResourceWarning label="맵 카테고리" onRetry={onLoadBattleCategories} /> : null}
       {mapState.error ? <ResourceWarning label="모험맵" onRetry={loadMaps} /> : null}
       {presetState.error ? <ResourceWarning label="프리셋" onRetry={partyPresetCatalog.retry} /> : presetState.loading ? <Text style={styles.muted}>프리셋 불러오는 중</Text> : null}
-      <AutomationMapEditorTabs activeTab={activeTab} onChange={setActiveTab} selectedCount={draft.maps.length} />
+      <AutomationMapEditorTabs activeTab={activeTab} compact onChange={setActiveTab} selectedCount={draft.maps.length} />
       {activeTab === 'CATALOG' ? <TextInput accessibilityLabel="모험맵 검색" editable={!controlsDisabled} onChangeText={(nextQuery) => { queryRef.current = nextQuery; setQuery(nextQuery); }} placeholder="추가할 모험맵 이름, 그룹, 추천 레벨 검색" placeholderTextColor={theme.colors.textMuted} style={styles.search} value={query} /> : null}
       <NestableScrollContainer
         contentContainerStyle={styles.content}
@@ -594,6 +598,11 @@ export function AdventureMapAutomationEditor({
 function ResourceWarning({ label, onRetry }: { label: string; onRetry: () => void | Promise<unknown> }) {
   return <View style={styles.warning}><Text style={styles.problem}>{label}을 불러오지 못했어요.</Text><Pressable onPress={() => { void onRetry(); }} style={styles.choice}><Text style={styles.choiceText}>다시 시도</Text></Pressable></View>;
 }
+function formatCompactAdventureDailyRefresh(refresh: AdventureDailyRefreshResponse): string {
+  if (refresh.status !== 'COMPLETE' || refresh.refreshedAt == null) return '초기화 · 대기';
+  if (Number.isNaN(new Date(refresh.refreshedAt).getTime())) return '초기화 완료 · 시간 확인 불가';
+  return formatAdventureDailyRefresh(refresh).replace(/^오늘 /, '');
+}
 function serializeDraft(draft: AdventureMapAutomationDraft): string {
   return JSON.stringify([draft.enabled, draft.maps.map(({ categoryId, mapCode, presetMode, partyPresetId, executionOrder }) => [categoryId, mapCode, presetMode, partyPresetId, executionOrder])]);
 }
@@ -633,24 +642,22 @@ function buildAdventureCardSummary(setting: AdventureMapAutomationDraft['maps'][
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, gap: theme.spacing.xs, padding: theme.spacing.lg },
+  screen: { flex: 1, gap: 2, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm },
   scroller: { flex: 1 },
   header: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
   copy: { flex: 1 },
   title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' },
-  subtitle: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
-  refreshBand: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md, gap: 2, padding: theme.spacing.md },
-  refreshTitle: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '700' },
-  refreshText: { color: theme.colors.accentGreen, fontSize: 13, fontWeight: '900' },
+  refreshBand: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md, justifyContent: 'center', paddingHorizontal: theme.spacing.md, paddingVertical: 2 },
+  refreshText: { color: theme.colors.accentGreen, fontSize: 12, fontWeight: '900', lineHeight: 18 },
   content: { gap: 6, paddingBottom: theme.spacing.lg },
   sectionTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '900', marginTop: theme.spacing.xs },
-  search: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: 46, paddingHorizontal: theme.spacing.md },
+  search: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md },
   mapName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
-  compactSummary: { color: theme.colors.textMuted, fontSize: 10, lineHeight: 14, marginTop: 2 },
+  compactSummary: { color: theme.colors.textMuted, fontSize: 10, lineHeight: 14 },
   muted: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
   problem: { color: theme.colors.accentAmber, fontSize: 11, lineHeight: 16 },
   iconButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
-  choice: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: 32, paddingHorizontal: theme.spacing.sm },
+  choice: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: 44, paddingHorizontal: theme.spacing.sm },
   choiceLabel: { color: theme.colors.textMuted, fontSize: 10, fontWeight: '700' },
   choiceText: { color: theme.colors.text, flex: 1, fontSize: 12, fontWeight: '800' },
   warning: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between' },

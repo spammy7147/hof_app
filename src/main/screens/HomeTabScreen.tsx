@@ -167,6 +167,7 @@ export function HomeTabScreen({
         displayName: entry.displayName ?? null,
         enabled: !entry.enabled,
         maps: entry.battleMaps,
+        minimumRemainingTime: entry.minimumRemainingTime ?? null,
       });
     }
     if (entry.type === 'ADVENTURE_MAP') {
@@ -257,6 +258,7 @@ export function HomeTabScreen({
         isBattleCategoriesLoading={isBattleCategoriesLoading}
         battleCategoriesError={battleCategoriesError}
         entry={entry}
+        observedTimeMax={aggregate.hofStatus?.timeMax ?? status?.timeMax ?? null}
         mutationMessage={message ?? error}
         saving={savingEntryIds.includes(entry.id) || savingTypes.includes('BATTLE_MAP')}
         onBack={closeEditor}
@@ -286,6 +288,7 @@ export function HomeTabScreen({
             displayName: request.displayName ?? entry.displayName ?? null,
             enabled: request.enabled,
             maps: request.maps,
+            minimumRemainingTime: request.minimumRemainingTime,
           });
           if (saved) closeEditor();
           return saved;

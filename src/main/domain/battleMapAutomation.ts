@@ -6,6 +6,7 @@ import type {
 } from '../types/api';
 
 export const MAX_BATTLE_DAILY_TARGET = 2_147_483_647;
+export const MAX_BATTLE_MINIMUM_REMAINING_TIME = 2_147_483_347;
 
 export type BattleMapServerProgress = {
   successfulRuns: number;
@@ -28,6 +29,7 @@ export type BattleMapSettingDraft = {
 
 export type BattleMapAutomationDraft = {
   enabled: boolean;
+  minimumRemainingTime: string;
   maps: BattleMapSettingDraft[];
   dailyProgress: Record<string, BattleMapServerProgress>;
 };
@@ -57,7 +59,7 @@ export function describeBattleBatch({
 }
 
 export function buildBattleMapAutomationDraft(
-  entry: Pick<TypedAutomationEntryResponse, 'enabled' | 'battleMaps' | 'battleMapProgress'>,
+  entry: Pick<TypedAutomationEntryResponse, 'enabled' | 'battleMaps' | 'battleMapProgress' | 'minimumRemainingTime'>,
   catalog: readonly BattleMapResponse[],
 ): BattleMapAutomationDraft {
   const dailyProgress = Object.fromEntries((entry.battleMapProgress ?? []).map((progress) => [
@@ -79,7 +81,12 @@ export function buildBattleMapAutomationDraft(
         supportsThreeBattles: catalogMap?.supportsThreeBattles ?? null,
       };
     });
-  return { enabled: entry.enabled, maps, dailyProgress };
+  return {
+    enabled: entry.enabled,
+    minimumRemainingTime: entry.minimumRemainingTime == null ? '' : String(entry.minimumRemainingTime),
+    maps,
+    dailyProgress,
+  };
 }
 
 export function filterBattleMapCatalog(
@@ -99,11 +106,11 @@ export function filterBattleMapCatalog(
     .map(({ map }) => map);
 }
 
-/** 전투맵 typed API가 거절하는 두 카테고리만 새 선택 후보에서 제외한다. */
+/** 전투맵 typed API가 거절하는 카테고리만 새 선택 후보에서 제외한다. */
 export function filterBattleAutomationCategories(
   categories: readonly BattleCategoryResponse[],
 ): BattleCategoryResponse[] {
-  return categories.filter(({ id }) => id !== 'adventure_map' && id !== 'union');
+  return categories.filter(({ id }) => id !== 'adventure_map' && id !== 'union' && id !== 'raid');
 }
 
 export function selectBattleMap(
@@ -158,6 +165,12 @@ export function validateBattleMapAutomationDraft(
   { validatePresetMembership = true }: BattleMapAutomationValidationOptions = {},
 ): string[] {
   const errors: string[] = [];
+  const minimumRemainingTime = parseBattleMinimumRemainingTime(draft.minimumRemainingTime);
+  if (minimumRemainingTime === undefined) {
+    errors.push('최소 잔여 Time은 1 이상의 정수로 입력해 주세요.');
+  } else if (minimumRemainingTime != null && minimumRemainingTime > MAX_BATTLE_MINIMUM_REMAINING_TIME) {
+    errors.push('최소 잔여 Time은 2,147,483,347 이하여야 합니다.');
+  }
   const identities = new Set<string>();
   const orders = new Set<number>();
   for (const map of draft.maps) {
@@ -200,6 +213,7 @@ export function buildBattleMapAutomationRequest(
   if (errors.length > 0) throw new Error(errors.join('\n'));
   return {
     enabled: draft.enabled,
+    minimumRemainingTime: parseBattleMinimumRemainingTime(draft.minimumRemainingTime) ?? null,
     maps: draft.maps.map(({ categoryId, mapCode, dailyTargetCount, presetMode, partyPresetId, executionOrder }) => (
       presetMode === 'PRIMARY'
         ? { categoryId, mapCode, dailyTargetCount: parseBattleDailyTarget(dailyTargetCount)!, presetMode, partyPresetId: null, executionOrder }
@@ -227,4 +241,13 @@ export function parseBattleDailyTarget(value: number | string): number | null {
   if (!/^[0-9]+$/.test(normalized)) return null;
   const parsed = Number(normalized);
   return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+/** 빈 값과 0은 별도 하한 없음이며, undefined는 유효하지 않은 입력을 뜻한다. */
+export function parseBattleMinimumRemainingTime(value: string): number | null | undefined {
+  const normalized = value.trim();
+  if (normalized === '' || /^0+$/.test(normalized)) return null;
+  if (!/^[0-9]+$/.test(normalized)) return undefined;
+  const parsed = Number(normalized);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
 }

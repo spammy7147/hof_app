@@ -78,6 +78,36 @@ describe('UnifiedAutomationDashboard', () => {
     }
   });
 
+  it('shows the actual battle map group minimum remaining Time in its summary', async () => {
+    const configured = networkStopped();
+    configured.entries[0] = {
+      ...configured.entries[0]!,
+      ready: true,
+      warnings: [],
+      minimumRemainingTime: 1500,
+      battleMaps: [{
+        categoryId: 'battle_map',
+        mapCode: 'map',
+        dailyTargetCount: 3,
+        presetMode: 'PRIMARY',
+        partyPresetId: null,
+        executionOrder: 0,
+      }],
+    };
+    const configuredRenderer = await renderDashboard(configured, () => undefined);
+    assert.equal(hasText(configuredRenderer.root, '전투맵 1개 · 전투 후 최소 1,500 Time 유지'), true);
+
+    const unlimited = networkStopped();
+    unlimited.entries[0] = { ...configured.entries[0]!, minimumRemainingTime: null };
+    const unlimitedRenderer = await renderDashboard(unlimited, () => undefined);
+    assert.equal(hasText(unlimitedRenderer.root, '전투맵 1개 · Time 제한 없음'), true);
+
+    const disabled = networkStopped();
+    disabled.entries[0] = { ...configured.entries[0]!, enabled: false };
+    const disabledRenderer = await renderDashboard(disabled, () => undefined);
+    assert.equal(hasText(disabledRenderer.root, '사용 안 함 · 전투 후 최소 1,500 Time 유지'), true);
+  });
+
   it('shows network failures as automatic retry without a manual resume action', async () => {
     const actions: UnifiedAutomationAction[] = [];
     const aggregate = networkStopped();

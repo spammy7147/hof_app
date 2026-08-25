@@ -131,7 +131,7 @@ export function buildBattleMapAutomationRequest(
   enabled: boolean,
   maps: readonly BattleMapSettingRequest[],
 ): UpdateBattleMapAutomationRequest {
-  return { enabled, maps: normalizeOrder(maps) };
+  return { enabled, maps: normalizeOrder(maps), minimumRemainingTime: null };
 }
 
 export function buildAdventureMapAutomationRequest(

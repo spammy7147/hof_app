@@ -50,6 +50,24 @@ it('exposes selected and catalog tabs with count and changes the active tab', as
   assert.deepEqual(changes, ['CATALOG']);
 });
 
+it('uses compact outer spacing only when requested', async () => {
+  let renderer: ReactTestRenderer;
+  await act(async () => {
+    renderer = create(React.createElement(AutomationMapEditorTabs, {
+      activeTab: 'SELECTED',
+      compact: true,
+      onChange: () => undefined,
+      selectedCount: 2,
+    }));
+  });
+
+  const tabList = renderer!.root.findByProps({ accessibilityRole: 'tablist' });
+  assert.equal(flattenStyle(tabList.props.style).padding, 2);
+  const selected = renderer!.root.findAllByProps({ accessibilityLabel: '선택 맵 2개 탭' })
+    .find((node) => (node.type as unknown) === 'Pressable')!;
+  assert.ok(flattenStyle(selected.props.style).minHeight as number >= 44);
+});
+
 function flattenStyle(style: unknown): Record<string, unknown> {
   if (Array.isArray(style)) {
     return style.reduce<Record<string, unknown>>(

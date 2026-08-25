@@ -6,13 +6,14 @@ export type AutomationMapEditorTab = 'SELECTED' | 'CATALOG';
 
 type Props = {
   activeTab: AutomationMapEditorTab;
+  compact?: boolean;
   selectedCount: number;
   onChange: (tab: AutomationMapEditorTab) => void;
 };
 
-export function AutomationMapEditorTabs({ activeTab, selectedCount, onChange }: Props) {
+export function AutomationMapEditorTabs({ activeTab, compact = false, selectedCount, onChange }: Props) {
   return (
-    <View accessibilityRole="tablist" style={styles.tabs}>
+    <View accessibilityRole="tablist" style={[styles.tabs, compact && styles.compactTabs]}>
       <Tab
         active={activeTab === 'SELECTED'}
         accessibilityLabel={`선택 맵 ${selectedCount}개 탭`}
@@ -55,6 +56,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     padding: 4,
   },
+  compactTabs: { padding: 2 },
   tab: {
     alignItems: 'center',
     borderRadius: theme.radius.sm,

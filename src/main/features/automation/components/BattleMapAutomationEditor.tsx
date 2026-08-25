@@ -25,6 +25,7 @@ import {
   MAX_BATTLE_DAILY_TARGET,
   moveBattleMapSetting,
   parseBattleDailyTarget,
+  parseBattleMinimumRemainingTime,
   removeBattleMapSetting,
   selectBattleMap,
   validateBattleMapAutomationDraft,
@@ -72,6 +73,7 @@ type Props = {
     mapCode: string,
     targetExecutionOrder: number,
   ) => Promise<boolean>;
+  observedTimeMax?: number | null;
 };
 
 type ResourceState = { loading: boolean; error: string | null };
@@ -98,6 +100,7 @@ export function BattleMapAutomationEditor({
   onSave,
   otherMapGroups = [],
   onMoveMap,
+  observedTimeMax = null,
 }: Props) {
   const [draft, setDraft] = useState<BattleMapAutomationDraft>(() => buildBattleMapAutomationDraft(entry, []));
   const [groupName, setGroupName] = useState(entry.displayName ?? '');
@@ -286,6 +289,12 @@ export function BattleMapAutomationEditor({
   const dirty = serializeEditableDraft(draft) !== baselineRef.current
     || groupName !== baselineNameRef.current;
   const nameInvalid = groupName.trim().length > 100;
+  const parsedMinimumRemainingTime = parseBattleMinimumRemainingTime(draft.minimumRemainingTime);
+  const minimumTimeValidationError = validationErrors.find((error) => error.startsWith('최소 잔여 Time은')) ?? null;
+  const generalValidationError = validationErrors.find((error) => error !== minimumTimeValidationError) ?? null;
+  const timeCapacityWarning = typeof parsedMinimumRemainingTime === 'number'
+    && observedTimeMax != null
+    && parsedMinimumRemainingTime + 100 > observedTimeMax;
   const hasExplicitPreset = draft.maps.some(({ presetMode }) => presetMode === 'EXPLICIT');
   const saveDisabled = controlsDisabled || validationErrors.length > 0 || nameInvalid
     || (hasExplicitPreset && (presetState.loading || presetState.error != null));
@@ -562,6 +571,7 @@ export function BattleMapAutomationEditor({
 
     return (
       <AutomationMapOrderList
+        compact
         data={draft.maps}
         disabled={controlsDisabled}
         getId={battleMapIdentity}
@@ -583,7 +593,6 @@ export function BattleMapAutomationEditor({
         </Pressable>
         <View style={styles.headerCopy}>
           <Text style={styles.title}>전투 맵 자동화</Text>
-          <Text style={styles.subtitle}>맵별 오늘 목표와 실행 순서를 설정하세요.</Text>
         </View>
         <Switch accessibilityLabel="전투 맵 자동화 사용" disabled={controlsDisabled} value={draft.enabled} onValueChange={(enabled) => updateEditableDraft((current) => ({ ...current, enabled }))} />
       </View>
@@ -599,13 +608,39 @@ export function BattleMapAutomationEditor({
         value={groupName}
       />
 
+      <View style={styles.minimumTimeField}>
+        <View style={styles.minimumTimeRow}>
+          <Text numberOfLines={1} style={styles.fieldLabel}>최소 잔여 Time</Text>
+          <TextInput
+            accessibilityHint="비워 두거나 0을 입력하면 잔여 Time 제한 없이 실행합니다."
+            accessibilityLabel="최소 잔여 Time"
+            editable={!controlsDisabled}
+            keyboardType="number-pad"
+            onChangeText={(minimumRemainingTime) => updateEditableDraft((current) => ({
+              ...current,
+              minimumRemainingTime,
+            }))}
+            onEndEditing={() => {
+              if (parseBattleMinimumRemainingTime(draftRef.current.minimumRemainingTime) !== null) return;
+              updateEditableDraft((current) => ({ ...current, minimumRemainingTime: '' }));
+            }}
+            placeholder="제한 없음"
+            placeholderTextColor={theme.colors.textMuted}
+            style={styles.minimumTimeInput}
+            value={draft.minimumRemainingTime}
+          />
+        </View>
+        {minimumTimeValidationError ? <Text accessibilityLabel="최소 잔여 Time 입력 오류" accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.problem}>{minimumTimeValidationError}</Text> : null}
+        {timeCapacityWarning ? <Text accessibilityLiveRegion="polite" accessibilityRole="alert" style={styles.problem}>현재 최대 Time으로는 이 값을 남기고 1회 전투를 실행할 수 없습니다.</Text> : null}
+      </View>
+
       {mutationMessage ? <Text accessibilityLabel="전투 맵 자동화 작업 오류" accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.problem}>{mutationMessage}</Text> : null}
       {serverRefreshWarning ? <Text accessibilityLabel="전투 맵 자동화 서버 갱신 알림" accessibilityLiveRegion="polite" accessibilityRole="alert" style={styles.problem}>새 서버 설정이 있지만 편집 중인 변경은 유지했습니다.</Text> : null}
       {categoryLoading ? <Text style={styles.muted}>맵 카테고리 불러오는 중</Text> : null}
       {battleCategoriesError ? <ResourceWarning label="맵 카테고리" retryLabel="맵 카테고리 다시 불러오기" onRetry={onLoadBattleCategories} /> : null}
       {presetState.error ? <ResourceWarning label="프리셋" retryLabel="프리셋 다시 불러오기" onRetry={partyPresetCatalog.retry} /> : presetState.loading ? <Text style={styles.muted}>프리셋 불러오는 중</Text> : null}
 
-      <AutomationMapEditorTabs activeTab={activeTab} onChange={setActiveTab} selectedCount={draft.maps.length} />
+      <AutomationMapEditorTabs activeTab={activeTab} compact onChange={setActiveTab} selectedCount={draft.maps.length} />
       {activeTab === 'CATALOG' ? <TextInput accessibilityLabel="전투 맵 검색" editable onChangeText={(value) => {
         queryRef.current = value;
         setQuery(value);
@@ -638,7 +673,7 @@ export function BattleMapAutomationEditor({
         visible={activePresetSetting != null && !controlsDisabled}
       />
 
-      {validationErrors.length > 0 || nameInvalid ? <Text accessibilityLabel="전투 맵 자동화 입력 오류" accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.problem}>{nameInvalid ? '묶음 이름은 100자 이하여야 합니다.' : validationErrors[0]}</Text> : null}
+      {generalValidationError || nameInvalid ? <Text accessibilityLabel="전투 맵 자동화 입력 오류" accessibilityLiveRegion="assertive" accessibilityRole="alert" style={styles.problem}>{nameInvalid ? '묶음 이름은 100자 이하여야 합니다.' : generalValidationError}</Text> : null}
       <View style={styles.footer}>
         <Pressable accessibilityLabel="전투 맵 자동화 저장" accessibilityRole="button" accessibilityState={{ busy, disabled: saveDisabled }} disabled={saveDisabled} onPress={() => save()} style={[styles.saveButton, saveDisabled && styles.disabled]}>{busy ? <ActivityIndicator color={theme.colors.buttonText} size="small" /> : <Save color={theme.colors.buttonText} size={17} />}<Text style={styles.saveText}>저장</Text></Pressable>
       </View>
@@ -695,23 +730,23 @@ function reorderBattleDraft(draft: BattleMapAutomationDraft, orderedIds: string[
 function serializeEditableDraft(draft: BattleMapAutomationDraft): string {
   return JSON.stringify([
     draft.enabled,
+    draft.minimumRemainingTime,
     draft.maps.map(({ categoryId, mapCode, dailyTargetCount, executionOrder, presetMode, partyPresetId }) => (
       [categoryId, mapCode, String(dailyTargetCount), executionOrder, presetMode, partyPresetId]
     )),
   ]);
 }
 function serializeEntrySettings(entry: TypedAutomationEntryResponse): string {
-  return JSON.stringify([entry.enabled, entry.battleMaps, entry.displayName]);
+  return JSON.stringify([entry.enabled, entry.battleMaps, entry.displayName, entry.minimumRemainingTime ?? null]);
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, gap: theme.spacing.xs, padding: theme.spacing.lg },
+  screen: { flex: 1, gap: 2, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm },
   scroller: { flex: 1 },
   header: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
   iconButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
   headerCopy: { flex: 1 },
   title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' },
-  subtitle: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16, marginTop: 2 },
   content: { gap: 6, paddingBottom: theme.spacing.lg },
   section: { gap: theme.spacing.xs },
   sectionTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '900' },
@@ -720,11 +755,15 @@ const styles = StyleSheet.create({
   progressSummary: { color: theme.colors.textMuted, flex: 1, fontSize: 11, lineHeight: 16 },
   compactTargetInput: { borderColor: theme.colors.borderStrong, borderRadius: 9, borderWidth: 1, color: theme.colors.text, minHeight: 28, paddingHorizontal: 0, textAlign: 'center', textAlignVertical: 'center', width: 38 },
   complete: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '900' },
-  choice: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: 9, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, marginTop: 4, minHeight: 32, paddingHorizontal: theme.spacing.xs },
+  choice: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: 9, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, minHeight: 44, paddingHorizontal: theme.spacing.xs },
   choiceActive: { borderColor: theme.colors.accentGreen },
   choiceLabel: { color: theme.colors.textMuted, fontSize: 10, fontWeight: '700' },
   choiceText: { color: theme.colors.text, flex: 1, fontSize: 11, fontWeight: '700' },
-  search: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: 46, paddingHorizontal: theme.spacing.md },
+  search: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md },
+  minimumTimeField: { gap: 4 },
+  minimumTimeRow: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
+  minimumTimeInput: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, flexBasis: 136, flexGrow: 1, minHeight: 44, minWidth: 120, paddingHorizontal: theme.spacing.md },
+  fieldLabel: { color: theme.colors.text, flexShrink: 1, fontSize: 12, fontWeight: '800' },
   warningRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between' },
   secondaryButton: { borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, minHeight: 44, justifyContent: 'center', paddingHorizontal: theme.spacing.md },
   secondaryText: { color: theme.colors.text, fontWeight: '800' },

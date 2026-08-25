@@ -243,8 +243,8 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     });
 
     const presetChoice = renderer.root.findByProps({ accessibilityLabel: '압축 전투 프리셋 선택 열기' });
-    assert.equal(flattenStyle(presetChoice.props.style).marginTop, 4);
-    assert.equal(flattenStyle(presetChoice.props.style).minHeight, 32);
+    assert.equal(flattenStyle(presetChoice.props.style).marginTop, undefined);
+    assert.equal(flattenStyle(presetChoice.props.style).minHeight, 44);
     assert.equal(hasText(presetChoice, '프리셋'), true);
     assert.equal(textCount(renderer.root, '대표 · 대표 프리셋'), 1);
     assert.equal(presetChoice.findAll((node) => (node.type as unknown) === 'ChevronRight').length, 1);
@@ -323,6 +323,67 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Beta 맵 선택 해제' }));
   });
 
+  it('edits and saves the group minimum remaining Time and warns when current maximum cannot satisfy it', async () => {
+    const saves: UpdateBattleMapAutomationRequest[] = [];
+    const entry = { ...battleEntry([setting('a', 3, 0)]), minimumRemainingTime: 1500 };
+    const renderer = await renderEditor({
+      entry,
+      maps: [catalogMap('a', 'Alpha')],
+      observedTimeMax: 1550,
+      onSave: async (request) => { saves.push(request); return true; },
+    });
+    const input = renderer.root.findByProps({ accessibilityLabel: '최소 잔여 Time' });
+
+    assert.equal(input.props.value, '1500');
+    assert.equal(input.props.placeholder, '제한 없음');
+    assert.equal(input.props.accessibilityHint, '비워 두거나 0을 입력하면 잔여 Time 제한 없이 실행합니다.');
+    assert.ok(flattenStyle(input.props.style).minHeight as number >= 44);
+    assert.equal(hasText(renderer.root, '맵별 오늘 목표와 실행 순서를 설정하세요.'), false);
+    assert.equal(hasText(renderer.root, '비워 두면 잔여 Time 제한 없이 실행합니다.'), false);
+    assert.equal(flattenStyle(renderer.root.findByProps({ accessibilityRole: 'tablist' }).props.style).padding, 2);
+    const presetButton = renderer.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' });
+    assert.ok(flattenStyle(presetButton.props.style).minHeight as number >= 44);
+    assert.equal(hasText(renderer.root, '현재 최대 Time으로는 이 값을 남기고 1회 전투를 실행할 수 없습니다.'), true);
+    await act(async () => { input.props.onChangeText('1200'); });
+    assert.equal(hasText(renderer.root, '현재 최대 Time으로는 이 값을 남기고 1회 전투를 실행할 수 없습니다.'), false);
+    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.onPress(); });
+
+    assert.equal(saves[0]?.minimumRemainingTime, 1200);
+  });
+
+  it('normalizes zero minimum remaining Time to blank and saves no extra reserve', async () => {
+    const saves: UpdateBattleMapAutomationRequest[] = [];
+    const renderer = await renderEditor({
+      entry: { ...battleEntry([setting('a', 3, 0)]), minimumRemainingTime: 1500 },
+      maps: [catalogMap('a', 'Alpha')],
+      onSave: async (request) => { saves.push(request); return true; },
+    });
+    const input = () => renderer.root.findByProps({ accessibilityLabel: '최소 잔여 Time' });
+
+    await act(async () => { input().props.onChangeText('0'); });
+    await act(async () => { input().props.onEndEditing(); });
+    assert.equal(input().props.value, '');
+    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.onPress(); });
+
+    assert.equal(saves[0]?.minimumRemainingTime, null);
+  });
+
+  it('shows a minimum Time validation error directly below its responsive input row', async () => {
+    const renderer = await renderEditor({
+      entry: battleEntry([setting('a', 3, 0)]),
+      maps: [catalogMap('a', 'Alpha')],
+    });
+
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '최소 잔여 Time' }).props.onChangeText('잘못된 값');
+    });
+    const error = renderer.root.findByProps({ accessibilityLabel: '최소 잔여 Time 입력 오류' });
+    assert.equal(error.props.accessibilityRole, 'alert');
+    assert.equal(error.props.accessibilityLiveRegion, 'assertive');
+    assert.equal(hasText(error, '최소 잔여 Time은 1 이상의 정수로 입력해 주세요.'), true);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투 맵 자동화 입력 오류' }).length, 0);
+  });
+
   it('saves the identity order produced by a selected-map drag', async () => {
     dragCalls.length = 0;
     const saves: UpdateBattleMapAutomationRequest[] = [];
@@ -379,7 +440,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'missing 삭제' }).props.onPress(); });
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.onPress(); });
 
-    assert.deepEqual(saves, [{ enabled: true, maps: [
+    assert.deepEqual(saves, [{ enabled: true, minimumRemainingTime: null, maps: [
       setting('a', 5, 0),
       { ...setting('b', 4, 1), presetMode: 'EXPLICIT', partyPresetId: 9 },
     ] }]);
@@ -458,7 +519,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
       pendingSave = renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.onPress();
     });
     await act(async () => { retainedBetaPress(); });
-    assert.deepEqual(saves, [{ enabled: true, maps: [setting('a', 1, 0)] }]);
+    assert.deepEqual(saves, [{ enabled: true, minimumRemainingTime: null, maps: [setting('a', 1, 0)] }]);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Beta 일일 목표' }).length, 0);
     assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Beta 맵 선택' }).props.accessibilityState.selected, false);
 
@@ -508,7 +569,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
       retainedRemove();
     });
 
-    assert.deepEqual(saves, [{ enabled: true, maps: [setting('a', 3, 0), setting('b', 4, 1)] }]);
+    assert.deepEqual(saves, [{ enabled: true, minimumRemainingTime: null, maps: [setting('a', 3, 0), setting('b', 4, 1)] }]);
     assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Alpha 일일 목표' }).props.value, '3');
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 사용' }).props.value, true);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Alpha 삭제' }));
@@ -554,7 +615,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(input().props.value, '4');
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.onPress(); });
 
-    assert.deepEqual(saves, [{ enabled: true, maps: [setting('a', 4, 0)] }]);
+    assert.deepEqual(saves, [{ enabled: true, minimumRemainingTime: null, maps: [setting('a', 4, 0)] }]);
   });
 
   it('rejects pasted non-decimal target formats and saves trimmed leading-zero decimal input as an integer', async () => {
@@ -754,12 +815,12 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
       saving: true,
       battleCategories: [
         { id: 'battle', label: '전투맵', description: '', order: 0, enabled: true },
-        { id: 'raid', label: '레이드', description: '', order: 1, enabled: true },
+        { id: 'scenario_ocean', label: '시나리오', description: '', order: 1, enabled: true },
       ],
       onLoadBattleMaps: async (categoryId) => {
         attempts[categoryId] = (attempts[categoryId] ?? 0) + 1;
         if (categoryId === 'battle' && attempts[categoryId] === 1) throw new Error('전투맵 연결 실패');
-        return [catalogMap(`${categoryId}-map`, categoryId === 'battle' ? '재시도 맵' : '레이드 맵', { categoryId })];
+        return [catalogMap(`${categoryId}-map`, categoryId === 'battle' ? '재시도 맵' : '시나리오 맵', { categoryId })];
       },
     });
 
@@ -767,7 +828,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     await openCatalogGroup(renderer);
     assert.equal(hasText(renderer.root, '전투맵 연결 실패'), true);
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '전투맵 맵 다시 불러오기' }).props.onPress(); });
-    assert.deepEqual(attempts, { battle: 2, raid: 1 });
+    assert.deepEqual(attempts, { battle: 2, scenario_ocean: 1 });
     await openCatalogGroup(renderer);
     const map = renderer.root.findByProps({ accessibilityLabel: '재시도 맵 맵 선택' });
     assert.equal(map.props.accessibilityState.disabled, true);
@@ -798,7 +859,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.deepEqual(mapLabels, ['가 맵 맵 선택 해제', '나 맵 맵 선택 해제']);
 
     await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.onPress(); });
-    assert.deepEqual(saves, [{ enabled: true, maps: [setting('later-group', 4, 0), setting('first-group', 5, 1)] }]);
+    assert.deepEqual(saves, [{ enabled: true, minimumRemainingTime: null, maps: [setting('later-group', 4, 0), setting('first-group', 5, 1)] }]);
   });
 
   it('shows authoritative search empty only after every eligible category settles successfully', async () => {
@@ -831,7 +892,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(categoryRetries, 1);
   });
 
-  it('does not load or offer adventure/union maps but keeps legacy rows and a dynamically unavailable supported map selectable', async () => {
+  it('does not load or offer adventure/union/raid maps but keeps legacy rows and a dynamically unavailable supported map selectable', async () => {
     const loadedCategories: string[] = [];
     const legacyAdventure = { ...setting('legacy-adventure', 3, 0), categoryId: 'adventure_map' };
     const legacyUnion = { ...setting('legacy-union', 3, 1), categoryId: 'union' };
@@ -841,11 +902,13 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
         { id: 'battle', label: '전투맵', description: '', order: 0, enabled: true },
         { id: 'adventure_map', label: '모험맵', description: '', order: 1, enabled: true },
         { id: 'union', label: '유니온', description: '', order: 2, enabled: true },
+        { id: 'raid', label: '레이드', description: '레이드 신청과 관리', order: 3, enabled: true },
       ],
       onLoadBattleMaps: async (categoryId) => {
         loadedCategories.push(categoryId);
         if (categoryId === 'adventure_map') return [catalogMap('adventure-new', 'Adventure New', { categoryId })];
         if (categoryId === 'union') return [catalogMap('union-new', 'Union New', { categoryId })];
+        if (categoryId === 'raid') return [catalogMap('raid-new', 'Raid New', { categoryId })];
         return [catalogMap('limited', 'Limited Supported', {
           categoryId,
           availableCount: 0,
@@ -861,6 +924,8 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.deepEqual(loadedCategories, ['battle']);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Adventure New 맵 선택' }).length, 0);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Union New 맵 선택' }).length, 0);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: 'Raid New 맵 선택' }).length, 0);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '레이드 카테고리 열기' }).length, 0);
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'legacy-adventure 삭제' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: 'legacy-union 삭제' }));
     await openCatalogGroup(renderer);
@@ -1057,6 +1122,7 @@ type Overrides = {
   onBack?: () => void;
   otherMapGroups?: readonly TypedAutomationEntryResponse[];
   onMoveMap?: React.ComponentProps<typeof BattleMapAutomationEditor>['onMoveMap'];
+  observedTimeMax?: number | null;
   battleCategories?: Array<{ id: string; label: string; description: string; order: number; enabled: boolean }>;
   areBattleCategoriesLoaded?: boolean; isBattleCategoriesLoading?: boolean; battleCategoriesError?: string | null;
   onLoadBattleCategories?: () => void;
@@ -1085,6 +1151,7 @@ function editorProps(overrides: Overrides = {}) {
     onSave: overrides.onSave ?? (async () => true), onBack: overrides.onBack ?? (() => undefined),
     otherMapGroups: overrides.otherMapGroups,
     onMoveMap: overrides.onMoveMap,
+    observedTimeMax: overrides.observedTimeMax,
   };
 }
 function presetCatalog(presets: ReturnType<typeof preset>[], error: string | null = null, retry = () => undefined) {
