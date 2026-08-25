@@ -36,37 +36,51 @@ moduleWithLoader._load = originalLoad;
 afterEach(async () => rntl.cleanup());
 
 describe('AutomationHistoryScreen with RNTL', () => {
-  it('shows one numbered fishing decision with nested START, CATCH, and obstruction battle evidence', async () => {
+  it('shows fishing cast and obstruction battle in separate numbered decisions', async () => {
     const homeEvent = historyEvent(1, 0, 10, 'HOME_QUEST', 'SKIPPED', 'HOME_IDLE', null);
     const fishingEvent = historyEvent(2, 1, 11, 'FISHING', 'SELECTED', 'RUNNABLE', 'FISHING_TOWN');
     const startEvent = historyEvent(3, 2, 11, 'FISHING', 'ACTION_SUCCEEDED', 'FISHING_START_APPLIED', 'START');
     const catchEvent = historyEvent(4, 3, 11, 'FISHING', 'ACTION_SUCCEEDED', 'FISHING_CATCH_APPLIED', 'CATCH');
-    const battleEvent = historyEvent(5, 4, 11, 'FISHING', 'ACTION_SUCCEEDED', 'FISHING_OBSTRUCTION_BATTLE_APPLIED', 'BATTLE');
+    const nextHomeEvent = historyEvent(5, 0, 10, 'HOME_QUEST', 'SKIPPED', 'HOME_IDLE', null);
+    const battleSelection = historyEvent(6, 1, 11, 'FISHING', 'SELECTED', 'RUNNABLE', 'BATTLE');
+    const battleEvent = historyEvent(7, 2, 11, 'FISHING', 'ACTION_SUCCEEDED', 'FISHING_OBSTRUCTION_BATTLE_APPLIED', 'BATTLE');
     const load = async (): Promise<AutomationHistoryPage> => ({
       nextCursor: null,
       cycles: [{
+        id: 10,
+        result: 'ACTION_SELECTED',
+        selectedEntryId: 11,
+        startedAt: '2026-08-24T00:00:02Z',
+        finishedAt: '2026-08-24T00:00:03Z',
+        events: [nextHomeEvent, battleSelection, battleEvent],
+        topLevelStepCount: 2,
+        steps: [
+          { sequence: 1, event: nextHomeEvent, executionEvents: [] },
+          { sequence: 2, event: battleSelection, executionEvents: [battleEvent] },
+        ],
+      }, {
         id: 9,
         result: 'ACTION_SELECTED',
         selectedEntryId: 11,
         startedAt: '2026-08-24T00:00:00Z',
         finishedAt: '2026-08-24T00:00:01Z',
-        events: [homeEvent, fishingEvent, startEvent, catchEvent, battleEvent],
+        events: [homeEvent, fishingEvent, startEvent, catchEvent],
         topLevelStepCount: 2,
         steps: [
           { sequence: 1, event: homeEvent, executionEvents: [] },
-          { sequence: 2, event: fishingEvent, executionEvents: [startEvent, catchEvent, battleEvent] },
+          { sequence: 2, event: fishingEvent, executionEvents: [startEvent, catchEvent] },
         ],
       }],
     });
 
     await rntl.render(React.createElement(AutomationHistoryScreen, { onBack: () => undefined, load }));
 
-    await rntl.screen.findByText('판단 과정 2단계');
-    assert.ok(rntl.screen.getByLabelText('낚시 사이클 실행 단계'));
-    assert.ok(rntl.screen.getByText('낚시 사이클 · 실행'));
+    await rntl.screen.findAllByText('판단 과정 2단계');
+    assert.equal(rntl.screen.getAllByLabelText('낚시 사이클 실행 단계').length, 2);
+    assert.equal(rntl.screen.getAllByText('낚시 사이클 · 실행').length, 2);
     assert.equal(rntl.screen.getAllByText('동작 낚시 시작').length, 1);
     assert.equal(rntl.screen.getAllByText('동작 낚기').length, 1);
-    assert.equal(rntl.screen.getAllByText('동작 전투').length, 1);
+    assert.equal(rntl.screen.getAllByText('동작 전투').length, 2);
     assert.equal(rntl.screen.queryByText('패턴 로드'), null);
   });
 });

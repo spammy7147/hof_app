@@ -27,25 +27,39 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('AutomationHistoryScreen', () => {
-  it('counts configured decisions once and nests fishing START, CATCH, and obstruction battle below the selected entry', async () => {
+  it('shows fishing START CATCH and obstruction battle as two separate global decisions', async () => {
     const homeEvent = historyEvent(1, 0, 10, 'HOME_QUEST', 'SKIPPED', 'HOME_IDLE', null);
     const fishingEvent = historyEvent(2, 1, 11, 'FISHING', 'SELECTED', 'RUNNABLE', 'FISHING_TOWN');
     const startEvent = historyEvent(3, 2, 11, 'FISHING', 'ACTION_SUCCEEDED', 'FISHING_START_APPLIED', 'START');
     const catchEvent = historyEvent(4, 3, 11, 'FISHING', 'ACTION_SUCCEEDED', 'FISHING_CATCH_APPLIED', 'CATCH');
-    const battleEvent = historyEvent(5, 4, 11, 'FISHING', 'ACTION_SUCCEEDED', 'FISHING_OBSTRUCTION_BATTLE_APPLIED', 'BATTLE');
+    const nextHomeEvent = historyEvent(5, 0, 10, 'HOME_QUEST', 'SKIPPED', 'HOME_IDLE', null);
+    const battleSelection = historyEvent(6, 1, 11, 'FISHING', 'SELECTED', 'RUNNABLE', 'BATTLE');
+    const battleEvent = historyEvent(7, 2, 11, 'FISHING', 'ACTION_SUCCEEDED', 'FISHING_OBSTRUCTION_BATTLE_APPLIED', 'BATTLE');
     const load = async (): Promise<AutomationHistoryPage> => ({
       nextCursor: null,
       cycles: [{
+        id: 10,
+        result: 'ACTION_SELECTED',
+        selectedEntryId: 11,
+        startedAt: '2026-08-24T00:00:02Z',
+        finishedAt: '2026-08-24T00:00:03Z',
+        events: [nextHomeEvent, battleSelection, battleEvent],
+        topLevelStepCount: 2,
+        steps: [
+          { sequence: 1, event: nextHomeEvent, executionEvents: [] },
+          { sequence: 2, event: battleSelection, executionEvents: [battleEvent] },
+        ],
+      }, {
         id: 9,
         result: 'ACTION_SELECTED',
         selectedEntryId: 11,
         startedAt: '2026-08-24T00:00:00Z',
         finishedAt: '2026-08-24T00:00:01Z',
-        events: [homeEvent, fishingEvent, startEvent, catchEvent, battleEvent],
+        events: [homeEvent, fishingEvent, startEvent, catchEvent],
         topLevelStepCount: 2,
         steps: [
           { sequence: 1, event: homeEvent, executionEvents: [] },
-          { sequence: 2, event: fishingEvent, executionEvents: [startEvent, catchEvent, battleEvent] },
+          { sequence: 2, event: fishingEvent, executionEvents: [startEvent, catchEvent] },
         ],
       }],
     });
@@ -60,7 +74,7 @@ describe('AutomationHistoryScreen', () => {
     assert.ok(text.includes('동작 낚시 시작'));
     assert.ok(text.includes('동작 낚기'));
     assert.ok(text.includes('동작 전투'));
-    assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '낚시 사이클 실행 단계' }).length >= 1);
+    assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '낚시 사이클 실행 단계' }).length >= 2);
     assert.ok(!text.includes('패턴 로드'));
   });
 

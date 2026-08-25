@@ -87,6 +87,34 @@ describe('NewAutomationEditor', () => {
     assert.equal(hasText(trigger, '대표 · 기본 파티'), true);
   });
 
+  it('keeps a resolved historical fishing battle map selectable and savable when currently disabled', async () => {
+    const saved: UpdateFishingAutomationRequest[] = [];
+    const renderer = await renderEditor({
+      entry: entry('FISHING'),
+      maps: [{ ...map('battle_map', 'fish-old', '고대 잉어', '낚시터 전투'), enabled: false }],
+      onSave: async (request) => {
+        if ('maps' in request) saved.push(request as UpdateFishingAutomationRequest);
+        return true;
+      },
+    });
+
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '고대 잉어 추가' }).props.onPress();
+    });
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '자동화 저장' }).props.onPress();
+      await Promise.resolve();
+    });
+
+    assert.deepEqual(saved[0]?.maps, [{
+      categoryId: 'battle_map',
+      mapCode: 'fish-old',
+      executionOrder: 0,
+      presetMode: 'PRIMARY',
+      partyPresetId: null,
+    }]);
+  });
+
   it('hydrates union codes with map names and uses the shared preset picker trigger', async () => {
     const renderer = await renderEditor({
       entry: entry('UNION', {

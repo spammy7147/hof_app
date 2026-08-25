@@ -52,7 +52,7 @@ export function NewAutomationEditor({ entry, saving, mutationMessage, onBack, on
     const request = entry.type === 'FISHING'
       ? onLoadBattleMaps('battle_map').then((maps) => maps
         .filter((map): map is BattleMapResponse & { mapCode: string } => Boolean(
-          map.mapCode && map.enabled && map.resolved && isFishingBattleMap(map),
+          map.mapCode && map.resolved && isFishingBattleMap(map),
         ))
         .map((map) => ({ key: map.mapCode, name: map.name })))
       : entry.type === 'UNION'
