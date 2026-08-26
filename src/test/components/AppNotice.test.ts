@@ -3,13 +3,17 @@ import Module from 'node:module';
 import { afterEach, describe, it } from 'node:test';
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
+import {
+  routeCaptchaNotificationResponse,
+  type PushNotificationResponseLike,
+} from '../../main/platform/pushNotificationRouting';
 
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => (
   React.createElement(name, { ...props, ref }, props.children as React.ReactNode)
 ));
 
 let publishNotice: ((message: string | null) => void) | null = null;
-let openCaptchaFromPush: (() => void) | null = null;
+let selectPushNotification: ((response: PushNotificationResponseLike) => void) | null = null;
 let openCaptchaCalls = 0;
 let logoutCalls = 0;
 const syncCharacters = async () => undefined;
@@ -121,11 +125,16 @@ moduleWithLoader._load = (request, parent, isMain) => {
       }),
     };
   }
-  if (request.endsWith('/features/push/useAndroidPushRegistration')) {
+  if (request.endsWith('/platform/pushNotifications')) {
     return {
-      useAndroidPushRegistration: ({ onOpenCaptcha }: { onOpenCaptcha: () => void }) => {
-        openCaptchaFromPush = onOpenCaptcha;
+      prepareAndroidPushRegistration: async () => null,
+      subscribeToCaptchaNotification: (onOpenCaptcha: () => void) => {
+        selectPushNotification = (response) => {
+          routeCaptchaNotificationResponse(response, onOpenCaptcha);
+        };
+        return () => { selectPushNotification = null; };
       },
+      subscribeToPushTokenChanges: () => () => undefined,
     };
   }
   return originalLoad(request, parent, isMain);
@@ -140,7 +149,7 @@ const realClearTimeout = globalThis.clearTimeout;
 
 afterEach(() => {
   publishNotice = null;
-  openCaptchaFromPush = null;
+  selectPushNotification = null;
   openCaptchaCalls = 0;
   logoutCalls = 0;
   globalThis.setTimeout = realSetTimeout;
@@ -182,20 +191,32 @@ describe('App system notice', () => {
     await act(async () => { renderer.unmount(); });
   });
 
-  it('routes a selected CAPTCHA push notification into the existing global modal flow', async () => {
+  it('routes an actual selected CAPTCHA notification response into the existing global modal flow', async () => {
     let renderer!: ReactTestRenderer;
     await act(async () => {
       renderer = create(React.createElement(App));
       await Promise.resolve();
     });
 
-    assert.ok(openCaptchaFromPush);
-    await act(async () => openCaptchaFromPush?.());
+    assert.ok(selectPushNotification);
+    await act(async () => selectPushNotification?.(notificationResponse('OTHER')));
+    assert.equal(openCaptchaCalls, 0);
+    await act(async () => selectPushNotification?.(notificationResponse('CAPTCHA_REQUIRED')));
 
     assert.equal(openCaptchaCalls, 1);
     await act(async () => { renderer.unmount(); });
   });
 });
+
+function notificationResponse(type: string): NonNullable<PushNotificationResponseLike> {
+  return {
+    notification: {
+      request: {
+        content: { data: { type } },
+      },
+    },
+  };
+}
 
 function mainScreen(renderer: ReactTestRenderer) {
   return renderer.root.find((node) => String(node.type) === 'MainScreen');

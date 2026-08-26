@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
 import type { AndroidPushRegistration } from './pushNotifications';
+import { routeCaptchaNotificationResponse } from './pushNotificationRouting';
 
 const CHANNEL_ID = 'automation-alerts';
 const INSTALLATION_ID_KEY = 'hof.android.installation-id';
@@ -47,9 +48,7 @@ export function subscribeToCaptchaNotification(onOpenCaptcha: () => void): () =>
   if (!Notifications) return () => undefined;
 
   const handleResponse = (response: import('expo-notifications').NotificationResponse | null) => {
-    const data = response?.notification.request.content.data;
-    if (data?.type !== 'CAPTCHA_REQUIRED') return;
-    onOpenCaptcha();
+    if (!routeCaptchaNotificationResponse(response, onOpenCaptcha)) return;
     Notifications.clearLastNotificationResponse();
   };
 
