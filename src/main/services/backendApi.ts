@@ -10,6 +10,7 @@ import type {
   BattleStatsResponse,
   AdventureMapStatsPeriod,
   CaptchaChallengeResponse,
+  CaptchaPassMaintenanceResponse,
   CharacterSyncEventResponse,
   CharacterSyncEventType,
   CharacterSyncJobResponse,
@@ -61,6 +62,7 @@ import type {
   AutomationConvergenceStatus,
 } from '../types/api';
 import { refreshTokenStorage, type RefreshTokenStorage } from '../platform/tokenStorage';
+import { loadAndroidPushInstallationId } from '../platform/pushNotifications';
 import { createSseConnection, type SseSubscription } from './sseClient';
 
 /** 캐릭터 sync hook이 SSE 연결 상태와 event를 받는 callback 계약이다. */
@@ -136,6 +138,8 @@ export class BackendApiClient {
   private readonly sessionRefreshListeners = new Set<(event: SessionRefreshEvent) => void>();
   private manualActionPending = false;
   private sessionMutationsBlocked = false;
+  private androidPushTargetId: number | null = null;
+  private pendingLogoutToken: string | null = null;
 
   constructor(
     baseUrl = resolveBackendBaseUrl(),
@@ -149,6 +153,7 @@ export class BackendApiClient {
    * HOF 계정으로 로그인하고 플랫폼에 맞게 refresh token을 보관한다.
    */
   async login(request: HofLoginRequest): Promise<TokenResponse> {
+    await this.completePendingLogout();
     this.acceptsSessionTokenBroadcasts = true;
     const epoch = this.beginAuthMutation();
     const response = await this.requestWithoutRefresh<TokenResponse>('/api/auth/login', {
@@ -164,8 +169,15 @@ export class BackendApiClient {
 
   /** 저장된 네이티브 토큰 또는 웹 HttpOnly 쿠키로 앱 시작 세션을 복원한다. */
   async restoreSession(): Promise<void> {
+    const epoch = this.authEpoch;
     this.acceptsSessionTokenBroadcasts = true;
-    await this.refreshAccessToken();
+    if (await this.completePendingLogout()) {
+      const ended = new BackendApiError(401, 'AUTH_TOKEN_INVALID', '로그아웃이 완료되었습니다.');
+      this.publishSessionRefreshEvent({ type: 'refresh-failed', error: ended });
+      throw ended;
+    }
+    if (!this.isCurrentAuthEpoch(epoch)) return;
+    await this.refreshAccessToken(epoch);
   }
 
   /** 현재 refresh token 패밀리를 서버에서 폐기하고 로컬 토큰 상태도 비운다. */
@@ -173,6 +185,11 @@ export class BackendApiClient {
     this.acceptsSessionTokenBroadcasts = false;
     const epoch = this.beginAuthMutation();
     const refreshToken = await this.tokenStorage.load().catch(() => null);
+    const pushInstallationId = await loadAndroidPushInstallationId().catch(() => null);
+    // Secure storage writes can fail independently from the already loaded credential.
+    // Keep the in-memory marker and continue: the same runtime can still retry, while a
+    // successful remote revocation must not be prevented by a local persistence outage.
+    await this.savePendingLogout(refreshToken).catch(() => undefined);
     let localClearError: unknown = null;
     try {
       await this.clearTokenState(epoch);
@@ -180,13 +197,53 @@ export class BackendApiClient {
       localClearError = error;
     }
     try {
-      await this.requestWithoutRefresh<null>('/api/auth/logout', {
-        method: 'POST',
-        body: JSON.stringify(refreshToken ? { refreshToken } : {}),
-      });
+      await this.requestRemoteLogout(refreshToken, pushInstallationId);
+      await this.removePendingLogout();
     } finally {
+      this.androidPushTargetId = null;
       if (localClearError) throw localClearError;
     }
+  }
+
+  private async completePendingLogout(): Promise<boolean> {
+    const pending = await this.loadPendingLogout();
+    if (!pending) return false;
+    const pushInstallationId = await loadAndroidPushInstallationId().catch(() => null);
+    await this.requestRemoteLogout(pending === 'WEB_COOKIE' ? null : pending, pushInstallationId);
+    await this.removePendingLogout();
+    await this.clearLocalSession();
+    return true;
+  }
+
+  private async requestRemoteLogout(
+    refreshToken: string | null,
+    pushInstallationId: string | null,
+  ): Promise<void> {
+    await this.requestWithoutRefresh<null>('/api/auth/logout', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...(refreshToken ? { refreshToken } : {}),
+        ...(this.androidPushTargetId == null ? {} : { pushTargetId: this.androidPushTargetId }),
+        ...(this.androidPushTargetId != null || !pushInstallationId ? {} : { pushInstallationId }),
+      }),
+    });
+  }
+
+  private async loadPendingLogout(): Promise<string | null> {
+    if (this.tokenStorage.loadPendingLogout) {
+      return this.tokenStorage.loadPendingLogout().catch(() => this.pendingLogoutToken);
+    }
+    return this.pendingLogoutToken;
+  }
+
+  private async savePendingLogout(refreshToken: string | null): Promise<void> {
+    this.pendingLogoutToken = refreshToken ?? 'WEB_COOKIE';
+    await this.tokenStorage.savePendingLogout?.(refreshToken);
+  }
+
+  private async removePendingLogout(): Promise<void> {
+    this.pendingLogoutToken = null;
+    await this.tokenStorage.removePendingLogout?.();
   }
 
   /** 앱 runtime 종료 뒤 web broadcast와 보류 중인 인증 결과를 더 이상 받지 않는다. */
@@ -378,6 +435,23 @@ export class BackendApiClient {
     return normalizeCaptchaChallenge(captcha, this.baseUrl);
   }
 
+  /** 서버가 소유한 계정 전역 통행증 자동 갱신 상태를 원격 호출 없이 조회한다. */
+  fetchCaptchaPassMaintenance(): Promise<CaptchaPassMaintenanceResponse> {
+    return this.request('/api/captcha/pass-maintenance');
+  }
+
+  updateCaptchaPassMaintenance(enabled: boolean): Promise<CaptchaPassMaintenanceResponse> {
+    return this.request('/api/captcha/pass-maintenance', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    });
+  }
+
+  /** HOF 홈을 읽기 전용으로 관측해 통행증 상태만 새로 고친다. */
+  refreshCaptchaPassMaintenance(): Promise<CaptchaPassMaintenanceResponse> {
+    return this.request('/api/captcha/pass-maintenance/refresh', { method: 'POST' });
+  }
+
   /** 계정별 통합 자동화의 현재 상태와 저장 설정을 조회한다. */
   fetchUnifiedAutomation(): Promise<TypedAutomationAggregateResponse> {
     return this.request('/api/automation/unified');
@@ -515,9 +589,12 @@ export class BackendApiClient {
   registerAndroidPushTarget(
     request: RegisterAndroidPushTargetRequest,
   ): Promise<DevicePushTargetResponse> {
-    return this.request('/api/push/android/targets', {
+    return this.request<DevicePushTargetResponse>('/api/push/android/targets', {
       method: 'POST',
       body: JSON.stringify(request),
+    }).then((target) => {
+      this.androidPushTargetId = target.id;
+      return target;
     });
   }
 
@@ -882,9 +959,9 @@ export class BackendApiClient {
   }
 
   /** 동시에 들어온 401 요청들이 하나의 refresh 요청을 공유하도록 single-flight를 적용한다. */
-  private async refreshAccessToken(): Promise<void> {
+  private async refreshAccessToken(epoch = this.authEpoch): Promise<void> {
     if (this.refreshPromise == null) {
-      const operation = this.performRefresh();
+      const operation = this.performRefresh(epoch);
       void operation.then(
         () => this.publishSessionRefreshEvent({ type: 'refresh-succeeded' }),
         (error: unknown) => this.publishSessionRefreshEvent({ type: 'refresh-failed', error }),
@@ -896,8 +973,7 @@ export class BackendApiClient {
     return this.refreshPromise;
   }
 
-  private async performRefresh(): Promise<void> {
-    const epoch = this.authEpoch;
+  private async performRefresh(epoch: number): Promise<void> {
     const refreshToken = await this.tokenStorage.load();
     if (Platform.OS !== 'web' && !refreshToken) {
       throw new BackendApiError(401, 'AUTH_TOKEN_INVALID', '저장된 로그인 정보가 없습니다.');

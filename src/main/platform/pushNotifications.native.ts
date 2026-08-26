@@ -36,6 +36,11 @@ export async function prepareAndroidPushRegistration(): Promise<AndroidPushRegis
   };
 }
 
+/** 로그아웃 시 푸시 등록 훅이 아직 실행되지 않았어도 현재 설치를 식별한다. */
+export async function loadAndroidPushInstallationId(): Promise<string | null> {
+  return SecureStore.getItemAsync(INSTALLATION_ID_KEY);
+}
+
 /** CAPTCHA_REQUIRED 알림을 누르면 앱 전역 캡차 화면을 연다. */
 export function subscribeToCaptchaNotification(onOpenCaptcha: () => void): () => void {
   const Notifications = getNotifications();

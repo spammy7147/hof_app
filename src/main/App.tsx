@@ -10,9 +10,11 @@ import { BackendApiClient } from "./services/backendApi";
 import { getAppBackendApiClient } from "./services/appRuntime";
 import { useCharacterSync } from "./features/characters/useCharacterSync";
 import { useCaptchaGate } from "./features/captcha/useCaptchaGate";
+import { useCaptchaPassMaintenance } from "./features/captcha/useCaptchaPassMaintenance";
 import { useAndroidPushRegistration } from "./features/push/useAndroidPushRegistration";
 import { RequiredUpdateGate } from "./features/update/RequiredUpdateGate";
 import { isCaptchaRequiredError } from "./domain/captchaGate";
+import { canOpenManualPassChallenge, captchaPassWarning } from "./domain/captchaPassMaintenance";
 import { mergeObservedHofStatus } from "./domain/hofStatus";
 import { UnifiedAutomationController } from "./domain/unifiedAutomationController";
 import { toUserFacingErrorMessage } from "./domain/userFacingErrors";
@@ -215,6 +217,12 @@ function AuthenticatedApp({
     (error: unknown): string => toUserFacingErrorMessage(error),
     [],
   );
+  const passMaintenance = useCaptchaPassMaintenance({
+    api,
+    authenticated: session?.loggedIn === true,
+    describeError,
+  });
+  const passWarning = captchaPassWarning(passMaintenance.state);
 
   useEffect(
     () => api.subscribeManualActionState(setManualActionPending),
@@ -437,6 +445,13 @@ function AuthenticatedApp({
         onOpenLogin={handleAccountSwitch}
         townApi={townApi}
         resolveCaptcha={waitForCaptchaResolution}
+        captchaPassMaintenance={passMaintenance.state}
+        captchaPassMaintenanceBusy={passMaintenance.busy}
+        captchaPassMaintenanceError={passMaintenance.errorMessage}
+        captchaPassWarning={passWarning}
+        captchaPassWarningActionable={canOpenManualPassChallenge(passMaintenance.state)}
+        onRefreshCaptchaPassMaintenance={passMaintenance.refresh}
+        onToggleCaptchaPassMaintenance={passMaintenance.updateEnabled}
     />
   );
 

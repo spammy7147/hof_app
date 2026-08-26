@@ -35,6 +35,7 @@ import type {
   CharacterSyncJobResponse,
   HofObservedStatusResponse,
   HofStatusResponse,
+  CaptchaPassMaintenanceResponse,
   RunBattleRequest,
 } from "../types/api";
 import { BattleTabScreen } from "./BattleTabScreen";
@@ -80,6 +81,13 @@ type MainScreenProps = {
   onOpenLogin: () => void;
   townApi?: TownApi;
   resolveCaptcha?: () => Promise<void>;
+  captchaPassMaintenance?: CaptchaPassMaintenanceResponse | null;
+  captchaPassMaintenanceBusy?: boolean;
+  captchaPassMaintenanceError?: string | null;
+  captchaPassWarning?: string | null;
+  captchaPassWarningActionable?: boolean;
+  onRefreshCaptchaPassMaintenance?: () => Promise<unknown>;
+  onToggleCaptchaPassMaintenance?: (enabled: boolean) => Promise<unknown>;
 };
 
 /**
@@ -115,6 +123,13 @@ export function MainScreen({
   onOpenLogin,
   townApi,
   resolveCaptcha,
+  captchaPassMaintenance = null,
+  captchaPassMaintenanceBusy = false,
+  captchaPassMaintenanceError = null,
+  captchaPassWarning = null,
+  captchaPassWarningActionable = false,
+  onRefreshCaptchaPassMaintenance,
+  onToggleCaptchaPassMaintenance,
 }: MainScreenProps) {
   const [activeTabId, setActiveTabId] =
     useState<MainRouteId>(DEFAULT_MAIN_TAB_ID);
@@ -158,6 +173,17 @@ export function MainScreen({
       >
         <FixedBottomActionHost>
           {renderSystemMessage(session, notice, onOpenLogin)}
+          {captchaPassWarning ? (
+            <Pressable
+              accessibilityRole={captchaPassWarningActionable ? "button" : "alert"}
+              disabled={!captchaPassWarningActionable}
+              onPress={captchaPassWarningActionable ? onOpenCaptcha : undefined}
+              style={styles.passWarning}
+            >
+              <Text style={styles.passWarningText}>{captchaPassWarning}</Text>
+              {captchaPassWarningActionable ? <Text style={styles.passWarningAction}>직접 인증</Text> : null}
+            </Pressable>
+          ) : null}
           {renderActiveTab({
           activeTabId,
           status,
@@ -191,6 +217,11 @@ export function MainScreen({
           resolveCaptcha,
           pendingBattleTarget,
           consumePendingBattleTarget,
+          captchaPassMaintenance,
+          captchaPassMaintenanceBusy,
+          captchaPassMaintenanceError,
+          onRefreshCaptchaPassMaintenance,
+          onToggleCaptchaPassMaintenance,
           onOpenFishingBattle: (target) => {
             setPendingBattleTarget(target);
             setActiveTabId("battle");
@@ -248,6 +279,11 @@ type RenderActiveTabArgs = {
   onOpenFishingBattle: (target: FishingBattleTarget) => void;
   pendingBattleTarget: FishingBattleTarget | null;
   consumePendingBattleTarget: () => void;
+  captchaPassMaintenance: CaptchaPassMaintenanceResponse | null;
+  captchaPassMaintenanceBusy: boolean;
+  captchaPassMaintenanceError: string | null;
+  onRefreshCaptchaPassMaintenance?: () => Promise<unknown>;
+  onToggleCaptchaPassMaintenance?: (enabled: boolean) => Promise<unknown>;
 };
 
 /**
@@ -292,6 +328,11 @@ function renderActiveTab({
   pendingBattleTarget,
   consumePendingBattleTarget,
   onDataLogModeChange,
+  captchaPassMaintenance,
+  captchaPassMaintenanceBusy,
+  captchaPassMaintenanceError,
+  onRefreshCaptchaPassMaintenance,
+  onToggleCaptchaPassMaintenance,
 }: RenderActiveTabArgs) {
   const selectedCharacter = characterHub.selectedCharacter;
   const characters = characterHub.characters;
@@ -461,6 +502,11 @@ function renderActiveTab({
             onBack={onCloseAppSettings}
             onLogout={onLogout}
             onOpenCaptcha={onOpenCaptcha}
+            passMaintenance={captchaPassMaintenance}
+            passMaintenanceBusy={captchaPassMaintenanceBusy}
+            passMaintenanceError={captchaPassMaintenanceError}
+            onRefreshPassMaintenance={onRefreshCaptchaPassMaintenance}
+            onTogglePassMaintenance={onToggleCaptchaPassMaintenance}
           />
         </TabScrollContainer>
       );
@@ -625,6 +671,31 @@ const styles = StyleSheet.create({
     padding: theme.spacing.md,
     fontSize: 14,
     lineHeight: 20,
+  },
+  passWarning: {
+    alignItems: "center",
+    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.accentAmber,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: theme.spacing.sm,
+    justifyContent: "space-between",
+    marginHorizontal: theme.spacing.lg,
+    marginTop: theme.spacing.md,
+    padding: theme.spacing.md,
+  },
+  passWarningText: {
+    color: theme.colors.text,
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 18,
+  },
+  passWarningAction: {
+    color: theme.colors.accentAmber,
+    fontSize: 13,
+    fontWeight: "900",
   },
   authPanel: {
     gap: theme.spacing.md,

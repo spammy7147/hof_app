@@ -203,6 +203,44 @@ export type CaptchaChallengeResponse = {
   answeredAt: string | null;
 };
 
+export type CaptchaPassMaintenanceResponse = {
+  enabled: boolean;
+  authSuspended: boolean;
+  passState: 'UNKNOWN' | 'VALID' | 'REQUIRED';
+  remainingSeconds: number | null;
+  validUntil: string | null;
+  observedAt: string | null;
+  nextRefreshAt: string | null;
+  lastAttemptAt: string | null;
+  lastResult: CaptchaPassMaintenanceLastResult | null;
+  manualChallengeId: number | null;
+  lifecycleState: CaptchaPassMaintenanceLifecycleState;
+  userActionRequired: boolean;
+};
+
+export type CaptchaPassMaintenanceLastResult =
+  | 'VALID_CONFIRMED'
+  | 'DISABLED'
+  | 'RENEWED'
+  | 'OCR_CONFIGURATION_REQUIRED'
+  | 'MANUAL_REQUIRED'
+  | 'HOF_LOGIN_REQUIRED'
+  | 'RETRY_SCHEDULED'
+  | 'AUTH_SUSPENDED';
+
+export type CaptchaPassMaintenanceLifecycleState =
+  | 'DISABLED'
+  | 'AUTH_SUSPENDED'
+  | 'UNKNOWN'
+  | 'VALID'
+  | 'CHECK_SCHEDULED'
+  | 'CHECKING'
+  | 'AUTO_RECOGNIZING'
+  | 'MANUAL_INPUT_REQUIRED'
+  | 'OCR_CONFIGURATION_REQUIRED'
+  | 'HOF_LOGIN_REQUIRED'
+  | 'CONNECTION_RETRY_WAIT';
+
 export type SubmitCaptchaAnswerRequest = {
   answer: string;
   preparationVersion: number;

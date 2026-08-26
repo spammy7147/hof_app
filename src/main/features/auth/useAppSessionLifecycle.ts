@@ -148,9 +148,13 @@ export function useAppSessionLifecycle(api: SessionLifecycleClient): AppSessionL
       ? current.generation
       : null;
     transition({ kind: 'ENDING', generation });
-    await api.logout().catch(() => undefined);
-    transition({ kind: 'UNAUTHENTICATED', errorMessage: null });
-  }, [api, transition]);
+    try {
+      await api.logout();
+      transition({ kind: 'UNAUTHENTICATED', errorMessage: null });
+    } catch (error) {
+      handleRefreshFailure(error);
+    }
+  }, [api, handleRefreshFailure, transition]);
 
   useEffect(() => {
     mountedRef.current = true;

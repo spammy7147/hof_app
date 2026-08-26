@@ -513,6 +513,31 @@ describe('BackendApiClient', () => {
     await loggingOut;
   });
 
+  it('persists a failed remote logout and completes it before any later session restore', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const storage = memoryTokenStorage('refresh-old');
+    let logoutAttempts = 0;
+    globalThis.fetch = (async (url: RequestInfo | URL) => {
+      if (!String(url).endsWith('/api/auth/logout')) throw new Error(`Unexpected request: ${String(url)}`);
+      logoutAttempts += 1;
+      if (logoutAttempts === 1) throw new Error('network unavailable');
+      return mockResponse(null, 204);
+    }) as unknown as typeof fetch;
+    const client = new BackendApiClient('http://backend.test', storage);
+
+    await assert.rejects(client.logout(), /network unavailable/);
+    assert.equal(storage.value, null);
+    assert.equal(storage.pendingLogout, 'refresh-old');
+
+    await assert.rejects(
+      client.restoreSession(),
+      (error: unknown) => (error as BackendErrorShape).code === 'AUTH_TOKEN_INVALID',
+    );
+
+    assert.equal(logoutAttempts, 2);
+    assert.equal(storage.pendingLogout, null);
+  });
+
   it('still clears memory and attempts removal when refresh-token loading fails during logout', async () => {
     const { BackendApiClient } = await loadBackendApi();
     let removeCalls = 0;
@@ -532,6 +557,29 @@ describe('BackendApiClient', () => {
 
     assert.equal(client.getAccessToken(), null);
     assert.equal(removeCalls, 1);
+  });
+
+  it('still revokes remotely and clears local credentials when pending-logout persistence fails', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    let value: string | null = 'refresh-old';
+    let logoutBody: Record<string, unknown> | null = null;
+    const storage = {
+      async load() { return value; },
+      async save(token: string) { value = token; },
+      async remove() { value = null; },
+      async savePendingLogout(): Promise<void> { throw new Error('secure storage write failed'); },
+      async removePendingLogout(): Promise<void> {},
+    };
+    globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      logoutBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return mockResponse(null, 204);
+    }) as unknown as typeof fetch;
+    const client = new BackendApiClient('http://backend.test', storage);
+
+    await client.logout();
+
+    assert.equal(value, null);
+    assert.deepEqual(logoutBody, { refreshToken: 'refresh-old' });
   });
 
   it('ignores a late token broadcast after local logout until a new local login starts', async () => {
@@ -904,6 +952,57 @@ describe('BackendApiClient', () => {
     );
   });
 
+  it('sends the current device push target with explicit logout', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const requests: CapturedRequest[] = [];
+    const responses = [
+      mockResponse({ id: 3, platform: 'ANDROID', installationId: 'install-1', active: true, lastSeenAt: '2026-07-13T00:00:00Z' }),
+      mockResponse(null, 204),
+    ];
+    globalThis.fetch = (async (url: RequestInfo | URL, init: RequestInit = {}) => {
+      requests.push({ url: String(url), init });
+      return responses.shift()!;
+    }) as unknown as typeof fetch;
+    const client = new BackendApiClient('http://backend.test', memoryTokenStorage('refresh-old'));
+
+    await client.registerAndroidPushTarget({ installationId: 'install-1', nativeToken: 'native-token' });
+    await client.logout();
+
+    assert.equal(requests[1]?.init.body, '{"refreshToken":"refresh-old","pushTargetId":3}');
+  });
+
+  it('uses typed account pass maintenance status setting and refresh endpoints', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const requests: CapturedRequest[] = [];
+    const response = {
+      enabled: true,
+      authSuspended: false,
+      passState: 'VALID',
+      remainingSeconds: 1200,
+      validUntil: '2026-08-26T10:20:00Z',
+      observedAt: '2026-08-26T10:00:00Z',
+      nextRefreshAt: '2026-08-26T10:20:01Z',
+      lastAttemptAt: null,
+      lastResult: 'VALID_CONFIRMED',
+      manualChallengeId: null,
+    };
+    globalThis.fetch = (async (url: RequestInfo | URL, init: RequestInit = {}) => {
+      requests.push({ url: String(url), init });
+      return mockResponse(response);
+    }) as unknown as typeof fetch;
+    const client = new BackendApiClient('http://backend.test');
+
+    await client.fetchCaptchaPassMaintenance();
+    await client.updateCaptchaPassMaintenance(false);
+    await client.refreshCaptchaPassMaintenance();
+
+    assert.deepEqual(requests.map(({ url, init }) => [url, init.method ?? 'GET', init.body]), [
+      ['http://backend.test/api/captcha/pass-maintenance', 'GET', undefined],
+      ['http://backend.test/api/captcha/pass-maintenance', 'PUT', '{"enabled":false}'],
+      ['http://backend.test/api/captcha/pass-maintenance/refresh', 'POST', undefined],
+    ]);
+  });
+
   it('uses party preset endpoints for reusable character parties', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const requests: CapturedRequest[] = [];
@@ -1161,6 +1260,7 @@ function mockResponse(body: unknown, status = 200, headers: Record<string, strin
 function memoryTokenStorage(initialValue: string | null = null) {
   return {
     value: initialValue,
+    pendingLogout: null as string | null,
     async load() {
       return this.value;
     },
@@ -1169,6 +1269,15 @@ function memoryTokenStorage(initialValue: string | null = null) {
     },
     async remove() {
       this.value = null;
+    },
+    async loadPendingLogout() {
+      return this.pendingLogout;
+    },
+    async savePendingLogout(token: string | null) {
+      this.pendingLogout = token ?? 'WEB_COOKIE';
+    },
+    async removePendingLogout() {
+      this.pendingLogout = null;
     },
   };
 }

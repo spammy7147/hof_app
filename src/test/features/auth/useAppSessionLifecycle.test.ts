@@ -103,6 +103,28 @@ describe('useAppSessionLifecycle', () => {
     await act(async () => { renderer.unmount(); });
   });
 
+  it('keeps a failed explicit logout in recovery until the server family is revoked', async () => {
+    const client = fakeClient();
+    let lifecycle!: AppSessionLifecycle;
+    const Harness = () => {
+      lifecycle = useAppSessionLifecycle(client.api);
+      return null;
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(Harness)); });
+    await act(async () => { client.emit({ type: 'refresh-succeeded' }); });
+    client.failLogout(apiError(503, 'SERVICE_UNAVAILABLE'));
+
+    await act(async () => { await lifecycle.logout(); });
+
+    assert.equal(lifecycle.state.kind, 'RECOVERY_WAITING');
+    if (lifecycle.state.kind !== 'RECOVERY_WAITING') throw new Error('Expected recovery waiting');
+    assert.equal(lifecycle.state.generation, null);
+    assert.equal(client.logoutCalls, 1);
+    assert.equal(client.mutationsBlocked, true);
+    await act(async () => { renderer.unmount(); });
+  });
+
   it('uses Retry-After first and then the agreed bounded backoff', () => {
     assert.equal(sessionRecoveryDelaySeconds(0, 19), 19);
     assert.deepEqual(
@@ -120,6 +142,7 @@ function fakeClient() {
     logoutCalls: 0,
     clearCalls: 0,
     mutationsBlocked: false,
+    logoutError: null as unknown,
   };
   const api: SessionLifecycleClient = {
     async restoreSession() { state.restoreCalls += 1; },
@@ -127,7 +150,10 @@ function fakeClient() {
       state.loginCalls += 1;
       return { accessToken: 'access' };
     },
-    async logout() { state.logoutCalls += 1; },
+    async logout() {
+      state.logoutCalls += 1;
+      if (state.logoutError) throw state.logoutError;
+    },
     async clearLocalSession() { state.clearCalls += 1; },
     subscribeSessionRefreshEvents(next) {
       listener = next;
@@ -138,6 +164,7 @@ function fakeClient() {
   return {
     api,
     emit(event: SessionRefreshEvent) { listener?.(event); },
+    failLogout(error: unknown) { state.logoutError = error; },
     get restoreCalls() { return state.restoreCalls; },
     get loginCalls() { return state.loginCalls; },
     get logoutCalls() { return state.logoutCalls; },

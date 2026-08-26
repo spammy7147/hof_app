@@ -1,13 +1,24 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { ArrowLeft } from 'lucide-react-native';
 
 import { PrimaryButton } from '../components/PrimaryButton';
 import { theme } from '../styles/theme';
+import {
+  canOpenManualPassChallenge,
+  describeCaptchaPassMaintenance,
+  formatPassTimestamp,
+} from '../domain/captchaPassMaintenance';
+import type { CaptchaPassMaintenanceResponse } from '../types/api';
 type SettingsTabScreenProps = {
   authenticated: boolean;
   onBack: () => void;
   onLogout: () => void;
   onOpenCaptcha: () => void;
+  passMaintenance?: CaptchaPassMaintenanceResponse | null;
+  passMaintenanceBusy?: boolean;
+  passMaintenanceError?: string | null;
+  onRefreshPassMaintenance?: () => Promise<unknown>;
+  onTogglePassMaintenance?: (enabled: boolean) => Promise<unknown>;
 };
 
 /**
@@ -20,7 +31,16 @@ export function SettingsTabScreen({
   onBack,
   onLogout,
   onOpenCaptcha,
+  passMaintenance = null,
+  passMaintenanceBusy = false,
+  passMaintenanceError = null,
+  onRefreshPassMaintenance,
+  onTogglePassMaintenance,
 }: SettingsTabScreenProps) {
+  const passDescription = passMaintenance == null
+    ? null
+    : describeCaptchaPassMaintenance(passMaintenance);
+  const manualAvailable = canOpenManualPassChallenge(passMaintenance);
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -38,23 +58,57 @@ export function SettingsTabScreen({
       </View>
 
       <View style={styles.panel}>
-        <Text style={styles.panelTitle}>캡차 대기</Text>
-        <View style={styles.panelBody}>
-          <Text style={styles.mutedText}>
-            전역 캡차 창에서 대기 중인 캡차를 확인하고 답안을 입력하세요.
-          </Text>
-          {!authenticated ? <Text style={styles.mutedText}>로그인이 필요합니다.</Text> : null}
-          <PrimaryButton
-            label="캡차 확인"
-            variant="secondary"
-            disabled={!authenticated}
-            onPress={onOpenCaptcha}
-            style={styles.captchaButton}
+        <View style={styles.panelTitleRow}>
+          <View style={styles.panelTitleCopy}>
+            <Text style={styles.panelTitle}>통행증 자동 갱신</Text>
+            <Text style={styles.mutedText}>전투와 별개로 만료 시각 뒤 서버에서 갱신합니다.</Text>
+          </View>
+          <Switch
+            accessibilityLabel="통행증 자동 갱신"
+            disabled={!authenticated || passMaintenanceBusy || passMaintenance == null}
+            onValueChange={(enabled) => { void onTogglePassMaintenance?.(enabled).catch(() => undefined); }}
+            value={passMaintenance?.enabled ?? true}
           />
+        </View>
+        <View style={styles.panelBody}>
+          <StatusRow label="정책" value={passDescription?.policyLabel ?? '불러오는 중'} />
+          <StatusRow label="유지 상태" value={passDescription?.lifecycleLabel ?? '상태 미확인'} />
+          <StatusRow label="통행증" value={passDescription?.stateLabel ?? '미확인'} />
+          <StatusRow label="남은 시간" value={passDescription?.remainingLabel ?? '확인되지 않음'} />
+          <StatusRow label="다음 갱신" value={formatPassTimestamp(passMaintenance?.nextRefreshAt ?? null)} />
+          <StatusRow label="최근 결과" value={passDescription?.lastResultLabel ?? '기록 없음'} />
+          <StatusRow label="최근 관측" value={formatPassTimestamp(passMaintenance?.observedAt ?? null)} />
+          {passMaintenanceError ? <Text accessibilityRole="alert" style={styles.errorText}>{passMaintenanceError}</Text> : null}
+          {!authenticated ? <Text style={styles.mutedText}>로그인이 필요합니다.</Text> : null}
+          <View style={styles.actionRow}>
+            <PrimaryButton
+              label="상태 새로고침"
+              variant="secondary"
+              disabled={!authenticated || passMaintenanceBusy}
+              onPress={() => { void onRefreshPassMaintenance?.().catch(() => undefined); }}
+              style={styles.captchaButton}
+            />
+            <PrimaryButton
+              label="직접 인증"
+              variant="secondary"
+              disabled={!authenticated || passMaintenanceBusy || !manualAvailable}
+              onPress={onOpenCaptcha}
+              style={styles.captchaButton}
+            />
+          </View>
         </View>
       </View>
 
       <PrimaryButton label="로그아웃" variant="secondary" onPress={onLogout} />
+    </View>
+  );
+}
+
+function StatusRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.statusRow}>
+      <Text style={styles.statusLabel}>{label}</Text>
+      <Text style={styles.statusValue}>{value}</Text>
     </View>
   );
 }
@@ -103,6 +157,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '900',
   },
+  panelTitleRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: theme.spacing.md,
+    justifyContent: 'space-between',
+  },
+  panelTitleCopy: {
+    flex: 1,
+    gap: 4,
+  },
   panelBody: {
     gap: theme.spacing.sm,
   },
@@ -117,5 +181,33 @@ const styles = StyleSheet.create({
     minHeight: 36,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+  },
+  statusRow: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: theme.spacing.md,
+    justifyContent: 'space-between',
+  },
+  statusLabel: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  statusValue: {
+    color: theme.colors.text,
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'right',
+  },
+  errorText: {
+    color: theme.colors.danger,
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

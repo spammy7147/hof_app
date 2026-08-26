@@ -8,6 +8,11 @@ export async function prepareAndroidPushRegistration(): Promise<AndroidPushRegis
   return null;
 }
 
+/** 웹과 미지원 플랫폼에는 영속 Android 설치 ID가 없다. */
+export async function loadAndroidPushInstallationId(): Promise<string | null> {
+  return null;
+}
+
 /** 웹에서는 네이티브 알림 응답 구독이 없다. */
 export function subscribeToCaptchaNotification(_onOpenCaptcha: () => void): () => void {
   return () => undefined;
