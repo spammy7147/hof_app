@@ -9,9 +9,11 @@ const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>
 ));
 
 let publishNotice: ((message: string | null) => void) | null = null;
+let openCaptchaFromPush: (() => void) | null = null;
+let openCaptchaCalls = 0;
 let logoutCalls = 0;
 const syncCharacters = async () => undefined;
-const openCaptcha = async () => undefined;
+const openCaptcha = async () => { openCaptchaCalls += 1; };
 const waitForCaptcha = async () => undefined;
 
 class BackendApiClientMock {
@@ -120,7 +122,11 @@ moduleWithLoader._load = (request, parent, isMain) => {
     };
   }
   if (request.endsWith('/features/push/useAndroidPushRegistration')) {
-    return { useAndroidPushRegistration: () => undefined };
+    return {
+      useAndroidPushRegistration: ({ onOpenCaptcha }: { onOpenCaptcha: () => void }) => {
+        openCaptchaFromPush = onOpenCaptcha;
+      },
+    };
   }
   return originalLoad(request, parent, isMain);
 };
@@ -134,6 +140,8 @@ const realClearTimeout = globalThis.clearTimeout;
 
 afterEach(() => {
   publishNotice = null;
+  openCaptchaFromPush = null;
+  openCaptchaCalls = 0;
   logoutCalls = 0;
   globalThis.setTimeout = realSetTimeout;
   globalThis.clearTimeout = realClearTimeout;
@@ -171,6 +179,20 @@ describe('App system notice', () => {
 
     assert.equal(logoutCalls, 1);
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'LoginScreen').length, 1);
+    await act(async () => { renderer.unmount(); });
+  });
+
+  it('routes a selected CAPTCHA push notification into the existing global modal flow', async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(React.createElement(App));
+      await Promise.resolve();
+    });
+
+    assert.ok(openCaptchaFromPush);
+    await act(async () => openCaptchaFromPush?.());
+
+    assert.equal(openCaptchaCalls, 1);
     await act(async () => { renderer.unmount(); });
   });
 });

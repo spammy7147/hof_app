@@ -27,7 +27,9 @@ export function captchaPassWarning(state: CaptchaPassMaintenanceResponse | null)
 
 export function describeCaptchaPassMaintenance(
   state: CaptchaPassMaintenanceResponse,
+  nowMs = Date.now(),
 ): CaptchaPassMaintenanceDescription {
+  const remainingSeconds = currentRemainingSeconds(state, nowMs);
   return {
     policyLabel: state.authSuspended
       ? '로그인 세션 종료로 일시중단'
@@ -40,11 +42,21 @@ export function describeCaptchaPassMaintenance(
       : state.passState === 'REQUIRED'
         ? '인증 필요'
         : '미확인',
-    remainingLabel: state.remainingSeconds == null
+    remainingLabel: remainingSeconds == null
       ? '확인되지 않음'
-      : formatRemaining(state.remainingSeconds),
+      : formatRemaining(remainingSeconds),
     lastResultLabel: describeLastResult(state.lastResult),
   };
+}
+
+function currentRemainingSeconds(
+  state: CaptchaPassMaintenanceResponse,
+  nowMs: number,
+): number | null {
+  if (state.passState !== 'VALID' || state.validUntil == null) return state.remainingSeconds;
+  const validUntilMs = Date.parse(state.validUntil);
+  if (!Number.isFinite(validUntilMs)) return state.remainingSeconds;
+  return Math.max(0, Math.ceil((validUntilMs - nowMs) / 1_000));
 }
 
 function describeLifecycle(state: CaptchaPassMaintenanceResponse['lifecycleState']): string {

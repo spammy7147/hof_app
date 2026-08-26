@@ -21,11 +21,28 @@ describe('captcha pass maintenance presentation', () => {
       passState: 'VALID',
       remainingSeconds: 1_569,
       validUntil: '2026-08-26T10:26:09Z',
-    }));
+    }), Date.parse('2026-08-26T10:00:00Z'));
 
     assert.equal(description.stateLabel, '유효');
     assert.equal(description.remainingLabel, '26분 9초');
     assert.equal(description.policyLabel, '자동 갱신 사용 중');
+  });
+
+  it('derives a decreasing countdown from the authoritative valid-until timestamp', () => {
+    const valid = state({
+      passState: 'VALID',
+      remainingSeconds: 1_800,
+      validUntil: '2026-08-26T10:30:00Z',
+    });
+
+    assert.equal(
+      describeCaptchaPassMaintenance(valid, Date.parse('2026-08-26T10:00:05Z')).remainingLabel,
+      '29분 55초',
+    );
+    assert.equal(
+      describeCaptchaPassMaintenance(valid, Date.parse('2026-08-26T10:29:59Z')).remainingLabel,
+      '1초',
+    );
   });
 
   it('shows nonblocking warnings for manual OCR and HOF login handoff only', () => {

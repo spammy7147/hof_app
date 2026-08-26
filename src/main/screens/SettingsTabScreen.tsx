@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { ArrowLeft } from 'lucide-react-native';
 
@@ -37,9 +38,16 @@ export function SettingsTabScreen({
   onRefreshPassMaintenance,
   onTogglePassMaintenance,
 }: SettingsTabScreenProps) {
+  const [nowMs, setNowMs] = useState(Date.now());
+  useEffect(() => {
+    if (passMaintenance?.passState !== 'VALID' || passMaintenance.validUntil == null) return undefined;
+    setNowMs(Date.now());
+    const timer = setInterval(() => setNowMs(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [passMaintenance?.passState, passMaintenance?.validUntil]);
   const passDescription = passMaintenance == null
     ? null
-    : describeCaptchaPassMaintenance(passMaintenance);
+    : describeCaptchaPassMaintenance(passMaintenance, nowMs);
   const manualAvailable = canOpenManualPassChallenge(passMaintenance);
   return (
     <View style={styles.container}>
