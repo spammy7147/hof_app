@@ -374,8 +374,16 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
       maps: [catalogMap('a', 'Alpha')],
     });
 
+    const input = renderer.root.findByProps({ accessibilityLabel: '최소 잔여 Time' });
+    const row = input.parent;
+    assert.ok(row);
+    assert.equal(flattenStyle(row.props.style).flexDirection, 'row');
+    assert.equal(flattenStyle(row.props.style).flexWrap, 'wrap');
+    assert.equal(flattenStyle(input.props.style).minWidth, 120);
+    assert.equal(flattenStyle(input.props.style).minHeight, 44);
+
     await act(async () => {
-      renderer.root.findByProps({ accessibilityLabel: '최소 잔여 Time' }).props.onChangeText('잘못된 값');
+      input.props.onChangeText('잘못된 값');
     });
     const error = renderer.root.findByProps({ accessibilityLabel: '최소 잔여 Time 입력 오류' });
     assert.equal(error.props.accessibilityRole, 'alert');
