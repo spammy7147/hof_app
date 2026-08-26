@@ -139,6 +139,8 @@ export class BackendApiClient {
   private manualActionPending = false;
   private sessionMutationsBlocked = false;
   private androidPushTargetId: number | null = null;
+  private acceptsPushRegistrations = true;
+  private readonly inFlightPushRegistrations = new Set<Promise<DevicePushTargetResponse>>();
   private pendingLogoutToken: string | null = null;
 
   constructor(
@@ -164,6 +166,7 @@ export class BackendApiClient {
       }),
     });
     await this.acceptTokenResponse(response, epoch);
+    if (this.isCurrentAuthEpoch(epoch)) this.acceptsPushRegistrations = true;
     return response;
   }
 
@@ -178,11 +181,13 @@ export class BackendApiClient {
     }
     if (!this.isCurrentAuthEpoch(epoch)) return;
     await this.refreshAccessToken(epoch);
+    if (this.isCurrentAuthEpoch(epoch)) this.acceptsPushRegistrations = true;
   }
 
   /** 현재 refresh token 패밀리를 서버에서 폐기하고 로컬 토큰 상태도 비운다. */
   async logout(): Promise<void> {
     this.acceptsSessionTokenBroadcasts = false;
+    this.acceptsPushRegistrations = false;
     const epoch = this.beginAuthMutation();
     const refreshToken = await this.tokenStorage.load().catch(() => null);
     const pushInstallationId = await loadAndroidPushInstallationId().catch(() => null);
@@ -197,6 +202,7 @@ export class BackendApiClient {
       localClearError = error;
     }
     try {
+      await this.waitForPushRegistrations();
       await this.requestRemoteLogout(refreshToken, pushInstallationId);
       await this.removePendingLogout();
     } finally {
@@ -250,6 +256,7 @@ export class BackendApiClient {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.acceptsPushRegistrations = false;
     this.authEpoch += 1;
     if (this.sessionChannel) {
       this.sessionChannel.onmessage = null;
@@ -275,6 +282,7 @@ export class BackendApiClient {
   /** 원격 요청 없이 현재 기기의 인증 자격과 web 탭 상태를 무효화한다. */
   async clearLocalSession(): Promise<void> {
     this.acceptsSessionTokenBroadcasts = false;
+    this.acceptsPushRegistrations = false;
     const epoch = this.beginAuthMutation();
     await this.clearTokenState(epoch);
   }
@@ -589,13 +597,30 @@ export class BackendApiClient {
   registerAndroidPushTarget(
     request: RegisterAndroidPushTargetRequest,
   ): Promise<DevicePushTargetResponse> {
-    return this.request<DevicePushTargetResponse>('/api/push/android/targets', {
+    if (!this.acceptsPushRegistrations) {
+      return Promise.reject(
+        new BackendApiError(401, 'AUTH_TOKEN_INVALID', '로그아웃 중에는 푸시 대상을 등록할 수 없습니다.'),
+      );
+    }
+    const registration = this.request<DevicePushTargetResponse>('/api/push/android/targets', {
       method: 'POST',
       body: JSON.stringify(request),
     }).then((target) => {
       this.androidPushTargetId = target.id;
       return target;
     });
+    this.inFlightPushRegistrations.add(registration);
+    void registration.then(
+      () => this.inFlightPushRegistrations.delete(registration),
+      () => this.inFlightPushRegistrations.delete(registration),
+    );
+    return registration;
+  }
+
+  /** 이미 서버에 도착한 등록 요청보다 로그아웃의 비활성화가 반드시 나중에 commit되게 한다. */
+  private async waitForPushRegistrations(): Promise<void> {
+    if (this.inFlightPushRegistrations.size === 0) return;
+    await Promise.allSettled([...this.inFlightPushRegistrations]);
   }
 
   /**

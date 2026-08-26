@@ -462,6 +462,31 @@ describe('MainScreen automation editor chrome', () => {
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 1);
   });
 
+  it('opens the manual captcha flow when the account-wide pass warning is actionable', async () => {
+    let captchaOpens = 0;
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(MainScreen, mainProps({
+        captchaPassWarning: '통행증 자동 인식을 완료하지 못했습니다.',
+        captchaPassWarningActionable: true,
+        onOpenCaptcha: () => { captchaOpens += 1; },
+      })));
+    });
+
+    const warning = renderer.root.findAll((node) => (
+      String(node.type) === 'Pressable'
+      && node.findAll((child) => (
+        String(child.type) === 'Text'
+        && child.children.join('') === '통행증 자동 인식을 완료하지 못했습니다.'
+      )).length > 0
+    )).at(0);
+    assert.ok(warning);
+    assert.equal(warning.props.accessibilityRole, 'button');
+    await act(async () => warning.props.onPress());
+
+    assert.equal(captchaOpens, 1);
+  });
+
   it('opens character details without the global header, tabs, or a sticky footer', async () => {
     const character = makeHofCharacter();
     let closes = 0;

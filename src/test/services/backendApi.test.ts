@@ -971,6 +971,53 @@ describe('BackendApiClient', () => {
     assert.equal(requests[1]?.init.body, '{"refreshToken":"refresh-old","pushTargetId":3}');
   });
 
+  it('waits for a late Android push registration before logout deactivates that installation', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const storage = memoryTokenStorage('refresh-old');
+    const registrationResponse = deferred<Response>();
+    const registrationRequested = deferred<void>();
+    let logoutBody: string | null = null;
+    globalThis.fetch = (async (url: RequestInfo | URL, init: RequestInit = {}) => {
+      if (String(url).endsWith('/api/push/android/targets')) {
+        registrationRequested.resolve();
+        return registrationResponse.promise;
+      }
+      if (String(url).endsWith('/api/auth/logout')) {
+        logoutBody = String(init.body);
+        return mockResponse(null, 204);
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    }) as unknown as typeof fetch;
+    const client = new BackendApiClient('http://backend.test', storage);
+
+    const registering = client.registerAndroidPushTarget({
+      installationId: 'install-late',
+      nativeToken: 'native-token',
+    });
+    await registrationRequested.promise;
+    const loggingOut = client.logout();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    assert.equal(logoutBody, null);
+    registrationResponse.resolve(mockResponse({
+      id: 17,
+      platform: 'ANDROID',
+      installationId: 'install-late',
+      active: true,
+      lastSeenAt: '2026-08-26T00:00:00Z',
+    }));
+    await registering;
+    await loggingOut;
+
+    assert.equal(storage.value, null);
+    assert.equal(logoutBody, '{"refreshToken":"refresh-old","pushTargetId":17}');
+    await assert.rejects(
+      client.registerAndroidPushTarget({ installationId: 'install-late', nativeToken: 'next-token' }),
+      (error: unknown) => (error as BackendErrorShape).code === 'AUTH_TOKEN_INVALID',
+    );
+  });
+
   it('uses typed account pass maintenance status setting and refresh endpoints', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const requests: CapturedRequest[] = [];
