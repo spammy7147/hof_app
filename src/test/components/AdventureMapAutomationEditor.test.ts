@@ -409,6 +409,17 @@ describe('AdventureMapAutomationEditor', () => {
     assert.equal(hasText(renderer.root, 'invalid timestamp'), false);
   });
 
+  it('shows an unavailable time when refresh completed without a timestamp', async () => {
+    const renderer = await renderEditor({
+      dailyRefresh: { status: 'COMPLETE', refreshDate: '2026-07-16', refreshedAt: null },
+    });
+
+    assert.equal(hasText(renderer.root, '초기화 완료 · 시간 확인 불가'), true);
+    renderer.root.findByProps({
+      accessibilityLabel: '한국 날짜 00시 초기화. 초기화 완료 · 시간 확인 불가',
+    });
+  });
+
   it('updates PRIMARY labels from the latest preset list while keeping explicit labels fixed', async () => {
     const maps = [map('primary', '대표 맵'), map('explicit', '고정 맵')];
     const loadMaps = async () => maps;

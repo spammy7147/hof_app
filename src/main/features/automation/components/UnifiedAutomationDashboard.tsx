@@ -354,9 +354,12 @@ function entrySummary(entry: TypedAutomationEntryResponse): string {
       : entry.warnings.length > 0
         ? entry.warnings[0] ?? '설정 확인 필요'
         : `전투맵 ${entry.battleMaps.length}개`;
+    const disabledWarning = !entry.enabled ? entry.warnings[0] : null;
     return `${state} · ${minimum == null
       ? 'Time 제한 없음'
-      : `전투 후 최소 ${minimum.toLocaleString('ko-KR')} Time 유지`}`;
+      : `전투 후 최소 ${minimum.toLocaleString('ko-KR')} Time 유지`}${disabledWarning == null
+      ? ''
+      : ` · ${disabledWarning}`}`;
   }
   if (!entry.enabled) return '사용 안 함';
   if (entry.warnings.length > 0) return entry.warnings[0] ?? '설정 확인 필요';

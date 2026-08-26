@@ -599,7 +599,8 @@ function ResourceWarning({ label, onRetry }: { label: string; onRetry: () => voi
   return <View style={styles.warning}><Text style={styles.problem}>{label}을 불러오지 못했어요.</Text><Pressable onPress={() => { void onRetry(); }} style={styles.choice}><Text style={styles.choiceText}>다시 시도</Text></Pressable></View>;
 }
 function formatCompactAdventureDailyRefresh(refresh: AdventureDailyRefreshResponse): string {
-  if (refresh.status !== 'COMPLETE' || refresh.refreshedAt == null) return '초기화 · 대기';
+  if (refresh.status !== 'COMPLETE') return '초기화 · 대기';
+  if (refresh.refreshedAt == null) return '초기화 완료 · 시간 확인 불가';
   if (Number.isNaN(new Date(refresh.refreshedAt).getTime())) return '초기화 완료 · 시간 확인 불가';
   return formatAdventureDailyRefresh(refresh).replace(/^오늘 /, '');
 }

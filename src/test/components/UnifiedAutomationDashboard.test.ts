@@ -106,6 +106,18 @@ describe('UnifiedAutomationDashboard', () => {
     disabled.entries[0] = { ...configured.entries[0]!, enabled: false };
     const disabledRenderer = await renderDashboard(disabled, () => undefined);
     assert.equal(hasText(disabledRenderer.root, '사용 안 함 · 전투 후 최소 1,500 Time 유지'), true);
+
+    const disabledWithWarning = networkStopped();
+    disabledWithWarning.entries[0] = {
+      ...configured.entries[0]!,
+      enabled: false,
+      warnings: ['현재 최대 Time으로는 설정한 최소 잔여 Time을 남기고 전투할 수 없습니다.'],
+    };
+    const warningRenderer = await renderDashboard(disabledWithWarning, () => undefined);
+    assert.equal(hasText(
+      warningRenderer.root,
+      '사용 안 함 · 전투 후 최소 1,500 Time 유지 · 현재 최대 Time으로는 설정한 최소 잔여 Time을 남기고 전투할 수 없습니다.',
+    ), true);
   });
 
   it('shows network failures as automatic retry without a manual resume action', async () => {
