@@ -219,6 +219,7 @@ function AdventureMapStatsScreen({ authenticated, onBack, onLoad }: {
         <Text style={[styles.mapCount, styles.defeatText]}>{item.defeats}회</Text>
         <Text style={styles.mapCount}>{item.draws}회</Text>
       </View>}
+      stickyHeaderIndices={[0]}
       style={styles.list}
     />
   );
@@ -345,6 +346,7 @@ function BattleLogScreen({
       onEndReached={() => { void loadMore(); }}
       onEndReachedThreshold={0.35}
       renderItem={({ item }) => <BattleLogCard log={item} onOpenDetail={() => setDetailLog(item)} />}
+      stickyHeaderIndices={[0]}
       style={styles.list}
     />
   );
@@ -475,7 +477,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
     padding: theme.spacing.lg,
   },
-  adventureHeaderStack: { gap: theme.spacing.md, marginBottom: theme.spacing.sm },
+  adventureHeaderStack: { backgroundColor: theme.colors.background, gap: theme.spacing.md, marginBottom: theme.spacing.sm },
   sectionTitle: { color: theme.colors.text, fontSize: 18, fontWeight: '900' },
   description: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '700', lineHeight: 17 },
   mapSection: { gap: theme.spacing.sm, marginTop: theme.spacing.sm },
@@ -505,7 +507,7 @@ const styles = StyleSheet.create({
     padding: theme.spacing.lg,
   },
   logLaunchCopy: { gap: theme.spacing.xs },
-  logScreenHeaderStack: { gap: theme.spacing.md, marginBottom: theme.spacing.lg },
+  logScreenHeaderStack: { backgroundColor: theme.colors.background, gap: theme.spacing.md, marginBottom: theme.spacing.lg },
   logListContainer: { padding: theme.spacing.lg, paddingBottom: theme.spacing.xl },
   filterRow: { flexDirection: 'row', gap: theme.spacing.xs },
   filterButton: {

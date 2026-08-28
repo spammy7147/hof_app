@@ -91,6 +91,8 @@ describe('DataTabScreen recent battle card', () => {
 
     const launch = renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '통계 보기');
     await act(async () => { launch.props.onPress(); });
+    const adventureList = renderer.root.find((node) => String(node.type) === 'FlatList');
+    assert.deepEqual(adventureList.props.stickyHeaderIndices, [0]);
     assert.deepEqual(periods, [undefined, 'DAY']);
     assert.deepEqual(['일간', '주간', '월간', '얼어붙은 산', '2회', '1회'].filter((value) => !flattenText(renderer.root).includes(value)), []);
 
@@ -139,6 +141,8 @@ describe('DataTabScreen recent battle card', () => {
     mountedRenderer = renderer;
     const openButton = renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '로그 보기');
     await act(async () => { openButton.props.onPress(); });
+    const battleList = renderer.root.find((node) => String(node.type) === 'FlatList');
+    assert.deepEqual(battleList.props.stickyHeaderIndices, [0]);
     const defeatTab = renderer.root.find((node) => (
       String(node.type) === 'Pressable'
       && node.props.accessibilityRole === 'tab'

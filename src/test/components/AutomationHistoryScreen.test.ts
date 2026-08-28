@@ -69,6 +69,8 @@ describe('AutomationHistoryScreen', () => {
     });
 
     const text = treeText(renderer.root);
+    const scroller = renderer.root.find((node) => String(node.type) === 'NestableScrollContainer');
+    assert.deepEqual(scroller.props.stickyHeaderIndices, [0]);
     assert.ok(text.includes('판단 과정 2단계'));
     assert.ok(text.includes('낚시 사이클 · 실행'));
     assert.ok(text.includes('동작 낚시 시작'));
