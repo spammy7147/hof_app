@@ -16,6 +16,7 @@ import type {
 type AutomationHistoryScreenProps = {
   onBack: () => void;
   load: (cursor?: number) => Promise<AutomationHistoryPage>;
+  nextAutomationDecisionAt?: string | null;
   loadConvergence?: () => Promise<AutomationConvergenceStatus>;
   allowFreshDecision?: (attemptId: number) => Promise<AutomationConvergenceStatus>;
 };
@@ -23,6 +24,7 @@ type AutomationHistoryScreenProps = {
 export function AutomationHistoryScreen({
   onBack,
   load,
+  nextAutomationDecisionAt,
   loadConvergence,
   allowFreshDecision,
 }: AutomationHistoryScreenProps) {
@@ -89,14 +91,20 @@ export function AutomationHistoryScreen({
     </View> : null}
     {error ? <><Text accessibilityRole="alert" style={styles.error}>{error}</Text><Pressable accessibilityRole="button" onPress={() => { void fetchPage(); }}><Text style={styles.link}>다시 시도</Text></Pressable></> : null}
     {!loading && cycles.length === 0 && !error ? <Text style={styles.empty}>아직 자동화 기록이 없습니다.</Text> : null}
-    {latestEvent ? <View accessibilityLabel="최근 자동화 상태" style={styles.statusSummary}>
+    {nextAutomationDecisionAt ? <View accessibilityLabel="전체 자동화 재판단 대기" style={styles.statusSummary}>
+      <Text style={styles.statusEyebrow}>전체 자동화</Text>
+      <Text style={styles.statusTitle}>재판단 대기</Text>
+      <Text style={styles.statusMessage}>현재 판단에서 실행할 행동을 찾지 못해 다음 시각에 첫 항목부터 다시 확인합니다.</Text>
+      <Text style={styles.next}>전체 자동화 재판단 {new Date(nextAutomationDecisionAt).toLocaleString('ko-KR')}</Text>
+    </View> : null}
+    {latestEvent ? <View accessibilityLabel="최근 항목 판단" style={styles.statusSummary}>
       <Text style={styles.statusEyebrow}>{statusSummaryLabel(latestEvent.kind)}</Text>
       <Text style={styles.statusTitle}>{latestEvent.entryDisplayName ?? (latestEvent.type ? AUTOMATION_TYPE_METADATA[latestEvent.type].label : '시스템')}{latestEvent.actionKind ? ` · ${actionLabel(latestEvent.actionKind, latestEvent.type)}` : ''}</Text>
       {latestEvent.targetName || latestEvent.targetKey ? <Text style={styles.target}>대상  {latestEvent.targetName ?? latestEvent.targetKey}</Text> : null}
       <Text style={styles.statusMessage}>{displayMessage(latestEvent)}</Text>
       <Text style={styles.statusDiagnostic}>현재 판단  {diagnosticSummary(latestEvent)}</Text>
       <TypedWaitDiagnostic event={latestEvent} />
-      {latestEvent.nextRunAt ? <Text style={styles.next}>다음 확인 {new Date(latestEvent.nextRunAt).toLocaleString('ko-KR')}</Text> : null}
+      {latestEvent.nextRunAt ? <Text style={styles.next}>{nextRunLabel(latestEvent)} {new Date(latestEvent.nextRunAt).toLocaleString('ko-KR')}</Text> : null}
     </View> : null}
     {cycles.map((cycle) => {
       const steps = historySteps(cycle);
@@ -131,7 +139,7 @@ function HistoryEventContent({ event }: { event: AutomationHistoryEvent }) {
     <Text style={styles.message}><Text style={styles.criteria}>{messageLabel(event.kind)}  </Text>{displayMessage(event)}</Text>
     <Text style={styles.diagnostic}>판단 내용  {diagnosticSummary(event)}</Text>
     <TypedWaitDiagnostic event={event} />
-    {event.nextRunAt ? <Text style={styles.next}>다음 확인 {new Date(event.nextRunAt).toLocaleString('ko-KR')}</Text> : null}
+    {event.nextRunAt ? <Text style={styles.next}>{nextRunLabel(event)} {new Date(event.nextRunAt).toLocaleString('ko-KR')}</Text> : null}
   </>;
 }
 function historySteps(cycle: AutomationHistoryCycle): AutomationHistoryStep[] {
@@ -163,7 +171,8 @@ function historySteps(cycle: AutomationHistoryCycle): AutomationHistoryStep[] {
 function resultLabel(value: AutomationHistoryCycle['result']) { return ({ ACTION_SELECTED: '행동 선택', WAITING: '대기', IDLE: '실행 없음', FATAL: '중지' } as const)[value]; }
 function kindLabel(value: AutomationHistoryCycle['events'][number]['kind']) { return ({ EVALUATED: '판단', SELECTED: '선택', WAITING: '대기', SKIPPED: '스킵', CONFIGURATION_WARNING: '설정 경고', ACTION_STARTED: '실행 시작', ACTION_SUCCEEDED: '성공', ACTION_FAILED: '실패', CYCLE_COMPLETED: '사이클 완료', CYCLE_ABORTED: '사이클 중단' } as const)[value]; }
 function messageLabel(value: AutomationHistoryCycle['events'][number]['kind']) { return ['EVALUATED', 'SELECTED', 'WAITING', 'SKIPPED', 'CONFIGURATION_WARNING'].includes(value) ? '판단 기준' : '처리 결과'; }
-function statusSummaryLabel(kind: AutomationHistoryCycle['events'][number]['kind']) { return kind === 'ACTION_FAILED' ? '최근 막힘 사유' : kind === 'WAITING' ? '현재 대기 사유' : '최근 자동화 단계'; }
+function statusSummaryLabel(kind: AutomationHistoryCycle['events'][number]['kind']) { return kind === 'ACTION_FAILED' ? '최근 막힘 사유' : kind === 'WAITING' ? '최근 항목 대기 사유' : '최근 자동화 단계'; }
+function nextRunLabel(event: AutomationHistoryEvent) { return event.entryId == null ? '다음 확인' : '해당 항목 재확인'; }
 function TypedWaitDiagnostic({ event }: { event: AutomationHistoryEvent }) {
   if (!event.diagnosticKind) return null;
   const isAlert = RAID_ALERT_DIAGNOSTICS.has(event.diagnosticKind);

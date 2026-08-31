@@ -27,6 +27,52 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('AutomationHistoryScreen', () => {
+  it('separates the global automation decision wait from an entry retry time', async () => {
+    const load = async (): Promise<AutomationHistoryPage> => ({
+      nextCursor: null,
+      cycles: [{
+        id: 56245,
+        result: 'WAITING',
+        selectedEntryId: null,
+        startedAt: '2026-08-30T10:36:34Z',
+        finishedAt: '2026-08-30T10:36:34Z',
+        events: [{
+          id: 9,
+          sequence: 8,
+          entryId: 3,
+          type: 'BATTLE_MAP',
+          entryDisplayName: '전투 맵 2',
+          kind: 'WAITING',
+          reasonCode: 'COOLDOWN',
+          message: '다음 실행 가능 시각까지 대기합니다.',
+          targetKey: null,
+          targetName: null,
+          actionKind: null,
+          presetId: null,
+          presetName: null,
+          nextRunAt: '2026-08-30T10:53:40Z',
+          occurredAt: '2026-08-30T10:36:34Z',
+        }],
+      }],
+    });
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(React.createElement(AutomationHistoryScreen, {
+        onBack: () => undefined,
+        load,
+        nextAutomationDecisionAt: '2026-08-30T10:41:34Z',
+      }));
+    });
+
+    const globalWait = renderer.root.findByProps({ accessibilityLabel: '전체 자동화 재판단 대기' });
+    const entryWait = renderer.root.findByProps({ accessibilityLabel: '최근 항목 판단' });
+    assert.ok(treeText(globalWait).includes('전체 자동화 재판단'));
+    assert.ok(treeText(globalWait).includes(new Date('2026-08-30T10:41:34Z').toLocaleString('ko-KR')));
+    assert.ok(treeText(entryWait).includes('전투 맵 2'));
+    assert.ok(treeText(entryWait).includes('해당 항목 재확인'));
+    assert.ok(treeText(entryWait).includes(new Date('2026-08-30T10:53:40Z').toLocaleString('ko-KR')));
+  });
+
   it('shows fishing START CATCH and obstruction battle as two separate global decisions', async () => {
     const homeEvent = historyEvent(1, 0, 10, 'HOME_QUEST', 'SKIPPED', 'HOME_IDLE', null);
     const fishingEvent = historyEvent(2, 1, 11, 'FISHING', 'SELECTED', 'RUNNABLE', 'FISHING_TOWN');

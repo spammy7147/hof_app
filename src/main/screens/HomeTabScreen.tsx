@@ -364,6 +364,11 @@ export function HomeTabScreen({
   if (route === 'history') return <AutomationHistoryScreen
     onBack={() => { onDetailModeChange?.(false); setRoute('dashboard'); }}
     load={(cursor) => automationController.fetchHistory(cursor)}
+    nextAutomationDecisionAt={aggregate?.runtime.lifecycle === 'RUNNING'
+      && aggregate.runtime.currentAction == null
+      && aggregate.runtime.waitReason === 'SCHEDULED'
+      ? aggregate.runtime.nextAttemptAt
+      : null}
     loadConvergence={() => automationController.fetchConvergence()}
     allowFreshDecision={(attemptId) => automationController.allowFreshDecision(attemptId)}
   />;
