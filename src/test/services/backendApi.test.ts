@@ -693,8 +693,8 @@ describe('BackendApiClient', () => {
 
     const characters = await client.listCharacters();
 
-    assert.equal(characters[0]?.imageUrl, 'http://sic.zerosic.com/ZeroHOF/image/social-knight.png');
-    assert.equal(characters[1]?.imageUrl, 'http://sic.zerosic.com/ZeroHOF/image/char/sknight02.gif');
+    assert.equal(characters[0]?.imageUrl, 'https://hof.zerosic.com/image/social-knight.png');
+    assert.equal(characters[1]?.imageUrl, 'https://hof.zerosic.com/image/char/sknight02.gif');
   });
 
   it('synchronizes the roster through the HOF home without starting a detail job', async () => {
@@ -741,7 +741,7 @@ describe('BackendApiClient', () => {
     mockFetch(makeHofCharacterDetail(1, { imageUrl: '/ZeroHOF/image/social-knight.png' }));
     const detail = await client.fetchCharacterDetail(1);
 
-    assert.equal(detail.imageUrl, 'http://sic.zerosic.com/ZeroHOF/image/social-knight.png');
+    assert.equal(detail.imageUrl, 'https://hof.zerosic.com/image/social-knight.png');
 
     mockFetch({
       jobId: 12,
@@ -758,7 +758,7 @@ describe('BackendApiClient', () => {
 
     const job = await client.fetchCharacterSyncJob(12);
 
-    assert.equal(job.characters[0]?.imageUrl, 'http://sic.zerosic.com/ZeroHOF/image/char/sknight02.gif');
+    assert.equal(job.characters[0]?.imageUrl, 'https://hof.zerosic.com/image/char/sknight02.gif');
   });
 
   it('loads a saved pattern through the stable character record contract', async () => {

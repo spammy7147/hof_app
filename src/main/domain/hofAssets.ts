@@ -1,4 +1,4 @@
-const HOF_ASSET_BASE_URL = 'http://sic.zerosic.com/ZeroHOF/';
+const HOF_ASSET_BASE_URL = 'https://hof.zerosic.com/';
 
 /**
  * HOF 원본 HTML에서 파싱한 이미지 경로를 앱에서 바로 열 수 있는 절대 URL로 바꾼다.
@@ -9,8 +9,10 @@ const HOF_ASSET_BASE_URL = 'http://sic.zerosic.com/ZeroHOF/';
 export function normalizeHofAssetUrl(url: string | null | undefined): string | null {
   const value = url?.trim();
   if (!value) return null;
+  const migrated = value.replace(/^(?:(?:https?:)?\/\/sic\.zerosic\.com)?\/ZeroHOF\//i, '');
+  if (migrated !== value) return new URL(migrated, HOF_ASSET_BASE_URL).toString();
   if (/^https?:\/\//i.test(value)) return value;
-  if (value.startsWith('//')) return `http:${value}`;
+  if (value.startsWith('//')) return `https:${value}`;
 
   try {
     return new URL(value, HOF_ASSET_BASE_URL).toString();
