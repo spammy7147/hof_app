@@ -1,5 +1,5 @@
-const REFRESH_TOKEN_KEY = 'hof.refresh-token.v1';
-const PENDING_LOGOUT_KEY = 'hof.pending-logout.v1';
+export const REFRESH_TOKEN_KEY = 'hof.refresh-token.v1';
+export const PENDING_LOGOUT_KEY = 'hof.pending-logout.v1';
 const WEB_PENDING_LOGOUT = 'WEB_COOKIE';
 
 /** BackendApiClient가 플랫폼별 refresh token 저장 방식을 몰라도 되게 하는 최소 계약이다. */

@@ -38,11 +38,14 @@ after(() => {
 describe('BackendApiClient', () => {
   const originalFetch = globalThis.fetch;
   const originalBroadcastChannel = globalThis.BroadcastChannel;
+  const extensionGlobal = globalThis as typeof globalThis & { chrome?: unknown };
+  const originalChrome = extensionGlobal.chrome;
 
   afterEach(() => {
     platformOS = 'ios';
     globalThis.fetch = originalFetch;
     globalThis.BroadcastChannel = originalBroadcastChannel;
+    extensionGlobal.chrome = originalChrome;
   });
 
   it('rejects a plaintext backend URL in a production build', async () => {
@@ -134,6 +137,28 @@ describe('BackendApiClient', () => {
     assert.equal(requests[0]?.url, 'http://backend.test/api/auth/login');
     assert.equal(requests[0]?.init.body, '{"loginId":"hof-id","password":"hof-password","clientType":"NATIVE"}');
     assert.equal(readHeader(requests[1]?.init.headers, 'Authorization'), 'Bearer access-1');
+  });
+
+  it('uses the refresh-token body flow inside a Chrome extension web page', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    platformOS = 'web';
+    extensionGlobal.chrome = { runtime: { id: 'extension-id' } };
+    const storage = memoryTokenStorage();
+    let loginBody: string | null = null;
+    globalThis.fetch = (async (_url: RequestInfo | URL, init: RequestInit = {}) => {
+      loginBody = String(init.body);
+      return mockResponse(tokenResponse('access-1', 'refresh-1'));
+    }) as unknown as typeof fetch;
+
+    const client = new BackendApiClient('https://backend.test', storage);
+    await client.login({
+      loginId: 'hof-id',
+      password: 'hof-password',
+    });
+    client.dispose();
+
+    assert.equal(loginBody, '{"loginId":"hof-id","password":"hof-password","clientType":"NATIVE"}');
+    assert.equal(storage.value, 'refresh-1');
   });
 
   it('publishes the latest HOF status carried by a backend response header', async () => {

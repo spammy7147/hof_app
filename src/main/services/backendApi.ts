@@ -62,6 +62,7 @@ import type {
   AutomationConvergenceStatus,
 } from '../types/api';
 import { refreshTokenStorage, type RefreshTokenStorage } from '../platform/tokenStorage';
+import { isChromeExtensionRuntime } from '../platform/chromeExtension';
 import { loadAndroidPushInstallationId } from '../platform/pushNotifications';
 import { createSseConnection, type SseSubscription } from './sseClient';
 
@@ -142,12 +143,14 @@ export class BackendApiClient {
   private acceptsPushRegistrations = true;
   private readonly inFlightPushRegistrations = new Set<Promise<DevicePushTargetResponse>>();
   private pendingLogoutToken: string | null = null;
+  private readonly usesWebCookieSession: boolean;
 
   constructor(
     baseUrl = resolveBackendBaseUrl(),
     private readonly tokenStorage: RefreshTokenStorage = refreshTokenStorage,
   ) {
     this.baseUrl = normalizeBackendBaseUrl(baseUrl, process.env.NODE_ENV === 'production');
+    this.usesWebCookieSession = Platform.OS === 'web' && !isChromeExtensionRuntime();
     this.sessionChannel = createSessionChannel((token) => this.receiveBroadcastToken(token));
   }
 
@@ -162,7 +165,7 @@ export class BackendApiClient {
       method: 'POST',
       body: JSON.stringify({
         ...request,
-        clientType: Platform.OS === 'web' ? 'WEB' : 'NATIVE',
+        clientType: this.usesWebCookieSession ? 'WEB' : 'NATIVE',
       }),
     });
     await this.acceptTokenResponse(response, epoch);
@@ -1000,7 +1003,7 @@ export class BackendApiClient {
 
   private async performRefresh(epoch: number): Promise<void> {
     const refreshToken = await this.tokenStorage.load();
-    if (Platform.OS !== 'web' && !refreshToken) {
+    if (!this.usesWebCookieSession && !refreshToken) {
       throw new BackendApiError(401, 'AUTH_TOKEN_INVALID', '저장된 로그인 정보가 없습니다.');
     }
     const accessTokenBeforeRefresh = this.accessToken;
@@ -1012,7 +1015,7 @@ export class BackendApiClient {
       await this.acceptTokenResponse(response, epoch);
     } catch (error) {
       if (
-        Platform.OS === 'web' &&
+        this.usesWebCookieSession &&
         error instanceof BackendApiError &&
         error.code === 'REFRESH_RETRY_REQUIRED'
       ) {
@@ -1080,7 +1083,7 @@ export class BackendApiClient {
     const hasBody = init.body != null;
     return fetch(`${this.baseUrl}${path}`, {
       ...init,
-      ...(Platform.OS === 'web' ? { credentials: 'include' as const } : {}),
+      ...(this.usesWebCookieSession ? { credentials: 'include' as const } : {}),
       headers: {
         Accept: 'application/json',
         ...(hasBody ? { 'Content-Type': 'application/json' } : {}),

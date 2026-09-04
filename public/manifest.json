@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "spammy ZeroHOF",
+  "description": "ZeroHOF 앱을 Chrome 사이드패널에서 사용합니다.",
+  "version": "1.0.0",
+  "minimum_chrome_version": "114",
+  "permissions": ["sidePanel", "storage"],
+  "host_permissions": ["https://api-hof.spammy.app/*"],
+  "action": {
+    "default_title": "ZeroHOF 열기"
+  },
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "side_panel": {
+    "default_path": "index.html"
+  }
+}
