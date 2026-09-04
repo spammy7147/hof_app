@@ -91,11 +91,11 @@ export function AutomationHistoryScreen({
     </View> : null}
     {error ? <><Text accessibilityRole="alert" style={styles.error}>{error}</Text><Pressable accessibilityRole="button" onPress={() => { void fetchPage(); }}><Text style={styles.link}>다시 시도</Text></Pressable></> : null}
     {!loading && cycles.length === 0 && !error ? <Text style={styles.empty}>아직 자동화 기록이 없습니다.</Text> : null}
-    {nextAutomationDecisionAt ? <View accessibilityLabel="전체 자동화 재판단 대기" style={styles.statusSummary}>
+    {nextAutomationDecisionAt ? <View accessibilityLabel="전체 자동화 확인 결과" style={styles.statusSummary}>
       <Text style={styles.statusEyebrow}>전체 자동화</Text>
-      <Text style={styles.statusTitle}>재판단 대기</Text>
-      <Text style={styles.statusMessage}>현재 판단에서 실행할 행동을 찾지 못해 다음 시각에 첫 항목부터 다시 확인합니다.</Text>
-      <Text style={styles.next}>전체 자동화 재판단 {new Date(nextAutomationDecisionAt).toLocaleString('ko-KR')}</Text>
+      <Text style={styles.statusTitle}>실행 가능한 항목 없음</Text>
+      <Text style={styles.statusMessage}>조건에 맞지 않는 항목을 건너뛰고 전체 확인을 마쳤습니다. 다음 시각에 첫 항목부터 다시 확인합니다.</Text>
+      <Text style={styles.next}>다음 전체 확인 {new Date(nextAutomationDecisionAt).toLocaleString('ko-KR')}</Text>
     </View> : null}
     {latestEvent ? <View accessibilityLabel="최근 항목 판단" style={styles.statusSummary}>
       <Text style={styles.statusEyebrow}>{statusSummaryLabel(latestEvent.kind)}</Text>
@@ -171,7 +171,7 @@ function historySteps(cycle: AutomationHistoryCycle): AutomationHistoryStep[] {
 function resultLabel(value: AutomationHistoryCycle['result']) { return ({ ACTION_SELECTED: '행동 선택', WAITING: '대기', IDLE: '실행 없음', FATAL: '중지' } as const)[value]; }
 function kindLabel(value: AutomationHistoryCycle['events'][number]['kind']) { return ({ EVALUATED: '판단', SELECTED: '선택', WAITING: '대기', SKIPPED: '스킵', CONFIGURATION_WARNING: '설정 경고', ACTION_STARTED: '실행 시작', ACTION_SUCCEEDED: '성공', ACTION_FAILED: '실패', CYCLE_COMPLETED: '사이클 완료', CYCLE_ABORTED: '사이클 중단' } as const)[value]; }
 function messageLabel(value: AutomationHistoryCycle['events'][number]['kind']) { return ['EVALUATED', 'SELECTED', 'WAITING', 'SKIPPED', 'CONFIGURATION_WARNING'].includes(value) ? '판단 기준' : '처리 결과'; }
-function statusSummaryLabel(kind: AutomationHistoryCycle['events'][number]['kind']) { return kind === 'ACTION_FAILED' ? '최근 막힘 사유' : kind === 'WAITING' ? '최근 항목 대기 사유' : '최근 자동화 단계'; }
+function statusSummaryLabel(kind: AutomationHistoryCycle['events'][number]['kind']) { return kind === 'ACTION_FAILED' ? '최근 막힘 사유' : kind === 'WAITING' ? '최근 항목 대기 사유' : kind === 'SKIPPED' ? '최근 항목 스킵 사유' : '최근 자동화 단계'; }
 function nextRunLabel(event: AutomationHistoryEvent) { return event.entryId == null ? '다음 확인' : '해당 항목 재확인'; }
 function TypedWaitDiagnostic({ event }: { event: AutomationHistoryEvent }) {
   if (!event.diagnosticKind) return null;
@@ -252,7 +252,7 @@ function reasonLabel(value: string) {
   if (value === 'TYPED_SHARED_COOLDOWN_SKIPPED') return '공유 쿨다운을 확인해 다음 판단으로 넘김';
   if (value.includes('AMBIGUOUS')) return '요청 결과가 불확실해 중복 실행 없이 상태를 재확인함';
   if (value.includes('DEFERRED')) return 'HOF 서버 응답 지연으로 현재 단계를 보존하고 재시도함';
-  if (value.includes('COOLDOWN')) return '쿨다운 종료 시각까지 기다림';
+  if (value.includes('COOLDOWN')) return '쿨다운으로 지금은 실행할 수 없음';
   if (value.includes('DAILY_LIMIT')) return '오늘 실행 가능한 횟수를 모두 사용함';
   if (value.includes('PRESET') || value.includes('PARTY') || value.includes('TARGET_MISSING')) return '필수 자동화 설정을 확인해야 함';
   if (value === 'NO_RUNNABLE_ACTION') return '현재 실행 조건을 만족하는 작업이 없음';
