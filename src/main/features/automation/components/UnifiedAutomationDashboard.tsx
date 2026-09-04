@@ -61,7 +61,8 @@ export function UnifiedAutomationDashboard({
   const current = runtime.currentAction;
   const running = runtime.lifecycle === 'RUNNING' || runtime.lifecycle === 'DRAINING';
   const paused = runtime.lifecycle === 'PAUSED';
-  const waiting = running && current == null && runtime.nextAttemptAt != null;
+  const waiting = running && current == null && runtime.nextAttemptAt != null && runtime.waitReason !== 'LOOP_INTERVAL';
+  const nextRound = running && current == null && runtime.waitReason === 'LOOP_INTERVAL';
   const automaticRetry = running && runtime.nextAttemptAt != null
     && runtime.stopReason != null && runtime.stopReason !== 'MANUAL_STOP';
   const networkRetry = automaticRetry && (runtime.stopReason === 'NETWORK' || runtime.stopReason === 'FATAL' || runtime.stopReason === 'UNKNOWN');
@@ -103,6 +104,8 @@ export function UnifiedAutomationDashboard({
           <Text style={styles.stopTitle}>HOF 로그인이 필요합니다. 저장된 로그인 정보로 {retryDelay(runtime.nextAttemptAt, nowMs)} 다시 시도합니다.</Text>
         ) : waitingForHof ? (
           <Text style={styles.stopTitle}>{hofRetryMessage(runtime.nextAttemptAt, nowMs)}</Text>
+        ) : nextRound ? (
+          <Text style={styles.stopTitle}>한 순환을 마쳤습니다. 1번부터 다시 확인합니다.</Text>
         ) : waitingForWork ? (
           <Text style={styles.stopTitle}>현재 진행할 작업이 없습니다. 실행 가능한 작업이 생기면 자동으로 계속합니다.</Text>
         ) : (
@@ -334,6 +337,7 @@ function statusLabel(aggregate: TypedAutomationAggregateResponse): string {
   if (automaticRetry && runtime.stopReason === 'AUTHENTICATION') return '로그인 재시도 대기';
   if (automaticRetry && runtime.stopReason === 'CAPTCHA') return '캡차 재확인 대기';
   if (automaticRetry) return '오류 재시도 대기';
+  if (running && runtime.waitReason === 'LOOP_INTERVAL') return '순환 중';
   if (waiting && runtime.waitReason === 'HOF_CONNECTION') return 'HOF 서버 연결 대기 중';
   if (waiting) return '자동화 대기 중';
   if (runtime.lifecycle === 'RUNNING') return '실행 중';

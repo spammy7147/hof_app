@@ -770,7 +770,7 @@ export type AutomationConvergenceStatus = {
 };
 
 export type TypedAutomationLifecycle = 'RUNNING' | 'DRAINING' | 'PAUSED' | 'STOPPED';
-export type AutomationWaitReason = 'SCHEDULED' | 'HOF_CONNECTION';
+export type AutomationWaitReason = 'SCHEDULED' | 'HOF_CONNECTION' | 'LOOP_INTERVAL';
 export type AutomationStopReason =
   | 'AUTHENTICATION'
   | 'CAPTCHA'

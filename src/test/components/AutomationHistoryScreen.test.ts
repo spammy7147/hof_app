@@ -27,7 +27,7 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('AutomationHistoryScreen', () => {
-  it('shows skipped conditions and a completed check separately from the next check time', async () => {
+  it('shows continuous ordered rounds and preserves the skipped entry condition time', async () => {
     const load = async (): Promise<AutomationHistoryPage> => ({
       nextCursor: null,
       cycles: [{
@@ -60,15 +60,12 @@ describe('AutomationHistoryScreen', () => {
       renderer = create(React.createElement(AutomationHistoryScreen, {
         onBack: () => undefined,
         load,
-        nextAutomationDecisionAt: '2026-08-30T10:41:34Z',
       }));
     });
 
-    const globalWait = renderer.root.findByProps({ accessibilityLabel: '전체 자동화 확인 결과' });
     const entryWait = renderer.root.findByProps({ accessibilityLabel: '최근 항목 판단' });
-    assert.ok(treeText(globalWait).includes('실행 가능한 항목 없음'));
-    assert.ok(treeText(globalWait).includes('다음 전체 확인'));
-    assert.ok(treeText(globalWait).includes(new Date('2026-08-30T10:41:34Z').toLocaleString('ko-KR')));
+    assert.ok(treeText(renderer.root).includes('실행이 끝나거나 끝까지 실행할 항목이 없으면 1번부터 반복합니다.'));
+    assert.ok(!treeText(renderer.root).includes('다음 전체 확인'));
     assert.ok(treeText(entryWait).includes('전투 맵 2'));
     assert.ok(treeText(entryWait).includes('최근 항목 스킵 사유'));
     assert.ok(treeText(renderer.root).includes('전투 맵 2 · 스킵'));

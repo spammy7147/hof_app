@@ -16,7 +16,6 @@ import type {
 type AutomationHistoryScreenProps = {
   onBack: () => void;
   load: (cursor?: number) => Promise<AutomationHistoryPage>;
-  nextAutomationDecisionAt?: string | null;
   loadConvergence?: () => Promise<AutomationConvergenceStatus>;
   allowFreshDecision?: (attemptId: number) => Promise<AutomationConvergenceStatus>;
 };
@@ -24,7 +23,6 @@ type AutomationHistoryScreenProps = {
 export function AutomationHistoryScreen({
   onBack,
   load,
-  nextAutomationDecisionAt,
   loadConvergence,
   allowFreshDecision,
 }: AutomationHistoryScreenProps) {
@@ -91,12 +89,7 @@ export function AutomationHistoryScreen({
     </View> : null}
     {error ? <><Text accessibilityRole="alert" style={styles.error}>{error}</Text><Pressable accessibilityRole="button" onPress={() => { void fetchPage(); }}><Text style={styles.link}>다시 시도</Text></Pressable></> : null}
     {!loading && cycles.length === 0 && !error ? <Text style={styles.empty}>아직 자동화 기록이 없습니다.</Text> : null}
-    {nextAutomationDecisionAt ? <View accessibilityLabel="전체 자동화 확인 결과" style={styles.statusSummary}>
-      <Text style={styles.statusEyebrow}>전체 자동화</Text>
-      <Text style={styles.statusTitle}>실행 가능한 항목 없음</Text>
-      <Text style={styles.statusMessage}>조건에 맞지 않는 항목을 건너뛰고 전체 확인을 마쳤습니다. 다음 시각에 첫 항목부터 다시 확인합니다.</Text>
-      <Text style={styles.next}>다음 전체 확인 {new Date(nextAutomationDecisionAt).toLocaleString('ko-KR')}</Text>
-    </View> : null}
+    <Text style={styles.statusMessage}>1번부터 확인해 가능한 항목을 실행하고, 불가능한 항목은 스킵합니다. 실행이 끝나거나 끝까지 실행할 항목이 없으면 1번부터 반복합니다.</Text>
     {latestEvent ? <View accessibilityLabel="최근 항목 판단" style={styles.statusSummary}>
       <Text style={styles.statusEyebrow}>{statusSummaryLabel(latestEvent.kind)}</Text>
       <Text style={styles.statusTitle}>{latestEvent.entryDisplayName ?? (latestEvent.type ? AUTOMATION_TYPE_METADATA[latestEvent.type].label : '시스템')}{latestEvent.actionKind ? ` · ${actionLabel(latestEvent.actionKind, latestEvent.type)}` : ''}</Text>

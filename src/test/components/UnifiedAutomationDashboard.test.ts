@@ -227,6 +227,20 @@ describe('UnifiedAutomationDashboard', () => {
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '중지된 자동화 재개' }).length, 0);
   });
 
+  it('shows the normal round interval as continuous automation', async () => {
+    const aggregate = networkStopped();
+    aggregate.runtime.lifecycle = 'RUNNING';
+    aggregate.runtime.stopReason = null;
+    aggregate.runtime.nextAttemptAt = '2026-07-23T00:00:03Z';
+    aggregate.runtime.waitReason = 'LOOP_INTERVAL';
+    aggregate.runtime.currentAction = null;
+    aggregate.runtime.lastError = null;
+    const renderer = await renderDashboard(aggregate, () => undefined);
+    assert.equal(hasText(renderer.root, '순환 중'), true);
+    assert.equal(hasText(renderer.root, '한 순환을 마쳤습니다. 1번부터 다시 확인합니다.'), true);
+    assert.equal(hasText(renderer.root, '자동화 대기 중'), false);
+  });
+
   it('shows a friendly timed retry only for HOF connection waits', async () => {
     const aggregate = networkStopped();
     aggregate.runtime.lifecycle = 'RUNNING';
