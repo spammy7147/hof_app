@@ -27,6 +27,52 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('AutomationHistoryScreen', () => {
+  for (const [reasonCode, kind, message] of [
+    ['REGISTRATION_COOLDOWN', 'SKIPPED', '레이드 신청 쿨다운 중입니다.'],
+    ['WAITING_TO_START', 'SKIPPED', '레이드 모집 중입니다.'],
+    ['BATTLE_COOLDOWN', 'SKIPPED', '레이드 전투 쿨다운 중입니다.'],
+    ['BATTLE_APPLIED_COOLDOWN', 'SKIPPED', '전투 적용 후 쿨다운 중입니다.'],
+    ['BATTLE_RECOVERY_RECHECK', 'WAITING', '전투 결과를 재확인합니다.'],
+    ['REWARD_CONFIRMATION', 'WAITING', '보상 결과를 확인합니다.'],
+    ['POST_REWARD_CHECK', 'WAITING', '보상 처리 후 상태를 확인합니다.'],
+  ] as const) {
+    for (const lowerRuns of [false, true]) it(`shows ${reasonCode} as ${kind}, lower entry runs: ${lowerRuns}`, async () => {
+      const retryAt = '2026-09-04T00:02:00Z';
+      const raid = {
+        ...historyEvent(1, 0, 10, 'RAID', kind, reasonCode, null),
+        entryDisplayName: '최우선 레이드', targetKey: 'RaidGoblin', targetName: '고블린 전투 마차',
+        message, nextRunAt: retryAt,
+      };
+      const home = {
+        ...historyEvent(2, 1, 11, 'HOME_QUEST', 'SELECTED', 'RUNNABLE', null),
+        entryDisplayName: '자택 퀘스트',
+      };
+      const load = async (): Promise<AutomationHistoryPage> => ({
+        nextCursor: null,
+        cycles: [{
+          id: 1, result: lowerRuns ? 'ACTION_SELECTED' : kind === 'WAITING' ? 'WAITING' : 'IDLE', selectedEntryId: lowerRuns ? 11 : null,
+          startedAt: '2026-09-04T00:00:00Z', finishedAt: '2026-09-04T00:00:01Z',
+          events: lowerRuns ? [raid, home] : [raid], topLevelStepCount: lowerRuns ? 2 : 1,
+          steps: [{ sequence: 1, event: raid, executionEvents: [] }, ...(lowerRuns ? [{ sequence: 2, event: home, executionEvents: [] }] : [])],
+        }],
+      });
+      let renderer!: ReturnType<typeof create>;
+      await act(async () => {
+        renderer = create(React.createElement(AutomationHistoryScreen, { onBack: () => undefined, load }));
+      });
+      const summary = treeText(renderer.root.findByProps({ accessibilityLabel: '최근 항목 판단' }));
+      if (!lowerRuns) {
+        assert.ok(summary.includes(kind === 'WAITING' ? '최근 항목 대기 사유' : '최근 항목 스킵 사유'));
+        assert.ok(summary.includes(message));
+        assert.ok(summary.includes(new Date(retryAt).toLocaleString('ko-KR')));
+      }
+      const text = treeText(renderer.root);
+      assert.ok(text.includes(`최우선 레이드 · ${kind === 'WAITING' ? '대기' : '스킵'}`));
+      if (lowerRuns) assert.ok(text.includes('자택 퀘스트 · 선택'));
+      await act(async () => { renderer.unmount(); });
+    });
+  }
+
   it('shows continuous ordered rounds and preserves the skipped entry condition time', async () => {
     const load = async (): Promise<AutomationHistoryPage> => ({
       nextCursor: null,
