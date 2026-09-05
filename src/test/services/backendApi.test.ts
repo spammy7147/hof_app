@@ -36,6 +36,49 @@ after(() => {
 });
 
 describe('BackendApiClient', () => {
+  it('프리셋 패턴을 순서대로 로드하고 로컬 캐릭터 ID와 0번 슬롯을 사용한다', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test');
+    const requests: unknown[] = [];
+    globalThis.fetch = async (_url, init) => {
+      requests.push(JSON.parse(String(init?.body)));
+      return mockResponse({ revision: '2026-09-05T00:00:00Z' });
+    };
+    const result = await client.loadPartyPresetPatterns(patternPreset(), [makeHofCharacter(1), makeHofCharacter(2), makeHofCharacter(3)]);
+    assert.deepEqual(requests, [{ characterId: 1, slotCode: '0' }, { characterId: 2, slotCode: '1' }]);
+    assert.equal(result, '2명 완료 · 0명 미실행 · 1명 패턴 미지정');
+  });
+
+  it('패턴 적용 결과가 불명확하면 완료 인원을 보존하고 다음 캐릭터를 실행하지 않는다', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test');
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      return mockResponse({ message: '현재 상태 재확인 필요' });
+    };
+    const result = await client.loadPartyPresetPatterns(patternPreset(), [makeHofCharacter(1), makeHofCharacter(2)]);
+    assert.equal(calls, 1);
+    assert.match(result, /0명 완료 · 1명 미실행/);
+    assert.match(result, /캐릭터1: 현재 상태 재확인 필요/);
+  });
+
+  it('프리셋 패턴 실행 중 다른 수동 작업을 막고 세션 종료 뒤 남은 패턴은 전송하지 않는다', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test');
+    let release!: (response: Response) => void;
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      return new Promise<Response>((resolve) => { release = resolve; });
+    };
+    const pending = client.loadPartyPresetPatterns(patternPreset(), [makeHofCharacter(1), makeHofCharacter(2)]);
+    await assert.rejects(client.loadSavedCharacterPattern(3, '0'));
+    client.dispose();
+    release(mockResponse({ revision: '2026-09-05T00:00:00Z' }));
+    await pending;
+    assert.equal(calls, 1);
+  });
   const originalFetch = globalThis.fetch;
   const originalBroadcastChannel = globalThis.BroadcastChannel;
   const extensionGlobal = globalThis as typeof globalThis & { chrome?: unknown };
@@ -1269,6 +1312,19 @@ describe('BackendApiClient', () => {
     unsubscribe();
   });
 });
+
+function patternPreset(): PartyPresetResponse {
+  return {
+    id: 1, accountId: 1, name: '패턴 테스트', displayOrder: 0, isPrimary: false,
+    folderId: null, createdAt: '', updatedAt: '',
+    members: [
+      { slotIndex: 0, characterId: 'char-1', patternSlot: 0 },
+      { slotIndex: 1, characterId: 'char-2', patternSlot: 1 },
+      { slotIndex: 2, characterId: 'char-3', patternSlot: null },
+      { slotIndex: 3, characterId: null, patternSlot: null },
+    ],
+  };
+}
 
 function loadBackendApi(): Promise<BackendApiModule> {
   backendApiModule ??= import('../../main/services/backendApi');

@@ -116,6 +116,45 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('PartyPresetList', () => {
+  it('저장된 프리셋의 패턴을 한 번만 불러오고 완료 결과를 표시한다', async () => {
+    const pending = deferred<string>();
+    const selected = { ...PRESETS[0]!, members: [{ slotIndex: 0, characterId: 'char-1', patternSlot: 0 }] };
+    const calls: PartyPresetResponse[] = [];
+    const renderer = await renderList({
+      partyPresetCatalog: catalogResource({ folders: [], presets: [selected, PRESETS[1]!] }),
+      onLoadPresetPatterns: async (value) => { calls.push(value); return pending.promise; },
+    });
+    await openUnassignedPreset(renderer, '서관, 대표 프리셋');
+    let operation!: Promise<void>;
+    await act(async () => {
+      const button = renderer.root.findByProps({ accessibilityLabel: '패턴불러오기' });
+      operation = button.props.onPress();
+      await button.props.onPress();
+    });
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0], selected);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '패턴불러오기' }).props.disabled, true);
+    await act(async () => { pending.resolve('1명 완료'); await operation; });
+    assert.ok(textCount(renderer.root, '1명 완료') > 0);
+    await act(async () => renderer.unmount());
+  });
+
+  it('프리셋 편집 내용이 있으면 패턴불러오기를 막고 저장을 안내한다', async () => {
+    let calls = 0;
+    const selected = { ...PRESETS[0]!, members: [{ slotIndex: 0, characterId: 'char-1', patternSlot: 0 }] };
+    const renderer = await renderList({
+      partyPresetCatalog: catalogResource({ folders: [], presets: [selected, PRESETS[1]!] }),
+      onLoadPresetPatterns: async () => { calls += 1; return ''; },
+    });
+    await openUnassignedPreset(renderer, '서관, 대표 프리셋');
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '프리셋 이름 입력' }).props.onChangeText('변경'));
+    const button = renderer.root.findByProps({ accessibilityLabel: '패턴불러오기' });
+    assert.equal(button.props.disabled, true);
+    await act(async () => button.props.onPress());
+    assert.equal(calls, 0);
+    assert.ok(textCount(renderer.root, '변경 내용을 저장한 뒤 패턴을 불러오세요.') > 0);
+    await act(async () => renderer.unmount());
+  });
   it('renders and moves folders through one full-tree editor backed by the authoritative catalog', async () => {
     const moveCalls: unknown[] = [];
     const initialCatalog: PartyPresetCatalogResponse = {

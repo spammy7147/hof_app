@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, FolderCog, GripVertical, Plus, Save, Star, Trash2 } from 'lucide-react-native';
+import { ChevronDown, ChevronUp, Download, FolderCog, GripVertical, Plus, Save, Star, Trash2 } from 'lucide-react-native';
 import type { ElementRef, ReactNode, Ref } from 'react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, ActivityIndicator, findNodeHandle, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -37,6 +37,7 @@ type PartyPresetListProps = {
   authenticated: boolean;
   characters: HofCharacter[];
   partyPresetCatalog: PartyPresetCatalogResource;
+  onLoadPresetPatterns?: (preset: PartyPresetResponse, characters: HofCharacter[]) => Promise<string>;
 };
 
 type ExpandedPresetId = number | 'new' | null;
@@ -48,6 +49,7 @@ export function PartyPresetList({
   authenticated,
   characters,
   partyPresetCatalog,
+  onLoadPresetPatterns,
 }: PartyPresetListProps) {
   const [expandedPresetId, setExpandedPresetId] = useState<ExpandedPresetId>(null);
   const [newDraft, setNewDraft] = useState<NewPresetDraft | null>(null);
@@ -61,7 +63,10 @@ export function PartyPresetList({
   const [folderEditMode, setFolderEditMode] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const isSaving = partyPresetCatalog.mutating;
+  const [loadingPatterns, setLoadingPatterns] = useState(false);
+  const [patternLoadResult, setPatternLoadResult] = useState<{ presetId: number; message: string } | null>(null);
+  const patternLoadPendingRef = useRef(false);
+  const isSaving = partyPresetCatalog.mutating || loadingPatterns;
   const {
     createPreset,
     updatePreset,
@@ -142,6 +147,7 @@ export function PartyPresetList({
       setFolderPickerOpen(false);
       setFolderEditMode(false);
       setErrorMessage(null);
+      setPatternLoadResult(null);
     }
   }, [authenticated]);
 
@@ -197,6 +203,8 @@ export function PartyPresetList({
   }, [expandedPresetId, visiblePresets]);
 
   function openPreset(preset: PartyPresetResponse) {
+    if (patternLoadPendingRef.current) return;
+    setPatternLoadResult(null);
     setExpandedPresetId((current) => {
       if (current === preset.id) return null;
       setDraftName(preset.name);
@@ -208,6 +216,7 @@ export function PartyPresetList({
   }
 
   function openNewPreset() {
+    if (patternLoadPendingRef.current) return;
     if (newDraft == null) {
       const request = buildCreatePartyPresetRequest();
       setNewDraft({ name: request.name, party: request.members, folderId: null });
@@ -253,7 +262,7 @@ export function PartyPresetList({
   }
 
   async function savePreset() {
-    if (!authenticated || mutationPendingRef.current) return;
+    if (!authenticated || mutationPendingRef.current || patternLoadPendingRef.current) return;
     const accountGeneration = accountGenerationRef.current;
     const editingNew = expandedPresetId === 'new';
     const name = editingNew ? newDraft?.name ?? '' : draftName;
@@ -437,11 +446,38 @@ export function PartyPresetList({
     setIsDragging(true);
     presetDragRefs.current.get(presetId)?.();
   }, [closeOpenSwipeable]);
+  function hasPresetChanges(preset: PartyPresetResponse) {
+    return draftName.trim() !== preset.name || draftFolderId !== preset.folderId
+      || JSON.stringify(normalizeDraftParty(draftParty)) !== JSON.stringify(normalizeDraftParty(createPartyFromPreset(preset)));
+  }
+
+  async function loadPresetPatterns(preset: PartyPresetResponse) {
+    if (!authenticated || !onLoadPresetPatterns || isSaving || mutationPendingRef.current
+      || patternLoadPendingRef.current || hasPresetChanges(preset)) return;
+    const generation = accountGenerationRef.current;
+    patternLoadPendingRef.current = true;
+    setLoadingPatterns(true);
+    setPatternLoadResult(null);
+    try {
+      const message = await onLoadPresetPatterns(preset, characters);
+      if (isCurrentAccountGeneration(generation)) setPatternLoadResult({ presetId: preset.id, message });
+    } catch (error) {
+      if (isCurrentAccountGeneration(generation)) {
+        setPatternLoadResult({ presetId: preset.id, message: toUserFacingErrorMessage(error) });
+      }
+    } finally {
+      if (mountedRef.current) setLoadingPatterns(false);
+      patternLoadPendingRef.current = false;
+    }
+  }
+
   function renderPreset({ item: preset, drag, getIndex, isActive }: RenderItemParams<PartyPresetResponse>) {
     presetDragRefs.current.set(preset.id, drag);
     const index = getIndex() ?? visiblePresetsRef.current.findIndex(({ id }) => id === preset.id);
     const expanded = expandedPresetId === preset.id;
     const interactionDisabled = isSaving || isDragging || isActive;
+    const patternLoadDisabled = isSaving || hasPresetChanges(preset)
+      || !preset.members.some((member) => member.characterId != null && member.patternSlot != null);
     return (
       <PartyPresetManagedRow
         count={visiblePresets.length}
@@ -461,6 +497,27 @@ export function PartyPresetList({
             nameInputRef: presetEditorNameInputRef,
             onOpenFolderPicker: openPresetFolderPicker,
             onSave: savePreset,
+            patternAction: onLoadPresetPatterns ? (
+              <View style={styles.patternAction}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="패턴불러오기"
+                  accessibilityState={{ disabled: patternLoadDisabled, busy: loadingPatterns }}
+                  disabled={patternLoadDisabled}
+                  onPress={() => loadPresetPatterns(preset)}
+                  style={({ pressed }) => [styles.patternLoadButton,
+                    patternLoadDisabled && styles.disabledButton,
+                    pressed && styles.pressed]}
+                >
+                  {loadingPatterns ? <ActivityIndicator color={theme.colors.accentGreen} size="small" /> : <Download color={theme.colors.accentGreen} size={16} />}
+                  <Text style={styles.patternLoadText}>{loadingPatterns ? '패턴 불러오는 중' : '패턴불러오기'}</Text>
+                </Pressable>
+                <Text style={styles.patternLoadHint}>{hasPresetChanges(preset)
+                  ? '변경 내용을 저장한 뒤 패턴을 불러오세요.'
+                  : '지정된 저장 패턴과 위치·호위를 적용합니다.'}</Text>
+                {patternLoadResult?.presetId === preset.id ? <Text accessibilityLiveRegion="polite" style={styles.patternLoadHint}>{patternLoadResult.message}</Text> : null}
+              </View>
+            ) : null,
           }) : null}
         expanded={expanded}
         index={index}
@@ -844,6 +901,7 @@ function renderEditor({
   onPartyChange,
   onOpenFolderPicker,
   onSave,
+  patternAction,
 }: {
   activeSlotIndex: number;
   characters: HofCharacter[];
@@ -859,12 +917,14 @@ function renderEditor({
   onPartyChange: (party: BattlePartyMember[]) => void;
   onOpenFolderPicker: () => void;
   onSave: () => void;
+  patternAction?: ReactNode;
 }) {
   return (
     <View style={styles.editor}>
       <Text style={styles.inputLabel}>프리셋 이름</Text>
       <TextInput
         ref={nameInputRef}
+        editable={!isSaving}
         accessibilityLabel="프리셋 이름 입력"
         autoCapitalize="none"
         autoCorrect={false}
@@ -886,13 +946,16 @@ function renderEditor({
         <Text style={styles.folderLocationText}>{folderPath}</Text>
         <ChevronDown color={theme.colors.textMuted} size={18} />
       </Pressable>
-      <BattlePartySelector
-        activeSlotIndex={activeSlotIndex}
-        characters={characters}
-        onActiveSlotChange={onActiveSlotChange}
-        onPartyChange={onPartyChange}
-        party={draftParty}
-      />
+      <View pointerEvents={isSaving ? 'none' : 'auto'}>
+        <BattlePartySelector
+          activeSlotIndex={activeSlotIndex}
+          characters={characters}
+          onActiveSlotChange={onActiveSlotChange}
+          onPartyChange={onPartyChange}
+          party={draftParty}
+        />
+      </View>
+      {patternAction}
       <FixedBottomAction>
         <View style={styles.editorActions}>
           <Pressable
@@ -974,6 +1037,10 @@ const styles = StyleSheet.create({
   cardSummary: { color: theme.colors.accentGreen, fontSize: 13, fontWeight: '900' },
   cardBody: { marginTop: theme.spacing.sm, borderTopWidth: 1, borderTopColor: theme.colors.border, paddingTop: theme.spacing.sm },
   editor: { gap: theme.spacing.sm },
+  patternAction: { gap: theme.spacing.xs },
+  patternLoadButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.spacing.xs, borderWidth: 1, borderColor: theme.colors.accentGreen, borderRadius: theme.radius.md },
+  patternLoadText: { color: theme.colors.accentGreen, fontSize: 13, fontWeight: '900' },
+  patternLoadHint: { color: theme.colors.textMuted, fontSize: 12 },
   inputLabel: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '900' },
   nameInput: { minHeight: 38, borderWidth: 1, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, color: theme.colors.text, backgroundColor: theme.colors.surfaceAlt, fontSize: 14, fontWeight: '800', paddingHorizontal: theme.spacing.md },
   folderLocationButton: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.sm, borderWidth: 1, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderCurve: 'continuous', backgroundColor: theme.colors.surfaceAlt, paddingHorizontal: theme.spacing.md },

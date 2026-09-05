@@ -37,6 +37,8 @@ import type {
   HofStatusResponse,
   CaptchaPassMaintenanceResponse,
   RunBattleRequest,
+  PartyPresetResponse,
+  HofCharacter,
 } from "../types/api";
 import { BattleTabScreen } from "./BattleTabScreen";
 import { DataTabScreen } from "./DataTabScreen";
@@ -69,6 +71,7 @@ type MainScreenProps = {
   onLoadBattleCategories: () => void;
   onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
   onRunBattle: (request: RunBattleRequest) => Promise<BattleResultResponse>;
+  onLoadPresetPatterns?: (preset: PartyPresetResponse, characters: HofCharacter[]) => Promise<string>;
   onLoadBattleLogs: (query?: BattleLogQuery) => Promise<BattleLogResponse[]>;
   onLoadBattleStats: (
     period?: AdventureMapStatsPeriod,
@@ -113,6 +116,7 @@ export function MainScreen({
   onLoadBattleCategories,
   onLoadBattleMaps,
   onRunBattle,
+  onLoadPresetPatterns,
   onLoadBattleLogs,
   onLoadBattleStats,
   onOpenCaptcha,
@@ -201,6 +205,7 @@ export function MainScreen({
           onLoadBattleCategories,
           onLoadBattleMaps,
           onRunBattle,
+          onLoadPresetPatterns,
           onLoadBattleLogs,
           onLoadBattleStats,
           onOpenCaptcha,
@@ -257,6 +262,7 @@ type RenderActiveTabArgs = {
   onLoadBattleCategories: () => void;
   onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
   onRunBattle: (request: RunBattleRequest) => Promise<BattleResultResponse>;
+  onLoadPresetPatterns?: (preset: PartyPresetResponse, characters: HofCharacter[]) => Promise<string>;
   onLoadBattleLogs: (query?: BattleLogQuery) => Promise<BattleLogResponse[]>;
   onLoadBattleStats: (
     period?: AdventureMapStatsPeriod,
@@ -308,6 +314,7 @@ function renderActiveTab({
   onLoadBattleCategories,
   onLoadBattleMaps,
   onRunBattle,
+  onLoadPresetPatterns,
   onLoadBattleLogs,
   onLoadBattleStats,
   onOpenCaptcha,
@@ -469,6 +476,7 @@ function renderActiveTab({
               authenticated={authenticated}
               characters={characters}
               partyPresetCatalog={partyPresetCatalog}
+              onLoadPresetPatterns={onLoadPresetPatterns}
             />
           )}
         </View>

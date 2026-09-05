@@ -435,6 +435,7 @@ function AuthenticatedApp({
         onLoadBattleCategories={loadBattleCategories}
         onLoadBattleMaps={loadBattleMaps}
         onRunBattle={runBattle}
+        onLoadPresetPatterns={(preset, characters) => api.loadPartyPresetPatterns(preset, characters)}
         onLoadBattleLogs={loadBattleLogs}
         onLoadBattleStats={loadBattleStats}
         onOpenCaptcha={handleOpenCaptchaModal}
