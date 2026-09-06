@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { ArrowLeft, Info } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
 
+import type { BattleResource } from '../features/battle/useBattleResource';
 import type { UnifiedAutomationController } from '../domain/unifiedAutomationController';
 import type { PartyPresetCatalogResource } from '../domain/partyPresetCatalogModule';
 import { UnifiedAutomationDashboard } from '../features/automation/components/UnifiedAutomationDashboard';
@@ -18,8 +19,6 @@ import { scrollFocusedInputIntoView } from '../components/keyboardAwareScroll';
 import { HomeStatusSummary } from '../components/HomeStatusSummary';
 import type { TownApi } from '../features/town/api/townApi';
 import type {
-  BattleCategoryResponse,
-  BattleMapResponse,
   AutomationType,
   HofObservedStatusResponse,
   HofStatusResponse,
@@ -34,12 +33,7 @@ import type {
 type HomeTabScreenProps = {
   authenticated: boolean;
   status: HofStatusResponse | null;
-  battleCategories: BattleCategoryResponse[];
-  areBattleCategoriesLoaded: boolean;
-  isBattleCategoriesLoading: boolean;
-  battleCategoriesError: string | null;
-  onLoadBattleCategories: () => void;
-  onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
+  battle: BattleResource;
   partyPresetCatalog: PartyPresetCatalogResource;
   automationController: UnifiedAutomationController;
   onOpenCaptcha: () => void;
@@ -59,13 +53,8 @@ type HomeRoute = 'dashboard' | 'settings' | 'editor' | 'history';
  */
 export function HomeTabScreen({
   authenticated,
+  battle,
   status,
-  battleCategories,
-  areBattleCategoriesLoaded,
-  isBattleCategoriesLoading,
-  battleCategoriesError,
-  onLoadBattleCategories,
-  onLoadBattleMaps,
   partyPresetCatalog,
   automationController,
   onOpenCaptcha,
@@ -74,6 +63,15 @@ export function HomeTabScreen({
   onDetailModeChange,
   townApi,
 }: HomeTabScreenProps) {
+  const {
+    categories: battleCategories,
+    loaded: areBattleCategoriesLoaded,
+    loading: isBattleCategoriesLoading,
+    errorMessage: battleCategoriesError,
+    loadCategories: onLoadBattleCategories,
+    loadMaps: onLoadBattleMaps,
+  } = battle;
+
   const loadRaidTargets = useCallback((): Promise<RaidPubResponse> => townApi == null
     ? Promise.reject(new Error('레이드 목록 API를 사용할 수 없습니다.'))
     : townApi.load<RaidPubResponse>('/api/town/raid'), [townApi]);

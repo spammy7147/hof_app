@@ -5,21 +5,16 @@ import { ArrowLeft } from 'lucide-react-native';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { theme } from '../styles/theme';
 import {
-  canOpenManualPassChallenge,
   describeCaptchaPassMaintenance,
   formatPassTimestamp,
 } from '../domain/captchaPassMaintenance';
-import type { CaptchaPassMaintenanceResponse } from '../types/api';
+import type { CaptchaPassResource } from '../features/captcha/useCaptchaPassMaintenance';
 type SettingsTabScreenProps = {
   authenticated: boolean;
   onBack: () => void;
   onLogout: () => void;
   onOpenCaptcha: () => void;
-  passMaintenance?: CaptchaPassMaintenanceResponse | null;
-  passMaintenanceBusy?: boolean;
-  passMaintenanceError?: string | null;
-  onRefreshPassMaintenance?: () => Promise<unknown>;
-  onTogglePassMaintenance?: (enabled: boolean) => Promise<unknown>;
+  passMaintenance?: CaptchaPassResource;
 };
 
 /**
@@ -32,12 +27,13 @@ export function SettingsTabScreen({
   onBack,
   onLogout,
   onOpenCaptcha,
-  passMaintenance = null,
-  passMaintenanceBusy = false,
-  passMaintenanceError = null,
-  onRefreshPassMaintenance,
-  onTogglePassMaintenance,
+  passMaintenance: pass,
 }: SettingsTabScreenProps) {
+  const passMaintenance = pass?.state ?? null;
+  const passMaintenanceBusy = pass?.busy ?? false;
+  const passMaintenanceError = pass?.errorMessage ?? null;
+  const onRefreshPassMaintenance = pass?.refresh;
+  const onTogglePassMaintenance = pass?.updateEnabled;
   const [nowMs, setNowMs] = useState(Date.now());
   useEffect(() => {
     if (passMaintenance?.passState !== 'VALID' || passMaintenance.validUntil == null) return undefined;
@@ -48,7 +44,7 @@ export function SettingsTabScreen({
   const passDescription = passMaintenance == null
     ? null
     : describeCaptchaPassMaintenance(passMaintenance, nowMs);
-  const manualAvailable = canOpenManualPassChallenge(passMaintenance);
+  const manualAvailable = pass?.manualAvailable ?? false;
   return (
     <View style={styles.container}>
       <View style={styles.header}>

@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { canOpenManualPassChallenge, captchaPassWarning } from '../../domain/captchaPassMaintenance';
 import type { BackendApiClient } from '../../services/backendApi';
 import type { CaptchaPassMaintenanceResponse } from '../../types/api';
+
+export type CaptchaPassResource = ReturnType<typeof useCaptchaPassMaintenance>;
 
 type Options = {
   api: BackendApiClient;
@@ -114,7 +117,11 @@ export function useCaptchaPassMaintenance({ api, authenticated, describeError }:
     }
   }, [api, describeError]);
 
-  return { state, errorMessage, busy, load, refresh, updateEnabled };
+  return {
+    state, errorMessage, busy, load, refresh, updateEnabled,
+    warning: captchaPassWarning(state),
+    manualAvailable: canOpenManualPassChallenge(state),
+  };
 }
 
 const POLL_INTERVAL_MS = 10_000;

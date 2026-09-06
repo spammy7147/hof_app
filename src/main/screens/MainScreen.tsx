@@ -8,6 +8,8 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NestableScrollContainer } from "react-native-draggable-flatlist";
 
+import type { BattleResource } from "../features/battle/useBattleResource";
+import type { CaptchaPassResource } from "../features/captcha/useCaptchaPassMaintenance";
 import { BottomTabBar } from "../components/BottomTabBar";
 import { FixedBottomActionHost } from "../components/FixedBottomAction";
 import { scrollFocusedInputIntoView } from "../components/keyboardAwareScroll";
@@ -24,19 +26,10 @@ import type { CharacterManagementHubResource } from "../domain/characterManageme
 import type { UnifiedAutomationController } from "../domain/unifiedAutomationController";
 import { theme } from "../styles/theme";
 import type {
-  BattleCategoryResponse,
-  BattleLogResponse,
-  BattleLogQuery,
-  BattleMapResponse,
-  BattleResultResponse,
-  BattleStatsResponse,
-  AdventureMapStatsPeriod,
   FishingBattleTarget,
   CharacterSyncJobResponse,
   HofObservedStatusResponse,
   HofStatusResponse,
-  CaptchaPassMaintenanceResponse,
-  RunBattleRequest,
   PartyPresetResponse,
   HofCharacter,
 } from "../types/api";
@@ -56,10 +49,7 @@ type CharacterSubTabId = "characters" | "presets";
 type MainScreenProps = {
   session: MainSession | null;
   status: HofStatusResponse | null;
-  battleCategories: BattleCategoryResponse[];
-  areBattleCategoriesLoaded: boolean;
-  isBattleCategoriesLoading: boolean;
-  battleCategoriesError: string | null;
+  battle: BattleResource;
   characterHub: CharacterManagementHubResource;
   characterSyncLabel: string | null;
   characterSyncJob?: CharacterSyncJobResponse | null;
@@ -68,14 +58,7 @@ type MainScreenProps = {
   onStopCharacterSync?: () => Promise<void>;
   onResumeCharacterSync?: () => Promise<void>;
   notice: string | null;
-  onLoadBattleCategories: () => void;
-  onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
-  onRunBattle: (request: RunBattleRequest) => Promise<BattleResultResponse>;
   onLoadPresetPatterns?: (preset: PartyPresetResponse, characters: HofCharacter[]) => Promise<string>;
-  onLoadBattleLogs: (query?: BattleLogQuery) => Promise<BattleLogResponse[]>;
-  onLoadBattleStats: (
-    period?: AdventureMapStatsPeriod,
-  ) => Promise<BattleStatsResponse>;
   onOpenCaptcha: () => void;
   onStatusObserved?: (status: HofObservedStatusResponse) => void;
   automationController: UnifiedAutomationController;
@@ -84,13 +67,7 @@ type MainScreenProps = {
   onOpenLogin: () => void;
   townApi?: TownApi;
   resolveCaptcha?: () => Promise<void>;
-  captchaPassMaintenance?: CaptchaPassMaintenanceResponse | null;
-  captchaPassMaintenanceBusy?: boolean;
-  captchaPassMaintenanceError?: string | null;
-  captchaPassWarning?: string | null;
-  captchaPassWarningActionable?: boolean;
-  onRefreshCaptchaPassMaintenance?: () => Promise<unknown>;
-  onToggleCaptchaPassMaintenance?: (enabled: boolean) => Promise<unknown>;
+  passMaintenance?: CaptchaPassResource;
 };
 
 /**
@@ -101,10 +78,7 @@ type MainScreenProps = {
 export function MainScreen({
   session,
   status,
-  battleCategories,
-  areBattleCategoriesLoaded,
-  isBattleCategoriesLoading,
-  battleCategoriesError,
+  battle,
   characterHub,
   characterSyncLabel,
   characterSyncJob,
@@ -113,12 +87,7 @@ export function MainScreen({
   onStopCharacterSync,
   onResumeCharacterSync,
   notice,
-  onLoadBattleCategories,
-  onLoadBattleMaps,
-  onRunBattle,
   onLoadPresetPatterns,
-  onLoadBattleLogs,
-  onLoadBattleStats,
   onOpenCaptcha,
   onStatusObserved,
   automationController,
@@ -127,13 +96,7 @@ export function MainScreen({
   onOpenLogin,
   townApi,
   resolveCaptcha,
-  captchaPassMaintenance = null,
-  captchaPassMaintenanceBusy = false,
-  captchaPassMaintenanceError = null,
-  captchaPassWarning = null,
-  captchaPassWarningActionable = false,
-  onRefreshCaptchaPassMaintenance,
-  onToggleCaptchaPassMaintenance,
+  passMaintenance,
 }: MainScreenProps) {
   const [activeTabId, setActiveTabId] =
     useState<MainRouteId>(DEFAULT_MAIN_TAB_ID);
@@ -177,37 +140,29 @@ export function MainScreen({
       >
         <FixedBottomActionHost>
           {renderSystemMessage(session, notice, onOpenLogin)}
-          {captchaPassWarning ? (
+          {passMaintenance?.warning ? (
             <Pressable
-              accessibilityRole={captchaPassWarningActionable ? "button" : "alert"}
-              disabled={!captchaPassWarningActionable}
-              onPress={captchaPassWarningActionable ? onOpenCaptcha : undefined}
+              accessibilityRole={passMaintenance.manualAvailable ? "button" : "alert"}
+              disabled={!passMaintenance.manualAvailable}
+              onPress={passMaintenance.manualAvailable ? onOpenCaptcha : undefined}
               style={styles.passWarning}
             >
-              <Text style={styles.passWarningText}>{captchaPassWarning}</Text>
-              {captchaPassWarningActionable ? <Text style={styles.passWarningAction}>직접 인증</Text> : null}
+              <Text style={styles.passWarningText}>{passMaintenance.warning}</Text>
+              {passMaintenance.manualAvailable ? <Text style={styles.passWarningAction}>직접 인증</Text> : null}
             </Pressable>
           ) : null}
           {renderActiveTab({
           activeTabId,
           status,
           authenticated: session?.loggedIn === true,
-          battleCategories,
-          areBattleCategoriesLoaded,
-          isBattleCategoriesLoading,
-          battleCategoriesError,
+          battle,
           characterSyncLabel,
           characterSyncJob,
           onSyncCharacterRoster,
           onStartCharacterFullSync,
           onStopCharacterSync,
           onResumeCharacterSync,
-          onLoadBattleCategories,
-          onLoadBattleMaps,
-          onRunBattle,
           onLoadPresetPatterns,
-          onLoadBattleLogs,
-          onLoadBattleStats,
           onOpenCaptcha,
           onOpenAppSettings: () => setActiveTabId("settings"),
           onCloseAppSettings: () => setActiveTabId("home"),
@@ -222,11 +177,7 @@ export function MainScreen({
           resolveCaptcha,
           pendingBattleTarget,
           consumePendingBattleTarget,
-          captchaPassMaintenance,
-          captchaPassMaintenanceBusy,
-          captchaPassMaintenanceError,
-          onRefreshCaptchaPassMaintenance,
-          onToggleCaptchaPassMaintenance,
+          passMaintenance,
           onOpenFishingBattle: (target) => {
             setPendingBattleTarget(target);
             setActiveTabId("battle");
@@ -249,24 +200,14 @@ type RenderActiveTabArgs = {
   activeTabId: MainRouteId;
   status: HofStatusResponse | null;
   authenticated: boolean;
-  battleCategories: BattleCategoryResponse[];
-  areBattleCategoriesLoaded: boolean;
-  isBattleCategoriesLoading: boolean;
-  battleCategoriesError: string | null;
+  battle: BattleResource;
   characterSyncLabel: string | null;
   characterSyncJob?: CharacterSyncJobResponse | null;
   onSyncCharacterRoster?: () => Promise<void>;
   onStartCharacterFullSync?: () => Promise<void>;
   onStopCharacterSync?: () => Promise<void>;
   onResumeCharacterSync?: () => Promise<void>;
-  onLoadBattleCategories: () => void;
-  onLoadBattleMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
-  onRunBattle: (request: RunBattleRequest) => Promise<BattleResultResponse>;
   onLoadPresetPatterns?: (preset: PartyPresetResponse, characters: HofCharacter[]) => Promise<string>;
-  onLoadBattleLogs: (query?: BattleLogQuery) => Promise<BattleLogResponse[]>;
-  onLoadBattleStats: (
-    period?: AdventureMapStatsPeriod,
-  ) => Promise<BattleStatsResponse>;
   onOpenCaptcha: () => void;
   onOpenAppSettings: () => void;
   onCloseAppSettings: () => void;
@@ -285,11 +226,7 @@ type RenderActiveTabArgs = {
   onOpenFishingBattle: (target: FishingBattleTarget) => void;
   pendingBattleTarget: FishingBattleTarget | null;
   consumePendingBattleTarget: () => void;
-  captchaPassMaintenance: CaptchaPassMaintenanceResponse | null;
-  captchaPassMaintenanceBusy: boolean;
-  captchaPassMaintenanceError: string | null;
-  onRefreshCaptchaPassMaintenance?: () => Promise<unknown>;
-  onToggleCaptchaPassMaintenance?: (enabled: boolean) => Promise<unknown>;
+  passMaintenance?: CaptchaPassResource;
 };
 
 /**
@@ -301,22 +238,14 @@ function renderActiveTab({
   activeTabId,
   status,
   authenticated,
-  battleCategories,
-  areBattleCategoriesLoaded,
-  isBattleCategoriesLoading,
-  battleCategoriesError,
+  battle,
   characterSyncLabel,
   characterSyncJob,
   onSyncCharacterRoster,
   onStartCharacterFullSync,
   onStopCharacterSync,
   onResumeCharacterSync,
-  onLoadBattleCategories,
-  onLoadBattleMaps,
-  onRunBattle,
   onLoadPresetPatterns,
-  onLoadBattleLogs,
-  onLoadBattleStats,
   onOpenCaptcha,
   onOpenAppSettings,
   onCloseAppSettings,
@@ -335,11 +264,7 @@ function renderActiveTab({
   pendingBattleTarget,
   consumePendingBattleTarget,
   onDataLogModeChange,
-  captchaPassMaintenance,
-  captchaPassMaintenanceBusy,
-  captchaPassMaintenanceError,
-  onRefreshCaptchaPassMaintenance,
-  onToggleCaptchaPassMaintenance,
+  passMaintenance,
 }: RenderActiveTabArgs) {
   const selectedCharacter = characterHub.selectedCharacter;
   const characters = characterHub.characters;
@@ -349,12 +274,7 @@ function renderActiveTab({
         <HomeTabScreen
           authenticated={authenticated}
           status={status}
-          battleCategories={battleCategories}
-          areBattleCategoriesLoaded={areBattleCategoriesLoaded}
-          isBattleCategoriesLoading={isBattleCategoriesLoading}
-          battleCategoriesError={battleCategoriesError}
-          onLoadBattleCategories={onLoadBattleCategories}
-          onLoadBattleMaps={onLoadBattleMaps}
+          battle={battle}
           partyPresetCatalog={partyPresetCatalog}
           automationController={automationController}
           onOpenCaptcha={onOpenCaptcha}
@@ -367,15 +287,10 @@ function renderActiveTab({
     case "battle":
       return (
         <BattleTabScreen
+          battle={battle}
           authenticated={authenticated}
-          categories={battleCategories}
-          isLoading={isBattleCategoriesLoading}
-          errorMessage={battleCategoriesError}
           characters={characters}
-          onLoadCategories={onLoadBattleCategories}
-          onLoadMaps={onLoadBattleMaps}
           partyPresetCatalog={partyPresetCatalog}
-          onRunBattle={onRunBattle}
           initialTarget={pendingBattleTarget}
           onInitialTargetConsumed={consumePendingBattleTarget}
         />
@@ -484,12 +399,12 @@ function renderActiveTab({
     case "town":
       return (
         <TownTabScrollContainer
+          onRunBattle={battle.run}
           townApi={townApi}
           resolveCaptcha={resolveCaptcha}
           onOpenFishingBattle={onOpenFishingBattle}
           characters={characters}
           partyPresetCatalog={partyPresetCatalog}
-          onRunBattle={onRunBattle}
           onDetailOpenChange={onTownDetailOpenChange}
         />
       );
@@ -497,8 +412,7 @@ function renderActiveTab({
       return (
         <DataTabScreen
           authenticated={authenticated}
-          onLoadBattleLogs={onLoadBattleLogs}
-          onLoadBattleStats={onLoadBattleStats}
+          battle={battle}
           onFullScreenChange={onDataLogModeChange}
         />
       );
@@ -510,11 +424,7 @@ function renderActiveTab({
             onBack={onCloseAppSettings}
             onLogout={onLogout}
             onOpenCaptcha={onOpenCaptcha}
-            passMaintenance={captchaPassMaintenance}
-            passMaintenanceBusy={captchaPassMaintenanceBusy}
-            passMaintenanceError={captchaPassMaintenanceError}
-            onRefreshPassMaintenance={onRefreshCaptchaPassMaintenance}
-            onTogglePassMaintenance={onToggleCaptchaPassMaintenance}
+            passMaintenance={passMaintenance}
           />
         </TabScrollContainer>
       );

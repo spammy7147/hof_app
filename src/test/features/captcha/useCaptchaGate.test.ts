@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import Module from 'node:module';
-import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
 import React from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
@@ -25,27 +23,43 @@ moduleWithLoader._load = originalLoad;
 type CaptchaGate = ReturnType<typeof useCaptchaGate>;
 
 describe('useCaptchaGate on-demand preparation', () => {
-  const source = readFileSync(
-    resolve(process.cwd(), 'src/main/features/captcha/useCaptchaGate.ts'),
-    'utf8',
-  );
-  const appSource = readFileSync(resolve(process.cwd(), 'src/main/App.tsx'), 'utf8');
-
-  it('prepares the latest captcha when the existing open action starts', () => {
-    assert.match(source, /await api\.prepareCurrentCaptcha\(\)/);
-    assert.doesNotMatch(source, /await api\.fetchCurrentCaptcha\(\)/);
-  });
-
-  it('submits the exact preparation version shown to the user', () => {
-    assert.match(
-      source,
-      /preparationVersion:\s*captcha\.preparationVersion/,
-    );
-  });
-
-  it('waits after detection and prepares only after the existing button opens authentication', () => {
-    assert.doesNotMatch(appSource, /await openCaptchaModal\(\{ blocking: true \}\)/);
-    assert.match(source, /pendingResumeRef\.current !== null/);
+  it('감지만으로 준비하지 않고 사용자가 연 최신 version을 제출한 뒤 대기를 재개한다', async () => {
+    let gate!: CaptchaGate;
+    let preparations = 0;
+    const submissions: unknown[] = [];
+    const ready = makeCaptchaChallenge({ id: 31, status: 'READY', preparationVersion: 7 });
+    const api = {
+      prepareCurrentCaptcha: async () => { preparations += 1; return ready; },
+      submitCaptchaAnswer: async (id: number, request: unknown) => {
+        submissions.push({ id, request });
+        return makeCaptchaChallenge({ id, status: 'ANSWERED' });
+      },
+    } as unknown as Parameters<typeof useCaptchaGate>[0]['api'];
+    const Harness = () => {
+      gate = useCaptchaGate({ authenticated: true, api, describeError: String });
+      return null;
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(Harness)); });
+    try {
+      let resumed = false;
+      await act(async () => { void gate.waitForResolution().then(() => { resumed = true; }); });
+      assert.equal(preparations, 0);
+      assert.equal(gate.visible, false);
+      assert.equal(resumed, false);
+      await act(async () => { await gate.open(); });
+      assert.equal(preparations, 1);
+      assert.equal(gate.visible, true);
+      assert.equal(gate.blocking, true);
+      assert.equal(gate.captcha?.preparationVersion, 7);
+      await act(async () => { await gate.submitAnswer('  Ab12  '); });
+      assert.deepEqual(submissions, [{ id: 31, request: { answer: 'Ab12', preparationVersion: 7 } }]);
+      assert.equal(gate.visible, false);
+      assert.equal(gate.blocking, false);
+      assert.equal(resumed, true);
+    } finally {
+      await act(async () => { renderer.unmount(); });
+    }
   });
 
   it('closes and resumes immediately when preparation finds captcha completed on the original site', async () => {

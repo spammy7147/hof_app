@@ -1,3 +1,4 @@
+import { makeCaptchaPassResource } from '../fixtures/captchaPassResource';
 import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { describe, it } from 'node:test';
@@ -41,9 +42,11 @@ describe('SettingsTabScreen pass maintenance controls', () => {
         onBack: () => undefined,
         onLogout: () => undefined,
         onOpenCaptcha: () => { manualOpens += 1; },
-        passMaintenance: manualRequiredState(),
-        onRefreshPassMaintenance: async () => { refreshes += 1; },
-        onTogglePassMaintenance: async (enabled: boolean) => { toggles.push(enabled); },
+        passMaintenance: makeCaptchaPassResource({
+          state: manualRequiredState(),
+          refresh: async () => { refreshes += 1; return manualRequiredState(); },
+          updateEnabled: async (enabled: boolean) => { toggles.push(enabled); return manualRequiredState(); },
+        }),
       }));
     });
 

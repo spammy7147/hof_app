@@ -1,3 +1,4 @@
+import { makeBattleResource } from '../fixtures/battleResource';
 import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { afterEach, describe, it } from 'node:test';
@@ -184,12 +185,7 @@ function props(automationController: never) {
     authenticated: true,
     status: null,
     automationController,
-    battleCategories: [],
-    areBattleCategoriesLoaded: true,
-    isBattleCategoriesLoading: false,
-    battleCategoriesError: null,
-    onLoadBattleCategories: () => undefined,
-    onLoadBattleMaps: async () => [],
+    battle: makeBattleResource(),
     partyPresetCatalog: makePartyPresetCatalogResource({ folders: [], presets: [] }),
     onOpenCaptcha: () => undefined,
     onOpenAppSettings: () => undefined,

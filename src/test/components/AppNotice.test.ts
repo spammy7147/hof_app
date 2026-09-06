@@ -16,6 +16,12 @@ let publishNotice: ((message: string | null) => void) | null = null;
 let selectPushNotification: ((response: PushNotificationResponseLike) => void) | null = null;
 let openCaptchaCalls = 0;
 let logoutCalls = 0;
+let categoryCalls = 0;
+let passReads = 0;
+let mutationsBlocked = false;
+let clientConstructions = 0;
+const categories = [{ id: 'battle_map', name: '전투', description: '' }];
+const passState = { enabled: true, passState: 'UNKNOWN', lifecycleState: 'UNKNOWN', userActionRequired: false };
 const syncCharacters = async () => undefined;
 const openCaptcha = async () => { openCaptchaCalls += 1; };
 let captchaWaitCalls = 0;
@@ -29,16 +35,20 @@ class BackendApiError extends Error {
 }
 
 class BackendApiClientMock {
-  private refreshListener: ((event: { type: 'refresh-succeeded' }) => void) | null = null;
+  constructor() { clientConstructions += 1; }
+  private refreshListener: ((event: import('../../main/services/backendApi').SessionRefreshEvent) => void) | null = null;
+  emit(event: import('../../main/services/backendApi').SessionRefreshEvent) { this.refreshListener?.(event); }
+  async fetchBattleCategories() { categoryCalls += 1; return categories; }
+  async fetchCaptchaPassMaintenance() { passReads += 1; return passState; }
   async restoreSession() { this.refreshListener?.({ type: 'refresh-succeeded' }); }
   async login() { return { accessToken: 'access' }; }
   async logout() { logoutCalls += 1; }
   async clearLocalSession() {}
-  subscribeSessionRefreshEvents(listener: (event: { type: 'refresh-succeeded' }) => void) {
+  subscribeSessionRefreshEvents(listener: (event: import('../../main/services/backendApi').SessionRefreshEvent) => void) {
     this.refreshListener = listener;
     return () => { this.refreshListener = null; };
   }
-  setSessionMutationsBlocked() {}
+  setSessionMutationsBlocked(blocked: boolean) { mutationsBlocked = blocked; }
   async runBattle(request: unknown) { battleCalls += 1; battleRequests.push(request); return battleResponse(); }
   async fetchStatus() { return { characterSyncRequired: false }; }
   subscribeManualActionState(listener: (pending: boolean) => void) { listener(false); return () => undefined; }
@@ -162,6 +172,9 @@ afterEach(() => {
   openCaptchaCalls = 0;
   logoutCalls = 0;
   battleCalls = 0;
+  categoryCalls = 0;
+  passReads = 0;
+  mutationsBlocked = false;
   battleRequests = [];
   captchaResolution = async () => undefined;
   captchaWaitCalls = 0;
@@ -191,6 +204,40 @@ describe('App system notice', () => {
     await act(async () => { renderer.unmount(); });
   });
 
+  it('재렌더와 인증 복구 동안 기능 상태를 유지하고 새 로그인에서는 카테고리를 초기화한다', async () => {
+    fakeTimeouts();
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(App)); });
+    try {
+      assert.equal(categoryCalls, 0);
+      assert.equal(passReads, 1);
+      await act(async () => { await mainScreen(renderer).props.battle.loadCategories(); });
+      const first = mainScreen(renderer);
+      const run = first.props.battle.run;
+      const loadStats = first.props.battle.loadStats;
+      await act(async () => { renderer.update(React.createElement(App)); });
+      await act(async () => { backendApiClient.emit({ type: 'refresh-failed', error: new TypeError('network unavailable') }); });
+      assert.equal(mainScreen(renderer), first);
+      assert.equal(mainScreen(renderer).props.battle.categories, categories);
+      assert.equal(mainScreen(renderer).props.passMaintenance.state, passState);
+      assert.equal(mutationsBlocked, true);
+      assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '로그인 상태 복구 중' }).length > 0);
+      await act(async () => { backendApiClient.emit({ type: 'refresh-succeeded' }); });
+      assert.equal(mainScreen(renderer).props.battle.run, run);
+      assert.equal(mainScreen(renderer).props.battle.loadStats, loadStats);
+      assert.equal(mutationsBlocked, false);
+      assert.equal(categoryCalls, 1);
+      assert.equal(passReads, 1);
+      await act(async () => { await mainScreen(renderer).props.onOpenLogin(); });
+      await act(async () => { await renderer.root.find((node) => String(node.type) === 'LoginScreen').props.onSubmit({ username: 'other', password: 'test' }); });
+      assert.deepEqual(mainScreen(renderer).props.battle.categories, []);
+      assert.equal(mainScreen(renderer).props.battle.loaded, false);
+      assert.equal(categoryCalls, 1);
+      assert.equal(passReads, 2);
+      assert.equal(clientConstructions, 1);
+    } finally { await act(async () => renderer.unmount()); }
+  });
+
   it('ends the current login generation before opening account login', async () => {
     let renderer!: ReactTestRenderer;
     await act(async () => {
@@ -211,7 +258,7 @@ describe('App system notice', () => {
     battleResponse = () => battleCalls === 1 ? response : Promise.resolve({});
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(React.createElement(App)); });
-    const pending = mainScreen(renderer).props.onRunBattle({ categoryId: 'battle_map', mapCode: 'field', characterIds: ['char-1'] });
+    const pending = mainScreen(renderer).props.battle.run({ categoryId: 'battle_map', mapCode: 'field', characterIds: ['char-1'] });
     const ended = assert.rejects(pending);
     await act(async () => { await mainScreen(renderer).props.onOpenLogin(); });
     await act(async () => {
@@ -233,7 +280,7 @@ describe('App system notice', () => {
     await act(async () => { renderer = create(React.createElement(App)); });
     const request = { categoryId: 'battle_map', mapCode: 'field', characterIds: ['char-1'] };
     let received: unknown;
-    await act(async () => { received = await mainScreen(renderer).props.onRunBattle(request); });
+    await act(async () => { received = await mainScreen(renderer).props.battle.run(request); });
     assert.equal(received, result);
     assert.deepEqual(battleRequests, [request, request]);
     assert.equal(captchaWaitCalls, 1);
@@ -247,7 +294,7 @@ describe('App system notice', () => {
     battleResponse = async () => { throw new BackendApiError(409, 'CAPTCHA_REQUIRED', '통행증 필요'); };
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(React.createElement(App)); });
-    const pending = mainScreen(renderer).props.onRunBattle({ categoryId: 'battle_map', mapCode: 'field', characterIds: ['char-1'] });
+    const pending = mainScreen(renderer).props.battle.run({ categoryId: 'battle_map', mapCode: 'field', characterIds: ['char-1'] });
     const ended = assert.rejects(pending, /로그인 계정이 변경/);
     await act(async () => { await Promise.resolve(); });
     assert.equal(captchaWaitCalls, 1);

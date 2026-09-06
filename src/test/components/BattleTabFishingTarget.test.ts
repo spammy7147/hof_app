@@ -1,3 +1,4 @@
+import { makeBattleResource } from '../fixtures/battleResource';
 import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { it } from 'node:test';
@@ -38,14 +39,12 @@ it('낚시 target 맵을 펼친 뒤 일회성 target을 소비한다', async () 
   await act(async () => {
     renderer = create(React.createElement(BattleTabScreen, {
       authenticated: true,
-      categories: [{ id: 'battle_map', label: '전투맵', description: '', order: 1, enabled: true }],
-      isLoading: false,
-      errorMessage: null,
+      battle: makeBattleResource({
+        categories: [{ id: 'battle_map', label: '전투맵', description: '', order: 1, enabled: true }],
+        loadMaps: async () => [map],
+      }),
       characters: [],
-      onLoadCategories: () => undefined,
-      onLoadMaps: async () => [map],
       partyPresetCatalog: { catalog: { folders: [], presets: [] }, loading: false, error: null, reload: async () => undefined } as never,
-      onRunBattle: async () => { throw new Error('unexpected'); },
       initialTarget: { categoryId: 'battle_map', mapCode: 'fishing_12' },
       onInitialTargetConsumed: () => { consumed += 1; },
     }));

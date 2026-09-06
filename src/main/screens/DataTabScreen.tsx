@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 
+import type { BattleResource } from '../features/battle/useBattleResource';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { BattleLogDetailScreen } from './BattleLogDetailScreen';
 import {
@@ -31,8 +32,7 @@ import type {
 
 type DataTabScreenProps = {
   authenticated: boolean;
-  onLoadBattleLogs: (query?: BattleLogQuery) => Promise<BattleLogResponse[]>;
-  onLoadBattleStats: (period?: AdventureMapStatsPeriod) => Promise<BattleStatsResponse>;
+  battle: BattleResource;
   onFullScreenChange?: (open: boolean) => void;
 };
 
@@ -54,10 +54,11 @@ const LOG_FILTERS: ReadonlyArray<{ id: LogFilter; label: string }> = [
 /** Funds 통계와 별도의 전체 전투 로그 화면을 제공하는 데이터 탭이다. */
 export function DataTabScreen({
   authenticated,
-  onLoadBattleLogs,
-  onLoadBattleStats,
+  battle,
   onFullScreenChange,
 }: DataTabScreenProps) {
+  const { loadLogs: onLoadBattleLogs, loadStats: onLoadBattleStats } = battle;
+
   const [stats, setStats] = useState<BattleStatsResponse | null>(null);
   const [isStatsLoading, setIsStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);

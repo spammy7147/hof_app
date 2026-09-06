@@ -1,3 +1,5 @@
+import { makeCaptchaPassResource } from '../fixtures/captchaPassResource';
+import { makeBattleResource } from '../fixtures/battleResource';
 import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { describe, it } from 'node:test';
@@ -15,6 +17,9 @@ import { makePartyPresetCatalogResource } from '../fixtures/partyPresetCatalog';
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => (
   React.createElement(name, { ...props, ref }, props.children as React.ReactNode)
 ));
+let showScreenActions = false;
+const screenWithAction = (name: string) => (props: Record<string, unknown>) => React.createElement(name, props,
+  showScreenActions ? React.createElement(FixedBottomAction, null, React.createElement('Text', null, name + ' 작업')) : null);
 const reactNativeMock = {
   ActivityIndicator: host('ActivityIndicator'),
   Pressable: host('Pressable'),
@@ -41,14 +46,15 @@ moduleWithLoader._load = (request, parent, isMain) => {
   if (request.endsWith('/CharacterList')) return { CharacterList: host('CharacterList') };
   if (request.endsWith('/PartyPresetList')) return { PartyPresetList: host('PartyPresetList') };
   if (request.endsWith('/PrimaryButton')) return { PrimaryButton: host('PrimaryButton') };
-  if (request.endsWith('/BattleTabScreen')) return { BattleTabScreen: host('BattleTabScreen') };
+  if (request.endsWith('/BattleTabScreen')) return { BattleTabScreen: screenWithAction('BattleTabScreen') };
   if (request.endsWith('/DataTabScreen')) return { DataTabScreen: host('DataTabScreen') };
-  if (request.endsWith('/HomeTabScreen')) return { HomeTabScreen: host('HomeTabScreen') };
+  if (request.endsWith('/HomeTabScreen')) return { HomeTabScreen: screenWithAction('HomeTabScreen') };
   if (request.endsWith('/SettingsTabScreen')) return { SettingsTabScreen: host('SettingsTabScreen') };
   if (request.endsWith('/TownTabScreen')) return { TownTabScreen: host('TownTabScreen') };
   return originalLoad(request, parent, isMain);
 };
 const { MainScreen } = require('../../main/screens/MainScreen') as typeof import('../../main/screens/MainScreen');
+const { FixedBottomAction } = require('../../main/components/FixedBottomAction') as typeof import('../../main/components/FixedBottomAction');
 moduleWithLoader._load = originalLoad;
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -101,6 +107,44 @@ function CatalogMainScreen(props: CatalogHarnessProps) {
 }
 
 describe('MainScreen automation editor chrome', () => {
+  it('탭을 바꾸면 실제 공용 하단 host에서 이전 화면 작업을 제거한다', async () => {
+    showScreenActions = true;
+    let renderer!: ReturnType<typeof create>;
+    try {
+      await act(async () => { renderer = create(React.createElement(MainScreen, mainProps())); });
+      const actionText = () => renderer.root.findAllByProps({ accessibilityLabel: '고정 하단 작업' })
+        .flatMap((bar) => bar.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join('')));
+      assert.ok(actionText().includes('HomeTabScreen 작업'));
+      await act(async () => renderer.root.find((node) => String(node.type) === 'BottomTabBar').props.onChangeTab('battle'));
+      assert.ok(actionText().includes('BattleTabScreen 작업'));
+      assert.equal(actionText().includes('HomeTabScreen 작업'), false);
+      await act(async () => renderer.root.find((node) => String(node.type) === 'BottomTabBar').props.onChangeTab('data'));
+      assert.deepEqual(actionText(), []);
+    } finally {
+      showScreenActions = false;
+      if (renderer) await act(async () => renderer.unmount());
+    }
+  });
+
+  it('탭 전환과 설정 복귀에서 같은 전투·통행증 resource를 소비 화면에 전달한다', async () => {
+    const battle = makeBattleResource({ categories: [{ id: 'battle_map', label: '전투맵', description: '', order: 0, enabled: true }] });
+    const passMaintenance = makeCaptchaPassResource();
+    let renderer!: ReturnType<typeof create>;
+    await act(async () => { renderer = create(React.createElement(MainScreen, mainProps({ battle, passMaintenance }))); });
+    try {
+      const screen = (name: string) => renderer.root.find((node) => String(node.type) === name);
+      assert.equal(screen('HomeTabScreen').props.battle, battle);
+      for (const [tab, name] of [['battle', 'BattleTabScreen'], ['data', 'DataTabScreen'], ['home', 'HomeTabScreen']]) {
+        await act(async () => screen('BottomTabBar').props.onChangeTab(tab));
+        assert.equal(screen(name!).props.battle, battle);
+      }
+      await act(async () => screen('HomeTabScreen').props.onOpenAppSettings());
+      assert.equal(screen('SettingsTabScreen').props.passMaintenance, passMaintenance);
+      await act(async () => screen('SettingsTabScreen').props.onBack());
+      assert.equal(screen('HomeTabScreen').props.battle, battle);
+    } finally { await act(async () => renderer.unmount()); }
+  });
+
   it('passes one supplied character hub to roster and detail without callback relays', async () => {
     const character = makeHofCharacter();
     const listHub = makeCharacterManagementHubResource({ characters: [character] });
@@ -467,8 +511,7 @@ describe('MainScreen automation editor chrome', () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(MainScreen, mainProps({
-        captchaPassWarning: '통행증 자동 인식을 완료하지 못했습니다.',
-        captchaPassWarningActionable: true,
+        passMaintenance: makeCaptchaPassResource({ warning: '통행증 자동 인식을 완료하지 못했습니다.', manualAvailable: true }),
         onOpenCaptcha: () => { captchaOpens += 1; },
       })));
     });
@@ -542,18 +585,10 @@ describe('MainScreen automation editor chrome', () => {
   return {
       session: { loggedIn: true },
       status: null,
-      battleCategories: [],
-      areBattleCategoriesLoaded: true,
-      isBattleCategoriesLoading: false,
-      battleCategoriesError: null,
+      battle: makeBattleResource(),
       characterHub: makeCharacterManagementHubResource(),
       characterSyncLabel: null,
       notice: null,
-      onLoadBattleCategories: () => undefined,
-      onLoadBattleMaps: async () => [],
-      onRunBattle: async () => ({}) as never,
-      onLoadBattleLogs: async () => [],
-      onLoadBattleStats: async () => ({}) as never,
       onOpenCaptcha: () => undefined,
       automationController: {} as never,
       partyPresetCatalog: makePartyPresetCatalogResource({ folders: [], presets: [] }),

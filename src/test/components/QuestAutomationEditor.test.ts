@@ -1,3 +1,4 @@
+import { makeBattleResource } from '../fixtures/battleResource';
 import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { afterEach, describe, it } from 'node:test';
@@ -1413,12 +1414,10 @@ describe('HomeTabScreen mounted typed editor routing', () => {
         authenticated: true,
         status: null,
         automationController: controller as never,
-        battleCategories: [{ id: 'battle_map', label: '전투맵', description: '', order: 0, enabled: true }],
-        areBattleCategoriesLoaded: true,
-        isBattleCategoriesLoading: false,
-        battleCategoriesError: null,
-        onLoadBattleCategories: () => undefined,
-        onLoadBattleMaps: async () => [catalogMap('battle_map', 'a', 'Alpha')],
+        battle: makeBattleResource({
+          categories: [{ id: 'battle_map', label: '전투맵', description: '', order: 0, enabled: true }],
+          loadMaps: async () => [catalogMap('battle_map', 'a', 'Alpha')],
+        }),
         partyPresetCatalog: presetCatalog([{ ...preset(7, 'Safe'), folderId: 90 }]),
         onOpenCaptcha: () => undefined,
         onOpenAppSettings: () => undefined,
@@ -1522,12 +1521,7 @@ describe('HomeTabScreen mounted typed editor routing', () => {
       authenticated: true,
       status: null,
       automationController: controller as never,
-      battleCategories: [],
-      areBattleCategoriesLoaded: true,
-      isBattleCategoriesLoading: false,
-      battleCategoriesError: null,
-      onLoadBattleCategories: () => undefined,
-      onLoadBattleMaps: async () => [],
+      battle: makeBattleResource(),
       partyPresetCatalog: presetCatalog([]),
       onOpenCaptcha: () => undefined,
       onOpenAppSettings: () => undefined,

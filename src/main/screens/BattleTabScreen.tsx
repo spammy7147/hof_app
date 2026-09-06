@@ -14,6 +14,7 @@ import {
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import type { BattleResource } from '../features/battle/useBattleResource';
 import {
   type BattlePartyMember,
   toRunBattleRequest,
@@ -36,20 +37,14 @@ import type {
   BattleResultResponse,
   FishingBattleTarget,
   HofCharacter,
-  RunBattleRequest,
 } from '../types/api';
 import { PrimaryButton } from '../components/PrimaryButton';
 
 type BattleTabScreenProps = {
   authenticated: boolean;
-  categories: BattleCategoryResponse[];
-  isLoading: boolean;
-  errorMessage: string | null;
+  battle: BattleResource;
   characters: HofCharacter[];
-  onLoadCategories: () => void;
-  onLoadMaps: (categoryId: string) => Promise<BattleMapResponse[]>;
   partyPresetCatalog: PartyPresetCatalogResource;
-  onRunBattle: (request: RunBattleRequest) => Promise<BattleResultResponse>;
   initialTarget?: FishingBattleTarget | null;
   onInitialTargetConsumed?: () => void;
 };
@@ -96,17 +91,17 @@ type BattleTreeRow =
  */
 export function BattleTabScreen({
   authenticated,
-  categories,
-  isLoading,
-  errorMessage,
+  battle,
   characters,
-  onLoadCategories,
-  onLoadMaps,
   partyPresetCatalog,
-  onRunBattle,
   initialTarget,
   onInitialTargetConsumed,
 }: BattleTabScreenProps) {
+  const {
+    categories, loading: isLoading, errorMessage,
+    loadCategories: onLoadCategories, loadMaps: onLoadMaps, run: onRunBattle,
+  } = battle;
+
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
   const [mapsByCategory, setMapsByCategory] = useState<Record<string, BattleMapResponse[]>>({});
   const [loadingCategoryId, setLoadingCategoryId] = useState<string | null>(null);

@@ -1,3 +1,4 @@
+import { makeBattleResource } from '../fixtures/battleResource';
 import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { afterEach, describe, it } from 'node:test';
@@ -66,17 +67,19 @@ describe('DataTabScreen recent battle card', () => {
     await act(async () => {
       renderer = create(React.createElement(DataTabScreen, {
         authenticated: true,
-        onLoadBattleLogs: async () => [],
-        onLoadBattleStats: async (period) => {
-          periods.push(period);
-          return ({
-          accountId: 7,
-          dailyFunds: 100,
-          weeklyFunds: 200,
-          monthlyFunds: 300,
-          adventureMapOutcomes: [{ mapCode: 'snow22', mapName: '얼어붙은 산', defeats: 2, draws: 1 }],
-          });
-        },
+        battle: makeBattleResource({
+          loadLogs: async () => [],
+          loadStats: async (period) => {
+            periods.push(period);
+            return ({
+              accountId: 7,
+              dailyFunds: 100,
+              weeklyFunds: 200,
+              monthlyFunds: 300,
+              adventureMapOutcomes: [{ mapCode: 'snow22', mapName: '얼어붙은 산', defeats: 2, draws: 1 }],
+            });
+          },
+        }),
       }));
     });
     mountedRenderer = renderer;
@@ -131,11 +134,13 @@ describe('DataTabScreen recent battle card', () => {
     await act(async () => {
       renderer = create(React.createElement(DataTabScreen, {
         authenticated: true,
-        onLoadBattleLogs: async (query) => {
-          queries.push(query);
-          return [battleLog];
-        },
-        onLoadBattleStats: async () => emptyStats,
+        battle: makeBattleResource({
+          loadLogs: async (query) => {
+            queries.push(query);
+            return [battleLog];
+          },
+          loadStats: async () => emptyStats,
+        }),
       }));
     });
     mountedRenderer = renderer;
@@ -166,8 +171,10 @@ async function renderBattleCard(): Promise<ReactTestInstance> {
   await act(async () => {
     renderer = create(React.createElement(DataTabScreen, {
       authenticated: true,
-      onLoadBattleLogs: async () => [battleLog],
-      onLoadBattleStats: async () => emptyStats,
+      battle: makeBattleResource({
+        loadLogs: async () => [battleLog],
+        loadStats: async () => emptyStats,
+      }),
     }));
   });
   const openButton = renderer.root.find((node) => (
