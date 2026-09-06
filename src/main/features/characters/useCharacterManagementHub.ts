@@ -7,6 +7,7 @@ import {
   type CharacterManagementHubResource,
 } from '../../domain/characterManagementHubModule';
 import type { BackendApiClient } from '../../services/backendApi';
+import { deepSyncCharacter, restoreCharacter, executeCharacterTransfer } from './characterOperations';
 
 export type CharacterManagementHubApi = Pick<
   BackendApiClient,
@@ -16,14 +17,12 @@ export type CharacterManagementHubApi = Pick<
   | 'applyCharacterPattern'
   | 'loadSavedCharacterPattern'
   | 'deleteSavedCharacterPattern'
-  | 'deepSyncCharacter'
+  | 'runManualSequence'
   | 'linkCharacter'
   | 'listCharacters'
   | 'archiveCharacter'
-  | 'restoreCharacter'
   | 'deleteCharacterPermanently'
   | 'previewCharacterTransfer'
-  | 'executeCharacterTransfer'
 >;
 
 export type CharacterManagementHubIntegration = {
@@ -62,17 +61,17 @@ export function createCharacterManagementHubBackend(
     deleteSavedPattern: (characterId, slotCode) =>
       api.deleteSavedCharacterPattern(characterId, slotCode),
     deepSync: (characterId, onProgress) =>
-      api.deepSyncCharacter(characterId, onProgress),
+      deepSyncCharacter(api, characterId, onProgress),
     linkCharacter: (characterId, newHofCharacterId) =>
       api.linkCharacter(characterId, newHofCharacterId),
     loadRoster: () => api.listCharacters(),
     archiveCharacter: (characterId) => api.archiveCharacter(characterId),
-    restoreCharacter: (characterId) => api.restoreCharacter(characterId),
+    restoreCharacter: (characterId) => restoreCharacter(api, characterId),
     deleteCharacterPermanently: (characterId) =>
       api.deleteCharacterPermanently(characterId),
     previewTransfer: (request) => api.previewCharacterTransfer(request),
     executeTransfer: (request, onProgress) =>
-      api.executeCharacterTransfer(request, [], onProgress),
+      executeCharacterTransfer(api, request, [], onProgress),
     reloadRelatedPresets: integration.reloadRelatedPresets,
     beginPatternEdit: integration.beginPatternEdit,
   };

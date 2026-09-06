@@ -20,8 +20,6 @@ import type {
   CharacterPatternOperationResult,
   CharacterTransferPreviewRequest,
   CharacterTransferPreview,
-  CharacterTransferExecutionResult,
-  CharacterDeepSyncResponse,
   CharacterOperationJob,
   CreateAutomationEntryRequest,
   CreatePartyPresetFolderRequest,
@@ -117,6 +115,20 @@ function normalizeQuestSnapshot(
       : [],
   };
 }
+
+/** 한 수동 행동 안에서만 사용하는 인증 세대에 묶인 단건 요청이다. */
+export type ManualSequenceRequests = {
+  isCurrent: () => boolean;
+  assertCurrent: () => void;
+  loadSavedPattern: (characterId: number, slotCode: string) => Promise<CharacterPatternOperationResult>;
+  startDeepSync: (characterId: number) => Promise<CharacterOperationJob>;
+  startRestore: (characterId: number) => Promise<CharacterOperationJob>;
+  startTransfer: (request: CharacterTransferPreviewRequest, completedStepIds: string[]) => Promise<CharacterOperationJob>;
+  fetchOperation: (jobId: number) => Promise<CharacterOperationJob>;
+  listCharacters: () => Promise<HofCharacter[]>;
+};
+
+export type ManualSequenceApi = Pick<BackendApiClient, 'runManualSequence'>;
 
 /**
  * React Native/Expo 앱에서 Spring 백엔드 API를 호출하는 단일 client다.
@@ -821,23 +833,6 @@ export class BackendApiClient {
     )));
   }
 
-  async deepSyncCharacter(
-    characterId: number,
-    onProgress?: (progress: CharacterDeepSyncResponse) => void,
-  ): Promise<CharacterDeepSyncResponse> {
-    const epoch = this.authEpoch;
-    return this.runManualAction(async () => {
-      const started = await this.request<CharacterOperationJob>(
-        `/api/characters/records/${characterId}/deep-sync-jobs`, { method: 'POST' }, true, epoch,
-      );
-      const completed = await this.pollCharacterOperation(epoch, started, (job) => {
-        if (job.deepSync) onProgress?.(job.deepSync);
-      });
-      if (!completed.deepSync) throw new Error('전체 설정 동기화 결과를 확인하지 못했습니다.');
-      return completed.deepSync;
-    });
-  }
-
   async linkCharacter(characterId: number, newHofCharacterId: string): Promise<HofCharacter[]> {
     return (await this.runManualAction(() => this.request<HofCharacter[]>('/api/characters/identity/link', {
       method: 'POST', body: JSON.stringify({ characterId, newHofCharacterId }),
@@ -850,22 +845,6 @@ export class BackendApiClient {
     }))).map(normalizeCharacter);
   }
 
-  async restoreCharacter(
-    characterId: number,
-    onProgress?: (progress: CharacterDeepSyncResponse) => void,
-  ): Promise<HofCharacter[]> {
-    const epoch = this.authEpoch;
-    return this.runManualAction(async () => {
-      const started = await this.request<CharacterOperationJob>('/api/characters/restore-jobs', {
-        method: 'POST', body: JSON.stringify({ characterId }),
-      }, true, epoch);
-      await this.pollCharacterOperation(epoch, started, (job) => {
-        if (job.deepSync) onProgress?.(job.deepSync);
-      });
-      return (await this.request<HofCharacter[]>('/api/characters', {}, true, epoch)).map(normalizeCharacter);
-    });
-  }
-
   async deleteCharacterPermanently(characterId: number): Promise<HofCharacter[]> {
     return (await this.runManualAction(() => this.request<HofCharacter[]>('/api/characters/delete-permanently', {
       method: 'POST', body: JSON.stringify({ characterId }),
@@ -876,45 +855,6 @@ export class BackendApiClient {
     return this.request<CharacterTransferPreview>('/api/characters/transfers/preview', {
       method: 'POST', body: JSON.stringify(request),
     });
-  }
-
-  async executeCharacterTransfer(
-    request: CharacterTransferPreviewRequest,
-    completedStepIds: string[] = [],
-    onProgress?: (progress: CharacterTransferExecutionResult) => void,
-  ): Promise<CharacterTransferExecutionResult> {
-    const epoch = this.authEpoch;
-    return this.runManualAction(async () => {
-      const started = await this.request<CharacterOperationJob>('/api/characters/transfers/jobs', {
-        method: 'POST', body: JSON.stringify({ ...request, completedStepIds }),
-      }, true, epoch);
-      const completed = await this.pollCharacterOperation(epoch, started, (job) => {
-        if (job.transfer) onProgress?.(job.transfer);
-      });
-      if (!completed.transfer) throw new Error('설정 가져오기 결과를 확인하지 못했습니다.');
-      return completed.transfer;
-    });
-  }
-
-  private async pollCharacterOperation(
-    epoch: number,
-    initial: CharacterOperationJob,
-    onProgress: (job: CharacterOperationJob) => void,
-  ): Promise<CharacterOperationJob> {
-    let current = initial;
-    for (;;) {
-      this.assertCurrentAuthEpoch(epoch);
-      onProgress(current);
-      this.assertCurrentAuthEpoch(epoch);
-      if (current.status === 'COMPLETED') return current;
-      if (current.status === 'FAILED' || current.status === 'STOPPED') {
-        throw new Error(current.message || '캐릭터 작업을 완료하지 못했습니다.');
-      }
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      current = await this.request<CharacterOperationJob>(
-        `/api/characters/operation-jobs/${current.id}`, {}, true, epoch,
-      );
-    }
   }
 
   async executeCharacterCommand(command: CharacterCommand): Promise<CharacterCommandResult> {
@@ -933,38 +873,6 @@ export class BackendApiClient {
     return this.runManualAction(() => this.request<CharacterPatternOperationResult>('/api/characters/patterns/load', {
       method: 'POST', body: JSON.stringify({ characterId, slotCode }),
     }));
-  }
-
-  /** 프리셋 전체를 하나의 수동 작업으로 실행하며 결과가 불명확하면 다음 캐릭터로 진행하지 않는다. */
-  async loadPartyPresetPatterns(preset: PartyPresetResponse, characters: HofCharacter[]): Promise<string> {
-    const epoch = this.authEpoch;
-    const members = preset.members.filter((member) => member.characterId != null);
-    const targets = members.filter((member) => member.patternSlot != null);
-    const skipped = members.length - targets.length;
-    return this.runManualAction(async () => {
-      let completed = 0;
-      for (const member of targets) {
-        if (!this.isCurrentAuthEpoch(epoch)) break;
-        const character = characters.find((item) => item.hofCharacterId === member.characterId);
-        try {
-          if (!character || (character.lifecycle && character.lifecycle !== 'ACTIVE')) {
-            throw new Error('현재 캐릭터 목록에서 사용할 수 없습니다. 동기화 후 다시 시도하세요.');
-          }
-          const slotCode = character.patternSlots?.find((slot) => Number(slot.slot) === member.patternSlot)?.slot
-            ?? String(member.patternSlot);
-          const result = await this.request<CharacterPatternOperationResult>('/api/characters/patterns/load', {
-            method: 'POST', body: JSON.stringify({ characterId: character.id, slotCode }),
-          }, true, epoch);
-          if (!this.isCurrentAuthEpoch(epoch)) break;
-          if (!result.revision) throw new Error(result.message ?? '패턴 적용 결과를 확인하지 못했습니다.');
-          completed += 1;
-        } catch (error) {
-          if (!this.isCurrentAuthEpoch(epoch)) break;
-          return `${completed}명 완료 · ${targets.length - completed - 1}명 미실행 · ${skipped}명 패턴 미지정\n${character?.name ?? member.characterId}: ${error instanceof Error ? error.message : '패턴불러오기에 실패했습니다.'}`;
-        }
-      }
-      return `${completed}명 완료 · ${targets.length - completed}명 미실행 · ${skipped}명 패턴 미지정`;
-    });
   }
 
   async deleteSavedCharacterPattern(characterId: number, slotCode: string): Promise<CharacterPatternOperationResult> {
@@ -1010,6 +918,44 @@ export class BackendApiClient {
     const result = await this.readResponse<T>(response, epoch);
     if (epoch != null) this.assertCurrentAuthEpoch(epoch);
     return result;
+  }
+
+  /** 기능이 여러 요청을 끝까지 await하는 동안 앱 전체 수동 잠금과 인증 세대를 유지한다. */
+  async runManualSequence<T>(operation: (requests: ManualSequenceRequests) => Promise<T>): Promise<T> {
+    const epoch = this.authEpoch;
+    return this.runManualAction(async () => {
+      let active = true;
+      const assertCurrent = () => {
+        if (!active) throw new Error('수동 작업이 이미 종료되었습니다.');
+        this.assertCurrentAuthEpoch(epoch);
+      };
+      const request = <R>(path: string, init: RequestInit = {}) => {
+        assertCurrent();
+        return this.request<R>(path, init, true, epoch);
+      };
+      try {
+        return await operation({
+          isCurrent: () => active && this.isCurrentAuthEpoch(epoch),
+          assertCurrent,
+          loadSavedPattern: (characterId, slotCode) => request('/api/characters/patterns/load', {
+            method: 'POST', body: JSON.stringify({ characterId, slotCode }),
+          }),
+          startDeepSync: (characterId) => request(`/api/characters/records/${characterId}/deep-sync-jobs`, {
+            method: 'POST',
+          }),
+          startRestore: (characterId) => request('/api/characters/restore-jobs', {
+            method: 'POST', body: JSON.stringify({ characterId }),
+          }),
+          startTransfer: (transferRequest, completedStepIds) => request('/api/characters/transfers/jobs', {
+            method: 'POST', body: JSON.stringify({ ...transferRequest, completedStepIds }),
+          }),
+          fetchOperation: (jobId) => request(`/api/characters/operation-jobs/${jobId}`),
+          listCharacters: async () => (await request<HofCharacter[]>('/api/characters')).map(normalizeCharacter),
+        });
+      } finally {
+        active = false;
+      }
+    });
   }
 
   /** 수동 HOF action은 연타로 중복 전송되지 않게 앱 전체에서 한 번에 하나만 허용한다. */

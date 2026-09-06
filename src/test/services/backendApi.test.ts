@@ -2,6 +2,11 @@ import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { after, afterEach, describe, it } from 'node:test';
 
+import { CharacterManagementHubModule } from '../../main/domain/characterManagementHubModule';
+import { createCharacterManagementHubBackend } from '../../main/features/characters/useCharacterManagementHub';
+import { deepSyncCharacter, restoreCharacter, executeCharacterTransfer } from '../../main/features/characters/characterOperations';
+import { loadPartyPresetPatterns } from '../../main/features/partyPresets/loadPartyPresetPatterns';
+
 import type { CharacterDeepSyncResponse, PartyPresetResponse } from '../../main/types/api';
 import { makeCaptchaChallenge, makeHofCharacter, makeHofCharacterDetail } from '../fixtures/api';
 
@@ -44,9 +49,60 @@ describe('BackendApiClient', () => {
       requests.push(JSON.parse(String(init?.body)));
       return mockResponse({ revision: '2026-09-05T00:00:00Z' });
     };
-    const result = await client.loadPartyPresetPatterns(patternPreset(), [makeHofCharacter(1), makeHofCharacter(2), makeHofCharacter(3)]);
+    const result = await loadPartyPresetPatterns(client, patternPreset(), [makeHofCharacter(1), makeHofCharacter(2), makeHofCharacter(3)]);
     assert.deepEqual(requests, [{ characterId: 1, slotCode: '0' }, { characterId: 2, slotCode: '1' }]);
     assert.equal(result, '2명 완료 · 0명 미실행 · 1명 패턴 미지정');
+  });
+
+  it('패턴 중간 실패 뒤 완료 인원과 오류를 보존하고 남은 캐릭터를 보내지 않는다', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test');
+    const preset = patternPreset();
+    preset.members[2]!.patternSlot = 2;
+    const requests: unknown[] = [];
+    globalThis.fetch = async (_url, init) => {
+      requests.push(JSON.parse(String(init?.body)));
+      if (requests.length === 1) return mockResponse({ revision: '2026-09-07T00:00:00Z' });
+      return mockResponse({ code: 'HOF_REQUEST_FAILED', message: '패턴 제출 확인 실패' }, 502);
+    };
+    const result = await loadPartyPresetPatterns(client, preset, [makeHofCharacter(1), makeHofCharacter(2), makeHofCharacter(3)]);
+    assert.deepEqual(requests, [{ characterId: 1, slotCode: '0' }, { characterId: 2, slotCode: '1' }]);
+    assert.equal(result, '1명 완료 · 1명 미실행 · 0명 패턴 미지정\n캐릭터2: 패턴 제출 확인 실패');
+  });
+
+  it('프리셋 두 번째 요청까지 수동 잠금을 유지하며 중첩된 단건 보호를 사용하지 않는다', async () => {
+    const { BackendApiClient, ManualActionBusyError } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test');
+    const secondStarted = deferred<void>();
+    const secondResponse = deferred<Response>();
+    const states: boolean[] = [];
+    client.subscribeManualActionState((value) => states.push(value));
+    let requests = 0;
+    globalThis.fetch = async () => {
+      requests += 1;
+      if (requests === 1) return mockResponse({ revision: 'first' });
+      secondStarted.resolve();
+      return secondResponse.promise;
+    };
+    const pending = loadPartyPresetPatterns(client, patternPreset(), [makeHofCharacter(1), makeHofCharacter(2)]);
+    await secondStarted.promise;
+    await assert.rejects(client.loadSavedCharacterPattern(3, '0'), ManualActionBusyError);
+    assert.deepEqual(states, [false, true]);
+    secondResponse.resolve(mockResponse({ revision: 'second' }));
+    assert.equal(await pending, '2명 완료 · 0명 미실행 · 1명 패턴 미지정');
+    assert.deepEqual(states, [false, true, false]);
+    assert.equal(requests, 2);
+  });
+
+  it('완료된 순차 작업에서 보관한 단건 요청으로 수동 잠금을 우회할 수 없다', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test');
+    let retained!: (characterId: number, slotCode: string) => Promise<unknown>;
+    let calls = 0;
+    globalThis.fetch = async () => { calls += 1; return mockResponse(null); };
+    await client.runManualSequence(async (requests) => { retained = requests.loadSavedPattern; });
+    await assert.rejects(async () => retained(1, '0'), /수동 작업이 이미 종료/);
+    assert.equal(calls, 0);
   });
 
   it('패턴 적용 결과가 불명확하면 완료 인원을 보존하고 다음 캐릭터를 실행하지 않는다', async () => {
@@ -57,7 +113,7 @@ describe('BackendApiClient', () => {
       calls += 1;
       return mockResponse({ message: '현재 상태 재확인 필요' });
     };
-    const result = await client.loadPartyPresetPatterns(patternPreset(), [makeHofCharacter(1), makeHofCharacter(2)]);
+    const result = await loadPartyPresetPatterns(client, patternPreset(), [makeHofCharacter(1), makeHofCharacter(2)]);
     assert.equal(calls, 1);
     assert.match(result, /0명 완료 · 1명 미실행/);
     assert.match(result, /캐릭터1: 현재 상태 재확인 필요/);
@@ -72,7 +128,7 @@ describe('BackendApiClient', () => {
       calls += 1;
       return new Promise<Response>((resolve) => { release = resolve; });
     };
-    const pending = client.loadPartyPresetPatterns(patternPreset(), [makeHofCharacter(1), makeHofCharacter(2)]);
+    const pending = loadPartyPresetPatterns(client, patternPreset(), [makeHofCharacter(1), makeHofCharacter(2)]);
     await assert.rejects(client.loadSavedCharacterPattern(3, '0'));
     client.dispose();
     release(mockResponse({ revision: '2026-09-05T00:00:00Z' }));
@@ -864,8 +920,7 @@ describe('BackendApiClient', () => {
     }, requests);
 
     const observed: typeof progress[] = [];
-    const result = await new BackendApiClient('http://backend.test')
-      .deepSyncCharacter(7, (value) => observed.push(value));
+    const result = await deepSyncCharacter(new BackendApiClient('http://backend.test'), 7, (value) => observed.push(value));
 
     assert.equal(requests[0]?.url, 'http://backend.test/api/characters/records/7/deep-sync-jobs');
     assert.equal(requests[0]?.init.method, 'POST');
@@ -897,7 +952,7 @@ describe('BackendApiClient', () => {
       return mockResponse(responses.shift());
     }) as unknown as typeof fetch;
 
-    const result = await new BackendApiClient('http://backend.test').restoreCharacter(restored.id);
+    const result = await restoreCharacter(new BackendApiClient('http://backend.test'), restored.id);
 
     assert.deepEqual(requests.map((request) => request.url), [
       'http://backend.test/api/characters/restore-jobs',
@@ -905,6 +960,60 @@ describe('BackendApiClient', () => {
     ]);
     assert.equal(requests[0]?.init.method, 'POST');
     assert.deepEqual(result, [restored]);
+  });
+
+  it('설정 가져오기 시작 인자와 완료 progress 결과를 그대로 전달한다', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test');
+    const request = {
+      sourceCharacterId: 6, targetCharacterId: 7,
+      transfer: { includeCurrentPattern: true, savedPatternMappings: [{ sourceSlot: '0', targetSlot: '1' }], includeStats: false, includeSkills: false, includeEquipment: false },
+    };
+    const completed = { targetCharacterId: 7, results: [{ stepId: 'pattern:0', status: 'COMPLETED', message: '완료' }], nextStepIndex: 1 };
+    const observed: unknown[] = [];
+    const requests: CapturedRequest[] = [];
+    mockFetchWithCapture({ id: 91, status: 'COMPLETED', transfer: completed }, requests);
+    const result = await executeCharacterTransfer(client, request, ['already-completed'], (value) => observed.push(value));
+    assert.equal(requests[0]?.url, 'http://backend.test/api/characters/transfers/jobs');
+    assert.equal(requests[0]?.init.method, 'POST');
+    assert.deepEqual(JSON.parse(String(requests[0]?.init.body)), { ...request, completedStepIds: ['already-completed'] });
+    assert.deepEqual(result, completed);
+    assert.deepEqual(observed, [completed]);
+    assert.equal(requests.length, 1);
+  });
+
+  it('실제 캐릭터 허브와 adapter가 이전 계정의 늦은 동기화를 현재 선택에 반영하지 않는다', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test', memoryTokenStorage());
+    const started = deferred<void>();
+    const response = deferred<Response>();
+    const requests: string[] = [];
+    globalThis.fetch = async (url) => {
+      const path = new URL(String(url)).pathname;
+      requests.push(path);
+      if (path.endsWith('/deep-sync-jobs')) { started.resolve(); return response.promise; }
+      const characterId = Number(path.split('/').at(-1));
+      return mockResponse(makeHofCharacterDetail(characterId, { detailSyncedAt: new Date().toISOString() }));
+    };
+    const hub = new CharacterManagementHubModule(createCharacterManagementHubBackend(client, {
+      reloadRelatedPresets: async () => undefined,
+      beginPatternEdit: async () => undefined,
+    }));
+    hub.activate('old-account');
+    hub.observeRoster([makeHofCharacter(1)]);
+    await hub.getSnapshot().actions.select(makeHofCharacter(1));
+    const pending = hub.getSnapshot().actions.deepSync?.();
+    await started.promise;
+    await client.clearLocalSession();
+    hub.activate('new-account');
+    hub.observeRoster([makeHofCharacter(2)]);
+    await hub.getSnapshot().actions.select(makeHofCharacter(2));
+    response.resolve(mockResponse({ id: 91, status: 'COMPLETED', deepSync: { characterId: 1, progress: [] } }));
+    await pending;
+    assert.equal(hub.getSnapshot().selectedCharacter?.id, 2);
+    assert.equal(hub.getSnapshot().detail?.id, 2);
+    assert.equal(hub.getSnapshot().deepSync.status, 'idle');
+    assert.deepEqual(requests, ['/api/characters/records/1', '/api/characters/records/1/deep-sync-jobs', '/api/characters/records/2']);
   });
 
   it('캐릭터 작업은 1초 간격의 진행 확인 전체 동안 다른 수동 행동을 막는다', async (context) => {
@@ -923,7 +1032,7 @@ describe('BackendApiClient', () => {
         deepSync: { characterId: 7, progress: [{ phase: requests.length === 1 ? 'CURRENT' : 'COMPLETED' }] },
       });
     };
-    const pending = client.deepSyncCharacter(7, (value) => { progress.push(value); firstProgress.resolve(); });
+    const pending = deepSyncCharacter(client, 7, (value) => { progress.push(value); firstProgress.resolve(); });
     await firstProgress.promise;
     await assert.rejects(client.loadSavedCharacterPattern(8, '0'), ManualActionBusyError);
     context.mock.timers.tick(999);
@@ -952,7 +1061,7 @@ describe('BackendApiClient', () => {
         requests += 1;
         return mockResponse({ id: 91, status, message: '현재 작업을 중단했습니다.', deepSync: { characterId: 7, progress: [] } });
       };
-      await assert.rejects(client.deepSyncCharacter(7, (value) => observed.push(value)), /현재 작업을 중단했습니다/);
+      await assert.rejects(deepSyncCharacter(client, 7, (value) => observed.push(value)), /현재 작업을 중단했습니다/);
       assert.deepEqual(observed, [{ characterId: 7, progress: [] }]);
       assert.equal(requests, 1);
       assert.deepEqual(states, [false, true, false]);
@@ -970,7 +1079,7 @@ describe('BackendApiClient', () => {
       calls += 1;
       return mockResponse({ id: 91, status: calls === 1 ? 'RUNNING' : 'COMPLETED', deepSync: { characterId: 7, progress: [] } });
     };
-    const pending = client.deepSyncCharacter(7, (value) => {
+    const pending = deepSyncCharacter(client, 7, (value) => {
       progress.push(value);
       firstProgress.resolve();
     });
@@ -995,7 +1104,7 @@ describe('BackendApiClient', () => {
       rosterStarted.resolve();
       return rosterResponse.promise;
     };
-    const pending = client.restoreCharacter(7);
+    const pending = restoreCharacter(client, 7);
     const ended = assert.rejects(pending, /로그인 세션이 변경/);
     await rosterStarted.promise;
     await client.clearLocalSession();
@@ -1026,7 +1135,7 @@ describe('BackendApiClient', () => {
         }
         return mockResponse({ code: 'AUTH_TOKEN_EXPIRED' }, 401);
       };
-      const pending = client.loadPartyPresetPatterns(patternPreset(), [makeHofCharacter(1), makeHofCharacter(2)]);
+      const pending = loadPartyPresetPatterns(client, patternPreset(), [makeHofCharacter(1), makeHofCharacter(2)]);
       await waiting.promise;
       await client.login({ loginId: 'new-account', password: 'test-password' });
       held.resolve(stage === 'response'
@@ -1054,7 +1163,7 @@ describe('BackendApiClient', () => {
       if (path === '/api/auth/refresh') { refreshStarted.resolve(); return refreshResponse.promise; }
       return mockResponse({ code: 'AUTH_TOKEN_EXPIRED' }, 401);
     };
-    const pending = client.loadPartyPresetPatterns(patternPreset(), [makeHofCharacter(1), makeHofCharacter(2)]);
+    const pending = loadPartyPresetPatterns(client, patternPreset(), [makeHofCharacter(1), makeHofCharacter(2)]);
     await refreshStarted.promise;
     await client.login({ loginId: 'new-account', password: 'test-password' });
     refreshResponse.resolve(mockResponse(tokenResponse('old-access', 'old-rotated-refresh'), 200, {
@@ -1082,7 +1191,7 @@ describe('BackendApiClient', () => {
       if (path === '/api/auth/refresh') { refreshStarted.resolve(); return refreshResponse.promise; }
       return mockResponse({ code: 'AUTH_TOKEN_EXPIRED' }, 401);
     };
-    const pending = client.loadPartyPresetPatterns(patternPreset(), [makeHofCharacter(1), makeHofCharacter(2)]);
+    const pending = loadPartyPresetPatterns(client, patternPreset(), [makeHofCharacter(1), makeHofCharacter(2)]);
     await refreshStarted.promise;
     await client.login({ loginId: 'new-account', password: 'test-password' });
     refreshResponse.resolve(mockResponse({ code: 'AUTH_TOKEN_INVALID', message: '이전 인증 만료' }, 401));
@@ -1109,7 +1218,7 @@ describe('BackendApiClient', () => {
         ? mockResponse(tokenResponse('old-access', 'old-rotated-refresh'))
         : mockResponse({ code: 'AUTH_TOKEN_EXPIRED' }, 401);
     };
-    const pending = client.loadPartyPresetPatterns(patternPreset(), [makeHofCharacter(1), makeHofCharacter(2)]);
+    const pending = loadPartyPresetPatterns(client, patternPreset(), [makeHofCharacter(1), makeHofCharacter(2)]);
     await reading.promise;
     await client.clearLocalSession();
     storedToken.resolve('old-refresh');
@@ -1128,7 +1237,7 @@ describe('BackendApiClient', () => {
       ...mockResponse(null),
       text: () => { reading.resolve(); return body.promise; },
     });
-    const pending = client.deepSyncCharacter(7, (value) => progress.push(value));
+    const pending = deepSyncCharacter(client, 7, (value) => progress.push(value));
     const ended = assert.rejects(pending, /로그인 세션이 변경/);
     await reading.promise;
     await client.clearLocalSession();
@@ -1153,10 +1262,10 @@ describe('BackendApiClient', () => {
       };
       const onProgress = (value: unknown) => { progress.push(value); };
       const pending = operation === 'deep-sync'
-        ? client.deepSyncCharacter(7, onProgress)
+        ? deepSyncCharacter(client, 7, onProgress)
         : operation === 'restore'
-          ? client.restoreCharacter(7, onProgress)
-          : client.executeCharacterTransfer({
+          ? restoreCharacter(client, 7, onProgress)
+          : executeCharacterTransfer(client, {
             sourceCharacterId: 6, targetCharacterId: 7,
             transfer: { includeCurrentPattern: true, savedPatternMappings: [], includeStats: false, includeSkills: false, includeEquipment: false },
           }, [], onProgress);

@@ -32,6 +32,7 @@ import type {
 } from "./types/api";
 import { theme } from "./styles/theme";
 import { createTownApi } from "./features/town/api/townApi";
+import { loadPartyPresetPatterns } from "./features/partyPresets/loadPartyPresetPatterns";
 import { usePartyPresetCatalog } from "./features/partyPresets/usePartyPresetCatalog";
 import { useCharacterManagementHub } from "./features/characters/useCharacterManagementHub";
 import { useAppSessionLifecycle } from "./features/auth/useAppSessionLifecycle";
@@ -435,7 +436,7 @@ function AuthenticatedApp({
         onLoadBattleCategories={loadBattleCategories}
         onLoadBattleMaps={loadBattleMaps}
         onRunBattle={runBattle}
-        onLoadPresetPatterns={(preset, characters) => api.loadPartyPresetPatterns(preset, characters)}
+        onLoadPresetPatterns={(preset, characters) => loadPartyPresetPatterns(api, preset, characters)}
         onLoadBattleLogs={loadBattleLogs}
         onLoadBattleStats={loadBattleStats}
         onOpenCaptcha={handleOpenCaptchaModal}
