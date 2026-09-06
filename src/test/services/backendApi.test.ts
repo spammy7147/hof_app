@@ -302,6 +302,48 @@ describe('BackendApiClient', () => {
     assert.deepEqual(received, []);
   });
 
+  it('이전 전투의 늦은 401로 새 계정 토큰을 갱신하거나 전투를 다시 보내지 않는다', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test', memoryTokenStorage('old-refresh'));
+    const response = deferred<Response>();
+    const requests: string[] = [];
+    globalThis.fetch = async (url) => {
+      const path = new URL(String(url)).pathname;
+      requests.push(path);
+      if (path === '/api/auth/login') return mockResponse(tokenResponse('new-access', 'new-refresh'));
+      if (path === '/api/auth/refresh') return mockResponse(tokenResponse('refreshed-access', 'refreshed-token'));
+      if (requests.length === 1) return response.promise;
+      return mockResponse({});
+    };
+    const pending = client.runBattle({ categoryId: 'battle_map', mapCode: 'field', characterIds: ['char-1'] });
+    const ended = assert.rejects(pending, /로그인 세션이 변경/);
+    await client.login({ loginId: 'new-account', password: 'test-password' });
+    response.resolve(mockResponse({ code: 'AUTH_TOKEN_EXPIRED' }, 401));
+    await ended;
+    assert.deepEqual(requests, ['/api/battles/run', '/api/auth/login']);
+    assert.equal(client.getAccessToken(), 'new-access');
+  });
+
+  it('이전 조회의 늦은 응답 헤더를 새 계정 상단 상태에 게시하지 않는다', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test', memoryTokenStorage());
+    const response = deferred<Response>();
+    const observed: unknown[] = [];
+    client.subscribeHofStatus((value) => observed.push(value));
+    globalThis.fetch = async () => response.promise;
+    const pending = client.getPartyPresetCatalog();
+    const ended = assert.rejects(pending, /로그인 세션이 변경/);
+    await client.clearLocalSession();
+    response.resolve(mockResponse({ folders: [], presets: [] }, 200, {
+      'X-HOF-Observed-Status': encodeURIComponent(JSON.stringify({
+        playerName: '이전 계정', funds: 100, timeCurrent: 20, timeMax: 30,
+        work: 'Nothing', auction: 'Nothing', observedAt: '2026-09-07T00:00:00Z',
+      })),
+    }));
+    await ended;
+    assert.deepEqual(observed, []);
+  });
+
   it('uses one refresh request for concurrent 401 responses and retries each request once', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const storage = memoryTokenStorage('refresh-old');

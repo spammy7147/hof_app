@@ -1,5 +1,5 @@
 import { StatusBar } from "expo-status-bar";
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { LoginScreen } from "./screens/LoginScreen";
@@ -167,6 +167,14 @@ function AuthenticatedApp({
   onLogout,
   onAccountSwitch,
 }: AuthenticatedAppProps) {
+  const activeGeneration = useRef(false);
+  useLayoutEffect(() => {
+    activeGeneration.current = true;
+    return () => { activeGeneration.current = false; };
+  }, []);
+  const assertActiveGeneration = useCallback(() => {
+    if (!activeGeneration.current) throw new Error("로그인 계정이 변경되었습니다.");
+  }, []);
   const townApi = useMemo(() => createTownApi(api), [api]);
   const automationController = useMemo(
     () =>
@@ -359,9 +367,13 @@ function AuthenticatedApp({
    */
   const runBattle = useCallback(
     async (request: RunBattleRequest): Promise<BattleResultResponse> => {
+      assertActiveGeneration();
       try {
-        return await api.runBattle(request);
+        const result = await api.runBattle(request);
+        assertActiveGeneration();
+        return result;
       } catch (error) {
+        assertActiveGeneration();
         if (!isCaptchaRequiredError(error)) {
           throw error;
         }
@@ -373,10 +385,13 @@ function AuthenticatedApp({
         );
         await resumePromise;
 
-        return await api.runBattle(request);
+        assertActiveGeneration();
+        const result = await api.runBattle(request);
+        assertActiveGeneration();
+        return result;
       }
     },
-    [api, waitForCaptchaResolution],
+    [api, assertActiveGeneration, waitForCaptchaResolution],
   );
 
   const loadBattleLogs = useCallback(
@@ -400,6 +415,7 @@ function AuthenticatedApp({
   });
 
   const resetAuthenticatedResources = useCallback((reason: string) => {
+    activeGeneration.current = false;
     automationController.reset();
     resetCaptchaGate(new Error(reason));
     resetCharacterSync();

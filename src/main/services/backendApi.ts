@@ -620,7 +620,7 @@ export class BackendApiClient {
     const registration = this.request<DevicePushTargetResponse>('/api/push/android/targets', {
       method: 'POST',
       body: JSON.stringify(request),
-    }).then((target) => {
+    }, true, this.authEpoch, true).then((target) => {
       this.androidPushTargetId = target.id;
       return target;
     });
@@ -897,26 +897,28 @@ export class BackendApiClient {
    * 모든 REST 요청이 공통으로 통과하는 private helper다.
    *
    * JSON 직렬화/역직렬화, 기본 헤더, HTTP 에러를 BackendApiError로 바꾸는 일을 담당한다.
-   * 순차 작업이 epoch를 넘기면 재시도와 응답 관측도 작업을 시작한 인증 세대에 묶는다.
+   * 단건·순차 작업 모두 시작한 인증 세대에 묶고, 재시도와 관측에도 같은 세대를 사용한다.
+   * 이미 제출된 푸시 등록만 로그아웃 정리에 결과가 필요해 늦은 응답을 반환한다.
    */
   private async request<T>(
     path: string,
     init: RequestInit = {},
     retry = true,
-    epoch?: number,
+    epoch = this.authEpoch,
+    allowLateResponseForLogout = false,
   ): Promise<T> {
-    if (epoch != null) this.assertCurrentAuthEpoch(epoch);
+    this.assertCurrentAuthEpoch(epoch);
     if (this.sessionMutationsBlocked && isMutationRequest(init)) {
       throw new SessionRecoveryMutationBlockedError();
     }
     const response = await this.fetchResponse(path, init, this.accessToken);
-    if (epoch != null) this.assertCurrentAuthEpoch(epoch);
+    if (!allowLateResponseForLogout || response.status === 401) this.assertCurrentAuthEpoch(epoch);
     if (response.status === 401 && retry) {
       await this.refreshAccessToken(epoch);
-      return this.request(path, init, false, epoch);
+      return this.request(path, init, false, epoch, allowLateResponseForLogout);
     }
     const result = await this.readResponse<T>(response, epoch);
-    if (epoch != null) this.assertCurrentAuthEpoch(epoch);
+    if (!allowLateResponseForLogout) this.assertCurrentAuthEpoch(epoch);
     return result;
   }
 
@@ -1093,8 +1095,8 @@ export class BackendApiClient {
     });
   }
 
-  private async readResponse<T>(response: Response, epoch?: number): Promise<T> {
-    if (epoch == null || this.isCurrentAuthEpoch(epoch)) {
+  private async readResponse<T>(response: Response, epoch: number): Promise<T> {
+    if (this.isCurrentAuthEpoch(epoch)) {
       this.publishObservedHofStatus(response.headers?.get(HOF_STATUS_HEADER));
     }
     const text = await response.text();
