@@ -825,11 +825,12 @@ export class BackendApiClient {
     characterId: number,
     onProgress?: (progress: CharacterDeepSyncResponse) => void,
   ): Promise<CharacterDeepSyncResponse> {
+    const epoch = this.authEpoch;
     return this.runManualAction(async () => {
       const started = await this.request<CharacterOperationJob>(
-        `/api/characters/records/${characterId}/deep-sync-jobs`, { method: 'POST' },
+        `/api/characters/records/${characterId}/deep-sync-jobs`, { method: 'POST' }, true, epoch,
       );
-      const completed = await this.pollCharacterOperation(started, (job) => {
+      const completed = await this.pollCharacterOperation(epoch, started, (job) => {
         if (job.deepSync) onProgress?.(job.deepSync);
       });
       if (!completed.deepSync) throw new Error('전체 설정 동기화 결과를 확인하지 못했습니다.');
@@ -853,14 +854,15 @@ export class BackendApiClient {
     characterId: number,
     onProgress?: (progress: CharacterDeepSyncResponse) => void,
   ): Promise<HofCharacter[]> {
+    const epoch = this.authEpoch;
     return this.runManualAction(async () => {
       const started = await this.request<CharacterOperationJob>('/api/characters/restore-jobs', {
         method: 'POST', body: JSON.stringify({ characterId }),
-      });
-      await this.pollCharacterOperation(started, (job) => {
+      }, true, epoch);
+      await this.pollCharacterOperation(epoch, started, (job) => {
         if (job.deepSync) onProgress?.(job.deepSync);
       });
-      return this.listCharacters();
+      return (await this.request<HofCharacter[]>('/api/characters', {}, true, epoch)).map(normalizeCharacter);
     });
   }
 
@@ -881,11 +883,12 @@ export class BackendApiClient {
     completedStepIds: string[] = [],
     onProgress?: (progress: CharacterTransferExecutionResult) => void,
   ): Promise<CharacterTransferExecutionResult> {
+    const epoch = this.authEpoch;
     return this.runManualAction(async () => {
       const started = await this.request<CharacterOperationJob>('/api/characters/transfers/jobs', {
         method: 'POST', body: JSON.stringify({ ...request, completedStepIds }),
-      });
-      const completed = await this.pollCharacterOperation(started, (job) => {
+      }, true, epoch);
+      const completed = await this.pollCharacterOperation(epoch, started, (job) => {
         if (job.transfer) onProgress?.(job.transfer);
       });
       if (!completed.transfer) throw new Error('설정 가져오기 결과를 확인하지 못했습니다.');
@@ -894,19 +897,22 @@ export class BackendApiClient {
   }
 
   private async pollCharacterOperation(
+    epoch: number,
     initial: CharacterOperationJob,
     onProgress: (job: CharacterOperationJob) => void,
   ): Promise<CharacterOperationJob> {
     let current = initial;
     for (;;) {
+      this.assertCurrentAuthEpoch(epoch);
       onProgress(current);
+      this.assertCurrentAuthEpoch(epoch);
       if (current.status === 'COMPLETED') return current;
       if (current.status === 'FAILED' || current.status === 'STOPPED') {
         throw new Error(current.message || '캐릭터 작업을 완료하지 못했습니다.');
       }
       await new Promise((resolve) => setTimeout(resolve, 1000));
       current = await this.request<CharacterOperationJob>(
-        `/api/characters/operation-jobs/${current.id}`,
+        `/api/characters/operation-jobs/${current.id}`, {}, true, epoch,
       );
     }
   }
@@ -948,11 +954,12 @@ export class BackendApiClient {
             ?? String(member.patternSlot);
           const result = await this.request<CharacterPatternOperationResult>('/api/characters/patterns/load', {
             method: 'POST', body: JSON.stringify({ characterId: character.id, slotCode }),
-          });
+          }, true, epoch);
           if (!this.isCurrentAuthEpoch(epoch)) break;
           if (!result.revision) throw new Error(result.message ?? '패턴 적용 결과를 확인하지 못했습니다.');
           completed += 1;
         } catch (error) {
+          if (!this.isCurrentAuthEpoch(epoch)) break;
           return `${completed}명 완료 · ${targets.length - completed - 1}명 미실행 · ${skipped}명 패턴 미지정\n${character?.name ?? member.characterId}: ${error instanceof Error ? error.message : '패턴불러오기에 실패했습니다.'}`;
         }
       }
@@ -982,17 +989,27 @@ export class BackendApiClient {
    * 모든 REST 요청이 공통으로 통과하는 private helper다.
    *
    * JSON 직렬화/역직렬화, 기본 헤더, HTTP 에러를 BackendApiError로 바꾸는 일을 담당한다.
+   * 순차 작업이 epoch를 넘기면 재시도와 응답 관측도 작업을 시작한 인증 세대에 묶는다.
    */
-  private async request<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
+  private async request<T>(
+    path: string,
+    init: RequestInit = {},
+    retry = true,
+    epoch?: number,
+  ): Promise<T> {
+    if (epoch != null) this.assertCurrentAuthEpoch(epoch);
     if (this.sessionMutationsBlocked && isMutationRequest(init)) {
       throw new SessionRecoveryMutationBlockedError();
     }
     const response = await this.fetchResponse(path, init, this.accessToken);
+    if (epoch != null) this.assertCurrentAuthEpoch(epoch);
     if (response.status === 401 && retry) {
-      await this.refreshAccessToken();
-      return this.request(path, init, false);
+      await this.refreshAccessToken(epoch);
+      return this.request(path, init, false, epoch);
     }
-    return this.readResponse<T>(response);
+    const result = await this.readResponse<T>(response, epoch);
+    if (epoch != null) this.assertCurrentAuthEpoch(epoch);
+    return result;
   }
 
   /** 수동 HOF action은 연타로 중복 전송되지 않게 앱 전체에서 한 번에 하나만 허용한다. */
@@ -1014,7 +1031,8 @@ export class BackendApiClient {
 
   /** 로그인·갱신·로그아웃처럼 401 자동 갱신 대상이 아닌 공개 인증 요청을 실행한다. */
   private async requestWithoutRefresh<T>(path: string, init: RequestInit = {}): Promise<T> {
-    return this.readResponse<T>(await this.fetchResponse(path, init, null));
+    const epoch = this.authEpoch;
+    return this.readResponse<T>(await this.fetchResponse(path, init, null), epoch);
   }
 
   /** 동시에 들어온 401 요청들이 하나의 refresh 요청을 공유하도록 single-flight를 적용한다. */
@@ -1022,8 +1040,12 @@ export class BackendApiClient {
     if (this.refreshPromise == null) {
       const operation = this.performRefresh(epoch);
       void operation.then(
-        () => this.publishSessionRefreshEvent({ type: 'refresh-succeeded' }),
-        (error: unknown) => this.publishSessionRefreshEvent({ type: 'refresh-failed', error }),
+        () => {
+          if (this.isCurrentAuthEpoch(epoch)) this.publishSessionRefreshEvent({ type: 'refresh-succeeded' });
+        },
+        (error: unknown) => {
+          if (this.isCurrentAuthEpoch(epoch)) this.publishSessionRefreshEvent({ type: 'refresh-failed', error });
+        },
       );
       this.refreshPromise = operation.finally(() => {
         this.refreshPromise = null;
@@ -1034,6 +1056,7 @@ export class BackendApiClient {
 
   private async performRefresh(epoch: number): Promise<void> {
     const refreshToken = await this.tokenStorage.load();
+    if (!this.isCurrentAuthEpoch(epoch)) return;
     if (!this.usesWebCookieSession && !refreshToken) {
       throw new BackendApiError(401, 'AUTH_TOKEN_INVALID', '저장된 로그인 정보가 없습니다.');
     }
@@ -1124,8 +1147,10 @@ export class BackendApiClient {
     });
   }
 
-  private async readResponse<T>(response: Response): Promise<T> {
-    this.publishObservedHofStatus(response.headers?.get(HOF_STATUS_HEADER));
+  private async readResponse<T>(response: Response, epoch?: number): Promise<T> {
+    if (epoch == null || this.isCurrentAuthEpoch(epoch)) {
+      this.publishObservedHofStatus(response.headers?.get(HOF_STATUS_HEADER));
+    }
     const text = await response.text();
     const body = parseJson(text);
 
@@ -1148,6 +1173,12 @@ export class BackendApiClient {
 
   private isCurrentAuthEpoch(epoch: number): boolean {
     return !this.disposed && epoch === this.authEpoch;
+  }
+
+  private assertCurrentAuthEpoch(epoch: number): void {
+    if (!this.isCurrentAuthEpoch(epoch)) {
+      throw new Error('로그인 세션이 변경되어 요청을 중단했습니다.');
+    }
   }
 
   private mutateTokenState(operation: () => Promise<void>): Promise<void> {

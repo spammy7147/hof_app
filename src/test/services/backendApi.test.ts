@@ -907,6 +907,276 @@ describe('BackendApiClient', () => {
     assert.deepEqual(result, [restored]);
   });
 
+  it('캐릭터 작업은 1초 간격의 진행 확인 전체 동안 다른 수동 행동을 막는다', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    const { BackendApiClient, ManualActionBusyError } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test', memoryTokenStorage());
+    const firstProgress = deferred<void>();
+    const progress: unknown[] = [];
+    const states: boolean[] = [];
+    const requests: string[] = [];
+    client.subscribeManualActionState((value) => states.push(value));
+    globalThis.fetch = async (url) => {
+      requests.push(String(url));
+      return mockResponse({
+        id: 91, status: requests.length === 1 ? 'RUNNING' : 'COMPLETED',
+        deepSync: { characterId: 7, progress: [{ phase: requests.length === 1 ? 'CURRENT' : 'COMPLETED' }] },
+      });
+    };
+    const pending = client.deepSyncCharacter(7, (value) => { progress.push(value); firstProgress.resolve(); });
+    await firstProgress.promise;
+    await assert.rejects(client.loadSavedCharacterPattern(8, '0'), ManualActionBusyError);
+    context.mock.timers.tick(999);
+    assert.equal(requests.length, 1);
+    assert.deepEqual(states, [false, true]);
+    context.mock.timers.tick(1);
+    const result = await pending;
+    assert.deepEqual(requests, ['http://backend.test/api/characters/records/7/deep-sync-jobs', 'http://backend.test/api/characters/operation-jobs/91']);
+    assert.deepEqual(progress, [
+      { characterId: 7, progress: [{ phase: 'CURRENT' }] },
+      { characterId: 7, progress: [{ phase: 'COMPLETED' }] },
+    ]);
+    assert.deepEqual(result, progress[1]);
+    assert.deepEqual(states, [false, true, false]);
+  });
+
+  for (const status of ['FAILED', 'STOPPED'] as const) {
+    it(`${status} 캐릭터 작업은 진행 메시지를 먼저 전달하고 오류를 보존한 뒤 수동 잠금을 해제한다`, async () => {
+      const { BackendApiClient } = await loadBackendApi();
+      const client = new BackendApiClient('http://backend.test', memoryTokenStorage());
+      const observed: unknown[] = [];
+      const states: boolean[] = [];
+      client.subscribeManualActionState((value) => states.push(value));
+      let requests = 0;
+      globalThis.fetch = async () => {
+        requests += 1;
+        return mockResponse({ id: 91, status, message: '현재 작업을 중단했습니다.', deepSync: { characterId: 7, progress: [] } });
+      };
+      await assert.rejects(client.deepSyncCharacter(7, (value) => observed.push(value)), /현재 작업을 중단했습니다/);
+      assert.deepEqual(observed, [{ characterId: 7, progress: [] }]);
+      assert.equal(requests, 1);
+      assert.deepEqual(states, [false, true, false]);
+    });
+  }
+
+  it('진행 확인 간격에 계정이 종료되면 다음 조회를 시작하지 않는다', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test', memoryTokenStorage());
+    const firstProgress = deferred<void>();
+    const progress: unknown[] = [];
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      return mockResponse({ id: 91, status: calls === 1 ? 'RUNNING' : 'COMPLETED', deepSync: { characterId: 7, progress: [] } });
+    };
+    const pending = client.deepSyncCharacter(7, (value) => {
+      progress.push(value);
+      firstProgress.resolve();
+    });
+    const ended = assert.rejects(pending, /로그인 세션이 변경/);
+    await firstProgress.promise;
+    await client.clearLocalSession();
+    context.mock.timers.tick(1000);
+    await ended;
+    assert.equal(calls, 1);
+    assert.equal(progress.length, 1);
+  });
+
+  it('복구 뒤 roster 응답이 계정 종료 후 도착하면 이전 계정 관측을 게시하지 않는다', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test', memoryTokenStorage());
+    const rosterStarted = deferred<void>();
+    const rosterResponse = deferred<Response>();
+    const observed: unknown[] = [];
+    client.subscribeHofStatus((value) => observed.push(value));
+    globalThis.fetch = async (url) => {
+      if (String(url).endsWith('/restore-jobs')) return mockResponse({ id: 91, status: 'COMPLETED' });
+      rosterStarted.resolve();
+      return rosterResponse.promise;
+    };
+    const pending = client.restoreCharacter(7);
+    const ended = assert.rejects(pending, /로그인 세션이 변경/);
+    await rosterStarted.promise;
+    await client.clearLocalSession();
+    rosterResponse.resolve(mockResponse([makeHofCharacter(7)], 200, {
+      'X-HOF-Observed-Status': encodeURIComponent(JSON.stringify({
+        playerName: '이전 계정', funds: 100, timeCurrent: 20, timeMax: 30,
+        work: 'Nothing', auction: 'Nothing', observedAt: '2026-09-07T00:00:00Z',
+      })),
+    }));
+    await ended;
+    assert.deepEqual(observed, []);
+  });
+
+  for (const stage of ['response', 'refresh'] as const) {
+    it(`패턴 ${stage} 대기 중 새 로그인으로 전환하면 이전 POST를 재시도하지 않는다`, async () => {
+      const { BackendApiClient } = await loadBackendApi();
+      const client = new BackendApiClient('http://backend.test', memoryTokenStorage('old-refresh'));
+      const held = deferred<Response>();
+      const waiting = deferred<void>();
+      const requests: string[] = [];
+      globalThis.fetch = async (url) => {
+        const path = new URL(String(url)).pathname;
+        requests.push(path);
+        if (path === '/api/auth/login') return mockResponse(tokenResponse('new-access', 'new-refresh'));
+        if (path === '/api/auth/refresh' || stage === 'response') {
+          waiting.resolve();
+          return held.promise;
+        }
+        return mockResponse({ code: 'AUTH_TOKEN_EXPIRED' }, 401);
+      };
+      const pending = client.loadPartyPresetPatterns(patternPreset(), [makeHofCharacter(1), makeHofCharacter(2)]);
+      await waiting.promise;
+      await client.login({ loginId: 'new-account', password: 'test-password' });
+      held.resolve(stage === 'response'
+        ? mockResponse({ code: 'AUTH_TOKEN_EXPIRED' }, 401)
+        : mockResponse(tokenResponse('old-access', 'old-rotated-refresh')));
+      assert.equal(await pending, '0명 완료 · 2명 미실행 · 1명 패턴 미지정');
+      assert.equal(requests.filter((path) => path === '/api/characters/patterns/load').length, 1);
+      assert.equal(requests.filter((path) => path === '/api/auth/refresh').length, stage === 'response' ? 0 : 1);
+      assert.equal(client.getAccessToken(), 'new-access');
+    });
+  }
+
+  it('이전 refresh 성공 응답의 관측 헤더와 이벤트도 새 계정에 반영하지 않는다', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test', memoryTokenStorage('old-refresh'));
+    const refreshStarted = deferred<void>();
+    const refreshResponse = deferred<Response>();
+    const observed: unknown[] = [];
+    const events: unknown[] = [];
+    client.subscribeHofStatus((value) => observed.push(value));
+    client.subscribeSessionRefreshEvents((event) => events.push(event));
+    globalThis.fetch = async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path === '/api/auth/login') return mockResponse(tokenResponse('new-access', 'new-refresh'));
+      if (path === '/api/auth/refresh') { refreshStarted.resolve(); return refreshResponse.promise; }
+      return mockResponse({ code: 'AUTH_TOKEN_EXPIRED' }, 401);
+    };
+    const pending = client.loadPartyPresetPatterns(patternPreset(), [makeHofCharacter(1), makeHofCharacter(2)]);
+    await refreshStarted.promise;
+    await client.login({ loginId: 'new-account', password: 'test-password' });
+    refreshResponse.resolve(mockResponse(tokenResponse('old-access', 'old-rotated-refresh'), 200, {
+      'X-HOF-Observed-Status': encodeURIComponent(JSON.stringify({
+        playerName: '이전 계정', funds: 100, timeCurrent: 20, timeMax: 30,
+        work: 'Nothing', auction: 'Nothing', observedAt: '2026-09-07T00:00:00Z',
+      })),
+    }));
+    assert.equal(await pending, '0명 완료 · 2명 미실행 · 1명 패턴 미지정');
+    assert.deepEqual(observed, []);
+    assert.deepEqual(events, []);
+    assert.equal(client.getAccessToken(), 'new-access');
+  });
+
+  it('이전 순차 작업의 refresh 실패를 새 로그인 세션에 알리지 않는다', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test', memoryTokenStorage('old-refresh'));
+    const refreshStarted = deferred<void>();
+    const refreshResponse = deferred<Response>();
+    const events: unknown[] = [];
+    client.subscribeSessionRefreshEvents((event) => events.push(event));
+    globalThis.fetch = async (url) => {
+      const path = new URL(String(url)).pathname;
+      if (path === '/api/auth/login') return mockResponse(tokenResponse('new-access', 'new-refresh'));
+      if (path === '/api/auth/refresh') { refreshStarted.resolve(); return refreshResponse.promise; }
+      return mockResponse({ code: 'AUTH_TOKEN_EXPIRED' }, 401);
+    };
+    const pending = client.loadPartyPresetPatterns(patternPreset(), [makeHofCharacter(1), makeHofCharacter(2)]);
+    await refreshStarted.promise;
+    await client.login({ loginId: 'new-account', password: 'test-password' });
+    refreshResponse.resolve(mockResponse({ code: 'AUTH_TOKEN_INVALID', message: '이전 인증 만료' }, 401));
+    assert.equal(await pending, '0명 완료 · 2명 미실행 · 1명 패턴 미지정');
+    assert.deepEqual(events, []);
+    assert.equal(client.getAccessToken(), 'new-access');
+  });
+
+  it('refresh 토큰 저장소를 읽는 동안 계정이 종료되면 refresh POST를 시작하지 않는다', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const reading = deferred<void>();
+    const storedToken = deferred<string | null>();
+    const client = new BackendApiClient('http://backend.test', {
+      ...memoryTokenStorage('old-refresh'),
+      load: () => { reading.resolve(); return storedToken.promise; },
+    });
+    const requests: string[] = [];
+    const events: unknown[] = [];
+    client.subscribeSessionRefreshEvents((event) => events.push(event));
+    globalThis.fetch = async (url) => {
+      const path = new URL(String(url)).pathname;
+      requests.push(path);
+      return path === '/api/auth/refresh'
+        ? mockResponse(tokenResponse('old-access', 'old-rotated-refresh'))
+        : mockResponse({ code: 'AUTH_TOKEN_EXPIRED' }, 401);
+    };
+    const pending = client.loadPartyPresetPatterns(patternPreset(), [makeHofCharacter(1), makeHofCharacter(2)]);
+    await reading.promise;
+    await client.clearLocalSession();
+    storedToken.resolve('old-refresh');
+    assert.equal(await pending, '0명 완료 · 2명 미실행 · 1명 패턴 미지정');
+    assert.deepEqual(requests, ['/api/characters/patterns/load']);
+    assert.deepEqual(events, []);
+  });
+
+  it('응답 본문을 읽는 동안 계정이 종료되면 캐릭터 진행 callback을 호출하지 않는다', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test', memoryTokenStorage());
+    const reading = deferred<void>();
+    const body = deferred<string>();
+    const progress: unknown[] = [];
+    globalThis.fetch = async () => ({
+      ...mockResponse(null),
+      text: () => { reading.resolve(); return body.promise; },
+    });
+    const pending = client.deepSyncCharacter(7, (value) => progress.push(value));
+    const ended = assert.rejects(pending, /로그인 세션이 변경/);
+    await reading.promise;
+    await client.clearLocalSession();
+    body.resolve(JSON.stringify({ id: 91, status: 'COMPLETED', deepSync: { characterId: 7, progress: [] } }));
+    await ended;
+    assert.deepEqual(progress, []);
+  });
+
+  for (const operation of ['deep-sync', 'restore', 'transfer'] as const) {
+    it(`${operation}의 시작 응답이 계정 종료 뒤 도착하면 관측·진행·후속 요청을 버린다`, async () => {
+      const { BackendApiClient } = await loadBackendApi();
+      const client = new BackendApiClient('http://backend.test', memoryTokenStorage());
+      const response = deferred<Response>();
+      const requests: string[] = [];
+      const progress: unknown[] = [];
+      const observed: unknown[] = [];
+      client.subscribeHofStatus((value) => observed.push(value));
+      globalThis.fetch = async (url) => {
+        requests.push(String(url));
+        if (requests.length === 1) return response.promise;
+        return mockResponse([]);
+      };
+      const onProgress = (value: unknown) => { progress.push(value); };
+      const pending = operation === 'deep-sync'
+        ? client.deepSyncCharacter(7, onProgress)
+        : operation === 'restore'
+          ? client.restoreCharacter(7, onProgress)
+          : client.executeCharacterTransfer({
+            sourceCharacterId: 6, targetCharacterId: 7,
+            transfer: { includeCurrentPattern: true, savedPatternMappings: [], includeStats: false, includeSkills: false, includeEquipment: false },
+          }, [], onProgress);
+      const ended = assert.rejects(pending, /로그인 세션이 변경/);
+      await client.clearLocalSession();
+      response.resolve(mockResponse({
+        id: 91, status: 'COMPLETED',
+        deepSync: { characterId: 7, progress: [] },
+        transfer: { targetCharacterId: 7, results: [], nextStepIndex: 0 },
+      }, 200, { 'X-HOF-Observed-Status': encodeURIComponent(JSON.stringify({
+        playerName: '이전 계정', funds: 100, timeCurrent: 20, timeMax: 30,
+        work: 'Nothing', auction: 'Nothing', observedAt: '2026-09-07T00:00:00Z',
+      })) }));
+      await ended;
+      assert.deepEqual(progress, []);
+      assert.deepEqual(observed, []);
+      assert.equal(requests.length, 1);
+    });
+  }
+
   it('uses the exact typed automation aggregate, settings, lifecycle, and quest endpoints', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const requests: CapturedRequest[] = [];
