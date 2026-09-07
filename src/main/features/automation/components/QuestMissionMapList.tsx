@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type ElementRef } from 'react';
-import { AccessibilityInfo, findNodeHandle, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { GripVertical, Trash2 } from 'lucide-react-native';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist';
+
+import { getAccessibilityFocusTarget, focusAccessibilityTarget } from '../../../platform/accessibilityFocus';
 
 import {
   buildQuestMapIdentity,
@@ -32,7 +34,7 @@ type PresetInvocation = {
   interactionGeneration: number;
   map: QuestMapSettingRequest;
   rowKey: string;
-  nodeHandle: ReturnType<typeof findNodeHandle>;
+  nodeHandle: ReturnType<typeof getAccessibilityFocusTarget>;
 };
 
 type MissionMapRow = {
@@ -167,9 +169,9 @@ export function QuestMissionMapList({
         return;
       }
       const liveNode = presetTriggerNodesRef.current.get(invocation.rowKey) ?? null;
-      const liveHandle = findNodeHandle(liveNode);
+      const liveHandle = getAccessibilityFocusTarget(liveNode);
       if (liveHandle != null && liveHandle === invocation.nodeHandle) {
-        AccessibilityInfo.setAccessibilityFocus(liveHandle);
+        focusAccessibilityTarget(liveHandle);
       }
       clearInvocation();
     }, 250);
@@ -191,7 +193,7 @@ export function QuestMissionMapList({
       interactionGeneration,
       map,
       rowKey,
-      nodeHandle: findNodeHandle(triggerNode),
+      nodeHandle: getAccessibilityFocusTarget(triggerNode),
     };
     activePresetRowKeyRef.current = rowKey;
     setActivePresetRowKey(rowKey);

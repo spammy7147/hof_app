@@ -8,8 +8,14 @@ import type { PartyPresetCatalogResponse, PartyPresetResponse } from '../../main
 
 const focusCalls: number[] = [];
 const searchFocusCalls: string[] = [];
+const webFocusEvents: string[] = [];
+const webFindNodeHandle: (node: unknown) => never = require('react-native-web/dist/cjs/exports/findNodeHandle');
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
-  React.useImperativeHandle(ref, () => ({ focus: () => undefined }), []);
+  React.useImperativeHandle(ref, () => ({
+    nodeName: 'DIV', getAttribute: () => null,
+    setAttribute: (key: string, value: string) => webFocusEvents.push(`${key}:${value}`),
+    focus: () => webFocusEvents.push(`focus:${name}`),
+  }), [name]);
   return React.createElement(name, props, props.children as React.ReactNode);
 });
 const flatList = (props: Record<string, unknown>) => React.createElement(
@@ -35,12 +41,13 @@ const reactNativeMock = {
   KeyboardAvoidingView: host('KeyboardAvoidingView'),
   Modal: host('Modal'),
   Platform: { OS: 'ios' },
+  UIManager: require('react-native-web/dist/cjs/exports/UIManager'),
   Pressable: host('Pressable'),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: host('Text'),
   TextInput: textInput,
   View: host('View'),
-  findNodeHandle: () => 7,
+  findNodeHandle: (node: unknown) => reactNativeMock.Platform.OS === 'web' ? webFindNodeHandle(node) : 7,
 };
 const iconsMock = new Proxy({}, { get: (_target, property) => host(String(property)) });
 type Loader = (request: string, parent: NodeModule | undefined, isMain: boolean) => unknown;
@@ -60,6 +67,19 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('PartyPresetPickerModal', () => {
+  it('focuses the web modal heading without a native handle or a new keyboard tab stop', async () => {
+    reactNativeMock.Platform.OS = 'web';
+    webFocusEvents.length = 0;
+    const renderer = await renderPicker();
+    try {
+      await act(async () => findHosts(renderer.root, 'Modal')[0]!.props.onShow());
+      assert.deepEqual(webFocusEvents, ['tabIndex:-1', 'focus:Text']);
+    } finally {
+      await act(async () => renderer.unmount());
+      reactNativeMock.Platform.OS = 'ios';
+    }
+  });
+
   it('browses the tree and switches one global name search to zero-indent full-width results', async () => {
     const renderer = await renderPicker();
 

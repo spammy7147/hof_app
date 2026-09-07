@@ -1,14 +1,14 @@
 import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import { useCallback, useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
 import {
-  AccessibilityInfo,
   ActivityIndicator,
-  findNodeHandle,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+
+import { getAccessibilityFocusTarget, focusAccessibilityTarget } from '../../../platform/accessibilityFocus';
 
 import { PartyPresetPickerModal } from '../../../components/PartyPresetPickerModal';
 import { theme } from '../../../styles/theme';
@@ -44,7 +44,7 @@ export function BattlePartyPresetPicker({
   const mountedRef = useRef(false);
   const loadingRef = useRef(loading);
   const expandedRef = useRef(false);
-  const invokingTriggerHandleRef = useRef<ReturnType<typeof findNodeHandle>>(null);
+  const invokingTriggerHandleRef = useRef<ReturnType<typeof getAccessibilityFocusTarget>>(null);
   const focusGenerationRef = useRef(0);
   const restoreFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   loadingRef.current = loading;
@@ -89,9 +89,9 @@ export function BattlePartyPresetPicker({
         || expandedRef.current
         || focusGenerationRef.current !== generation
       ) return;
-      const liveHandle = findNodeHandle(triggerRef.current);
+      const liveHandle = getAccessibilityFocusTarget(triggerRef.current);
       if (liveHandle != null && liveHandle === invocationHandle) {
-        AccessibilityInfo.setAccessibilityFocus(liveHandle);
+        focusAccessibilityTarget(liveHandle);
       }
       if (invokingTriggerHandleRef.current === invocationHandle) {
         invokingTriggerHandleRef.current = null;
@@ -105,7 +105,7 @@ export function BattlePartyPresetPicker({
       clearTimeout(restoreFocusTimerRef.current);
       restoreFocusTimerRef.current = null;
     }
-    invokingTriggerHandleRef.current = findNodeHandle(triggerRef.current);
+    invokingTriggerHandleRef.current = getAccessibilityFocusTarget(triggerRef.current);
     expandedRef.current = true;
     setExpanded(true);
   }, []);

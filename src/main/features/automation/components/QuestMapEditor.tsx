@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ElementRef } from 'react';
-import { AccessibilityInfo, findNodeHandle, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Plus } from 'lucide-react-native';
+
+import { getAccessibilityFocusTarget, focusAccessibilityTarget } from '../../../platform/accessibilityFocus';
 
 import {
   buildQuestMapIdentity,
@@ -42,7 +44,7 @@ export function QuestMapEditor({
   const mountedRef = useRef(false);
   const disabledRef = useRef(disabled);
   const pickerOpenRef = useRef(false);
-  const invokingTriggerHandleRef = useRef<ReturnType<typeof findNodeHandle>>(null);
+  const invokingTriggerHandleRef = useRef<ReturnType<typeof getAccessibilityFocusTarget>>(null);
   const focusGenerationRef = useRef(0);
   const restoreFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const questContext = quest.name || quest.displayCode;
@@ -75,8 +77,8 @@ export function QuestMapEditor({
     restoreFocusTimerRef.current = setTimeout(() => {
       restoreFocusTimerRef.current = null;
       if (!mountedRef.current || disabledRef.current || pickerOpenRef.current || focusGenerationRef.current !== generation) return;
-      const liveHandle = findNodeHandle(pickerTriggerRef.current);
-      if (liveHandle != null && liveHandle === invocationHandle) AccessibilityInfo.setAccessibilityFocus(liveHandle);
+      const liveHandle = getAccessibilityFocusTarget(pickerTriggerRef.current);
+      if (liveHandle != null && liveHandle === invocationHandle) focusAccessibilityTarget(liveHandle);
       if (invokingTriggerHandleRef.current === invocationHandle) invokingTriggerHandleRef.current = null;
     }, 250);
   }, []);
@@ -85,7 +87,7 @@ export function QuestMapEditor({
     if (disabledRef.current) return;
     focusGenerationRef.current += 1;
     if (restoreFocusTimerRef.current) clearTimeout(restoreFocusTimerRef.current);
-    invokingTriggerHandleRef.current = findNodeHandle(pickerTriggerRef.current);
+    invokingTriggerHandleRef.current = getAccessibilityFocusTarget(pickerTriggerRef.current);
     pickerOpenRef.current = true;
     setPickerOpen(true);
   }, []);

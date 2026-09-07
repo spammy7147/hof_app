@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
 import {
-  AccessibilityInfo,
   ActivityIndicator,
-  findNodeHandle,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -15,6 +13,8 @@ import {
 } from 'react-native';
 import { ChevronDown, ChevronRight } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { getAccessibilityFocusTarget, focusAccessibilityTarget } from '../../../platform/accessibilityFocus';
 
 import {
   buildQuestMapCatalogRows,
@@ -73,8 +73,8 @@ export function BattleMapPickerSheet({
   }, [visible]);
 
   function handleShow() {
-    const titleNode = findNodeHandle(titleRef.current);
-    if (titleNode != null) AccessibilityInfo.setAccessibilityFocus(titleNode);
+    const titleNode = getAccessibilityFocusTarget(titleRef.current);
+    if (titleNode != null) focusAccessibilityTarget(titleNode);
   }
 
   function toggleCategory(categoryId: string) {

@@ -59,6 +59,7 @@ const reactNativeMock = {
   Text: host('Text'),
   TextInput: host('TextInput'),
   View: host('View'),
+  Platform: { OS: 'ios' },
   findNodeHandle: (node: Record<string, unknown> | null) => node,
 };
 type Loader = (request: string, parent: NodeModule | undefined, isMain: boolean) => unknown;

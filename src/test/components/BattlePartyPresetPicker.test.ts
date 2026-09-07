@@ -7,15 +7,23 @@ import { act, create } from 'react-test-renderer';
 import type { PartyPresetResponse } from '../../main/types/api';
 
 const focusCalls: number[] = [];
+const webFocusCalls: string[] = [];
+const platform = { OS: 'ios' };
+const webFindNodeHandle: (node: unknown) => never = require('react-native-web/dist/cjs/exports/findNodeHandle');
 let nativeHandle = 11;
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
-  React.useImperativeHandle(ref, () => ({ name }), [name]);
+  React.useImperativeHandle(ref, () => ({
+    name, nodeName: 'BUTTON', getAttribute: () => '0',
+    focus: () => webFocusCalls.push(name),
+  }), [name]);
   return React.createElement(name, props, props.children as React.ReactNode);
 });
 const reactNativeMock = {
   AccessibilityInfo: { setAccessibilityFocus: (handle: number) => focusCalls.push(handle) },
   ActivityIndicator: host('ActivityIndicator'),
-  findNodeHandle: (node: unknown) => node == null ? null : nativeHandle,
+  findNodeHandle: (node: unknown) => platform.OS === 'web' ? webFindNodeHandle(node) : node == null ? null : nativeHandle,
+  Platform: platform,
+  UIManager: require('react-native-web/dist/cjs/exports/UIManager'),
   Pressable: host('Pressable'),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: host('Text'),
@@ -44,6 +52,24 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('BattlePartyPresetPicker', () => {
+  it('opens on web and restores the invoking DOM ref without native handles', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    platform.OS = 'web';
+    webFocusCalls.length = 0;
+    const renderer = await renderPicker();
+    try {
+      await openPicker(renderer);
+      assert.equal(commonPickerCalls.at(-1)?.visible, true);
+      await act(async () => (commonPickerCalls.at(-1)?.onClose as () => void)());
+      await act(async () => { context.mock.timers.tick(280); });
+      assert.equal(commonPickerCalls.at(-1)?.visible, false);
+      assert.deepEqual(webFocusCalls, ['Pressable']);
+    } finally {
+      await act(async () => renderer.unmount());
+      platform.OS = 'ios';
+    }
+  });
+
   it('keeps the collapsed field and injects direct selection into the shared modal', async () => {
     commonPickerCalls.length = 0;
     const events: string[] = [];

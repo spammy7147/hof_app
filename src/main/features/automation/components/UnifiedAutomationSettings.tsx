@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ElementRef } from 'react';
 import {
-  AccessibilityInfo,
   Alert,
-  findNodeHandle,
   Pressable,
   StyleSheet,
   Switch,
@@ -17,6 +15,8 @@ import {
   NestableDraggableFlatList,
   type RenderItemParams,
 } from 'react-native-draggable-flatlist';
+
+import { getAccessibilityFocusTarget, focusAccessibilityTarget } from '../../../platform/accessibilityFocus';
 
 import {
   automationEntryDisplayName,
@@ -376,8 +376,8 @@ function AutomationEntryRow({
 }
 
 function focusNode(node: ElementRef<typeof Pressable> | null): void {
-  const handle = findNodeHandle(node);
-  if (handle != null) AccessibilityInfo.setAccessibilityFocus(handle);
+  const handle = getAccessibilityFocusTarget(node);
+  if (handle != null) focusAccessibilityTarget(handle);
 }
 
 function getEntrySummary(entry: TypedAutomationEntryResponse): string {

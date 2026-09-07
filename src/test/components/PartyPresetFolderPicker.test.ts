@@ -26,6 +26,7 @@ const reactNativeMock = {
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: host('Text'),
   View: host('View'),
+  Platform: { OS: 'ios' },
   findNodeHandle: () => 1,
 };
 const iconsMock = new Proxy({}, { get: (_target, property) => host(String(property)) });

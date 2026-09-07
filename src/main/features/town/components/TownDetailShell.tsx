@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { useEffect, useRef } from 'react';
-import { AccessibilityInfo, findNodeHandle, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { getAccessibilityFocusTarget, focusAccessibilityTarget } from '../../../platform/accessibilityFocus';
 
 import type { TownMenu } from '../../../domain/townMenus';
 import { theme } from '../../../styles/theme';
@@ -16,8 +18,8 @@ export function TownDetailShell({ menu, onBack, children }: TownDetailShellProps
   const titleRef = useRef<Text>(null);
 
   useEffect(() => {
-    const titleHandle = findNodeHandle(titleRef.current);
-    if (titleHandle != null) AccessibilityInfo.setAccessibilityFocus(titleHandle);
+    const titleHandle = getAccessibilityFocusTarget(titleRef.current);
+    if (titleHandle != null) focusAccessibilityTarget(titleHandle);
   }, [menu.id]);
 
   return (

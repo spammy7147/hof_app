@@ -1,8 +1,6 @@
 import { Check, Circle, X } from 'lucide-react-native';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
 import {
-  AccessibilityInfo,
-  findNodeHandle,
   FlatList,
   Modal,
   Pressable,
@@ -11,6 +9,8 @@ import {
   View,
   type ListRenderItemInfo,
 } from 'react-native';
+
+import { getAccessibilityFocusTarget, focusAccessibilityTarget } from '../platform/accessibilityFocus';
 
 import {
   canMovePartyPresetFolder,
@@ -76,8 +76,8 @@ export function PartyPresetFolderPicker({
   const keyExtractor = useCallback((item: FolderChoice) => item.folderId?.toString() ?? 'null', []);
   const confirm = useCallback(() => onConfirm(pendingFolderId), [onConfirm, pendingFolderId]);
   const handleShow = useCallback(() => {
-    const titleNode = findNodeHandle(titleRef.current);
-    if (titleNode != null) AccessibilityInfo.setAccessibilityFocus(titleNode);
+    const titleNode = getAccessibilityFocusTarget(titleRef.current);
+    if (titleNode != null) focusAccessibilityTarget(titleNode);
   }, []);
 
   return (

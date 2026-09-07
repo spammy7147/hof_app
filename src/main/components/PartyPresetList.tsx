@@ -1,10 +1,12 @@
 import { ChevronDown, ChevronUp, Download, FolderCog, GripVertical, Plus, Save, Star, Trash2 } from 'lucide-react-native';
 import type { ElementRef, ReactNode, Ref } from 'react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, ActivityIndicator, findNodeHandle, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { FlatList } from 'react-native-gesture-handler';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist';
+
+import { getAccessibilityFocusTarget, focusAccessibilityTarget } from '../platform/accessibilityFocus';
 
 import { BattlePartySelector } from './BattlePartySelector';
 import { scrollFocusedInputIntoView } from './keyboardAwareScroll';
@@ -42,7 +44,7 @@ type PartyPresetListProps = {
 
 type ExpandedPresetId = number | 'new' | null;
 type NewPresetDraft = { name: string; party: BattlePartyMember[]; folderId: number | null };
-type PickerInvocation = { handle: ReturnType<typeof findNodeHandle> };
+type PickerInvocation = { handle: ReturnType<typeof getAccessibilityFocusTarget> };
 
 /** 캐릭터 탭의 저장 파티 프리셋을 편집하고 정렬한다. */
 export function PartyPresetList({
@@ -197,8 +199,8 @@ export function PartyPresetList({
     editorFocusTimerRef.current = setTimeout(() => {
       editorFocusTimerRef.current = null;
       if (!mountedRef.current || editorFocusGenerationRef.current !== generation) return;
-      const handle = findNodeHandle(presetEditorNameInputRef.current);
-      if (handle != null) AccessibilityInfo.setAccessibilityFocus(handle);
+      const handle = getAccessibilityFocusTarget(presetEditorNameInputRef.current);
+      if (handle != null) focusAccessibilityTarget(handle);
     }, 100);
   }, [expandedPresetId, visiblePresets]);
 
@@ -232,7 +234,7 @@ export function PartyPresetList({
   function openPresetFolderPicker() {
     pickerFocusGenerationRef.current += 1;
     if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
-    pickerInvocationRef.current = { handle: findNodeHandle(presetFolderTriggerRef.current) };
+    pickerInvocationRef.current = { handle: getAccessibilityFocusTarget(presetFolderTriggerRef.current) };
     setFolderPickerOpen(true);
   }
 
@@ -244,9 +246,9 @@ export function PartyPresetList({
       if (!mountedRef.current || pickerVisibleRef.current || pickerFocusGenerationRef.current !== generation) return;
       const invocation = pickerInvocationRef.current;
       if (!invocation || invocation.handle == null) return;
-      const liveHandle = findNodeHandle(presetFolderTriggerRef.current);
+      const liveHandle = getAccessibilityFocusTarget(presetFolderTriggerRef.current);
       if (liveHandle == null || liveHandle !== invocation.handle) return;
-      AccessibilityInfo.setAccessibilityFocus(liveHandle);
+      focusAccessibilityTarget(liveHandle);
       if (pickerInvocationRef.current === invocation) pickerInvocationRef.current = null;
     }, 250);
   }

@@ -1,9 +1,7 @@
 import { X } from 'lucide-react-native';
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
 import {
-  AccessibilityInfo,
   ActivityIndicator,
-  findNodeHandle,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -14,6 +12,8 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { getAccessibilityFocusTarget, focusAccessibilityTarget } from '../platform/accessibilityFocus';
 
 import { PartyPresetSearchResults } from './PartyPresetSearchResults';
 import {
@@ -77,8 +77,8 @@ export function PartyPresetPickerModal({
   }, [visible]);
 
   const handleShow = useCallback(() => {
-    const titleNode = findNodeHandle(titleRef.current);
-    if (titleNode != null) AccessibilityInfo.setAccessibilityFocus(titleNode);
+    const titleNode = getAccessibilityFocusTarget(titleRef.current);
+    if (titleNode != null) focusAccessibilityTarget(titleNode);
   }, []);
   const handleClose = useCallback(() => {
     if (disabled) return;

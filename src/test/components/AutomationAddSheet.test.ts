@@ -80,6 +80,7 @@ const reactNativeMock = {
   ActivityIndicator: host('ActivityIndicator'),
   Alert: { alert: (...args: unknown[]) => { alertArguments = args; } },
   Dimensions: { get: () => ({ height: windowHeight, width: 390 }) },
+  Platform: { OS: 'ios' },
   findNodeHandle: (node: unknown) => node,
   Modal: modal,
   Pressable: host('Pressable'),

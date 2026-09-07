@@ -91,6 +91,7 @@ const reactNativeMock = {
   Text: host('Text'),
   TextInput: host('TextInput'),
   View: host('View'),
+  Platform: { OS: 'ios' },
   findNodeHandle: (node: Record<string, unknown> | null) => node?.accessibilityLabel === '프리셋 이름 입력' ? 77 : 1,
 };
 const iconsMock = new Proxy({}, { get: (_target, property) => host(String(property)) });

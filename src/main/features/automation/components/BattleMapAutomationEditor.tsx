@@ -1,9 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
 import {
-  AccessibilityInfo,
   ActivityIndicator,
   Alert,
-  findNodeHandle,
   Pressable,
   StyleSheet,
   Switch,
@@ -14,6 +12,8 @@ import {
 import { ArrowLeft, ChevronRight, Save } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
 import { scrollFocusedInputIntoView } from '../../../components/keyboardAwareScroll';
+
+import { getAccessibilityFocusTarget, focusAccessibilityTarget } from '../../../platform/accessibilityFocus';
 
 import {
   battleMapIdentity,
@@ -130,7 +130,7 @@ export function BattleMapAutomationEditor({
   const presetTriggerNodesRef = useRef(new Map<string, ElementRef<typeof Pressable>>());
   const invokingPresetTriggerRef = useRef<{
     identity: string;
-    nodeHandle: ReturnType<typeof findNodeHandle>;
+    nodeHandle: ReturnType<typeof getAccessibilityFocusTarget>;
   } | null>(null);
   const presetFocusGenerationRef = useRef(0);
   const restorePresetFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -346,9 +346,9 @@ export function BattleMapAutomationEditor({
         return;
       }
       const liveNode = presetTriggerNodesRef.current.get(invocation.identity) ?? null;
-      const liveHandle = findNodeHandle(liveNode);
+      const liveHandle = getAccessibilityFocusTarget(liveNode);
       if (liveHandle != null && liveHandle === invocation.nodeHandle) {
-        AccessibilityInfo.setAccessibilityFocus(liveHandle);
+        focusAccessibilityTarget(liveHandle);
       }
       clearInvocation();
     }, 250);
@@ -363,7 +363,7 @@ export function BattleMapAutomationEditor({
     const triggerNode = presetTriggerNodesRef.current.get(identity) ?? null;
     invokingPresetTriggerRef.current = {
       identity,
-      nodeHandle: findNodeHandle(triggerNode),
+      nodeHandle: getAccessibilityFocusTarget(triggerNode),
     };
     setActivePresetIdentity(identity);
   }, []);

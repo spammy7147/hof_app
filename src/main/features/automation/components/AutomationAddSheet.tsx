@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
-  findNodeHandle,
   Modal,
   Pressable,
   ScrollView,
@@ -13,6 +12,8 @@ import {
 } from 'react-native';
 import { Fish, House, Map, ScrollText, Shield, Swords, Users, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { getAccessibilityFocusTarget, focusAccessibilityTarget } from '../../../platform/accessibilityFocus';
 
 import {
   AUTOMATION_TYPE_METADATA,
@@ -80,8 +81,8 @@ export function AutomationAddSheet({
     if (!visible) return undefined;
     AccessibilityInfo.announceForAccessibility('자동화 추가 창이 열렸습니다.');
     const focusTimer = setTimeout(() => {
-      const titleNode = findNodeHandle(titleRef.current);
-      if (titleNode != null) AccessibilityInfo.setAccessibilityFocus(titleNode);
+      const titleNode = getAccessibilityFocusTarget(titleRef.current);
+      if (titleNode != null) focusAccessibilityTarget(titleNode);
     }, 250);
     return () => clearTimeout(focusTimer);
   }, [visible]);

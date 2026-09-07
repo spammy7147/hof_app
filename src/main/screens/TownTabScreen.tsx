@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import {
-  AccessibilityInfo,
   BackHandler,
-  findNodeHandle,
   Pressable,
   StyleSheet,
   Text,
@@ -10,6 +8,8 @@ import {
   View,
   type View as NativeView,
 } from 'react-native';
+
+import { getAccessibilityFocusTarget, focusAccessibilityTarget } from '../platform/accessibilityFocus';
 
 import {
   DEFAULT_TOWN_CATEGORY_ID,
@@ -113,8 +113,8 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
     if (detailOpen || restoreMenuId == null) return;
     pendingFocusRestore.current = null;
     onRestoreListScroll?.();
-    const triggerHandle = findNodeHandle(menuTriggerRefs.current.get(restoreMenuId) ?? null);
-    if (triggerHandle != null) AccessibilityInfo.setAccessibilityFocus(triggerHandle);
+    const triggerHandle = getAccessibilityFocusTarget(menuTriggerRefs.current.get(restoreMenuId) ?? null);
+    if (triggerHandle != null) focusAccessibilityTarget(triggerHandle);
   }, [detailOpen, onRestoreListScroll]);
 
   if (detailOpen && selectedMenu != null) {
