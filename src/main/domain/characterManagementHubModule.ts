@@ -3,6 +3,8 @@ import type {
   CharacterCommand,
   CharacterCommandResult,
   CharacterDeepSyncResponse,
+  CharacterOperationJob,
+  CharacterRecoveryPreview,
   CharacterIdentityCandidate,
   CharacterPatternApplyRequest,
   CharacterPatternSetting,
@@ -35,7 +37,13 @@ export type CharacterManagementHubBackend = {
   deepSync?: (
     characterId: number,
     onProgress: (progress: CharacterDeepSyncResponse) => void,
+    onJob?: (job: CharacterOperationJob) => void,
   ) => Promise<CharacterDeepSyncResponse>;
+  loadCurrentOperation?: (characterId?: number) => Promise<CharacterOperationJob | null>;
+  loadOperation?: (jobId: number) => Promise<CharacterOperationJob>;
+  retryRecovery?: (jobId: number, onJob: (job: CharacterOperationJob) => void) => Promise<CharacterOperationJob>;
+  previewRecovery?: (jobId: number) => Promise<CharacterRecoveryPreview>;
+  acceptRecovery?: (jobId: number, token: string) => Promise<CharacterOperationJob>;
   linkCharacter?: (
     characterId: number,
     newHofCharacterId: string,
@@ -83,6 +91,11 @@ export type CharacterManagementHubActions = {
   loadSavedPattern?: (slotCode: string) => Promise<CharacterPatternOperationResult>;
   deleteSavedPattern?: (slotCode: string) => Promise<CharacterPatternOperationResult>;
   deepSync?: () => Promise<CharacterDeepSyncResponse | void>;
+  checkRecovery?: () => Promise<void>;
+  retryRecovery?: () => Promise<void>;
+  previewRecovery?: () => Promise<void>;
+  acceptRecovery?: () => Promise<void>;
+  dismissRecoveryPreview?: () => void;
   linkCharacter?: (newHofCharacterId: string) => Promise<void>;
   linkRosterCharacter?: (
     characterId: number,
@@ -103,6 +116,9 @@ export type CharacterManagementDeepSyncState = {
   status: 'idle' | 'running' | 'completed' | 'error';
   progress: CharacterDeepSyncResponse | null;
   errorMessage: string | null;
+  job?: CharacterOperationJob | null;
+  preview?: CharacterRecoveryPreview | null;
+  recoveryBusy?: boolean;
 };
 
 export type CharacterManagementTransferState = {
@@ -235,6 +251,7 @@ export class CharacterManagementHubModule {
         this.transferGeneration,
       ),
     ));
+    void this.recoveryAction('check', this.generation, this.selectionGeneration);
   }
 
   deactivate(): void {
@@ -436,14 +453,10 @@ export class CharacterManagementHubModule {
         this.transferGeneration,
       ),
     });
-    await this.loadStored(
-      selected.id,
-      generation,
-      selectionGeneration,
-      request,
-      true,
-      this.rosterProjectionGeneration,
-    );
+    await Promise.all([
+      this.loadStored(selected.id, generation, selectionGeneration, request, true, this.rosterProjectionGeneration),
+      this.recoveryAction('check', generation, selectionGeneration),
+    ]);
   }
 
   private close(
@@ -463,6 +476,7 @@ export class CharacterManagementHubModule {
       ),
       [...this.roster.values()],
     ));
+    void this.recoveryAction('check', this.generation, this.selectionGeneration);
   }
 
   private async reloadStored(
@@ -727,6 +741,22 @@ export class CharacterManagementHubModule {
     if (this.backend.deepSync) {
       actions.deepSync = () => this.deepSync(generation, selectionGeneration);
     }
+    if (this.backend.loadCurrentOperation) {
+      actions.checkRecovery = () => this.recoveryAction('check', generation, selectionGeneration);
+    }
+    if (this.backend.retryRecovery) {
+      actions.retryRecovery = () => this.recoveryAction('retry', generation, selectionGeneration);
+    }
+    if (this.backend.previewRecovery) {
+      actions.previewRecovery = () => this.recoveryAction('preview', generation, selectionGeneration);
+    }
+    if (this.backend.acceptRecovery) {
+      actions.acceptRecovery = () => this.recoveryAction('accept', generation, selectionGeneration);
+    }
+    actions.dismissRecoveryPreview = () => {
+      if (!this.isActiveLease(generation, selectionGeneration) || this.resource.deepSync.recoveryBusy) return;
+      this.replace({ ...this.resource, deepSync: { ...this.resource.deepSync, preview: null } });
+    };
     if (this.backend.linkCharacter) {
       actions.linkCharacter = (newHofCharacterId) =>
         this.linkCharacter(newHofCharacterId, generation, selectionGeneration);
@@ -741,11 +771,13 @@ export class CharacterManagementHubModule {
       );
     }
     if (this.backend.restoreCharacter) {
-      actions.restoreCharacter = (characterId) => this.mutateRoster(
-        characterId,
-        this.backend.restoreCharacter!,
-        generation,
-      );
+      actions.restoreCharacter = async (characterId) => {
+        try {
+          await this.mutateRoster(characterId, this.backend.restoreCharacter!, generation);
+        } finally {
+          if (this.isActiveGeneration(generation)) await this.recoveryAction('check', generation, this.selectionGeneration);
+        }
+      };
     }
     if (this.backend.deleteCharacterPermanently) {
       actions.deleteCharacterPermanently = (characterId) => this.mutateRoster(
@@ -989,7 +1021,8 @@ export class CharacterManagementHubModule {
     if (
       !synchronize ||
       !selected ||
-      this.resource.deepSync.status === 'running'
+      this.resource.deepSync.status === 'running' || this.resource.deepSync.recoveryBusy ||
+      operationNeedsAttention(this.resource.deepSync.job)
     ) return undefined;
     this.replace({
       ...this.resource,
@@ -1008,8 +1041,11 @@ export class CharacterManagementHubModule {
         )) return;
         this.replace({
           ...this.resource,
-          deepSync: { status: 'running', progress, errorMessage: null },
+          deepSync: { ...this.resource.deepSync, status: 'running', progress, errorMessage: null },
         });
+      }, (job) => {
+        if (!this.isCurrentTarget(selected.id, expectedGeneration, expectedSelectionGeneration)) return;
+        this.replace({ ...this.resource, deepSync: { ...this.resource.deepSync, job } });
       });
       if (!this.isCurrentTarget(
         selected.id,
@@ -1024,7 +1060,7 @@ export class CharacterManagementHubModule {
       )) return undefined;
       this.replace({
         ...this.resource,
-        deepSync: { status: 'completed', progress: result, errorMessage: null },
+        deepSync: { ...this.resource.deepSync, status: 'completed', progress: result, errorMessage: null },
       });
       return result;
     } catch (error: unknown) {
@@ -1036,12 +1072,79 @@ export class CharacterManagementHubModule {
       this.replace({
         ...this.resource,
         deepSync: {
+          ...this.resource.deepSync,
           status: 'error',
           progress: this.resource.deepSync.progress,
           errorMessage: toUserFacingErrorMessage(error),
         },
       });
       return undefined;
+    }
+  }
+
+  private async recoveryAction(
+    action: 'check' | 'retry' | 'preview' | 'accept',
+    generation: number,
+    selectionGeneration: number,
+  ): Promise<void> {
+    const selected = this.currentTarget(generation, selectionGeneration);
+    const state = this.resource.deepSync;
+    if (!this.isActiveLease(generation, selectionGeneration) || state.recoveryBusy || state.status === 'running') return;
+    const job = state.job;
+    if (action === 'check' && !this.backend.loadCurrentOperation) return;
+    if (action !== 'check' && !job) return;
+    if (action === 'retry' && (!this.backend.retryRecovery || job?.canRetryRecovery === false || !['REQUIRED', 'RESTORING'].includes(job?.recoveryStatus ?? ''))) return;
+    if (action === 'preview' && !this.backend.previewRecovery) return;
+    if (action === 'accept' && (!this.backend.acceptRecovery || !state.preview || state.preview.jobId !== job?.id)) return;
+    if (action !== 'check' && (job?.status === 'RUNNING' || job?.status === 'PENDING')) return;
+    const isCurrent = () => this.isActiveLease(generation, selectionGeneration)
+      && this.resource.selectedCharacter?.id === selected?.id;
+    const observe = (observed: CharacterOperationJob) => {
+      if (!isCurrent()) return;
+      this.replace({ ...this.resource, deepSync: {
+        ...this.resource.deepSync, job: observed, progress: observed.deepSync,
+      } });
+    };
+    this.replace({ ...this.resource, deepSync: {
+      ...state, recoveryBusy: true, preview: action === 'accept' ? state.preview : null, errorMessage: null,
+    } });
+    try {
+      if (action === 'preview') {
+        const preview = await this.backend.previewRecovery!(job!.id);
+        if (isCurrent() && preview.jobId === job!.id && preview.characterId === job!.targetCharacterId) {
+          this.replace({ ...this.resource, deepSync: { ...this.resource.deepSync, preview } });
+        }
+        return;
+      }
+      const observed = action === 'retry'
+        ? await this.backend.retryRecovery!(job!.id, observe)
+        : action === 'accept'
+          ? await this.backend.acceptRecovery!(job!.id, state.preview!.confirmationToken)
+          : job && operationNeedsAttention(job) && this.backend.loadOperation
+            ? await this.backend.loadOperation(job.id)
+            : await this.backend.loadCurrentOperation!(selected?.id);
+      if (!isCurrent()) return;
+      if (observed) observe(observed);
+      const failed = observed?.status === 'FAILED' || (observed?.status === 'STOPPED' && observed.recoveryStatus !== 'ACCEPTED');
+      this.replace({ ...this.resource, deepSync: {
+        ...this.resource.deepSync,
+        job: observed,
+        progress: observed?.deepSync ?? null,
+        preview: null,
+        status: failed ? 'error' : observed?.status === 'COMPLETED' ? 'completed' : 'idle',
+        errorMessage: failed ? observed.message : null,
+      } });
+      if (action !== 'check' && selected && observed?.targetCharacterId === selected.id) {
+        if (action === 'accept') await this.refresh(generation, selectionGeneration);
+        else await this.reloadStored(generation, selectionGeneration);
+      }
+    } catch (error) {
+      if (!isCurrent()) return;
+      this.replace({ ...this.resource, deepSync: {
+        ...this.resource.deepSync, status: 'error', preview: null, errorMessage: toUserFacingErrorMessage(error),
+      } });
+    } finally {
+      if (isCurrent()) this.replace({ ...this.resource, deepSync: { ...this.resource.deepSync, recoveryBusy: false } });
     }
   }
 
@@ -1542,6 +1645,11 @@ function isPatternConflict(result: CharacterPatternOperationResult): boolean {
 
 function idleDeepSync(): CharacterManagementDeepSyncState {
   return { status: 'idle', progress: null, errorMessage: null };
+}
+
+export function operationNeedsAttention(job: CharacterOperationJob | null | undefined): boolean {
+  return job != null && (job.status === 'PENDING' || job.status === 'RUNNING'
+    || ['REQUIRED', 'RESTORING', 'UNAVAILABLE'].includes(job.recoveryStatus ?? ''));
 }
 
 function idleTransfer(): CharacterManagementTransferState {

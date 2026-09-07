@@ -10,6 +10,8 @@ import type {
   CharacterCommand,
   CharacterCommandResult,
   CharacterDeepSyncResponse,
+  CharacterOperationJob,
+  CharacterRecoveryPreview,
   CharacterPatternApplyRequest,
   CharacterPatternOperationResult,
   CharacterTransferExecutionResult,
@@ -20,6 +22,94 @@ import type {
 } from '../../main/types/api';
 
 describe('character management hub module', () => {
+  it('reopens the unresolved job and retries its recovery without starting a new sync', async () => {
+    const job = recoveryJob('REQUIRED');
+    let starts = 0;
+    const retries: number[] = [];
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async () => freshDetail(1),
+      loadCurrentOperation: async () => job,
+      deepSync: async () => { starts += 1; return { characterId: 1, progress: [] }; },
+      retryRecovery: async (jobId, onJob) => {
+        retries.push(jobId);
+        const restored = { ...job, recoveryStatus: 'RESTORED' as const, message: '수집은 실패했지만 원본은 복원했습니다.' };
+        onJob(restored);
+        throw new Error(restored.message);
+      },
+    }));
+    const character = makeHofCharacter(1);
+    hub.activate('account-1');
+    hub.observeRoster([character]);
+    await hub.getSnapshot().actions.select(character);
+    assert.equal(hub.getSnapshot().deepSync.job?.id, job.id);
+    await hub.getSnapshot().actions.deepSync?.();
+    assert.equal(starts, 0);
+    await hub.getSnapshot().actions.retryRecovery?.();
+    assert.deepEqual(retries, [job.id]);
+    assert.equal(hub.getSnapshot().deepSync.status, 'error');
+    assert.equal(hub.getSnapshot().deepSync.job?.recoveryStatus, 'RESTORED');
+    assert.equal(hub.getSnapshot().deepSync.recoveryBusy, false);
+  });
+
+  it('requires a preview of the same job before accepting current state and ignores an old selection', async () => {
+    const job = recoveryJob('UNAVAILABLE');
+    const preview: CharacterRecoveryPreview = {
+      jobId: job.id, characterId: 1, confirmationToken: 'confirmed-observation',
+      observedAt: '2026-09-07T00:00:00Z', expiresAt: '2026-09-07T00:05:00Z',
+      hofCharacterId: '10', name: '원본 서버 이름', patterns: [], equipment: [],
+      positionGuard: { positions: [], selectedPosition: 'front', guardValue: '1', guardText: '호위' },
+    };
+    const previews = deferred<CharacterRecoveryPreview>();
+    const acceptCalls: unknown[] = [];
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async (id) => freshDetail(id),
+      loadCurrentOperation: async () => job,
+      previewRecovery: () => previews.promise,
+      acceptRecovery: async (jobId, token) => {
+        acceptCalls.push({ jobId, token });
+        return { ...job, status: 'STOPPED', recoveryStatus: 'ACCEPTED' };
+      },
+    }));
+    const first = makeHofCharacter(1);
+    const second = makeHofCharacter(2);
+    hub.activate('account-1');
+    hub.observeRoster([first, second]);
+    await hub.getSnapshot().actions.select(first);
+    await hub.getSnapshot().actions.acceptRecovery?.();
+    assert.deepEqual(acceptCalls, []);
+    const oldActions = hub.getSnapshot().actions;
+    const pending = oldActions.previewRecovery?.();
+    await hub.getSnapshot().actions.select(second);
+    previews.resolve(preview);
+    await pending;
+    assert.equal(hub.getSnapshot().deepSync.preview ?? null, null);
+    await oldActions.acceptRecovery?.();
+    assert.deepEqual(acceptCalls, []);
+    await hub.getSnapshot().actions.previewRecovery?.();
+    assert.equal(hub.getSnapshot().deepSync.preview?.confirmationToken, preview.confirmationToken);
+    await hub.getSnapshot().actions.acceptRecovery?.();
+    assert.deepEqual(acceptCalls, [{ jobId: job.id, token: preview.confirmationToken }]);
+    assert.equal(hub.getSnapshot().deepSync.job?.recoveryStatus, 'ACCEPTED');
+    assert.equal(hub.getSnapshot().deepSync.preview ?? null, null);
+  });
+
+  it('does not publish a recovery lookup from the previous account', async () => {
+    const response = deferred<CharacterOperationJob | null>();
+    let oldAccount = true;
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async () => freshDetail(1), loadCurrentOperation: () => oldAccount ? response.promise : Promise.resolve(null),
+    }));
+    const character = makeHofCharacter(1);
+    hub.activate('account-1');
+    hub.observeRoster([character]);
+    const pending = hub.getSnapshot().actions.select(character);
+    oldAccount = false;
+    hub.activate('account-2');
+    response.resolve(recoveryJob('UNAVAILABLE'));
+    await pending;
+    assert.equal(hub.getSnapshot().deepSync.job ?? null, null);
+  });
+
   it('owns the authoritative roster and its lifecycle mutations', async () => {
     const initial = [makeHofCharacter(1), makeHofCharacter(2, { lifecycle: 'ARCHIVED' })];
     const archived = [makeHofCharacter(1, { lifecycle: 'ARCHIVED' }), initial[1]!];
@@ -1015,6 +1105,12 @@ describe('character management hub module', () => {
     assert.equal(refreshes, 0);
   });
 });
+
+function recoveryJob(recoveryStatus: CharacterOperationJob['recoveryStatus']): CharacterOperationJob {
+  return { id: 91, operationType: 'DEEP_SYNC', status: 'FAILED', sourceCharacterId: null, targetCharacterId: 1,
+    deepSync: { characterId: 1, progress: [] }, transfer: null, message: '원본 복원을 확인해 주세요.',
+    updatedAt: '2026-09-07T00:00:00Z', finishedAt: '2026-09-07T00:00:00Z', recoveryStatus };
+}
 
 function backend(
   overrides: Partial<CharacterManagementHubBackend>,

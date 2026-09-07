@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronUp } from 'lucide-react-native';
-import { useCallback, useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
+import { useCallback, useMemo, useRef, useState, type ElementRef } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -8,7 +8,7 @@ import {
   View,
 } from 'react-native';
 
-import { getAccessibilityFocusTarget, focusAccessibilityTarget } from '../../../platform/accessibilityFocus';
+import { usePickerFocusReturn } from '../../../platform/usePickerFocusReturn';
 
 import { PartyPresetPickerModal } from '../../../components/PartyPresetPickerModal';
 import { theme } from '../../../styles/theme';
@@ -41,12 +41,12 @@ export function BattlePartyPresetPicker({
 }: BattlePartyPresetPickerProps) {
   const [expanded, setExpanded] = useState(false);
   const triggerRef = useRef<ElementRef<typeof Pressable>>(null);
-  const mountedRef = useRef(false);
   const loadingRef = useRef(loading);
   const expandedRef = useRef(false);
-  const invokingTriggerHandleRef = useRef<ReturnType<typeof getAccessibilityFocusTarget>>(null);
-  const focusGenerationRef = useRef(0);
-  const restoreFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { open: captureFocus, close: restoreFocus } = usePickerFocusReturn<undefined>({
+    getTarget: () => triggerRef.current,
+    canRestore: () => !loadingRef.current && !expandedRef.current,
+  });
   loadingRef.current = loading;
   const selectedPreset = useMemo(
     () => catalog.presets.find((preset) => preset.id === selectedPresetId) ?? null,
@@ -58,57 +58,17 @@ export function BattlePartyPresetPicker({
       ? selectedPreset?.name ?? `삭제된 프리셋 #${selectedPresetId}`
       : '프리셋을 선택하세요';
 
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      focusGenerationRef.current += 1;
-      invokingTriggerHandleRef.current = null;
-      if (restoreFocusTimerRef.current != null) clearTimeout(restoreFocusTimerRef.current);
-    };
-  }, []);
-
-  const closePicker = useCallback((restoreFocus: boolean) => {
-    const generation = ++focusGenerationRef.current;
-    const invocationHandle = invokingTriggerHandleRef.current;
+  const closePicker = useCallback((shouldRestoreFocus: boolean) => {
     expandedRef.current = false;
     setExpanded(false);
-    if (restoreFocusTimerRef.current != null) {
-      clearTimeout(restoreFocusTimerRef.current);
-      restoreFocusTimerRef.current = null;
-    }
-    if (!restoreFocus || invocationHandle == null) {
-      invokingTriggerHandleRef.current = null;
-      return;
-    }
-    restoreFocusTimerRef.current = setTimeout(() => {
-      restoreFocusTimerRef.current = null;
-      if (
-        !mountedRef.current
-        || loadingRef.current
-        || expandedRef.current
-        || focusGenerationRef.current !== generation
-      ) return;
-      const liveHandle = getAccessibilityFocusTarget(triggerRef.current);
-      if (liveHandle != null && liveHandle === invocationHandle) {
-        focusAccessibilityTarget(liveHandle);
-      }
-      if (invokingTriggerHandleRef.current === invocationHandle) {
-        invokingTriggerHandleRef.current = null;
-      }
-    }, 250);
-  }, []);
+    restoreFocus(shouldRestoreFocus);
+  }, [restoreFocus]);
   const handleOpen = useCallback(() => {
     if (loadingRef.current) return;
-    focusGenerationRef.current += 1;
-    if (restoreFocusTimerRef.current != null) {
-      clearTimeout(restoreFocusTimerRef.current);
-      restoreFocusTimerRef.current = null;
-    }
-    invokingTriggerHandleRef.current = getAccessibilityFocusTarget(triggerRef.current);
+    captureFocus(undefined);
     expandedRef.current = true;
     setExpanded(true);
-  }, []);
+  }, [captureFocus]);
   const handleClose = useCallback(() => closePicker(true), [closePicker]);
   const handleSelectPreset = useCallback((preset: PartyPresetResponse) => {
     if (loadingRef.current) return;

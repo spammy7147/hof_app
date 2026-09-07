@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import Module from 'node:module';
-import { describe, it } from 'node:test';
+import { afterEach, describe, it } from 'node:test';
 import React from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 
@@ -16,11 +16,19 @@ const dragCalls: PartyPresetResponse[] = [];
 const scrollToIndexCalls: Array<Record<string, unknown>> = [];
 const scrollToOffsetCalls: Array<Record<string, unknown>> = [];
 const accessibilityFocusCalls: number[] = [];
+const renderedLists = new Set<ReactTestRenderer>();
+afterEach(async () => {
+  await act(async () => { for (const renderer of renderedLists) renderer.unmount(); });
+  renderedLists.clear();
+});
 const hostRenderCounts = new Map<string, number>();
+const focusPlatform = process.env.HOF_TEST_FOCUS_PLATFORM === 'web' ? 'web' : 'ios';
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
   if (typeof props.testID === 'string') hostRenderCounts.set(props.testID, (hostRenderCounts.get(props.testID) ?? 0) + 1);
   const nodeRef = React.useRef<Record<string, unknown>>({});
-  Object.assign(nodeRef.current, props);
+  Object.assign(nodeRef.current, props, {
+    nodeName: 'BUTTON', getAttribute: () => '0', focus: () => { accessibilityFocusCalls.push(name === 'TextInput' ? 77 : 1); },
+  });
   React.useImperativeHandle(ref, () => nodeRef.current, []);
   return React.createElement(name, props, props.children as React.ReactNode);
 });
@@ -91,8 +99,12 @@ const reactNativeMock = {
   Text: host('Text'),
   TextInput: host('TextInput'),
   View: host('View'),
-  Platform: { OS: 'ios' },
-  findNodeHandle: (node: Record<string, unknown> | null) => node?.accessibilityLabel === '프리셋 이름 입력' ? 77 : 1,
+  Platform: { OS: focusPlatform },
+  UIManager: require('react-native-web/dist/cjs/exports/UIManager'),
+  findNodeHandle: (node: Record<string, unknown> | null) => {
+    if (focusPlatform === 'web') throw new Error('Native handles must not be used on web.');
+    return node?.accessibilityLabel === '프리셋 이름 입력' ? 77 : 1;
+  },
 };
 const iconsMock = new Proxy({}, { get: (_target, property) => host(String(property)) });
 type Loader = (request: string, parent: NodeModule | undefined, isMain: boolean) => unknown;
@@ -440,6 +452,50 @@ describe('PartyPresetList', () => {
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '폴더 위치 확인' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '현재 폴더 위치 미지정' }));
   });
+
+  it('does not return folder-picker focus when a mutation starts after closing', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    const props = listProps({ partyPresetCatalog: catalogResource(FOLDER_CATALOG) });
+    const renderer = await renderListProps(props);
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '미지정 폴더, 프리셋 2개, 열기' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 대표 프리셋' }).props.onPress());
+    await act(async () => { context.mock.timers.tick(150); });
+    accessibilityFocusCalls.length = 0;
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 선택' }).props.onPress());
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 확인' }).props.onPress());
+    await act(async () => renderer.update(React.createElement(PartyPresetList, {
+      ...props, partyPresetCatalog: { ...props.partyPresetCatalog, mutating: true },
+    })));
+    await act(async () => { context.mock.timers.tick(300); });
+    assert.deepEqual(accessibilityFocusCalls.filter((handle) => handle !== 77), []);
+    await act(async () => renderer.unmount());
+  });
+
+  for (const outcome of ['cancel', 'confirm', 'reopen', 'remove', 'logout', 'replace', 'unmount']) {
+    it(`folder picker returns only to the original live editor after ${outcome}`, async (context) => {
+      context.mock.timers.enable({ apis: ['setTimeout'] });
+      const props = listProps({ partyPresetCatalog: catalogResource(FOLDER_CATALOG) });
+      const renderer = await renderListProps(props);
+      await act(async () => renderer.root.findByProps({ accessibilityLabel: '미지정 폴더, 프리셋 2개, 열기' }).props.onPress());
+      await act(async () => renderer.root.findByProps({ accessibilityLabel: '서관, 대표 프리셋' }).props.onPress());
+      await act(async () => { context.mock.timers.tick(150); });
+      accessibilityFocusCalls.length = 0;
+      await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 선택' }).props.onPress());
+      await act(async () => renderer.root.findByProps({ accessibilityLabel: outcome === 'confirm' ? '폴더 위치 확인' : '폴더 위치 취소' }).props.onPress());
+      if (outcome === 'reopen') await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 위치 선택' }).props.onPress());
+      if (outcome === 'replace') await act(async () => renderer.root.findByProps({ accessibilityLabel: '동관 프리셋 펼치기' }).props.onPress());
+      if (outcome === 'remove') await act(async () => renderer.update(React.createElement(PartyPresetList, {
+        ...props, partyPresetCatalog: { ...props.partyPresetCatalog, catalog: { ...FOLDER_CATALOG, presets: PRESETS.filter(({ id }) => id !== 1) } },
+      })));
+      if (outcome === 'logout') {
+        await act(async () => renderer.update(React.createElement(PartyPresetList, { ...props, authenticated: false })));
+        await act(async () => renderer.update(React.createElement(PartyPresetList, props)));
+      }
+      if (outcome === 'unmount') await act(async () => renderer.unmount());
+      await act(async () => { context.mock.timers.tick(300); });
+      assert.deepEqual(accessibilityFocusCalls.filter((handle) => handle !== 77), ['cancel', 'confirm'].includes(outcome) ? [1] : []);
+    });
+  }
 
   it('creates and renames folders through the full-tree editor callbacks', async () => {
     const createCalls: unknown[] = [];
@@ -850,6 +906,7 @@ async function renderList(overrides: Overrides = {}): Promise<ReactTestRenderer>
   let renderer!: ReactTestRenderer;
   await act(async () => {
     renderer = create(React.createElement(ControlledPartyPresetList, props));
+    renderedLists.add(renderer);
     await Promise.resolve();
   });
   return renderer;
@@ -988,6 +1045,7 @@ async function renderListProps(props: React.ComponentProps<typeof PartyPresetLis
   let renderer!: ReactTestRenderer;
   await act(async () => {
     renderer = create(React.createElement(PartyPresetList, props));
+    renderedLists.add(renderer);
     await Promise.resolve();
   });
   return renderer;

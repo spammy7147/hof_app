@@ -7,6 +7,7 @@ import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist';
 
 import { getAccessibilityFocusTarget, focusAccessibilityTarget } from '../platform/accessibilityFocus';
+import { usePickerFocusReturn } from '../platform/usePickerFocusReturn';
 
 import { BattlePartySelector } from './BattlePartySelector';
 import { scrollFocusedInputIntoView } from './keyboardAwareScroll';
@@ -44,7 +45,6 @@ type PartyPresetListProps = {
 
 type ExpandedPresetId = number | 'new' | null;
 type NewPresetDraft = { name: string; party: BattlePartyMember[]; folderId: number | null };
-type PickerInvocation = { handle: ReturnType<typeof getAccessibilityFocusTarget> };
 
 /** 캐릭터 탭의 저장 파티 프리셋을 편집하고 정렬한다. */
 export function PartyPresetList({
@@ -93,10 +93,7 @@ export function PartyPresetList({
   const swipeableNodesRef = useRef(new Map<number, SwipeableMethods>());
   const presetFolderTriggerRef = useRef<ElementRef<typeof Pressable>>(null);
   const presetDragRefs = useRef(new Map<number, () => void>());
-  const pickerInvocationRef = useRef<PickerInvocation | null>(null);
   const pickerVisibleRef = useRef(false);
-  const pickerFocusGenerationRef = useRef(0);
-  const pickerFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const presetListRef = useRef<FlatList<PartyPresetResponse>>(null);
   const presetEditorNameInputRef = useRef<ElementRef<typeof TextInput>>(null);
   const editorFocusGenerationRef = useRef(0);
@@ -135,6 +132,14 @@ export function PartyPresetList({
     && accountGenerationRef.current === generation
   ), []);
 
+  const { open: capturePickerFocus, close: restorePickerFocus, cancel: cancelPickerFocus } = usePickerFocusReturn<{
+    generation: number; presetId: ExpandedPresetId;
+  }>({
+    getTarget: () => presetFolderTriggerRef.current,
+    canRestore: ({ generation, presetId }) => isCurrentAccountGeneration(generation) && presetId === expandedPresetId
+      && !pickerVisibleRef.current && !isSaving && !mutationPendingRef.current,
+  });
+
   const closeOpenSwipeable = useCallback(() => {
     openSwipeableRef.current?.close();
     openSwipeableRef.current = null;
@@ -160,8 +165,6 @@ export function PartyPresetList({
       closeOpenSwipeable();
       swipeableNodesRef.current.clear();
       presetDragRefs.current.clear();
-      pickerFocusGenerationRef.current += 1;
-      if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
       editorFocusGenerationRef.current += 1;
       if (editorFocusTimerRef.current) clearTimeout(editorFocusTimerRef.current);
       if (presetScrollRetryTimerRef.current) clearTimeout(presetScrollRetryTimerRef.current);
@@ -177,13 +180,11 @@ export function PartyPresetList({
     setFolderPickerOpen(false);
     setFolderEditMode(false);
     setErrorMessage(null);
-    pickerInvocationRef.current = null;
-    pickerFocusGenerationRef.current += 1;
-    if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
+    cancelPickerFocus();
     editorFocusGenerationRef.current += 1;
     if (editorFocusTimerRef.current) clearTimeout(editorFocusTimerRef.current);
     if (presetScrollRetryTimerRef.current) clearTimeout(presetScrollRetryTimerRef.current);
-  }, [authenticated]);
+  }, [authenticated, cancelPickerFocus]);
 
   useEffect(() => {
     closeOpenSwipeable();
@@ -232,30 +233,16 @@ export function PartyPresetList({
   }
 
   function openPresetFolderPicker() {
-    pickerFocusGenerationRef.current += 1;
-    if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
-    pickerInvocationRef.current = { handle: getAccessibilityFocusTarget(presetFolderTriggerRef.current) };
+    if (!authenticatedRef.current || isSaving || mutationPendingRef.current) return;
+    capturePickerFocus({ generation: accountGenerationRef.current, presetId: expandedPresetId });
+    pickerVisibleRef.current = true;
     setFolderPickerOpen(true);
   }
 
-  function restorePickerFocusAfterClose() {
-    const generation = ++pickerFocusGenerationRef.current;
-    if (pickerFocusTimerRef.current) clearTimeout(pickerFocusTimerRef.current);
-    pickerFocusTimerRef.current = setTimeout(() => {
-      pickerFocusTimerRef.current = null;
-      if (!mountedRef.current || pickerVisibleRef.current || pickerFocusGenerationRef.current !== generation) return;
-      const invocation = pickerInvocationRef.current;
-      if (!invocation || invocation.handle == null) return;
-      const liveHandle = getAccessibilityFocusTarget(presetFolderTriggerRef.current);
-      if (liveHandle == null || liveHandle !== invocation.handle) return;
-      focusAccessibilityTarget(liveHandle);
-      if (pickerInvocationRef.current === invocation) pickerInvocationRef.current = null;
-    }, 250);
-  }
-
   function closePresetFolderPicker() {
+    pickerVisibleRef.current = false;
     setFolderPickerOpen(false);
-    restorePickerFocusAfterClose();
+    restorePickerFocus();
   }
 
   function retryCatalog() {

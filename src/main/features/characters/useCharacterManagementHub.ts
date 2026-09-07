@@ -7,7 +7,7 @@ import {
   type CharacterManagementHubResource,
 } from '../../domain/characterManagementHubModule';
 import type { BackendApiClient } from '../../services/backendApi';
-import { deepSyncCharacter, restoreCharacter, executeCharacterTransfer } from './characterOperations';
+import { deepSyncCharacter, restoreCharacter, executeCharacterTransfer, retryCharacterRecovery } from './characterOperations';
 
 export type CharacterManagementHubApi = Pick<
   BackendApiClient,
@@ -23,6 +23,10 @@ export type CharacterManagementHubApi = Pick<
   | 'archiveCharacter'
   | 'deleteCharacterPermanently'
   | 'previewCharacterTransfer'
+  | 'fetchCurrentCharacterOperation'
+  | 'fetchCharacterOperation'
+  | 'previewCharacterRecovery'
+  | 'acceptCharacterRecovery'
 >;
 
 export type CharacterManagementHubIntegration = {
@@ -60,8 +64,13 @@ export function createCharacterManagementHubBackend(
       api.loadSavedCharacterPattern(characterId, slotCode),
     deleteSavedPattern: (characterId, slotCode) =>
       api.deleteSavedCharacterPattern(characterId, slotCode),
-    deepSync: (characterId, onProgress) =>
-      deepSyncCharacter(api, characterId, onProgress),
+    deepSync: (characterId, onProgress, onJob) =>
+      deepSyncCharacter(api, characterId, onProgress, onJob),
+    loadCurrentOperation: (characterId) => api.fetchCurrentCharacterOperation(characterId),
+    loadOperation: (jobId) => api.fetchCharacterOperation(jobId),
+    retryRecovery: (jobId, onJob) => retryCharacterRecovery(api, jobId, onJob),
+    previewRecovery: (jobId) => api.previewCharacterRecovery(jobId),
+    acceptRecovery: (jobId, token) => api.acceptCharacterRecovery(jobId, token),
     linkCharacter: (characterId, newHofCharacterId) =>
       api.linkCharacter(characterId, newHofCharacterId),
     loadRoster: () => api.listCharacters(),

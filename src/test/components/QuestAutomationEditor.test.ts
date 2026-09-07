@@ -36,9 +36,12 @@ afterEach(async () => {
 let alertArguments: unknown[] | null = null;
 const accessibilityFocusCalls: unknown[] = [];
 const dragCalls: unknown[] = [];
+const focusPlatform = process.env.HOF_TEST_FOCUS_PLATFORM === 'web' ? 'web' : 'ios';
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
   const nodeRef = React.useRef<Record<string, unknown>>({});
-  Object.assign(nodeRef.current, props);
+  Object.assign(nodeRef.current, props, {
+    nodeName: 'BUTTON', getAttribute: () => '0', focus: () => { accessibilityFocusCalls.push(nodeRef.current); },
+  });
   React.useImperativeHandle(ref, () => nodeRef.current, []);
   return React.createElement(name, props, props.children as React.ReactNode);
 });
@@ -112,10 +115,14 @@ const reactNativeMock = {
   Alert: { alert: (...args: unknown[]) => { alertArguments = args; } },
   Dimensions: { get: () => ({ height: 800, width: 390 }) },
   FlatList: flatList,
-  findNodeHandle: (node: unknown) => node,
+  UIManager: require('react-native-web/dist/cjs/exports/UIManager'),
+  findNodeHandle: (node: unknown) => {
+    if (focusPlatform === 'web') throw new Error('Native handles must not be used on web.');
+    return node;
+  },
   KeyboardAvoidingView: host('KeyboardAvoidingView'),
   Modal: modal,
-  Platform: { OS: 'ios' },
+  Platform: { OS: focusPlatform },
   Pressable: host('Pressable'),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Switch: host('Switch'),

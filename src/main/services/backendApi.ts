@@ -21,6 +21,7 @@ import type {
   CharacterTransferPreviewRequest,
   CharacterTransferPreview,
   CharacterOperationJob,
+  CharacterRecoveryPreview,
   CreateAutomationEntryRequest,
   CreatePartyPresetFolderRequest,
   CreatePartyPresetRequest,
@@ -125,6 +126,7 @@ export type ManualSequenceRequests = {
   startRestore: (characterId: number) => Promise<CharacterOperationJob>;
   startTransfer: (request: CharacterTransferPreviewRequest, completedStepIds: string[]) => Promise<CharacterOperationJob>;
   fetchOperation: (jobId: number) => Promise<CharacterOperationJob>;
+  retryRecovery: (jobId: number) => Promise<CharacterOperationJob>;
   listCharacters: () => Promise<HofCharacter[]>;
 };
 
@@ -827,6 +829,26 @@ export class BackendApiClient {
     return normalizeCharacter(detail);
   }
 
+  async fetchCurrentCharacterOperation(characterId?: number): Promise<CharacterOperationJob | null> {
+    const query = characterId == null ? '' : `?characterId=${characterId}`;
+    const result = await this.requestCharacterOperation<{ job: CharacterOperationJob | null }>(`/api/characters/operation-jobs/current${query}`);
+    return result.job;
+  }
+
+  async fetchCharacterOperation(jobId: number): Promise<CharacterOperationJob> {
+    return this.requestCharacterOperation(`/api/characters/operation-jobs/${jobId}`);
+  }
+
+  async previewCharacterRecovery(jobId: number): Promise<CharacterRecoveryPreview> {
+    return this.runManualAction(() => this.requestCharacterOperation(`/api/characters/operation-jobs/${jobId}/recovery-preview`, { method: 'POST' }));
+  }
+
+  async acceptCharacterRecovery(jobId: number, confirmationToken: string): Promise<CharacterOperationJob> {
+    return this.runManualAction(() => this.requestCharacterOperation(`/api/characters/operation-jobs/${jobId}/accept-current`, {
+      method: 'POST', body: JSON.stringify({ confirmationToken }),
+    }));
+  }
+
   async refreshCharacterDetail(characterId: number): Promise<HofCharacterDetail> {
     return normalizeCharacter(await this.runManualAction(() => this.request<HofCharacterDetail>(
       `/api/characters/records/${characterId}/refresh`, { method: 'POST' },
@@ -908,18 +930,43 @@ export class BackendApiClient {
     allowLateResponseForLogout = false,
   ): Promise<T> {
     this.assertCurrentAuthEpoch(epoch);
+    this.assertRequestNotAborted(init.signal);
     if (this.sessionMutationsBlocked && isMutationRequest(init)) {
       throw new SessionRecoveryMutationBlockedError();
     }
     const response = await this.fetchResponse(path, init, this.accessToken);
+    this.assertRequestNotAborted(init.signal);
     if (!allowLateResponseForLogout || response.status === 401) this.assertCurrentAuthEpoch(epoch);
     if (response.status === 401 && retry) {
       await this.refreshAccessToken(epoch);
       return this.request(path, init, false, epoch, allowLateResponseForLogout);
     }
-    const result = await this.readResponse<T>(response, epoch);
+    const result = await this.readResponse<T>(response, epoch, init.signal);
     if (!allowLateResponseForLogout) this.assertCurrentAuthEpoch(epoch);
     return result;
+  }
+
+  /** 캐릭터 작업 확인은 통신·인증 갱신 대기도 유한하게 끝내고 늦은 관측을 폐기한다. */
+  private async requestCharacterOperation<T>(path: string, init: RequestInit = {}, epoch = this.authEpoch): Promise<T> {
+    const controller = new AbortController();
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        this.request<T>(path, { ...init, signal: controller.signal }, true, epoch),
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(() => {
+            controller.abort();
+            reject(new Error('요청 확인 시간이 지났습니다. 작업 상태를 다시 확인해 주세요.'));
+          }, 30_000);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private assertRequestNotAborted(signal?: AbortSignal | null): void {
+    if (signal?.aborted) throw new Error('요청 확인 시간이 지났습니다. 작업 상태를 다시 확인해 주세요.');
   }
 
   /** 기능이 여러 요청을 끝까지 await하는 동안 앱 전체 수동 잠금과 인증 세대를 유지한다. */
@@ -935,6 +982,10 @@ export class BackendApiClient {
         assertCurrent();
         return this.request<R>(path, init, true, epoch);
       };
+      const operationRequest = <R>(path: string, init: RequestInit = {}) => {
+        assertCurrent();
+        return this.requestCharacterOperation<R>(path, init, epoch);
+      };
       try {
         return await operation({
           isCurrent: () => active && this.isCurrentAuthEpoch(epoch),
@@ -942,16 +993,17 @@ export class BackendApiClient {
           loadSavedPattern: (characterId, slotCode) => request('/api/characters/patterns/load', {
             method: 'POST', body: JSON.stringify({ characterId, slotCode }),
           }),
-          startDeepSync: (characterId) => request(`/api/characters/records/${characterId}/deep-sync-jobs`, {
+          startDeepSync: (characterId) => operationRequest(`/api/characters/records/${characterId}/deep-sync-jobs`, {
             method: 'POST',
           }),
-          startRestore: (characterId) => request('/api/characters/restore-jobs', {
+          startRestore: (characterId) => operationRequest('/api/characters/restore-jobs', {
             method: 'POST', body: JSON.stringify({ characterId }),
           }),
-          startTransfer: (transferRequest, completedStepIds) => request('/api/characters/transfers/jobs', {
+          startTransfer: (transferRequest, completedStepIds) => operationRequest('/api/characters/transfers/jobs', {
             method: 'POST', body: JSON.stringify({ ...transferRequest, completedStepIds }),
           }),
-          fetchOperation: (jobId) => request(`/api/characters/operation-jobs/${jobId}`),
+          fetchOperation: (jobId) => operationRequest(`/api/characters/operation-jobs/${jobId}`),
+          retryRecovery: (jobId) => operationRequest(`/api/characters/operation-jobs/${jobId}/retry-recovery`, { method: 'POST' }),
           listCharacters: async () => (await request<HofCharacter[]>('/api/characters')).map(normalizeCharacter),
         });
       } finally {
@@ -1095,11 +1147,13 @@ export class BackendApiClient {
     });
   }
 
-  private async readResponse<T>(response: Response, epoch: number): Promise<T> {
+  private async readResponse<T>(response: Response, epoch: number, signal?: AbortSignal | null): Promise<T> {
+    this.assertRequestNotAborted(signal);
     if (this.isCurrentAuthEpoch(epoch)) {
       this.publishObservedHofStatus(response.headers?.get(HOF_STATUS_HEADER));
     }
     const text = await response.text();
+    this.assertRequestNotAborted(signal);
     const body = parseJson(text);
 
     if (!response.ok) {

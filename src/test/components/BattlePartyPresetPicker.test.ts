@@ -11,11 +11,12 @@ const webFocusCalls: string[] = [];
 const platform = { OS: 'ios' };
 const webFindNodeHandle: (node: unknown) => never = require('react-native-web/dist/cjs/exports/findNodeHandle');
 let nativeHandle = 11;
+let nodeVersion = 0;
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
   React.useImperativeHandle(ref, () => ({
     name, nodeName: 'BUTTON', getAttribute: () => '0',
     focus: () => webFocusCalls.push(name),
-  }), [name]);
+  }), [name, nodeVersion]);
   return React.createElement(name, props, props.children as React.ReactNode);
 });
 const reactNativeMock = {
@@ -52,6 +53,19 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('BattlePartyPresetPicker', () => {
+  it('does not focus a replacement ref even when the native handle is reused', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    focusCalls.length = 0;
+    nativeHandle = 11;
+    const renderer = await renderPicker();
+    await openPicker(renderer);
+    await act(async () => (commonPickerCalls.at(-1)?.onClose as () => void)());
+    nodeVersion += 1;
+    await act(async () => renderer.update(React.createElement(BattlePartyPresetPicker, pickerProps())));
+    await act(async () => { context.mock.timers.tick(280); });
+    assert.deepEqual(focusCalls, []);
+    await act(async () => renderer.unmount());
+  });
   it('opens on web and restores the invoking DOM ref without native handles', async (context) => {
     context.mock.timers.enable({ apis: ['setTimeout'] });
     platform.OS = 'web';
@@ -172,13 +186,17 @@ async function openPicker(renderer: ReturnType<typeof create>) {
 async function renderPicker(overrides: Record<string, unknown> = {}) {
   let renderer!: ReturnType<typeof create>;
   await act(async () => {
-    renderer = create(React.createElement(BattlePartyPresetPicker, {
-      characters: [], catalog: CATALOG, loading: false, errorMessage: null,
-      selectedMode: null, selectedPresetId: null, onRetry: () => undefined,
-      onSelectDirect: () => undefined, onSelectPreset: () => undefined, ...overrides,
-    }));
+    renderer = create(React.createElement(BattlePartyPresetPicker, pickerProps(overrides)));
   });
   return renderer;
+}
+
+function pickerProps(overrides: Record<string, unknown> = {}): React.ComponentProps<typeof BattlePartyPresetPicker> {
+  return {
+    characters: [], catalog: CATALOG, loading: false, errorMessage: null,
+    selectedMode: null, selectedPresetId: null, onRetry: () => undefined,
+    onSelectDirect: () => undefined, onSelectPreset: () => undefined, ...overrides,
+  };
 }
 
 const PRESETS: PartyPresetResponse[] = [{ id: 1, accountId: 1, name: '레이드', folderId: null, isPrimary: false, displayOrder: 0, members: [], createdAt: '', updatedAt: '' }];

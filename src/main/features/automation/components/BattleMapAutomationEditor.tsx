@@ -13,7 +13,7 @@ import { ArrowLeft, ChevronRight, Save } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
 import { scrollFocusedInputIntoView } from '../../../components/keyboardAwareScroll';
 
-import { getAccessibilityFocusTarget, focusAccessibilityTarget } from '../../../platform/accessibilityFocus';
+import { usePickerFocusReturn } from '../../../platform/usePickerFocusReturn';
 
 import {
   battleMapIdentity,
@@ -128,12 +128,11 @@ export function BattleMapAutomationEditor({
   const mountedRef = useRef(false);
   const controlsDisabledRef = useRef(false);
   const presetTriggerNodesRef = useRef(new Map<string, ElementRef<typeof Pressable>>());
-  const invokingPresetTriggerRef = useRef<{
-    identity: string;
-    nodeHandle: ReturnType<typeof getAccessibilityFocusTarget>;
-  } | null>(null);
-  const presetFocusGenerationRef = useRef(0);
-  const restorePresetFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { open: capturePresetFocus, close: restorePresetFocus } = usePickerFocusReturn<string>({
+    getTarget: (identity) => presetTriggerNodesRef.current.get(identity) ?? null,
+    canRestore: (identity) => !controlsDisabledRef.current
+      && draftRef.current.maps.some((setting) => battleMapIdentity(setting) === identity),
+  });
   const scrollRef = useRef<ElementRef<typeof NestableScrollContainer>>(null);
 
   const updateDraft = useCallback((updater: (current: BattleMapAutomationDraft) => BattleMapAutomationDraft) => {
@@ -176,13 +175,8 @@ export function BattleMapAutomationEditor({
       mountedRef.current = false;
       mountedGenerationRef.current += 1;
       mapGenerationRef.current = {};
-      presetFocusGenerationRef.current += 1;
       presetTriggerNodesRef.current.clear();
-      invokingPresetTriggerRef.current = null;
-      if (restorePresetFocusTimerRef.current) {
-        clearTimeout(restorePresetFocusTimerRef.current);
-        restorePresetFocusTimerRef.current = null;
-      }
+
     };
   }, []);
 
@@ -320,53 +314,14 @@ export function BattleMapAutomationEditor({
     ? null
     : draft.maps.find((setting) => battleMapIdentity(setting) === activePresetIdentity) ?? null;
   const closePresetPicker = useCallback((restoreFocus: boolean) => {
-    const focusGeneration = ++presetFocusGenerationRef.current;
-    const invocation = invokingPresetTriggerRef.current;
     setActivePresetIdentity(null);
-    if (restorePresetFocusTimerRef.current) {
-      clearTimeout(restorePresetFocusTimerRef.current);
-      restorePresetFocusTimerRef.current = null;
-    }
-    if (!restoreFocus || !invocation) {
-      invokingPresetTriggerRef.current = null;
-      return;
-    }
-    restorePresetFocusTimerRef.current = setTimeout(() => {
-      restorePresetFocusTimerRef.current = null;
-      const clearInvocation = () => {
-        if (invokingPresetTriggerRef.current === invocation) invokingPresetTriggerRef.current = null;
-      };
-      if (
-        !mountedRef.current
-        || controlsDisabledRef.current
-        || presetFocusGenerationRef.current !== focusGeneration
-        || !draftRef.current.maps.some((setting) => battleMapIdentity(setting) === invocation.identity)
-      ) {
-        clearInvocation();
-        return;
-      }
-      const liveNode = presetTriggerNodesRef.current.get(invocation.identity) ?? null;
-      const liveHandle = getAccessibilityFocusTarget(liveNode);
-      if (liveHandle != null && liveHandle === invocation.nodeHandle) {
-        focusAccessibilityTarget(liveHandle);
-      }
-      clearInvocation();
-    }, 250);
-  }, []);
+    restorePresetFocus(restoreFocus);
+  }, [restorePresetFocus]);
   const openPresetPicker = useCallback((identity: string) => {
     if (controlsDisabledRef.current) return;
-    presetFocusGenerationRef.current += 1;
-    if (restorePresetFocusTimerRef.current) {
-      clearTimeout(restorePresetFocusTimerRef.current);
-      restorePresetFocusTimerRef.current = null;
-    }
-    const triggerNode = presetTriggerNodesRef.current.get(identity) ?? null;
-    invokingPresetTriggerRef.current = {
-      identity,
-      nodeHandle: getAccessibilityFocusTarget(triggerNode),
-    };
+    capturePresetFocus(identity);
     setActivePresetIdentity(identity);
-  }, []);
+  }, [capturePresetFocus]);
   const toggleCatalogCategory = useCallback((categoryId: string) => {
     if (queryRef.current.trim().length > 0) return;
     setExpandedCategoryId((current) => queryRef.current.trim().length > 0

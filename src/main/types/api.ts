@@ -1106,6 +1106,23 @@ export type CharacterOperationJob = {
   message: string | null;
   updatedAt: string;
   finishedAt: string | null;
+  recoveryStatus?: 'NOT_STARTED' | 'REQUIRED' | 'RESTORING' | 'RESTORED' | 'UNAVAILABLE' | 'ACCEPTED' | null;
+  collectionStatus?: 'NOT_STARTED' | 'INCOMPLETE' | 'COMPLETED' | 'FAILED' | 'UNKNOWN' | null;
+  collectionMessage?: string | null;
+  canRetryRecovery?: boolean;
+};
+
+export type CharacterRecoveryPreview = {
+  jobId: number;
+  characterId: number;
+  confirmationToken: string;
+  observedAt: string;
+  expiresAt: string;
+  hofCharacterId: string;
+  name: string;
+  patterns: HofCharacterActionPattern[];
+  equipment: HofCharacterEquipment[];
+  positionGuard: HofCharacterPositionGuard;
 };
 
 export type CharacterSyncJobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'stopped';

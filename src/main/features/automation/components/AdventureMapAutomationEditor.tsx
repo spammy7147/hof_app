@@ -13,7 +13,7 @@ import { ArrowLeft, ChevronRight, Save } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
 import { scrollFocusedInputIntoView } from '../../../components/keyboardAwareScroll';
 
-import { getAccessibilityFocusTarget, focusAccessibilityTarget } from '../../../platform/accessibilityFocus';
+import { usePickerFocusReturn } from '../../../platform/usePickerFocusReturn';
 
 import {
   adventureMapIdentity,
@@ -128,9 +128,11 @@ export function AdventureMapAutomationEditor({
   const presetSessionGenerationRef = useRef(0);
   const presetSessionRef = useRef<PresetSession | null>(null);
   const presetTriggerNodesRef = useRef(new Map<string, ElementRef<typeof Pressable>>());
-  const invokingPresetTriggerRef = useRef<{ identity: string; nodeHandle: ReturnType<typeof getAccessibilityFocusTarget> } | null>(null);
-  const presetFocusGenerationRef = useRef(0);
-  const restorePresetFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { open: capturePresetFocus, close: restorePresetFocus } = usePickerFocusReturn<string>({
+    getTarget: (identity) => presetTriggerNodesRef.current.get(identity) ?? null,
+    canRestore: (identity) => !controlsDisabledRef.current
+      && draftRef.current.maps.some((setting) => adventureMapIdentity(setting) === identity),
+  });
   const scrollRef = useRef<ElementRef<typeof NestableScrollContainer>>(null);
 
   const updateDraft = useCallback((updater: (current: AdventureMapAutomationDraft) => AdventureMapAutomationDraft) => {
@@ -149,13 +151,8 @@ export function AdventureMapAutomationEditor({
     controlsDisabledRef.current = true;
     presetSessionRef.current = null;
     presetSessionGenerationRef.current += 1;
-    presetFocusGenerationRef.current += 1;
     presetTriggerNodesRef.current.clear();
-    invokingPresetTriggerRef.current = null;
-    if (restorePresetFocusTimerRef.current) {
-      clearTimeout(restorePresetFocusTimerRef.current);
-      restorePresetFocusTimerRef.current = null;
-    }
+
     mountedGenerationRef.current += 1;
     mapGenerationRef.current += 1;
   }, []);
@@ -302,40 +299,10 @@ export function AdventureMapAutomationEditor({
 
   const closePresetPicker = useCallback((session: PresetSession | null, restoreFocus = true) => {
     if (!isSamePresetSession(presetSessionRef.current, session)) return;
-    const focusGeneration = ++presetFocusGenerationRef.current;
-    const invocation = invokingPresetTriggerRef.current;
     presetSessionRef.current = null;
     setActivePresetSession((current) => isSamePresetSession(current, session) ? null : current);
-    if (restorePresetFocusTimerRef.current) {
-      clearTimeout(restorePresetFocusTimerRef.current);
-      restorePresetFocusTimerRef.current = null;
-    }
-    if (!restoreFocus || invocation == null || invocation.identity !== session?.identity) {
-      invokingPresetTriggerRef.current = null;
-      return;
-    }
-    restorePresetFocusTimerRef.current = setTimeout(() => {
-      restorePresetFocusTimerRef.current = null;
-      const clearInvocation = () => {
-        if (invokingPresetTriggerRef.current === invocation) invokingPresetTriggerRef.current = null;
-      };
-      if (
-        !mountedRef.current
-        || controlsDisabledRef.current
-        || presetFocusGenerationRef.current !== focusGeneration
-        || !draftRef.current.maps.some((setting) => adventureMapIdentity(setting) === invocation.identity)
-      ) {
-        clearInvocation();
-        return;
-      }
-      const liveNode = presetTriggerNodesRef.current.get(invocation.identity) ?? null;
-      const liveHandle = getAccessibilityFocusTarget(liveNode);
-      if (liveHandle != null && liveHandle === invocation.nodeHandle) {
-        focusAccessibilityTarget(liveHandle);
-      }
-      clearInvocation();
-    }, 250);
-  }, []);
+    restorePresetFocus(restoreFocus);
+  }, [restorePresetFocus]);
 
   useEffect(() => {
     if (activePresetSession != null && (activePresetSetting == null || controlsDisabled)) {
@@ -345,17 +312,11 @@ export function AdventureMapAutomationEditor({
 
   const openPresetPicker = useCallback((identity: string) => {
     if (controlsDisabledRef.current || presetSessionRef.current != null) return;
-    presetFocusGenerationRef.current += 1;
-    if (restorePresetFocusTimerRef.current) {
-      clearTimeout(restorePresetFocusTimerRef.current);
-      restorePresetFocusTimerRef.current = null;
-    }
     const session = { generation: ++presetSessionGenerationRef.current, identity };
-    const triggerNode = presetTriggerNodesRef.current.get(identity) ?? null;
-    invokingPresetTriggerRef.current = { identity, nodeHandle: getAccessibilityFocusTarget(triggerNode) };
+    capturePresetFocus(identity);
     presetSessionRef.current = session;
     setActivePresetSession(session);
-  }, []);
+  }, [capturePresetFocus]);
 
   const toggleCatalogGroup = useCallback((groupKey: string) => {
     if (queryRef.current.trim().length > 0) return;

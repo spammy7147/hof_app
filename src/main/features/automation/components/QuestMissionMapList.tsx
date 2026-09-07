@@ -4,7 +4,7 @@ import { GripVertical, Trash2 } from 'lucide-react-native';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist';
 
-import { getAccessibilityFocusTarget, focusAccessibilityTarget } from '../../../platform/accessibilityFocus';
+import { usePickerFocusReturn } from '../../../platform/usePickerFocusReturn';
 
 import {
   buildQuestMapIdentity,
@@ -34,7 +34,6 @@ type PresetInvocation = {
   interactionGeneration: number;
   map: QuestMapSettingRequest;
   rowKey: string;
-  nodeHandle: ReturnType<typeof getAccessibilityFocusTarget>;
 };
 
 type MissionMapRow = {
@@ -83,8 +82,12 @@ export function QuestMissionMapList({
   const activePresetRowKeyRef = useRef<string | null>(null);
   const presetTriggerNodesRef = useRef(new Map<string, ElementRef<typeof Pressable>>());
   const invokingPresetTriggerRef = useRef<PresetInvocation | null>(null);
-  const presetFocusGenerationRef = useRef(0);
-  const restorePresetFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { open: capturePresetFocus, close: restorePresetFocus } = usePickerFocusReturn<{ rowKey: string; missionKey: string }>({
+    getTarget: ({ rowKey }) => presetTriggerNodesRef.current.get(rowKey) ?? null,
+    canRestore: (invocation) => invocation.missionKey === missionKey
+      && !disabledRef.current && activePresetRowKeyRef.current == null
+      && rowsRef.current.some((row) => row.rowKey === invocation.rowKey),
+  });
 
   disabledRef.current = disabled;
   draggingRef.current = dragging;
@@ -112,12 +115,8 @@ export function QuestMissionMapList({
       openSwipeableRef.current?.close();
       openSwipeableRef.current = null;
       swipeableNodesRef.current.clear();
-      presetFocusGenerationRef.current += 1;
       invokingPresetTriggerRef.current = null;
-      if (restorePresetFocusTimerRef.current) {
-        clearTimeout(restorePresetFocusTimerRef.current);
-        restorePresetFocusTimerRef.current = null;
-      }
+
     };
   }, []);
 
@@ -141,41 +140,11 @@ export function QuestMissionMapList({
   }, [closeOpenSwipeable, disabled, maps, missionKey]);
 
   const closePresetPicker = useCallback((restoreFocus: boolean) => {
-    const focusGeneration = ++presetFocusGenerationRef.current;
-    const invocation = invokingPresetTriggerRef.current;
     activePresetRowKeyRef.current = null;
+    invokingPresetTriggerRef.current = null;
     setActivePresetRowKey(null);
-    if (restorePresetFocusTimerRef.current) {
-      clearTimeout(restorePresetFocusTimerRef.current);
-      restorePresetFocusTimerRef.current = null;
-    }
-    if (!restoreFocus || !invocation) {
-      invokingPresetTriggerRef.current = null;
-      return;
-    }
-    restorePresetFocusTimerRef.current = setTimeout(() => {
-      restorePresetFocusTimerRef.current = null;
-      const clearInvocation = () => {
-        if (invokingPresetTriggerRef.current === invocation) invokingPresetTriggerRef.current = null;
-      };
-      if (
-        !mountedRef.current
-        || disabledRef.current
-        || activePresetRowKeyRef.current != null
-        || presetFocusGenerationRef.current !== focusGeneration
-        || !rowsRef.current.some((row) => row.rowKey === invocation.rowKey)
-      ) {
-        clearInvocation();
-        return;
-      }
-      const liveNode = presetTriggerNodesRef.current.get(invocation.rowKey) ?? null;
-      const liveHandle = getAccessibilityFocusTarget(liveNode);
-      if (liveHandle != null && liveHandle === invocation.nodeHandle) {
-        focusAccessibilityTarget(liveHandle);
-      }
-      clearInvocation();
-    }, 250);
-  }, []);
+    restorePresetFocus(restoreFocus);
+  }, [restorePresetFocus]);
 
   const openPresetPicker = useCallback((rowKey: string, map: QuestMapSettingRequest, interactionGeneration: number) => {
     if (
@@ -183,21 +152,16 @@ export function QuestMissionMapList({
       || interactionGeneration !== interactionGenerationRef.current
       || !rowsRef.current.some((row) => row.rowKey === rowKey && row.map === map)
     ) return;
-    presetFocusGenerationRef.current += 1;
-    if (restorePresetFocusTimerRef.current) {
-      clearTimeout(restorePresetFocusTimerRef.current);
-      restorePresetFocusTimerRef.current = null;
-    }
-    const triggerNode = presetTriggerNodesRef.current.get(rowKey) ?? null;
+
+    capturePresetFocus({ rowKey, missionKey });
     invokingPresetTriggerRef.current = {
       interactionGeneration,
       map,
       rowKey,
-      nodeHandle: getAccessibilityFocusTarget(triggerNode),
     };
     activePresetRowKeyRef.current = rowKey;
     setActivePresetRowKey(rowKey);
-  }, []);
+  }, [capturePresetFocus, missionKey]);
 
   const activePresetRow = activePresetRowKey == null
     ? null

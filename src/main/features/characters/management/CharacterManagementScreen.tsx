@@ -27,6 +27,8 @@ import type {
 import { theme } from "../../../styles/theme";
 import { toUserFacingErrorMessage } from "../../../domain/userFacingErrors";
 import type { CharacterManagementHubResource } from "../../../domain/characterManagementHubModule";
+import { operationNeedsAttention } from "../../../domain/characterManagementHubModule";
+import { CharacterRecoveryPanel } from './CharacterRecoveryPanel';
 import { CharacterItemsScreen } from "../items/CharacterItemsScreen";
 import { CharacterSettingsTransferScreen } from "../transfer/CharacterSettingsTransferScreen";
 
@@ -54,7 +56,6 @@ export function CharacterManagementScreen({
     useState(false);
   const deepSyncProgress = characterHub.deepSync.progress;
   const deepSyncBusy = characterHub.deepSync.status === "running";
-  const deepSyncError = characterHub.deepSync.errorMessage;
   const canTransfer = characterHub.actions.previewTransfer != null
     && characterHub.actions.executeTransfer != null;
   const classOptions = (detail.patternOptions ?? []).filter(
@@ -166,13 +167,14 @@ export function CharacterManagementScreen({
           icon={RefreshCw}
           title={deepSyncBusy ? "동기화 중…" : "전체 설정 동기화"}
           description="현재 설정과 저장 패턴·장비 저장 1·2를 다시 확인합니다."
-          disabled={deepSyncBusy}
+          disabled={deepSyncBusy || characterHub.deepSync.recoveryBusy || operationNeedsAttention(characterHub.deepSync.job)}
           onPress={() => {
             void characterHub.actions.deepSync?.();
           }}
         />
       </View>
-      {deepSyncProgress && (
+      <CharacterRecoveryPanel characterHub={characterHub} />
+      {deepSyncProgress && !characterHub.deepSync.job && (
         <View style={styles.card}>
           <Text style={styles.label}>전체 설정 동기화</Text>
           {deepSyncProgress.progress.length === 0 ? (
@@ -190,7 +192,6 @@ export function CharacterManagementScreen({
           )}
         </View>
       )}
-      {deepSyncError && <Text style={styles.error}>{deepSyncError}</Text>}
       <Modal
         visible={renameOpen}
         transparent

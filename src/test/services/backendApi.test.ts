@@ -4,7 +4,7 @@ import { after, afterEach, describe, it } from 'node:test';
 
 import { CharacterManagementHubModule } from '../../main/domain/characterManagementHubModule';
 import { createCharacterManagementHubBackend } from '../../main/features/characters/useCharacterManagementHub';
-import { deepSyncCharacter, restoreCharacter, executeCharacterTransfer } from '../../main/features/characters/characterOperations';
+import { CharacterOperationError, deepSyncCharacter, restoreCharacter, executeCharacterTransfer, retryCharacterRecovery } from '../../main/features/characters/characterOperations';
 import { loadPartyPresetPatterns } from '../../main/features/partyPresets/loadPartyPresetPatterns';
 
 import type { CharacterDeepSyncResponse, PartyPresetResponse } from '../../main/types/api';
@@ -1034,6 +1034,7 @@ describe('BackendApiClient', () => {
       const path = new URL(String(url)).pathname;
       requests.push(path);
       if (path.endsWith('/deep-sync-jobs')) { started.resolve(); return response.promise; }
+      if (path.endsWith('/operation-jobs/current')) return mockResponse({ job: null });
       const characterId = Number(path.split('/').at(-1));
       return mockResponse(makeHofCharacterDetail(characterId, { detailSyncedAt: new Date().toISOString() }));
     };
@@ -1055,7 +1056,11 @@ describe('BackendApiClient', () => {
     assert.equal(hub.getSnapshot().selectedCharacter?.id, 2);
     assert.equal(hub.getSnapshot().detail?.id, 2);
     assert.equal(hub.getSnapshot().deepSync.status, 'idle');
-    assert.deepEqual(requests, ['/api/characters/records/1', '/api/characters/records/1/deep-sync-jobs', '/api/characters/records/2']);
+    assert.deepEqual(requests, [
+      '/api/characters/operation-jobs/current', '/api/characters/records/1', '/api/characters/operation-jobs/current',
+      '/api/characters/records/1/deep-sync-jobs',
+      '/api/characters/operation-jobs/current', '/api/characters/records/2', '/api/characters/operation-jobs/current',
+    ]);
   });
 
   it('캐릭터 작업은 1초 간격의 진행 확인 전체 동안 다른 수동 행동을 막는다', async (context) => {
@@ -1132,6 +1137,118 @@ describe('BackendApiClient', () => {
     await ended;
     assert.equal(calls, 1);
     assert.equal(progress.length, 1);
+  });
+
+  it('장시간 끝나지 않는 캐릭터 작업은 마지막 작업을 보존하고 진행 확인 잠금을 해제한다', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test', memoryTokenStorage());
+    const firstProgress = deferred<void>();
+    const states: boolean[] = [];
+    let failure: unknown;
+    let calls = 0;
+    client.subscribeManualActionState((value) => states.push(value));
+    globalThis.fetch = async () => {
+      calls += 1;
+      return mockResponse({ id: 91, status: 'RUNNING', recoveryStatus: 'RESTORING', deepSync: { characterId: 7, progress: [] } });
+    };
+    const pending = deepSyncCharacter(client, 7, () => firstProgress.resolve()).catch((error) => { failure = error; });
+    try {
+      await firstProgress.promise;
+      context.mock.timers.tick(5 * 60 * 1000);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      assert.ok(failure instanceof CharacterOperationError);
+      assert.equal(failure.job.id, 91);
+      assert.equal(failure.job.status, 'RUNNING');
+      assert.equal(failure.job.recoveryStatus, 'RESTORING');
+      assert.match(failure.message, /진행 확인/);
+      assert.deepEqual(states, [false, true, false]);
+      assert.equal(calls, 1);
+    } finally {
+      await client.clearLocalSession();
+      context.mock.timers.tick(1000);
+      await pending;
+    }
+  });
+
+  it('미복원 실패는 같은 작업의 복구 상태와 원인을 호출자에게 함께 전달한다', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    globalThis.fetch = async () => mockResponse({ id: 91, status: 'FAILED', recoveryStatus: 'REQUIRED',
+      message: '원본 복원 후보가 없습니다.', deepSync: { characterId: 7, progress: [] } });
+    await assert.rejects(deepSyncCharacter(new BackendApiClient('http://backend.test'), 7), (error: unknown) => {
+      assert.ok(error instanceof CharacterOperationError);
+      assert.equal(error.job.id, 91);
+      assert.equal(error.job.recoveryStatus, 'REQUIRED');
+      assert.equal(error.message, '원본 복원 후보가 없습니다.');
+      return true;
+    });
+  });
+
+  it('복구 API는 같은 작업을 확인하고 미리보기의 명시적 토큰으로만 현재 상태를 수락한다', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test');
+    const requests: CapturedRequest[] = [];
+    const restored = { id: 91, status: 'COMPLETED', recoveryStatus: 'RESTORED', deepSync: { characterId: 7, progress: [] } };
+    const responses = [{ job: null }, restored, { jobId: 91, confirmationToken: 'verified-state' },
+      { ...restored, status: 'STOPPED', recoveryStatus: 'ACCEPTED' }, restored];
+    globalThis.fetch = async (url, init) => {
+      requests.push({ url: String(url), init: init ?? {} });
+      return mockResponse(responses.shift());
+    };
+    assert.equal(await client.fetchCurrentCharacterOperation(7), null);
+    assert.deepEqual(await client.fetchCharacterOperation(91), restored);
+    const preview = await client.previewCharacterRecovery(91);
+    assert.equal((await client.acceptCharacterRecovery(91, preview.confirmationToken)).recoveryStatus, 'ACCEPTED');
+    assert.deepEqual(await retryCharacterRecovery(client, 91, () => undefined), restored);
+    assert.deepEqual(requests.map(({ url, init }) => [new URL(url).pathname, init.method ?? 'GET']), [
+      ['/api/characters/operation-jobs/current', 'GET'], ['/api/characters/operation-jobs/91', 'GET'],
+      ['/api/characters/operation-jobs/91/recovery-preview', 'POST'], ['/api/characters/operation-jobs/91/accept-current', 'POST'],
+      ['/api/characters/operation-jobs/91/retry-recovery', 'POST'],
+    ]);
+    assert.equal(new URL(requests[0]!.url).searchParams.get('characterId'), '7');
+    assert.deepEqual(JSON.parse(String(requests[3]!.init.body)), { confirmationToken: 'verified-state' });
+  });
+
+  it('상태 조회 응답이 없어도 요청을 취소하고 마지막 작업과 수동 잠금을 정리한다', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test');
+    const initial = deferred<void>();
+    const read = deferred<void>();
+    const response = deferred<Response>();
+    const states: boolean[] = [];
+    const observations: unknown[] = [];
+    let readSignal: AbortSignal | null | undefined;
+    let error: unknown;
+    client.subscribeManualActionState((value) => states.push(value));
+    client.subscribeHofStatus((value) => observations.push(value));
+    globalThis.fetch = async (url, init) => {
+      if (String(url).endsWith('/deep-sync-jobs')) return mockResponse({ id: 91, status: 'RUNNING', recoveryStatus: 'REQUIRED' });
+      readSignal = init?.signal;
+      read.resolve();
+      return response.promise;
+    };
+    const pending = deepSyncCharacter(client, 7, undefined, () => initial.resolve()).catch((value) => { error = value; });
+    try {
+      await initial.promise;
+      context.mock.timers.tick(1000);
+      await read.promise;
+      context.mock.timers.tick(30000);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      assert.ok(error instanceof CharacterOperationError);
+      assert.equal(error.job.id, 91);
+      assert.equal(readSignal?.aborted, true);
+      assert.deepEqual(states, [false, true, false]);
+      response.resolve(mockResponse({ id: 91, status: 'COMPLETED' }, 200, {
+        'X-HOF-Observed-Status': encodeURIComponent(JSON.stringify({ playerName: '늦은 관측', funds: 100 })),
+      }));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      assert.deepEqual(observations, []);
+    } finally {
+      await client.clearLocalSession();
+      response.resolve(mockResponse({ id: 91, status: 'FAILED' }));
+      await pending;
+    }
   });
 
   it('복구 뒤 roster 응답이 계정 종료 후 도착하면 이전 계정 관측을 게시하지 않는다', async () => {
