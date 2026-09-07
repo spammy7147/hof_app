@@ -27,6 +27,7 @@ pipeline {
         SSH_KNOWN_HOSTS_FILE = "${WORKSPACE}/.jenkins/known_hosts"
         RELEASE_HOST_DIR = '/home/spammy/hof/releases'
         BACKEND_RELEASE_PUBLISH_URL = 'http://192.168.50.202:8080/internal/app-releases/android'
+        EXTENSION_DOWNLOAD_URL = 'https://api-hof.spammy.app/extension/lastest'
         NPM_CONFIG_CACHE = '/home/jenkins/workspace/.npm-cache'
         GRADLE_USER_HOME = '/home/jenkins/workspace/.gradle-cache/hof-app'
         HOF_CI_STATE_DIR = "${WORKSPACE}/.jenkins-state"
@@ -67,6 +68,7 @@ pipeline {
                     set -Eeuo pipefail
 
                     command -v node
+                    command -v python3
                     command -v npm
                     command -v java
                     command -v keytool
@@ -131,6 +133,7 @@ NODE
                     env.VERSION_CODE = env.BUILD_NUMBER
                     env.VERSION_NAME = "${baseVersionParts[0]}.${baseVersionParts[1]}.${env.BUILD_NUMBER}"
                     env.ARTIFACT_NAME = "hof-app-${env.BASE_VERSION}-build-${env.BUILD_NUMBER}-${env.GIT_SHORT}.apk"
+                    env.EXTENSION_ARTIFACT_NAME = "hof-chrome-extension-${env.VERSION_NAME}-${env.GIT_SHORT}.zip"
                 }
                 sh '''#!/usr/bin/env bash
                     set -Eeuo pipefail
@@ -182,6 +185,18 @@ NODE
             steps {
                 sh 'npm test'
                 sh 'npm run typecheck'
+                sh 'python3 -m unittest discover -s scripts -p "test_*.py"'
+            }
+        }
+
+        stage('Build Chrome Extension') {
+            steps {
+                sh '''#!/usr/bin/env bash
+                    set -Eeuo pipefail
+                    HOF_VERSION_NAME="$VERSION_NAME" npm run build:extension
+                    python3 scripts/package-chrome-extension.py dist "dist/$EXTENSION_ARTIFACT_NAME" "$VERSION_NAME"
+                    sha256sum "dist/$EXTENSION_ARTIFACT_NAME" > "dist/$EXTENSION_ARTIFACT_NAME.sha256"
+                '''
             }
         }
 
@@ -274,7 +289,7 @@ NODE
         stage('Archive') {
             steps {
                 archiveArtifacts(
-                    artifacts: 'dist/*.apk,dist/*.sha256',
+                    artifacts: 'dist/*.apk,dist/*.zip,dist/*.sha256',
                     fingerprint: true,
                     onlyIfSuccessful: true,
                 )
@@ -352,6 +367,18 @@ REMOTE_SCRIPT
                           "$BACKEND_RELEASE_PUBLISH_URL"
                         printf '\nPublished APK: %s\n' "$ARTIFACT_NAME"
                     '''
+                }
+            }
+        }
+        stage('Publish Chrome Extension') {
+            steps {
+                withCredentials([
+                    sshUserPrivateKey(
+                        credentialsId: "${SSH_CREDENTIAL_ID}",
+                        keyFileVariable: 'SSH_KEY_FILE',
+                    ),
+                ]) {
+                    sh 'bash scripts/publish-chrome-extension.sh'
                 }
             }
         }
