@@ -1,4 +1,5 @@
 import { useCallback, useLayoutEffect, useRef } from 'react';
+import { Platform } from 'react-native';
 import { focusAccessibilityTarget, getAccessibilityFocusTarget } from './accessibilityFocus';
 
 type FocusNode = Parameters<typeof getAccessibilityFocusTarget>[0];
@@ -46,6 +47,7 @@ export function usePickerFocusReturn<Key>({ getTarget, canRestore }: Options<Key
     cancel();
     if (captured.node == null || captured.target == null) return;
     const expectedGeneration = generation.current;
+    // Android TalkBack은 창 전환 뒤 약 600ms까지 초기 포커스를 다시 고르므로 그 뒤에 복귀한다.
     timer.current = setTimeout(() => {
       timer.current = null;
       if (!mounted.current || generation.current !== expectedGeneration || !latest.current.canRestore(captured.key)) return;
@@ -53,7 +55,7 @@ export function usePickerFocusReturn<Key>({ getTarget, canRestore }: Options<Key
       if (node !== captured.node) return;
       const target = getAccessibilityFocusTarget(node);
       if (target != null && target === captured.target) focusAccessibilityTarget(target);
-    }, 250);
+    }, Platform.OS === 'android' ? 700 : 250);
   }, [cancel]);
 
   return { open, close, cancel };

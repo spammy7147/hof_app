@@ -53,6 +53,50 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('BattlePartyPresetPicker', () => {
+  it('restores Android focus after TalkBack finishes choosing focus for the closing window', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    platform.OS = 'android';
+    focusCalls.length = 0;
+    nativeHandle = 11;
+    const renderer = await renderPicker();
+    try {
+      await openPicker(renderer);
+      await act(async () => (commonPickerCalls.at(-1)?.onClose as () => void)());
+      // APK 68의 실제 TalkBack 창 전환은 닫기 뒤 약 600ms까지 초기 포커스를 다시 고른다.
+      await act(async () => { context.mock.timers.tick(600); });
+      assert.deepEqual(focusCalls, []);
+      await act(async () => { context.mock.timers.tick(200); });
+      assert.deepEqual(focusCalls, [11]);
+    } finally {
+      await act(async () => renderer.unmount());
+      platform.OS = 'ios';
+    }
+  });
+
+  it('cancels Android focus when reopening or becoming busy during the window transition', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    platform.OS = 'android';
+    focusCalls.length = 0;
+    nativeHandle = 11;
+    const renderer = await renderPicker();
+    try {
+      await openPicker(renderer);
+      await act(async () => (commonPickerCalls.at(-1)?.onClose as () => void)());
+      await act(async () => { context.mock.timers.tick(400); });
+      await openPicker(renderer);
+      await act(async () => { context.mock.timers.tick(400); });
+      assert.deepEqual(focusCalls, []);
+      await act(async () => (commonPickerCalls.at(-1)?.onClose as () => void)());
+      await act(async () => { context.mock.timers.tick(400); });
+      await act(async () => renderer.update(React.createElement(BattlePartyPresetPicker, pickerProps({ loading: true }))));
+      await act(async () => { context.mock.timers.tick(400); });
+      assert.deepEqual(focusCalls, []);
+    } finally {
+      await act(async () => renderer.unmount());
+      platform.OS = 'ios';
+    }
+  });
+
   it('does not focus a replacement ref even when the native handle is reused', async (context) => {
     context.mock.timers.enable({ apis: ['setTimeout'] });
     focusCalls.length = 0;
