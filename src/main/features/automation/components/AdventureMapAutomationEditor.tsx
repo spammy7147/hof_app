@@ -13,12 +13,12 @@ import { ArrowLeft, ChevronRight, Save } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
 import { scrollFocusedInputIntoView } from '../../../components/keyboardAwareScroll';
 
+import { useAdventureMapGroupEditing } from './useMapGroupEditing';
+
 import { usePickerFocusReturn } from '../../../platform/usePickerFocusReturn';
 
 import {
   adventureMapIdentity,
-  buildAdventureMapAutomationDraft,
-  buildAdventureMapAutomationRequest,
   describeAdventureMapConstraints,
   describeAdventureMapState,
   filterAdventureAutomationCategories,
@@ -28,7 +28,6 @@ import {
   moveAdventureMapSetting,
   removeAdventureMapSetting,
   selectAdventureMap,
-  validateAdventureMapAutomationDraft,
   type AdventureMapAutomationDraft,
 } from '../../../domain/adventureMapAutomation';
 import {
@@ -104,8 +103,6 @@ export function AdventureMapAutomationEditor({
   otherMapGroups = [],
   onMoveMap,
 }: Props) {
-  const [draft, setDraft] = useState<AdventureMapAutomationDraft>(() => buildAdventureMapAutomationDraft(entry, []));
-  const [groupName, setGroupName] = useState(entry.displayName ?? '');
   const [catalog, setCatalog] = useState<BattleMapResponse[]>([]);
   const [mapState, setMapState] = useState<ResourceState>({ loading: true, error: null });
   const presetState = { loading: partyPresetCatalog.loading, error: partyPresetCatalog.error };
@@ -113,42 +110,34 @@ export function AdventureMapAutomationEditor({
   const [activeTab, setActiveTab] = useState<AutomationMapEditorTab>('SELECTED');
   const [expandedGroupKeys, setExpandedGroupKeys] = useState<string[]>([]);
   const [activePresetSession, setActivePresetSession] = useState<PresetSession | null>(null);
-  const [localBusy, setLocalBusy] = useState(false);
   const requestedCategoriesRef = useRef(false);
   const mountedRef = useRef(true);
   const mountedGenerationRef = useRef(0);
   const mapGenerationRef = useRef(0);
-  const draftRef = useRef(draft);
   const queryRef = useRef(query);
-  const baselineRef = useRef(serializeDraft(draft));
-  const baselineNameRef = useRef(entry.displayName ?? '');
-  const entrySettingsRef = useRef(serializeEntrySettings(entry));
-  const controlsDisabledRef = useRef(false);
-  const busyRef = useRef(false);
   const presetSessionGenerationRef = useRef(0);
   const presetSessionRef = useRef<PresetSession | null>(null);
+  const validPresetIds = useMemo(
+    () => partyPresetCatalog.catalog.presets.map(({ id }) => id),
+    [partyPresetCatalog.catalog.presets],
+  );
+  const { draft, groupName, busy, controlsDisabled, saveDisabled, nameInvalid,
+    validationErrors: errors, getDraft, updateDraft, updateEditableDraft, setGroupName,
+    isEditingDisabled, runMutation, save, requestBack } = useAdventureMapGroupEditing({
+    entry, catalog, saving, loading: mapState.loading, validPresetIds,
+    presetsVerified: !presetState.loading && presetState.error == null,
+    onSave, onBack, onClearMutationMessage,
+  });
   const presetTriggerNodesRef = useRef(new Map<string, ElementRef<typeof Pressable>>());
   const { open: capturePresetFocus, close: restorePresetFocus } = usePickerFocusReturn<string>({
     getTarget: (identity) => presetTriggerNodesRef.current.get(identity) ?? null,
-    canRestore: (identity) => !controlsDisabledRef.current
-      && draftRef.current.maps.some((setting) => adventureMapIdentity(setting) === identity),
+    canRestore: (identity) => !isEditingDisabled()
+      && getDraft().maps.some((setting) => adventureMapIdentity(setting) === identity),
   });
   const scrollRef = useRef<ElementRef<typeof NestableScrollContainer>>(null);
 
-  const updateDraft = useCallback((updater: (current: AdventureMapAutomationDraft) => AdventureMapAutomationDraft) => {
-    const next = updater(draftRef.current);
-    draftRef.current = next;
-    setDraft(next);
-  }, []);
-  const updateEditableDraft = useCallback((updater: (current: AdventureMapAutomationDraft) => AdventureMapAutomationDraft) => {
-    if (controlsDisabledRef.current) return;
-    updateDraft((current) => controlsDisabledRef.current ? current : updater(current));
-  }, [updateDraft]);
-
   useEffect(() => () => {
     mountedRef.current = false;
-    busyRef.current = true;
-    controlsDisabledRef.current = true;
     presetSessionRef.current = null;
     presetSessionGenerationRef.current += 1;
     presetTriggerNodesRef.current.clear();
@@ -237,42 +226,7 @@ export function AdventureMapAutomationEditor({
     void loadMaps();
   }, [loadMaps]);
 
-  const draftDirty = serializeDraft(draft) !== baselineRef.current
-    || groupName !== baselineNameRef.current;
-  useEffect(() => {
-    const source = serializeEntrySettings(entry);
-    if (source === entrySettingsRef.current) return;
-    if (draftDirty) return;
-    const next = buildAdventureMapAutomationDraft(entry, catalog);
-    entrySettingsRef.current = source;
-    draftRef.current = next;
-    setDraft(next);
-    baselineRef.current = serializeDraft(next);
-    const nextName = entry.displayName ?? '';
-    baselineNameRef.current = nextName;
-    setGroupName(nextName);
-  }, [catalog, draftDirty, entry]);
-
-  const validPresetIds = useMemo(
-    () => partyPresetCatalog.catalog.presets.map(({ id }) => id),
-    [partyPresetCatalog.catalog.presets],
-  );
-  const presetsVerified = !presetState.loading && presetState.error == null;
-  const errors = useMemo(
-    () => validateAdventureMapAutomationDraft(draft, validPresetIds, {
-      validatePresetMembership: presetsVerified,
-    }),
-    [draft, presetsVerified, validPresetIds],
-  );
-  const busy = saving || localBusy;
-  const controlsDisabled = busy || mapState.loading;
-  controlsDisabledRef.current = controlsDisabled;
-  busyRef.current = busy;
   queryRef.current = query;
-  const hasExplicitPreset = draft.maps.some(({ presetMode }) => presetMode === 'EXPLICIT');
-  const nameInvalid = groupName.trim().length > 100;
-  const saveDisabled = controlsDisabled || errors.length > 0 || nameInvalid
-    || (hasExplicitPreset && !presetsVerified);
   const activePresetIdentity = activePresetSession?.identity ?? null;
   const activePresetSetting = activePresetIdentity == null
     ? null
@@ -311,12 +265,12 @@ export function AdventureMapAutomationEditor({
   }, [activePresetSession, activePresetSetting, closePresetPicker, controlsDisabled]);
 
   const openPresetPicker = useCallback((identity: string) => {
-    if (controlsDisabledRef.current || presetSessionRef.current != null) return;
+    if (isEditingDisabled() || presetSessionRef.current != null) return;
     const session = { generation: ++presetSessionGenerationRef.current, identity };
     capturePresetFocus(identity);
     presetSessionRef.current = session;
     setActivePresetSession(session);
-  }, [capturePresetFocus]);
+  }, [capturePresetFocus, isEditingDisabled]);
 
   const toggleCatalogGroup = useCallback((groupKey: string) => {
     if (queryRef.current.trim().length > 0) return;
@@ -327,40 +281,6 @@ export function AdventureMapAutomationEditor({
         : [...current, groupKey];
     });
   }, []);
-
-  function requestBack() {
-    if (busyRef.current) return;
-    if (serializeDraft(draftRef.current) === baselineRef.current) return onBack();
-    Alert.alert('변경 사항을 버릴까요?', '저장하지 않은 모험맵 설정이 있습니다.', [
-      { text: '계속 편집', style: 'cancel' },
-      { text: '나가기', style: 'destructive', onPress: () => {
-        if (!busyRef.current) onBack();
-      } },
-    ]);
-  }
-
-  async function save() {
-    if (saveDisabled || controlsDisabledRef.current) return;
-    controlsDisabledRef.current = true;
-    busyRef.current = true;
-    setLocalBusy(true);
-    onClearMutationMessage();
-    try {
-      const submittedDraft = draftRef.current;
-      const request = buildAdventureMapAutomationRequest(submittedDraft, validPresetIds);
-      const submittedBaseline = serializeDraft(submittedDraft);
-      const submittedName = groupName.trim();
-      const payload = entry.settingsRevision == null && submittedName.length === 0
-        ? request
-        : { ...request, displayName: submittedName || null };
-      if (await onSave(payload)) {
-        baselineRef.current = submittedBaseline;
-        baselineNameRef.current = submittedName;
-      }
-    } finally {
-      if (mountedRef.current) setLocalBusy(false);
-    }
-  }
 
   const deleteSelectedMap = useCallback((identity: string) => {
     updateEditableDraft((current) => {
@@ -442,13 +362,7 @@ export function AdventureMapAutomationEditor({
                   {
                     text: '여기로 이동',
                     onPress: () => {
-                      if (controlsDisabledRef.current) return;
-                      controlsDisabledRef.current = true;
-                      busyRef.current = true;
-                      setLocalBusy(true);
-                      onClearMutationMessage();
-                      void onMoveMap(owner.id, item.map.categoryId, item.map.mapCode, draftRef.current.maps.length)
-                        .finally(() => { if (mountedRef.current) setLocalBusy(false); });
+                      void runMutation(() => onMoveMap(owner.id, item.map.categoryId, item.map.mapCode, getDraft().maps.length));
                     },
                   },
                 ],
@@ -480,7 +394,7 @@ export function AdventureMapAutomationEditor({
         nested
       />
     );
-  }, [controlsDisabled, deleteSelectedMap, draft.maps, moveSelectedMap, onClearMutationMessage, onMoveMap, otherMapGroups, query, renderSelectedMap, reorderSelectedMaps, searching, toggleCatalogGroup, updateEditableDraft]);
+  }, [controlsDisabled, deleteSelectedMap, draft.maps, getDraft, moveSelectedMap, runMutation, onMoveMap, otherMapGroups, query, renderSelectedMap, reorderSelectedMaps, searching, toggleCatalogGroup, updateEditableDraft]);
 
   return (
     <View style={styles.screen}>
@@ -532,7 +446,7 @@ export function AdventureMapAutomationEditor({
         onClose={() => closePresetPicker(activePresetSession)}
         onSelect={(presetId) => {
           const session = activePresetSession;
-          if (controlsDisabledRef.current || session == null
+          if (isEditingDisabled() || session == null
             || !isSamePresetSession(presetSessionRef.current, session)) return;
           updateEditableDraft((current) => ({
             ...current,
@@ -564,12 +478,6 @@ function formatCompactAdventureDailyRefresh(refresh: AdventureDailyRefreshRespon
   if (refresh.refreshedAt == null) return '초기화 완료 · 시간 확인 불가';
   if (Number.isNaN(new Date(refresh.refreshedAt).getTime())) return '초기화 완료 · 시간 확인 불가';
   return formatAdventureDailyRefresh(refresh).replace(/^오늘 /, '');
-}
-function serializeDraft(draft: AdventureMapAutomationDraft): string {
-  return JSON.stringify([draft.enabled, draft.maps.map(({ categoryId, mapCode, presetMode, partyPresetId, executionOrder }) => [categoryId, mapCode, presetMode, partyPresetId, executionOrder])]);
-}
-function serializeEntrySettings(entry: TypedAutomationEntryResponse): string {
-  return JSON.stringify([entry.enabled, entry.adventureMaps, entry.displayName]);
 }
 function isSamePresetSession(left: PresetSession | null, right: PresetSession | null): boolean {
   return left != null && right != null

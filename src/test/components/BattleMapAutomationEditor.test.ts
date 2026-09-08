@@ -549,6 +549,111 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(alertArguments, null);
   });
 
+  it('protects a name-only edit through continue editing, discard, and successful save', async () => {
+    alertArguments = null;
+    let backs = 0;
+    const saves: Array<UpdateBattleMapAutomationRequest & { displayName?: string | null }> = [];
+    const renderer = await renderEditor({
+      onBack: () => { backs += 1; },
+      onSave: async (request) => { saves.push(request); return true; },
+    });
+    const name = () => renderer.root.findByProps({ accessibilityLabel: '전투 맵 묶음 이름' });
+    const back = () => renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 뒤로' }).props.onPress();
+    await act(async () => { name().props.onChangeText('재료 수집'); });
+    await act(async () => { back(); });
+    assert.equal(backs, 0);
+    assert.equal(alertArguments?.[0], '변경 사항을 버릴까요?');
+    const buttons = alertArguments?.[2] as unknown as Array<{ text: string; style?: string; onPress?: () => void }>;
+    assert.equal(buttons.find((button) => button.text === '계속 편집')?.style, 'cancel');
+    await act(async () => { buttons.find((button) => button.text === '계속 편집')?.onPress?.(); });
+    assert.equal(name().props.value, '재료 수집');
+    assert.equal(backs, 0);
+    await act(async () => { buttons.find((button) => button.text === '나가기')?.onPress?.(); });
+    assert.equal(backs, 1);
+    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.onPress(); });
+    assert.equal(saves[0]?.displayName, '재료 수집');
+    alertArguments = null;
+    await act(async () => { back(); });
+    assert.equal(backs, 2);
+    assert.equal(alertArguments, null);
+  });
+
+  it('fences retained name, save, back and discard callbacks and permits retry after failure', async () => {
+    alertArguments = null;
+    const pending = deferred<boolean>();
+    let saves = 0;
+    let backs = 0;
+    const renderer = await renderEditor({
+      onBack: () => { backs += 1; },
+      onSave: async () => { saves += 1; return saves === 1 ? pending.promise : true; },
+    });
+    const name = () => renderer.root.findByProps({ accessibilityLabel: '전투 맵 묶음 이름' });
+    const retainedName = name().props.onChangeText as (value: string) => void;
+    await act(async () => { retainedName('편집한 이름'); });
+    const retainedBack = renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 뒤로' }).props.onPress as () => void;
+    await act(async () => { retainedBack(); });
+    const buttons = alertArguments?.[2] as unknown as Array<{ text: string; onPress?: () => void }>;
+    const retainedDiscard = buttons.find((button) => button.text === '나가기')?.onPress;
+    const retainedSave = renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.onPress as () => Promise<void>;
+    let saving!: Promise<void>;
+    await act(async () => { saving = retainedSave(); });
+    await act(async () => {
+      retainedName('저장 중 들어온 이름');
+      retainedBack();
+      retainedDiscard?.();
+      await retainedSave();
+    });
+    assert.equal(saves, 1);
+    assert.equal(backs, 0);
+    assert.equal(name().props.value, '편집한 이름');
+    await act(async () => { pending.resolve(false); await saving; });
+    assert.equal(name().props.value, '편집한 이름');
+    alertArguments = null;
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 뒤로' }).props.onPress(); });
+    assert.equal(alertArguments?.[0], '변경 사항을 버릴까요?');
+    await act(async () => { name().props.onChangeText('재시도 이름'); });
+    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.onPress(); });
+    assert.equal(saves, 2);
+    alertArguments = null;
+    await act(async () => { retainedBack(); });
+    assert.equal(backs, 1);
+    assert.equal(alertArguments, null);
+  });
+
+  it('keeps a different server name dirty after save and isolates a late completion from a new editor generation', async () => {
+    alertArguments = null;
+    const pending = deferred<boolean>();
+    const base = editorProps({ onSave: async () => pending.promise });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(BattleMapAutomationEditor, base)); });
+    let saving!: Promise<void>;
+    await act(async () => { saving = renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.onPress(); });
+    await act(async () => { renderer.update(React.createElement(BattleMapAutomationEditor, {
+      ...base, entry: { ...base.entry, displayName: '별도 서버 이름' },
+    })); });
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '전투 맵 묶음 이름' }).props.value, '별도 서버 이름');
+    await act(async () => { pending.resolve(true); await saving; });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투 맵 자동화 뒤로' }).props.onPress(); });
+    assert.equal(alertArguments?.[0], '변경 사항을 버릴까요?');
+
+    const late = deferred<boolean>();
+    let old!: ReactTestRenderer;
+    await act(async () => { old = create(React.createElement(BattleMapAutomationEditor, { ...base, onSave: async () => late.promise })); });
+    let oldSave!: Promise<void>;
+    await act(async () => { oldSave = old.root.findByProps({ accessibilityLabel: '전투 맵 자동화 저장' }).props.onPress(); });
+    await act(async () => { old.unmount(); });
+    activeRenderers.delete(old);
+    let backs = 0;
+    const fresh = await renderEditor({ onBack: () => { backs += 1; } });
+    await act(async () => { fresh.root.findByProps({ accessibilityLabel: '전투 맵 묶음 이름' }).props.onChangeText('새 로그인 편집'); });
+    await act(async () => { late.resolve(true); await oldSave; });
+    alertArguments = null;
+    await act(async () => { fresh.root.findByProps({ accessibilityLabel: '전투 맵 자동화 뒤로' }).props.onPress(); });
+    assert.equal(fresh.root.findByProps({ accessibilityLabel: '전투 맵 묶음 이름' }).props.value, '새 로그인 편집');
+    assert.equal(backs, 0);
+    assert.equal(alertArguments?.[0], '변경 사항을 버릴까요?');
+  });
+
   it('fences every retained editor mutation during save and baselines the submitted draft', async () => {
     alertArguments = null;
     let backs = 0;

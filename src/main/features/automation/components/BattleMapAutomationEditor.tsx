@@ -13,12 +13,12 @@ import { ArrowLeft, ChevronRight, Save } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
 import { scrollFocusedInputIntoView } from '../../../components/keyboardAwareScroll';
 
+import { useBattleMapGroupEditing } from './useMapGroupEditing';
+
 import { usePickerFocusReturn } from '../../../platform/usePickerFocusReturn';
 
 import {
   battleMapIdentity,
-  buildBattleMapAutomationDraft,
-  buildBattleMapAutomationRequest,
   buildBattleProgress,
   describeBattleBatch,
   filterBattleAutomationCategories,
@@ -28,7 +28,6 @@ import {
   parseBattleMinimumRemainingTime,
   removeBattleMapSetting,
   selectBattleMap,
-  validateBattleMapAutomationDraft,
   type BattleMapAutomationDraft,
 } from '../../../domain/battleMapAutomation';
 import { buildBattleMapCatalogRows, type BattleMapCatalogRow } from '../../../domain/battleMapCatalog';
@@ -102,8 +101,6 @@ export function BattleMapAutomationEditor({
   onMoveMap,
   observedTimeMax = null,
 }: Props) {
-  const [draft, setDraft] = useState<BattleMapAutomationDraft>(() => buildBattleMapAutomationDraft(entry, []));
-  const [groupName, setGroupName] = useState(entry.displayName ?? '');
   const [catalog, setCatalog] = useState<BattleMapResponse[]>([]);
   const [query, setQuery] = useState('');
   const [activeTab, setActiveTab] = useState<AutomationMapEditorTab>('SELECTED');
@@ -112,38 +109,32 @@ export function BattleMapAutomationEditor({
   const [activePresetIdentity, setActivePresetIdentity] = useState<string | null>(null);
   const presetState = { loading: partyPresetCatalog.loading, error: partyPresetCatalog.error };
   const [mapStates, setMapStates] = useState<Record<string, ResourceState>>({});
-  const [localBusy, setLocalBusy] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
-  const [serverRefreshWarning, setServerRefreshWarning] = useState(false);
-  const draftRef = useRef(draft);
   const queryRef = useRef(query);
-  const baselineRef = useRef(serializeEditableDraft(draft));
-  const baselineNameRef = useRef(entry.displayName ?? '');
-  const entrySettingsRef = useRef(serializeEntrySettings(entry));
   const mountedGenerationRef = useRef(0);
   const mapGenerationRef = useRef<Record<string, number>>({});
   const mapSequenceRef = useRef(0);
   const eligibleIdsRef = useRef(new Set<string>());
   const requestedCategoriesRef = useRef(false);
-  const mountedRef = useRef(false);
-  const controlsDisabledRef = useRef(false);
+  const validPresetIds = useMemo(
+    () => partyPresetCatalog.catalog.presets.map(({ id }) => id),
+    [partyPresetCatalog.catalog.presets],
+  );
+  const presetsVerified = !presetState.loading && presetState.error == null;
+  const { draft, groupName, busy, controlsDisabled, saveDisabled, nameInvalid,
+    validationErrors, serverRefreshWarning, getDraft, updateDraft, updateEditableDraft, setGroupName,
+    isEditingDisabled, runMutation, save, requestBack } = useBattleMapGroupEditing({
+    entry, catalog, saving, loading: !draftReady, validPresetIds,
+    presetsVerified,
+    onSave, onBack, onClearMutationMessage,
+  });
   const presetTriggerNodesRef = useRef(new Map<string, ElementRef<typeof Pressable>>());
   const { open: capturePresetFocus, close: restorePresetFocus } = usePickerFocusReturn<string>({
     getTarget: (identity) => presetTriggerNodesRef.current.get(identity) ?? null,
-    canRestore: (identity) => !controlsDisabledRef.current
-      && draftRef.current.maps.some((setting) => battleMapIdentity(setting) === identity),
+    canRestore: (identity) => !isEditingDisabled()
+      && getDraft().maps.some((setting) => battleMapIdentity(setting) === identity),
   });
   const scrollRef = useRef<ElementRef<typeof NestableScrollContainer>>(null);
-
-  const updateDraft = useCallback((updater: (current: BattleMapAutomationDraft) => BattleMapAutomationDraft) => {
-    const next = updater(draftRef.current);
-    draftRef.current = next;
-    setDraft(next);
-  }, []);
-  const updateEditableDraft = useCallback((updater: (current: BattleMapAutomationDraft) => BattleMapAutomationDraft) => {
-    if (controlsDisabledRef.current) return;
-    updateDraft((current) => controlsDisabledRef.current ? current : updater(current));
-  }, [updateDraft]);
 
   const loadCategoryMaps = useCallback(async (category: BattleCategoryResponse) => {
     const generation = ++mapSequenceRef.current;
@@ -170,13 +161,10 @@ export function BattleMapAutomationEditor({
   }, [onLoadBattleMaps]);
 
   useEffect(() => {
-    mountedRef.current = true;
     return () => {
-      mountedRef.current = false;
       mountedGenerationRef.current += 1;
       mapGenerationRef.current = {};
       presetTriggerNodesRef.current.clear();
-
     };
   }, []);
 
@@ -242,56 +230,13 @@ export function BattleMapAutomationEditor({
     updateDraft(hydrate);
   }, [catalog, updateDraft]);
 
-  useEffect(() => {
-    const source = serializeEntrySettings(entry);
-    const settingsChanged = source !== entrySettingsRef.current;
-    entrySettingsRef.current = source;
-    const next = buildBattleMapAutomationDraft(entry, catalog);
-    if (settingsChanged
-      && serializeEditableDraft(draftRef.current) === baselineRef.current
-      && groupName === baselineNameRef.current) {
-      draftRef.current = next;
-      setDraft(next);
-      baselineRef.current = serializeEditableDraft(next);
-      const nextName = entry.displayName ?? '';
-      baselineNameRef.current = nextName;
-      setGroupName(nextName);
-      setServerRefreshWarning(false);
-    } else {
-      updateDraft((current) => ({ ...current, dailyProgress: next.dailyProgress }));
-      if (settingsChanged) setServerRefreshWarning(true);
-    }
-  }, [catalog, entry, groupName, updateDraft]);
-
-  const validPresetIds = useMemo(
-    () => partyPresetCatalog.catalog.presets.map(({ id }) => id),
-    [partyPresetCatalog.catalog.presets],
-  );
-  const presetsVerified = !presetState.loading && presetState.error == null;
-  const validationErrors = useMemo(
-    () => validateBattleMapAutomationDraft(
-      draft,
-      validPresetIds,
-      { validatePresetMembership: presetsVerified },
-    ),
-    [draft, presetsVerified, validPresetIds],
-  );
-  const busy = saving || localBusy;
-  const controlsDisabled = busy || !draftReady;
-  controlsDisabledRef.current = controlsDisabled;
   queryRef.current = query;
-  const dirty = serializeEditableDraft(draft) !== baselineRef.current
-    || groupName !== baselineNameRef.current;
-  const nameInvalid = groupName.trim().length > 100;
   const parsedMinimumRemainingTime = parseBattleMinimumRemainingTime(draft.minimumRemainingTime);
   const minimumTimeValidationError = validationErrors.find((error) => error.startsWith('최소 잔여 Time은')) ?? null;
   const generalValidationError = validationErrors.find((error) => error !== minimumTimeValidationError) ?? null;
   const timeCapacityWarning = typeof parsedMinimumRemainingTime === 'number'
     && observedTimeMax != null
     && parsedMinimumRemainingTime + 100 > observedTimeMax;
-  const hasExplicitPreset = draft.maps.some(({ presetMode }) => presetMode === 'EXPLICIT');
-  const saveDisabled = controlsDisabled || validationErrors.length > 0 || nameInvalid
-    || (hasExplicitPreset && (presetState.loading || presetState.error != null));
   const catalogResult = useMemo(() => buildBattleMapCatalogRows({
     categories: eligibleCategories,
     catalog,
@@ -318,10 +263,10 @@ export function BattleMapAutomationEditor({
     restorePresetFocus(restoreFocus);
   }, [restorePresetFocus]);
   const openPresetPicker = useCallback((identity: string) => {
-    if (controlsDisabledRef.current) return;
+    if (isEditingDisabled()) return;
     capturePresetFocus(identity);
     setActivePresetIdentity(identity);
-  }, [capturePresetFocus]);
+  }, [capturePresetFocus, isEditingDisabled]);
   const toggleCatalogCategory = useCallback((categoryId: string) => {
     if (queryRef.current.trim().length > 0) return;
     setExpandedCategoryId((current) => queryRef.current.trim().length > 0
@@ -361,37 +306,6 @@ export function BattleMapAutomationEditor({
       closePresetPicker(false);
     }
   }, [activePresetIdentity, activePresetSetting, closePresetPicker, controlsDisabled]);
-
-  function requestBack() {
-    if (busy) return;
-    if (!dirty) return onBack();
-    Alert.alert('변경 사항을 버릴까요?', '저장하지 않은 전투 맵 설정이 있습니다.', [
-      { text: '계속 편집', style: 'cancel' },
-      { text: '나가기', style: 'destructive', onPress: onBack },
-    ]);
-  }
-
-  async function save() {
-    if (saveDisabled || controlsDisabledRef.current) return;
-    controlsDisabledRef.current = true;
-    onClearMutationMessage();
-    setLocalBusy(true);
-    try {
-      const submittedDraft = draftRef.current;
-      const request = buildBattleMapAutomationRequest(submittedDraft, validPresetIds);
-      const submittedBaseline = serializeEditableDraft(submittedDraft);
-      const submittedName = groupName.trim();
-      const payload = entry.settingsRevision == null && submittedName.length === 0
-        ? request
-        : { ...request, displayName: submittedName || null };
-      if (await onSave(payload)) {
-        baselineRef.current = submittedBaseline;
-        baselineNameRef.current = submittedName;
-      }
-    } finally {
-      setLocalBusy(false);
-    }
-  }
 
   const deleteSelectedMap = useCallback((identity: string) => {
     updateEditableDraft((current) => {
@@ -493,7 +407,7 @@ export function BattleMapAutomationEditor({
         (setting) => battleMapIdentity(setting) === identity,
       )) ?? null;
       return <BattleMapCatalogMapRow disabled={controlsDisabled} map={map} onPress={() => {
-        if (controlsDisabledRef.current) return;
+        if (isEditingDisabled()) return;
         if (!selected && owner && onMoveMap && map.mapCode != null) {
           Alert.alert(
             `${map.name}을 이 묶음으로 이동할까요?`,
@@ -503,12 +417,7 @@ export function BattleMapAutomationEditor({
               {
                 text: '여기로 이동',
                 onPress: () => {
-                  if (controlsDisabledRef.current) return;
-                  controlsDisabledRef.current = true;
-                  setLocalBusy(true);
-                  onClearMutationMessage();
-                  void onMoveMap(owner.id, map.categoryId, map.mapCode!, draftRef.current.maps.length)
-                    .finally(() => { if (mountedRef.current) setLocalBusy(false); });
+                  void runMutation(() => onMoveMap(owner.id, map.categoryId, map.mapCode!, getDraft().maps.length));
                 },
               },
             ],
@@ -516,7 +425,7 @@ export function BattleMapAutomationEditor({
           return;
         }
         updateDraft((current) => {
-          if (controlsDisabledRef.current) return current;
+          if (isEditingDisabled()) return current;
           const currentlySelected = identity != null
             && current.maps.some((setting) => battleMapIdentity(setting) === identity);
           return selectBattleMap(current, map, !currentlySelected);
@@ -538,7 +447,7 @@ export function BattleMapAutomationEditor({
         nested
       />
     );
-  }, [controlsDisabled, deleteSelectedMap, draft.maps, loadCategoryMaps, moveSelectedMap, onClearMutationMessage, onMoveMap, otherMapGroups, query, renderSelectedMap, reorderSelectedMaps, toggleCatalogCategory, toggleCatalogGroup, updateDraft]);
+  }, [controlsDisabled, deleteSelectedMap, draft.maps, loadCategoryMaps, getDraft, isEditingDisabled, moveSelectedMap, runMutation, onMoveMap, otherMapGroups, query, renderSelectedMap, reorderSelectedMaps, toggleCatalogCategory, toggleCatalogGroup, updateDraft]);
 
   return (
     <View style={styles.screen}>
@@ -576,7 +485,7 @@ export function BattleMapAutomationEditor({
               minimumRemainingTime,
             }))}
             onEndEditing={() => {
-              if (parseBattleMinimumRemainingTime(draftRef.current.minimumRemainingTime) !== null) return;
+              if (parseBattleMinimumRemainingTime(getDraft().minimumRemainingTime) !== null) return;
               updateEditableDraft((current) => ({ ...current, minimumRemainingTime: '' }));
             }}
             placeholder="제한 없음"
@@ -618,7 +527,7 @@ export function BattleMapAutomationEditor({
         mapName={activePresetSetting?.displayName ?? ''}
         onClose={() => closePresetPicker(true)}
         onSelect={(presetId) => {
-          if (controlsDisabledRef.current || activePresetIdentity == null) return;
+          if (isEditingDisabled() || activePresetIdentity == null) return;
           updateEditableDraft((current) => updatePreset(current, activePresetIdentity, presetId));
           closePresetPicker(true);
         }}
@@ -680,19 +589,6 @@ function reorderBattleDraft(draft: BattleMapAutomationDraft, orderedIds: string[
     return setting == null ? null : { ...setting, executionOrder };
   });
   return maps.some((setting) => setting == null) ? draft : { ...draft, maps: maps as BattleMapAutomationDraft['maps'] };
-}
-
-function serializeEditableDraft(draft: BattleMapAutomationDraft): string {
-  return JSON.stringify([
-    draft.enabled,
-    draft.minimumRemainingTime,
-    draft.maps.map(({ categoryId, mapCode, dailyTargetCount, executionOrder, presetMode, partyPresetId }) => (
-      [categoryId, mapCode, String(dailyTargetCount), executionOrder, presetMode, partyPresetId]
-    )),
-  ]);
-}
-function serializeEntrySettings(entry: TypedAutomationEntryResponse): string {
-  return JSON.stringify([entry.enabled, entry.battleMaps, entry.displayName, entry.minimumRemainingTime ?? null]);
 }
 
 const styles = StyleSheet.create({
