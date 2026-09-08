@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import Module from 'node:module';
-import { describe, it } from 'node:test';
+import { afterEach, describe, it } from 'node:test';
 import React from 'react';
 import {
   act,
@@ -18,6 +18,15 @@ let windowHeight = 800;
 let safeAreaBottom = 0;
 let alertArguments: unknown[] | null = null;
 const focusCalls: unknown[] = [];
+const focusPlatform = process.env.HOF_TEST_FOCUS_PLATFORM === 'web' ? 'web'
+  : process.env.HOF_TEST_FOCUS_PLATFORM === 'android' ? 'android' : 'ios';
+const focusReturnWait = focusPlatform === 'android' ? 730 : 280;
+const activeRenderers = new Set<ReactTestRenderer>();
+afterEach(async () => {
+  for (const renderer of activeRenderers) await act(async () => { renderer.unmount(); });
+  activeRenderers.clear();
+  focusCalls.length = 0;
+});
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => (
   React.createElement(name, { ...props, ref }, props.children as React.ReactNode)
 ));
@@ -80,8 +89,12 @@ const reactNativeMock = {
   ActivityIndicator: host('ActivityIndicator'),
   Alert: { alert: (...args: unknown[]) => { alertArguments = args; } },
   Dimensions: { get: () => ({ height: windowHeight, width: 390 }) },
-  Platform: { OS: 'ios' },
-  findNodeHandle: (node: unknown) => node,
+  Platform: { OS: focusPlatform },
+  UIManager: require('react-native-web/dist/cjs/exports/UIManager'),
+  findNodeHandle: (node: unknown) => {
+    if (focusPlatform === 'web') throw new Error('Native handles must not be used on web.');
+    return node;
+  },
   Modal: modal,
   Pressable: host('Pressable'),
   ScrollView: host('ScrollView'),
@@ -468,7 +481,8 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
     assert.equal(reordered.length, 1);
   });
 
-  it('does not let an old add completion close a newly reopened sheet', async () => {
+  it('does not let an old add completion close or steal focus from a newly reopened sheet', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
     const pending = deferred<boolean>();
     const renderer = await renderSettings({ onAdd: async () => pending.promise });
     await act(async () => {
@@ -484,6 +498,9 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
 
     await act(async () => { pending.resolve(true); await pending.promise; });
     assert.equal(visibleModals(renderer.root).length, 1);
+    focusCalls.length = 0;
+    await act(async () => { context.mock.timers.tick(focusReturnWait); });
+    assert.equal(focusCalls.some((node) => focusId(node) === 'automation-add-trigger'), false);
   });
 
   it('moves focus into the add overlay and restores its invoking control on close', async (context) => {
@@ -493,13 +510,96 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
     await act(async () => {
       renderer.root.findByProps({ accessibilityHint: '자동화 유형 선택 창을 엽니다' }).props.onPress();
     });
-    await act(async () => { context.mock.timers.tick(280); });
+    await act(async () => { context.mock.timers.tick(focusReturnWait); });
     await act(async () => {
       visibleModals(renderer.root)[0]?.props.onRequestClose();
     });
-    await act(async () => { context.mock.timers.tick(280); });
+    await act(async () => { context.mock.timers.tick(focusReturnWait); });
     assert.equal(focusLabel(focusCalls.at(-1)), '자동화 추가');
   });
+
+  it('자동화 추가창은 플랫폼 창 전환 뒤 원래 버튼으로 한 번 복귀한다', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    const renderer = await renderSettings({});
+    await act(async () => {
+      renderer.root.findByProps({ nativeID: 'automation-add-trigger' }).props.onPress();
+    });
+    await act(async () => { context.mock.timers.tick(250); });
+    assert.equal(focusCalls.length, 1);
+    assert.equal((focusCalls[0] as { accessibilityRole: string }).accessibilityRole, 'header');
+    focusCalls.length = 0;
+    await act(async () => { visibleModals(renderer.root)[0]?.props.onRequestClose(); });
+    await act(async () => { context.mock.timers.tick(focusPlatform === 'android' ? 699 : 249); });
+    assert.equal(focusCalls.length, 0);
+    await act(async () => { context.mock.timers.tick(1); });
+    assert.deepEqual(focusCalls.map(focusId), ['automation-add-trigger']);
+    await act(async () => { context.mock.timers.tick(1000); });
+    assert.equal(focusCalls.length, 1);
+  });
+
+  for (const closePath of ['닫기 버튼', '배경', '추가 성공'] as const) {
+    it(`${closePath}으로 종료하면 유효한 추가 버튼에 한 번 복귀한다`, async (context) => {
+      context.mock.timers.enable({ apis: ['setTimeout'] });
+      const addedTypes: AutomationType[] = [];
+      const renderer = await renderSettings({ onAdd: async (type) => { addedTypes.push(type); return true; } });
+      await act(async () => { renderer.root.findByProps({ nativeID: 'automation-add-trigger' }).props.onPress(); });
+      await act(async () => { context.mock.timers.tick(250); });
+      focusCalls.length = 0;
+      const label = closePath === '닫기 버튼' ? '자동화 추가 닫기'
+        : closePath === '배경' ? '자동화 추가 배경 닫기' : '전투 맵 자동화 추가';
+      await act(async () => { renderer.root.findByProps({ accessibilityLabel: label }).props.onPress(); });
+      assert.equal(visibleModals(renderer.root).length, 0);
+      assert.deepEqual(addedTypes, closePath === '추가 성공' ? ['BATTLE_MAP'] : []);
+      await act(async () => { context.mock.timers.tick(focusReturnWait); });
+      assert.deepEqual(focusCalls.map(focusId), ['automation-add-trigger']);
+    });
+  }
+
+  for (const transition of ['재열기', '추가 한도 도달', '로그인 세대 교체', '화면 이탈'] as const) {
+    it(`닫기 뒤 ${transition}에서는 과거 추가 버튼에 복귀하지 않는다`, async (context) => {
+      context.mock.timers.enable({ apis: ['setTimeout'] });
+      const props = settingsProps();
+      const renderer = await renderElement(React.createElement(UnifiedAutomationSettings, props));
+      await act(async () => { renderer.root.findByProps({ nativeID: 'automation-add-trigger' }).props.onPress(); });
+      await act(async () => { visibleModals(renderer.root)[0]?.props.onRequestClose(); });
+      await act(async () => {
+        if (transition === '재열기') renderer.root.findByProps({ nativeID: 'automation-add-trigger' }).props.onPress();
+        else if (transition === '추가 한도 도달') renderer.update(withSafeArea(React.createElement(UnifiedAutomationSettings, {
+          ...props, entries: Array.from({ length: 100 }, (_, index) => entry(index + 1, 'BATTLE_MAP')),
+        })));
+        else if (transition === '로그인 세대 교체') renderer.update(withSafeArea(React.createElement(UnifiedAutomationSettings, {
+          ...props, key: 'next-login-generation',
+        })));
+        else renderer.unmount();
+      });
+      focusCalls.length = 0;
+      await act(async () => { context.mock.timers.tick(focusReturnWait); });
+      assert.equal(focusCalls.some((node) => focusId(node) === 'automation-add-trigger'), false);
+      if (transition === '재열기') {
+        assert.equal(visibleModals(renderer.root).length, 1);
+        focusCalls.length = 0;
+        await act(async () => { visibleModals(renderer.root)[0]?.props.onRequestClose(); });
+        await act(async () => { context.mock.timers.tick(focusReturnWait); });
+        assert.deepEqual(focusCalls.map(focusId), ['automation-add-trigger']);
+      }
+    });
+  }
+
+  for (const reopen of [false, true]) {
+    it(`삭제 완료는 ${reopen ? '새로 연 창의 포커스를 빼앗지 않는다' : '기존 추가 버튼 복귀를 유지한다'}`, async (context) => {
+      context.mock.timers.enable({ apis: ['setTimeout'] });
+      const pending = deferred<boolean>();
+      const renderer = await renderSettings({ entries: [entry(1, 'QUEST')], onDelete: async () => pending.promise });
+      renderer.root.findByProps({ accessibilityLabel: '퀘스트 삭제' }).props.onPress();
+      const actions = alertArguments![2] as Array<{ onPress?: () => void }>;
+      await act(async () => { actions[1]?.onPress?.(); });
+      if (reopen) await act(async () => { renderer.root.findByProps({ nativeID: 'automation-add-trigger' }).props.onPress(); });
+      await act(async () => { pending.resolve(true); await pending.promise; });
+      await act(async () => { context.mock.timers.tick(focusReturnWait); });
+      assert.equal(focusCalls.filter((node) => focusId(node) === 'automation-add-trigger').length, reopen ? 0 : 1);
+      assert.equal(visibleModals(renderer.root).length, reopen ? 1 : 0);
+    });
+  }
 });
 
 function sheetProps(overrides: Partial<React.ComponentProps<typeof AutomationAddSheet>> = {}) {
@@ -556,11 +656,16 @@ async function renderRaw(element: React.ReactElement): Promise<ReactTestRenderer
         {
           createNodeMock: (candidate) => {
             const props = candidate.props as Record<string, unknown>;
-            return {
+            const node = {
               accessibilityLabel: props.accessibilityLabel,
+              accessibilityRole: props.accessibilityRole,
               nativeID: props.nativeID,
               type: candidate.type,
+              nodeName: 'BUTTON',
+              getAttribute: () => '0',
+              focus: () => { focusCalls.push(node); },
             };
+            return node;
           },
         },
       );
@@ -568,7 +673,12 @@ async function renderRaw(element: React.ReactElement): Promise<ReactTestRenderer
   } finally {
     console.error = originalError;
   }
+  activeRenderers.add(renderer!);
   return renderer!;
+}
+
+function focusId(node: unknown): unknown {
+  return node && typeof node === 'object' && 'nativeID' in node ? node.nativeID : undefined;
 }
 
 function withSafeArea(element: React.ReactElement): React.ReactElement {

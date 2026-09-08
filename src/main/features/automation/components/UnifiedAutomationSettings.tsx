@@ -16,7 +16,7 @@ import {
   type RenderItemParams,
 } from 'react-native-draggable-flatlist';
 
-import { getAccessibilityFocusTarget, focusAccessibilityTarget } from '../../../platform/accessibilityFocus';
+import { usePickerFocusReturn } from '../../../platform/usePickerFocusReturn';
 
 import {
   automationEntryDisplayName,
@@ -59,15 +59,17 @@ export function UnifiedAutomationSettings({
   const addTriggerRef = useRef<ElementRef<typeof Pressable>>(null);
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const addGenerationRef = useRef(0);
-  const restoreFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const allTypesAdded = hasAllAutomationTypes(entries);
   const entryIds = entries.map(({ id }) => id).join(',');
+  const { open: captureFocus, close: restoreFocus } = usePickerFocusReturn<undefined>({
+    getTarget: () => addTriggerRef.current,
+    canRestore: () => !addSheetOpen && !allTypesAdded,
+  });
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      if (restoreFocusTimerRef.current) clearTimeout(restoreFocusTimerRef.current);
       openSwipeableRef.current?.close();
       openSwipeableRef.current = null;
     };
@@ -85,18 +87,11 @@ export function UnifiedAutomationSettings({
     openSwipeableRef.current = swipeable;
   }, []);
 
-  const restoreAddTriggerFocus = useCallback(() => {
-    if (restoreFocusTimerRef.current) clearTimeout(restoreFocusTimerRef.current);
-    restoreFocusTimerRef.current = setTimeout(() => {
-      if (mountedRef.current) focusNode(addTriggerRef.current);
-    }, 250);
-  }, []);
-
   const closeAddSheet = useCallback(() => {
     addGenerationRef.current += 1;
     setAddSheetOpen(false);
-    restoreAddTriggerFocus();
-  }, [restoreAddTriggerFocus]);
+    restoreFocus();
+  }, [restoreFocus]);
 
   useEffect(() => {
     closeOpenSwipeable();
@@ -120,17 +115,19 @@ export function UnifiedAutomationSettings({
           text: '삭제',
           style: 'destructive',
           onPress: () => {
+            const generation = ++addGenerationRef.current;
+            captureFocus(undefined);
             void onDelete(entry.id).then((deleted) => {
-              if (deleted && mountedRef.current) {
+              if (deleted && mountedRef.current && addGenerationRef.current === generation) {
                 closeOpenSwipeable();
-                restoreAddTriggerFocus();
+                restoreFocus();
               }
             });
           },
         },
       ],
     );
-  }, [closeOpenSwipeable, entries, onDelete, restoreAddTriggerFocus]);
+  }, [captureFocus, closeOpenSwipeable, entries, onDelete, restoreFocus]);
 
   const renderItem = useCallback((params: RenderItemParams<TypedAutomationEntryResponse>) => (
     <AutomationEntryRow
@@ -198,8 +195,10 @@ export function UnifiedAutomationSettings({
         disabled={allTypesAdded}
         nativeID="automation-add-trigger"
         onPress={() => {
+          if (allTypesAdded) return;
           closeOpenSwipeable();
           addGenerationRef.current += 1;
+          captureFocus(undefined);
           setAddSheetOpen(true);
         }}
         style={({ pressed }) => [
@@ -373,11 +372,6 @@ function AutomationEntryRow({
       </View>
     </ReanimatedSwipeable>
   );
-}
-
-function focusNode(node: ElementRef<typeof Pressable> | null): void {
-  const handle = getAccessibilityFocusTarget(node);
-  if (handle != null) focusAccessibilityTarget(handle);
 }
 
 function getEntrySummary(entry: TypedAutomationEntryResponse): string {

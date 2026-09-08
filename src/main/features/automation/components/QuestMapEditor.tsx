@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ElementRef } from 'react
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Plus } from 'lucide-react-native';
 
-import { getAccessibilityFocusTarget, focusAccessibilityTarget } from '../../../platform/accessibilityFocus';
+import { usePickerFocusReturn } from '../../../platform/usePickerFocusReturn';
 
 import {
   buildQuestMapIdentity,
@@ -41,56 +41,30 @@ export function QuestMapEditor({
 }: QuestMapEditorProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const pickerTriggerRef = useRef<ElementRef<typeof Pressable>>(null);
-  const mountedRef = useRef(false);
   const disabledRef = useRef(disabled);
   const pickerOpenRef = useRef(false);
-  const invokingTriggerHandleRef = useRef<ReturnType<typeof getAccessibilityFocusTarget>>(null);
-  const focusGenerationRef = useRef(0);
-  const restoreFocusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const questContext = quest.name || quest.displayCode;
+  const { open: captureFocus, close: restoreFocus } = usePickerFocusReturn<string>({
+    getTarget: () => pickerTriggerRef.current,
+    canRestore: (questKey) => questKey === quest.questKey && !disabledRef.current && !pickerOpenRef.current,
+  });
 
   disabledRef.current = disabled;
 
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      focusGenerationRef.current += 1;
-      invokingTriggerHandleRef.current = null;
-      if (restoreFocusTimerRef.current) clearTimeout(restoreFocusTimerRef.current);
-    };
-  }, []);
-
-  const closePicker = useCallback((restoreFocus: boolean) => {
-    const generation = ++focusGenerationRef.current;
-    const invocationHandle = invokingTriggerHandleRef.current;
+  const closePicker = useCallback((restore: boolean) => {
     pickerOpenRef.current = false;
     setPickerOpen(false);
-    if (restoreFocusTimerRef.current) {
-      clearTimeout(restoreFocusTimerRef.current);
-      restoreFocusTimerRef.current = null;
-    }
-    if (!restoreFocus || invocationHandle == null) {
-      invokingTriggerHandleRef.current = null;
-      return;
-    }
-    restoreFocusTimerRef.current = setTimeout(() => {
-      restoreFocusTimerRef.current = null;
-      if (!mountedRef.current || disabledRef.current || pickerOpenRef.current || focusGenerationRef.current !== generation) return;
-      const liveHandle = getAccessibilityFocusTarget(pickerTriggerRef.current);
-      if (liveHandle != null && liveHandle === invocationHandle) focusAccessibilityTarget(liveHandle);
-      if (invokingTriggerHandleRef.current === invocationHandle) invokingTriggerHandleRef.current = null;
-    }, 250);
-  }, []);
+    restoreFocus(restore);
+  }, [restoreFocus]);
 
   const openPicker = useCallback(() => {
     if (disabledRef.current) return;
-    focusGenerationRef.current += 1;
-    if (restoreFocusTimerRef.current) clearTimeout(restoreFocusTimerRef.current);
-    invokingTriggerHandleRef.current = getAccessibilityFocusTarget(pickerTriggerRef.current);
+    captureFocus(quest.questKey);
     pickerOpenRef.current = true;
     setPickerOpen(true);
-  }, []);
+  }, [captureFocus, quest.questKey]);
+
+  useEffect(() => { closePicker(false); }, [closePicker, quest.questKey]);
 
   useEffect(() => {
     if (disabled) closePicker(false);

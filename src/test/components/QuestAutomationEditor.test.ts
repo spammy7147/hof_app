@@ -36,7 +36,9 @@ afterEach(async () => {
 let alertArguments: unknown[] | null = null;
 const accessibilityFocusCalls: unknown[] = [];
 const dragCalls: unknown[] = [];
-const focusPlatform = process.env.HOF_TEST_FOCUS_PLATFORM === 'web' ? 'web' : 'ios';
+const focusPlatform = process.env.HOF_TEST_FOCUS_PLATFORM === 'web' ? 'web'
+  : process.env.HOF_TEST_FOCUS_PLATFORM === 'android' ? 'android' : 'ios';
+const focusReturnWait = focusPlatform === 'android' ? 730 : 280;
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
   const nodeRef = React.useRef<Record<string, unknown>>({});
   Object.assign(nodeRef.current, props, {
@@ -339,14 +341,14 @@ describe('QuestAutomationEditor mounted behavior', () => {
     });
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '프리셋 검색' }).length, 0);
     await act(async () => { retainedSelect(); });
-    await act(async () => { context.mock.timers.tick(280); });
+    await act(async () => { context.mock.timers.tick(focusReturnWait); });
     assert.equal(updates.length, 0);
     assert.deepEqual(accessibilityFocusCalls, []);
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · kill 1번째 맵 프리셋 선택' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Safe 프리셋 선택' }).props.onPress(); });
     assert.deepEqual(updates[0]?.map(({ partyPresetId }) => partyPresetId), [7, null]);
-    await act(async () => { context.mock.timers.tick(280); });
+    await act(async () => { context.mock.timers.tick(focusReturnWait); });
     assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), 'Combat · kill 1번째 맵 프리셋 선택');
   });
 
@@ -838,13 +840,13 @@ describe('QuestAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: label }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
-    await act(async () => { context.mock.timers.tick(280); });
+    await act(async () => { context.mock.timers.tick(focusReturnWait); });
     assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), label);
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: label }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Safe 프리셋 선택' }).props.onPress(); });
-    await act(async () => { context.mock.timers.tick(280); });
+    await act(async () => { context.mock.timers.tick(focusReturnWait); });
     assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), label);
   });
 
@@ -867,13 +869,13 @@ describe('QuestAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat · Alpha 삭제' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
-    await act(async () => { context.mock.timers.tick(280); });
+    await act(async () => { context.mock.timers.tick(focusReturnWait); });
     assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === firstLabel), false);
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: firstLabel }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.update(React.createElement(QuestAutomationEditor, { ...base, saving: true })); });
-    await act(async () => { context.mock.timers.tick(280); });
+    await act(async () => { context.mock.timers.tick(focusReturnWait); });
     assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === firstLabel), false);
 
     await act(async () => { renderer.update(React.createElement(QuestAutomationEditor, base)); });
@@ -881,14 +883,35 @@ describe('QuestAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: firstLabel }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
-    await act(async () => { context.mock.timers.tick(280); });
+    await act(async () => { context.mock.timers.tick(focusReturnWait); });
     assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === firstLabel), false);
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.unmount(); });
-    await act(async () => { context.mock.timers.tick(280); });
+    await act(async () => { context.mock.timers.tick(focusReturnWait); });
     assert.equal(accessibilityFocusCalls.length, 0);
+  });
+
+  it('퀘스트 맵 추가창은 플랫폼 창 전환 뒤 원래 버튼으로 한 번 복귀한다', async (context) => {
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
+    const renderer = await renderEditor({
+      entry: questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'a', 0)] }]),
+      quests: [quest],
+      maps: [catalogMap('battle_map', 'a', 'Alpha')],
+    });
+    const label = 'Combat 전투맵 추가';
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: label }).props.onPress(); });
+    await act(async () => { context.mock.timers.tick(250); });
+    accessibilityFocusCalls.length = 0;
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투맵 선택 닫기' }).props.onPress(); });
+    await act(async () => { context.mock.timers.tick(focusPlatform === 'android' ? 699 : 249); });
+    assert.equal(accessibilityFocusCalls.length, 0);
+    await act(async () => { context.mock.timers.tick(1); });
+    assert.deepEqual(accessibilityFocusCalls.map(focusedLabel), [label]);
+    await act(async () => { context.mock.timers.tick(1000); });
+    assert.equal(accessibilityFocusCalls.length, 1);
   });
 
   it('restores focus to the monster picker trigger after ordinary close and map selection', async (context) => {
@@ -905,14 +928,14 @@ describe('QuestAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat 전투맵 추가' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투맵 선택 닫기' }).props.onPress(); });
-    await act(async () => { context.mock.timers.tick(280); });
+    await act(async () => { context.mock.timers.tick(focusReturnWait); });
     assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), 'Combat 전투맵 추가');
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat 전투맵 추가' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투맵 검색' }).props.onChangeText('Beta'); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Beta 맵 선택' }).props.onPress(); });
-    await act(async () => { context.mock.timers.tick(280); });
+    await act(async () => { context.mock.timers.tick(focusReturnWait); });
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투맵 선택' }).length, 0);
     assert.equal(focusedLabel(accessibilityFocusCalls.at(-1)), 'Combat 전투맵 추가');
   });
@@ -928,7 +951,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat 전투맵 추가' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.update(React.createElement(QuestAutomationEditor, { ...base, saving: true })); });
-    await act(async () => { context.mock.timers.tick(280); });
+    await act(async () => { context.mock.timers.tick(focusReturnWait); });
     assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === 'Combat 전투맵 추가'), false);
 
     await act(async () => { renderer.update(React.createElement(QuestAutomationEditor, base)); });
@@ -936,15 +959,47 @@ describe('QuestAutomationEditor mounted behavior', () => {
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투맵 선택 닫기' }).props.onPress(); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Combat 전투맵 추가' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
-    await act(async () => { context.mock.timers.tick(280); });
+    await act(async () => { context.mock.timers.tick(focusReturnWait); });
     assert.equal(accessibilityFocusCalls.some((node) => focusedLabel(node) === 'Combat 전투맵 추가'), false);
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투맵 선택 닫기' }).props.onPress(); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.unmount(); });
-    await act(async () => { context.mock.timers.tick(280); });
+    await act(async () => { context.mock.timers.tick(focusReturnWait); });
     assert.equal(accessibilityFocusCalls.length, 0);
   });
+
+  for (const transition of ['퀘스트 해제', '같은 퀘스트 재선택', '다른 퀘스트로 이동', '로그인 세대 교체'] as const) {
+    it(`맵 선택창을 닫은 뒤 ${transition}에서는 과거 버튼에 복귀하지 않는다`, async (context) => {
+      context.mock.timers.enable({ apis: ['setTimeout'] });
+      const quests = ['First', 'Second'].map((name) => snapshot(name, name, 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]));
+      const base = editorProps({
+        entry: questEntry(quests.map((quest, sourceOrder) => ({
+          questKey: quest.questKey, enabled: true, sourceOrder, maps: [mapSetting('kill', 'a', 0)],
+        }))),
+        quests, maps: [catalogMap('battle_map', 'a', 'Alpha')],
+      });
+      let renderer!: ReactTestRenderer;
+      await act(async () => { renderer = create(React.createElement(QuestAutomationEditor, base)); });
+      await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'First 전투맵 추가' }).props.onPress(); });
+      await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투맵 선택 닫기' }).props.onPress(); });
+      if (transition === '로그인 세대 교체') {
+        await act(async () => { renderer.update(React.createElement(QuestAutomationEditor, { ...base, key: 'next-login-generation' })); });
+      } else if (transition === '다른 퀘스트로 이동') {
+        await act(async () => { renderer.root.findByProps({ accessibilityLabel: '퀘스트 검색' }).props.onChangeText('Second'); });
+        assert.ok(renderer.root.findByProps({ accessibilityLabel: 'Second 전투맵 추가' }));
+      } else {
+        await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'First 선택' }).props.onPress(); });
+        if (transition === '같은 퀘스트 재선택') {
+          await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'First 선택' }).props.onPress(); });
+          assert.ok(renderer.root.findByProps({ accessibilityLabel: 'First 전투맵 추가' }));
+        }
+      }
+      accessibilityFocusCalls.length = 0;
+      await act(async () => { context.mock.timers.tick(focusReturnWait); });
+      assert.equal(accessibilityFocusCalls.length, 0);
+    });
+  }
 
   it('closes an open monster picker when the editor becomes busy', async () => {
     const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
