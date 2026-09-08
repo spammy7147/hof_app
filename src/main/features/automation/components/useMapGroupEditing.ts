@@ -38,6 +38,18 @@ type EditingFormat<D, R> = {
   refreshProgress?: (current: D, server: D) => D;
 };
 
+function validateGroup<D extends MapDraft, R>(
+  current: { draft: D; groupName: string }, props: EditingProps<R>, format: EditingFormat<D, R>,
+) {
+  const validationErrors = format.validate(current.draft, props.validPresetIds, {
+    validatePresetMembership: props.presetsVerified,
+  });
+  const nameInvalid = current.groupName.trim().length > 100;
+  const invalid = validationErrors.length > 0 || nameInvalid
+    || (current.draft.maps.some(({ presetMode }) => presetMode === 'EXPLICIT') && !props.presetsVerified);
+  return { validationErrors, nameInvalid, invalid };
+}
+
 const battleFormat: EditingFormat<BattleMapAutomationDraft, UpdateBattleMapAutomationRequest> = {
   build: buildBattleMapAutomationDraft,
   request: buildBattleMapAutomationRequest,
@@ -135,14 +147,10 @@ function useMapGroupEditing<D extends MapDraft, R extends object>(props: Editing
     }
   }, [props.entry, props.catalog, state.groupName, dirty, format, isDirty, update]);
 
-  const validationErrors = format.validate(state.draft, props.validPresetIds, {
-    validatePresetMembership: props.presetsVerified,
-  });
-  const nameInvalid = state.groupName.trim().length > 100;
+  const { validationErrors, nameInvalid, invalid } = validateGroup(state, props, format);
   const busy = props.saving || localBusy;
   const controlsDisabled = busy || props.loading;
-  const saveDisabled = controlsDisabled || validationErrors.length > 0 || nameInvalid
-    || (state.draft.maps.some(({ presetMode }) => presetMode === 'EXPLICIT') && !props.presetsVerified);
+  const saveDisabled = controlsDisabled || invalid;
 
   const runMutation = useCallback(async (operation: () => Promise<unknown>) => {
     if (isEditingDisabled()) return;
@@ -164,9 +172,7 @@ function useMapGroupEditing<D extends MapDraft, R extends object>(props: Editing
     const current = stateRef.current;
     const latest = propsRef.current;
     const name = current.groupName.trim();
-    if (name.length > 100 || format.validate(current.draft, latest.validPresetIds, {
-      validatePresetMembership: latest.presetsVerified,
-    }).length > 0 || (current.draft.maps.some(({ presetMode }) => presetMode === 'EXPLICIT') && !latest.presetsVerified)) return;
+    if (validateGroup(current, latest, format).invalid) return;
     await runMutation(async () => {
       const generation = generationRef.current;
       const baseline = format.serialize(current.draft);
