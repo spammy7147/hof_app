@@ -38,7 +38,7 @@ const accessibilityFocusCalls: unknown[] = [];
 const dragCalls: unknown[] = [];
 const focusPlatform = process.env.HOF_TEST_FOCUS_PLATFORM === 'web' ? 'web'
   : process.env.HOF_TEST_FOCUS_PLATFORM === 'android' ? 'android' : 'ios';
-const focusReturnWait = focusPlatform === 'android' ? 730 : 280;
+const focusReturnWait = focusPlatform === 'android' ? 1030 : 280;
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => {
   const nodeRef = React.useRef<Record<string, unknown>>({});
   Object.assign(nodeRef.current, props, {
@@ -906,7 +906,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     await act(async () => { context.mock.timers.tick(250); });
     accessibilityFocusCalls.length = 0;
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '전투맵 선택 닫기' }).props.onPress(); });
-    await act(async () => { context.mock.timers.tick(focusPlatform === 'android' ? 699 : 249); });
+    await act(async () => { context.mock.timers.tick(focusPlatform === 'android' ? 999 : 249); });
     assert.equal(accessibilityFocusCalls.length, 0);
     await act(async () => { context.mock.timers.tick(1); });
     assert.deepEqual(accessibilityFocusCalls.map(focusedLabel), [label]);

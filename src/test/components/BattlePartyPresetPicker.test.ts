@@ -62,11 +62,13 @@ describe('BattlePartyPresetPicker', () => {
     try {
       await openPicker(renderer);
       await act(async () => (commonPickerCalls.at(-1)?.onClose as () => void)());
-      // APK 68의 실제 TalkBack 창 전환은 닫기 뒤 약 600ms까지 초기 포커스를 다시 고른다.
-      await act(async () => { context.mock.timers.tick(600); });
-      assert.deepEqual(focusCalls, []);
-      await act(async () => { context.mock.timers.tick(200); });
-      assert.deepEqual(focusCalls, [11]);
+      // APK 72 실측: slide 종료 뒤 TalkBack의 초기 선택이 700ms 복귀까지 덮어썼다.
+      // OS가 다른 대상(99)을 고르는 상황을 adapter의 관측 결과로 재현한다.
+      setTimeout(() => focusCalls.push(99), 800);
+      await act(async () => { context.mock.timers.tick(999); });
+      assert.deepEqual(focusCalls, [99]);
+      await act(async () => { context.mock.timers.tick(1); });
+      assert.deepEqual(focusCalls, [99, 11]);
     } finally {
       await act(async () => renderer.unmount());
       platform.OS = 'ios';
@@ -84,12 +86,12 @@ describe('BattlePartyPresetPicker', () => {
       await act(async () => (commonPickerCalls.at(-1)?.onClose as () => void)());
       await act(async () => { context.mock.timers.tick(400); });
       await openPicker(renderer);
-      await act(async () => { context.mock.timers.tick(400); });
+      await act(async () => { context.mock.timers.tick(700); });
       assert.deepEqual(focusCalls, []);
       await act(async () => (commonPickerCalls.at(-1)?.onClose as () => void)());
       await act(async () => { context.mock.timers.tick(400); });
       await act(async () => renderer.update(React.createElement(BattlePartyPresetPicker, pickerProps({ loading: true }))));
-      await act(async () => { context.mock.timers.tick(400); });
+      await act(async () => { context.mock.timers.tick(700); });
       assert.deepEqual(focusCalls, []);
     } finally {
       await act(async () => renderer.unmount());

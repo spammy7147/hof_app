@@ -20,7 +20,7 @@ let alertArguments: unknown[] | null = null;
 const focusCalls: unknown[] = [];
 const focusPlatform = process.env.HOF_TEST_FOCUS_PLATFORM === 'web' ? 'web'
   : process.env.HOF_TEST_FOCUS_PLATFORM === 'android' ? 'android' : 'ios';
-const focusReturnWait = focusPlatform === 'android' ? 730 : 280;
+const focusReturnWait = focusPlatform === 'android' ? 1030 : 280;
 const activeRenderers = new Set<ReactTestRenderer>();
 afterEach(async () => {
   for (const renderer of activeRenderers) await act(async () => { renderer.unmount(); });
@@ -529,7 +529,7 @@ describe('UnifiedAutomationSettings mounted interactions', () => {
     assert.equal((focusCalls[0] as { accessibilityRole: string }).accessibilityRole, 'header');
     focusCalls.length = 0;
     await act(async () => { visibleModals(renderer.root)[0]?.props.onRequestClose(); });
-    await act(async () => { context.mock.timers.tick(focusPlatform === 'android' ? 699 : 249); });
+    await act(async () => { context.mock.timers.tick(focusPlatform === 'android' ? 999 : 249); });
     assert.equal(focusCalls.length, 0);
     await act(async () => { context.mock.timers.tick(1); });
     assert.deepEqual(focusCalls.map(focusId), ['automation-add-trigger']);

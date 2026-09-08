@@ -47,7 +47,8 @@ export function usePickerFocusReturn<Key>({ getTarget, canRestore }: Options<Key
     cancel();
     if (captured.node == null || captured.target == null) return;
     const expectedGeneration = generation.current;
-    // Android TalkBack은 창 전환 뒤 약 600ms까지 초기 포커스를 다시 고르므로 그 뒤에 복귀한다.
+    // Android slide 전환 시간과 TalkBack의 뒤늦은 초기 포커스 선택이 끝난 뒤 복귀한다.
+    // 실제 추가창에서는 닫기 요청 후 700ms 복귀도 OS의 선택에 덮어써졌다.
     timer.current = setTimeout(() => {
       timer.current = null;
       if (!mounted.current || generation.current !== expectedGeneration || !latest.current.canRestore(captured.key)) return;
@@ -55,7 +56,7 @@ export function usePickerFocusReturn<Key>({ getTarget, canRestore }: Options<Key
       if (node !== captured.node) return;
       const target = getAccessibilityFocusTarget(node);
       if (target != null && target === captured.target) focusAccessibilityTarget(target);
-    }, Platform.OS === 'android' ? 700 : 250);
+    }, Platform.OS === 'android' ? 1000 : 250);
   }, [cancel]);
 
   return { open, close, cancel };
