@@ -10,6 +10,13 @@ export function CharacterRecoveryPanel({ characterHub }: { characterHub: Charact
   if (!job && !state.errorMessage) return null;
   const busy = state.recoveryBusy || state.status === 'running';
   const executing = job?.status === 'RUNNING' || job?.status === 'PENDING';
+  const restored = job?.recoveryStatus === 'RESTORED';
+  const collectionIncomplete = job?.collectionStatus === 'FAILED' || job?.collectionStatus === 'INCOMPLETE';
+  const collectionMessage = job?.collectionMessage || (collectionIncomplete ? job?.message : null);
+  const errorMessage = restored && (state.errorMessage === job?.message || state.errorMessage === collectionMessage)
+    ? null : state.errorMessage;
+  const lastStep = job?.deepSync?.progress.at(-1);
+  const restoring = job?.recoveryStatus === 'RESTORING' || (executing && job?.collectionStatus === 'FAILED');
   const needsReview = job && ['REQUIRED', 'RESTORING', 'UNAVAILABLE'].includes(job.recoveryStatus ?? '');
   const canRetry = needsReview && job.recoveryStatus !== 'UNAVAILABLE' && job.canRetryRecovery !== false;
   const preview = state.preview?.jobId === job?.id ? state.preview : null;
@@ -27,14 +34,23 @@ export function CharacterRecoveryPanel({ characterHub }: { characterHub: Charact
       {job && <>
         <Text style={styles.text}>{`수집: ${collectionLabel(job)}`}</Text>
         <Text style={styles.text}>{`원본 복구: ${recoveryLabel(job)}`}</Text>
+        {restored && job.collectionStatus === 'COMPLETED' && <Text style={styles.text}>
+          전체 설정 동기화를 완료했고 시작 전 설정으로 복원했습니다.
+        </Text>}
+        {restored && collectionIncomplete && <Text style={styles.text}>
+          설정 수집을 완료하지 못했지만 시작 전 설정으로 복원했습니다.
+        </Text>}
         {executing && <Text style={styles.note}>서버에서 작업을 진행 중입니다. 아래 버튼으로 최신 상태를 확인할 수 있습니다.</Text>}
         {job.recoveryStatus === 'ACCEPTED' && <Text style={styles.note}>확인한 현재 상태로 작업을 종료했습니다. 자동화는 자동 재개하지 않았습니다.</Text>}
-        {job.collectionMessage && job.collectionMessage !== state.errorMessage && <Text style={styles.note}>{job.collectionMessage}</Text>}
-        {job.deepSync?.progress.slice(-5).map((step, index) => <Text key={`${step.phase}-${index}`} style={styles.note}>
-          {phaseLabels[step.phase]} · {step.completedSteps}/{step.totalSteps}
-        </Text>)}
+        {collectionMessage && (restored || collectionMessage !== errorMessage) && <Text style={styles.note}>
+          {restored ? `이전 수집 실패 사유: ${collectionMessage}` : collectionMessage}
+        </Text>}
+        {executing && <Text style={styles.note}>
+          {restoring ? '시작 전 설정 복원 중' : lastStep?.phase === 'RESTORE' ? '시작 전 설정 복원 확인'
+            : lastStep ? `${phaseLabels[lastStep.phase]} · ${lastStep.completedSteps}/${lastStep.totalSteps}` : '작업 시작 중'}
+        </Text>}
       </>}
-      {state.errorMessage && <Text accessibilityRole="alert" style={styles.error}>{state.errorMessage}</Text>}
+      {errorMessage && <Text accessibilityRole="alert" style={styles.error}>{errorMessage}</Text>}
       {button('작업 상태 다시 확인', actions.checkRecovery)}
       {canRetry && button('보존된 원본으로 복구 재시도', actions.retryRecovery, executing)}
       {needsReview && button('원본 서버의 현재 상태 확인', actions.previewRecovery, executing)}
