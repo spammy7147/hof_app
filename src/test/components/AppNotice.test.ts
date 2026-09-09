@@ -8,6 +8,7 @@ import {
   type PushNotificationResponseLike,
 } from '../../main/platform/pushNotificationRouting';
 import type { AndroidPushPreparation } from '../../main/platform/pushNotifications';
+import type { HofObservedStatusResponse, HofStatusResponse } from '../../main/types/api';
 
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => (
   React.createElement(name, { ...props, ref }, props.children as React.ReactNode)
@@ -26,6 +27,9 @@ let categoryCalls = 0;
 let passReads = 0;
 let mutationsBlocked = false;
 let clientConstructions = 0;
+let statusListener: ((status: HofObservedStatusResponse) => void) | null = null;
+let statusResponse = async (): Promise<HofStatusResponse> => fullStatus();
+let syncRequirements: boolean[] = [];
 const categories = [{ id: 'battle_map', name: '전투', description: '' }];
 const passState = { enabled: true, passState: 'UNKNOWN', lifecycleState: 'UNKNOWN', userActionRequired: false };
 const syncCharacters = async () => undefined;
@@ -56,7 +60,11 @@ class BackendApiClientMock {
   }
   setSessionMutationsBlocked(blocked: boolean) { mutationsBlocked = blocked; }
   async runBattle(request: unknown) { battleCalls += 1; battleRequests.push(request); return battleResponse(); }
-  async fetchStatus() { return { characterSyncRequired: false }; }
+  async fetchStatus() { return statusResponse(); }
+  subscribeHofStatus(listener: (status: HofObservedStatusResponse) => void) {
+    statusListener = listener;
+    return () => { statusListener = null; };
+  }
   subscribeManualActionState(listener: (pending: boolean) => void) { manualActionListener = listener; listener(false); return () => { manualActionListener = null; }; }
 }
 const backendApiClient = new BackendApiClientMock();
@@ -101,7 +109,7 @@ moduleWithLoader._load = (request, parent, isMain) => {
           characterSyncLabel: syncLabel,
           characterSyncError: syncError,
           loadSavedCharacters: syncCharacters,
-          startAutomaticSyncIfRequired: syncCharacters,
+          startAutomaticSyncIfRequired: async (required: boolean) => { syncRequirements.push(required); },
           resetCharacterSync: () => undefined,
         };
       },
@@ -187,6 +195,9 @@ afterEach(() => {
   categoryCalls = 0;
   passReads = 0;
   mutationsBlocked = false;
+  statusListener = null;
+  statusResponse = async () => fullStatus();
+  syncRequirements = [];
   battleRequests = [];
   captchaResolution = async () => undefined;
   captchaWaitCalls = 0;
@@ -196,6 +207,67 @@ afterEach(() => {
 });
 
 describe('App system notice', () => {
+  it('초기 전체 상태보다 먼저 도착한 최신 관측과 전체 상태 메타데이터를 함께 보존한다', async () => {
+    let resolveStatus!: (status: HofStatusResponse) => void;
+    statusResponse = () => new Promise((resolve) => { resolveStatus = resolve; });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(App)); });
+    try {
+      assert.equal(mainScreen(renderer).props.status, null);
+      const observed: HofObservedStatusResponse = {
+        playerName: '최신 이름', funds: 200, timeCurrent: 2000, timeMax: 6000,
+        work: 'Working', auction: 'Auction', observedAt: '2026-09-09T10:00:02Z',
+      };
+      await act(async () => { statusListener?.(observed); });
+      for (const observedAt of ['2026-09-09T10:00:01Z', observed.observedAt, 'invalid']) {
+        await act(async () => { statusListener?.({ ...observed, funds: 999, observedAt }); });
+      }
+      await act(async () => { resolveStatus(fullStatus()); });
+      assert.deepEqual(mainScreen(renderer).props.status, { ...fullStatus(), ...observed });
+      assert.deepEqual(syncRequirements, [true]);
+      const latest = { ...observed, funds: 300, observedAt: '2026-09-09T10:00:03Z' };
+      await act(async () => { statusListener?.(latest); });
+      assert.deepEqual(mainScreen(renderer).props.status, { ...fullStatus(), ...latest });
+    } finally { await act(async () => renderer.unmount()); }
+  });
+
+  it('먼저 도착한 관측보다 전체 상태의 관측 시각이 최신이면 전체 상태를 유지한다', async () => {
+    let resolveStatus!: (status: HofStatusResponse) => void;
+    statusResponse = () => new Promise((resolve) => { resolveStatus = resolve; });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(App)); });
+    try {
+      await act(async () => { statusListener?.({ ...fullStatus(), funds: 999, observedAt: 'invalid' }); });
+      await act(async () => { statusListener?.({ ...fullStatus(), funds: 200 }); });
+      const latest = { ...fullStatus(), funds: 300, observedAt: '2026-09-09T10:00:03Z', characterSyncRequired: false };
+      await act(async () => { resolveStatus(latest); });
+      assert.deepEqual(mainScreen(renderer).props.status, latest);
+      assert.deepEqual(syncRequirements, [false]);
+    } finally { await act(async () => renderer.unmount()); }
+  });
+
+  it('계정 전환 뒤에는 이전 세대의 보관 관측과 늦은 전체 상태·콜백을 표시하지 않는다', async () => {
+    let resolveOldStatus!: (status: HofStatusResponse) => void;
+    statusResponse = () => new Promise((resolve) => { resolveOldStatus = resolve; });
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(App)); });
+    try {
+      const oldListener = statusListener;
+      const oldObservation = { ...fullStatus(), funds: 999, observedAt: '2026-09-09T10:00:09Z' };
+      await act(async () => { oldListener?.(oldObservation); });
+      await act(async () => { await mainScreen(renderer).props.onOpenLogin(); });
+      const nextAccount = { ...fullStatus(), accountId: 8, playerName: '다음 계정', characterSyncRequired: false };
+      statusResponse = async () => nextAccount;
+      await act(async () => {
+        await renderer.root.find((node) => String(node.type) === 'LoginScreen').props.onSubmit({ username: 'other', password: 'test' });
+      });
+      assert.deepEqual(mainScreen(renderer).props.status, nextAccount);
+      await act(async () => { oldListener?.(oldObservation); resolveOldStatus(fullStatus()); });
+      assert.deepEqual(mainScreen(renderer).props.status, nextAccount);
+      assert.deepEqual(syncRequirements, [false]);
+    } finally { await act(async () => renderer.unmount()); }
+  });
+
   it('푸시 권한 거부 안내를 로그인한 화면에 전달한다', async () => {
     pushPreparation = { status: 'permission-denied' };
     let renderer!: ReactTestRenderer;
@@ -362,6 +434,14 @@ function notificationResponse(type: string): NonNullable<PushNotificationRespons
         content: { data: { type } },
       },
     },
+  };
+}
+
+function fullStatus(): HofStatusResponse {
+  return {
+    accountId: 7, playerName: '초기 이름', funds: 100, timeCurrent: 1000, timeMax: 6000,
+    work: 'Nothing', auction: 'Nothing', totalCharacterCount: 2, synchronizedCharacterCount: 1,
+    characterSyncRequired: true, observedAt: '2026-09-09T10:00:00Z',
   };
 }
 

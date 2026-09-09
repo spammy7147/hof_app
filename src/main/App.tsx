@@ -201,6 +201,7 @@ function AuthenticatedApp({
     session?.loggedIn === true ? session : null,
   );
   const [status, setStatus] = useState<HofStatusResponse | null>(null);
+  const latestStatusObservation = useRef<HofObservedStatusResponse | null>(null);
   const [manualActionPending, setManualActionPending] = useState(false);
   const describeError = useCallback(
     (error: unknown): string => toUserFacingErrorMessage(error),
@@ -296,12 +297,20 @@ function AuthenticatedApp({
    */
   const refreshStatus = useCallback(async () => {
     const nextStatus = await api.fetchStatus();
-    setStatus(nextStatus);
+    if (activeGeneration.current) {
+      setStatus(mergeObservedHofStatus(nextStatus, latestStatusObservation.current));
+    }
     return nextStatus;
   }, [api]);
 
   const handleStatusObserved = useCallback(
     (observed: HofObservedStatusResponse) => {
+      if (!activeGeneration.current) return;
+      const observedAt = Date.parse(observed.observedAt);
+      const previous = latestStatusObservation.current;
+      if (Number.isNaN(observedAt) || (previous && observedAt <= Date.parse(previous.observedAt))) return;
+      // 전체 상태가 아직 없어도 이 로그인 세대의 최신 관측 하나는 보존한다.
+      latestStatusObservation.current = observed;
       setStatus((current) => mergeObservedHofStatus(current, observed));
     },
     [],
