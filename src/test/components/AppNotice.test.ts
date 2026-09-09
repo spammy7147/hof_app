@@ -7,6 +7,7 @@ import {
   routeCaptchaNotificationResponse,
   type PushNotificationResponseLike,
 } from '../../main/platform/pushNotificationRouting';
+import type { AndroidPushPreparation } from '../../main/platform/pushNotifications';
 
 const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>>((props, ref) => (
   React.createElement(name, { ...props, ref }, props.children as React.ReactNode)
@@ -19,6 +20,7 @@ let syncError: string | null = null;
 let syncLabel: string | null = null;
 let selectPushNotification: ((response: PushNotificationResponseLike) => void) | null = null;
 let openCaptchaCalls = 0;
+let pushPreparation: AndroidPushPreparation = { status: 'unsupported' };
 let logoutCalls = 0;
 let categoryCalls = 0;
 let passReads = 0;
@@ -70,6 +72,7 @@ moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') {
     return {
       ActivityIndicator: host('ActivityIndicator'),
+      AppState: { currentState: 'active', addEventListener: () => ({ remove: () => undefined }) },
       Pressable: host('Pressable'),
       StyleSheet: { create: <T,>(styles: T) => styles },
       Text: host('Text'),
@@ -150,7 +153,7 @@ moduleWithLoader._load = (request, parent, isMain) => {
   }
   if (request.endsWith('/platform/pushNotifications')) {
     return {
-      prepareAndroidPushRegistration: async () => null,
+      prepareAndroidPushRegistration: async () => pushPreparation,
       subscribeToCaptchaNotification: (onOpenCaptcha: () => void) => {
         selectPushNotification = (response) => {
           routeCaptchaNotificationResponse(response, onOpenCaptcha);
@@ -178,6 +181,7 @@ afterEach(() => {
   syncLabel = null;
   selectPushNotification = null;
   openCaptchaCalls = 0;
+  pushPreparation = { status: 'unsupported' };
   logoutCalls = 0;
   battleCalls = 0;
   categoryCalls = 0;
@@ -192,6 +196,15 @@ afterEach(() => {
 });
 
 describe('App system notice', () => {
+  it('푸시 권한 거부 안내를 로그인한 화면에 전달한다', async () => {
+    pushPreparation = { status: 'permission-denied' };
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(App)); });
+    try {
+      assert.match(mainScreen(renderer).props.notice, /설정.*알림 권한/);
+    } finally { await act(async () => renderer.unmount()); }
+  });
+
   it('동기화 오류는 별도 화면으로 전달하고 공용 안내에 표시하지 않는다', async () => {
     syncError = '서비스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.';
     let renderer!: ReactTestRenderer;

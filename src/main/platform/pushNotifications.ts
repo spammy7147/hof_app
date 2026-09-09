@@ -3,9 +3,14 @@ export type AndroidPushRegistration = {
   nativeToken: string;
 };
 
+export type AndroidPushPreparation =
+  | { status: 'ready'; registration: AndroidPushRegistration }
+  | { status: 'permission-denied' }
+  | { status: 'unsupported' };
+
 /** 웹과 미지원 플랫폼에서는 Android 푸시 등록을 건너뛴다. */
-export async function prepareAndroidPushRegistration(): Promise<AndroidPushRegistration | null> {
-  return null;
+export async function prepareAndroidPushRegistration(_nativeToken?: string): Promise<AndroidPushPreparation> {
+  return { status: 'unsupported' };
 }
 
 /** 웹과 미지원 플랫폼에는 영속 Android 설치 ID가 없다. */
@@ -20,7 +25,7 @@ export function subscribeToCaptchaNotification(_onOpenCaptcha: () => void): () =
 
 /** 웹에서는 네이티브 push token 변경 이벤트가 없다. */
 export function subscribeToPushTokenChanges(
-  _onToken: (registration: AndroidPushRegistration) => void,
+  _onTokenChanged: (nativeToken: string) => void,
 ): () => void {
   return () => undefined;
 }

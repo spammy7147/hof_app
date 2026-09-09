@@ -2,7 +2,7 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 
-import type { AndroidPushRegistration } from './pushNotifications';
+import type { AndroidPushPreparation } from './pushNotifications';
 import { routeCaptchaNotificationResponse } from './pushNotificationRouting';
 
 const CHANNEL_ID = 'automation-alerts';
@@ -11,10 +11,10 @@ type NotificationsModule = typeof import('expo-notifications');
 let notificationsModule: NotificationsModule | null = null;
 
 /** Android 알림 권한과 캡차 인증 채널을 준비하고 FCM 네이티브 토큰을 반환한다. */
-export async function prepareAndroidPushRegistration(): Promise<AndroidPushRegistration | null> {
-  if (Platform.OS !== 'android') return null;
+export async function prepareAndroidPushRegistration(nativeToken?: string): Promise<AndroidPushPreparation> {
+  if (Platform.OS !== 'android') return { status: 'unsupported' };
   const Notifications = getNotifications();
-  if (!Notifications) return null;
+  if (!Notifications) return { status: 'unsupported' };
 
   await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
     name: '캡차 인증',
@@ -23,17 +23,23 @@ export async function prepareAndroidPushRegistration(): Promise<AndroidPushRegis
   });
 
   const currentPermission = await Notifications.getPermissionsAsync();
-  const permission = currentPermission.granted
-    ? currentPermission
-    : await Notifications.requestPermissionsAsync();
-  if (!permission.granted) return null;
+  const permission = currentPermission.status === 'undetermined' && currentPermission.canAskAgain
+    ? await Notifications.requestPermissionsAsync()
+    : currentPermission;
+  if (!permission.granted) return { status: 'permission-denied' };
 
-  const token = await Notifications.getDevicePushTokenAsync();
-  if (typeof token.data !== 'string' || token.data.length === 0) return null;
+  // 토큰 조회도 변경 이벤트를 발생시키므로 listener가 전달한 토큰은 재조회하지 않는다.
+  const token = nativeToken ?? (await Notifications.getDevicePushTokenAsync()).data;
+  if (typeof token !== 'string' || token.length === 0) {
+    throw new Error('기기 알림 토큰을 가져오지 못했습니다.');
+  }
 
   return {
-    installationId: await getOrCreateInstallationId(),
-    nativeToken: token.data,
+    status: 'ready',
+    registration: {
+      installationId: await getOrCreateInstallationId(),
+      nativeToken: token,
+    },
   };
 }
 
@@ -57,21 +63,21 @@ export function subscribeToCaptchaNotification(onOpenCaptcha: () => void): () =>
   return () => subscription.remove();
 }
 
-/** 실행 중 FCM 토큰이 교체되면 백엔드가 즉시 갱신할 수 있도록 전달한다. */
+/** 토큰 교체는 등록 경로가 최신 권한·설치 ID를 확인하고 새 토큰을 연결하게 한다. */
 export function subscribeToPushTokenChanges(
-  onToken: (registration: AndroidPushRegistration) => void,
+  onTokenChanged: (nativeToken: string) => void,
 ): () => void {
   if (Platform.OS !== 'android') return () => undefined;
   const Notifications = getNotifications();
   if (!Notifications) return () => undefined;
 
+  let active = true;
   const subscription = Notifications.addPushTokenListener((token) => {
+    if (!active) return;
     if (typeof token.data !== 'string' || token.data.length === 0) return;
-    void getOrCreateInstallationId().then((installationId) => {
-      onToken({ installationId, nativeToken: token.data as string });
-    });
+    onTokenChanged(token.data);
   });
-  return () => subscription.remove();
+  return () => { active = false; subscription.remove(); };
 }
 
 /**

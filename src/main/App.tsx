@@ -286,7 +286,7 @@ function AuthenticatedApp({
   const handleOpenCaptchaModal = useCallback(() => {
     void openCaptchaModal();
   }, [openCaptchaModal]);
-  useAndroidPushRegistration({
+  const pushRegistrationMessage = useAndroidPushRegistration({
     api,
     authenticated: session?.loggedIn === true,
     onOpenCaptcha: handleOpenCaptchaModal,
@@ -355,7 +355,7 @@ function AuthenticatedApp({
         onStartCharacterFullSync={startCharacterFullSync}
         onStopCharacterSync={stopCharacterSync}
         onResumeCharacterSync={resumeCharacterSync}
-        notice={null}
+        notice={pushRegistrationMessage}
         onLoadPresetPatterns={(preset, characters) => loadPartyPresetPatterns(api, preset, characters)}
         onOpenCaptcha={handleOpenCaptchaModal}
         onStatusObserved={handleStatusObserved}
