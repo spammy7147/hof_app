@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
   FlatList,
   Modal,
   Pressable,
@@ -9,6 +8,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { AppAlert as Alert } from '../../../platform/AppAlert';
 import {
   NestableDraggableFlatList,
   type RenderItemParams,

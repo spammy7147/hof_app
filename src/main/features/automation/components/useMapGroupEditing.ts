@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert } from 'react-native';
+import { AppAlert as Alert } from '../../../platform/AppAlert';
 
 import {
   buildBattleMapAutomationDraft, buildBattleMapAutomationRequest, validateBattleMapAutomationDraft,

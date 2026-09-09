@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   StyleSheet,
@@ -10,6 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { AppAlert as Alert } from '../../../platform/AppAlert';
 import { ArrowLeft, Save, Trash2 } from 'lucide-react-native';
 
 import {

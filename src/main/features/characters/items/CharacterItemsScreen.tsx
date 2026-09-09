@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Alert,
   FlatList,
   Image,
   Pressable,
@@ -9,6 +8,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { AppAlert as Alert } from '../../../platform/AppAlert';
 import type { HofCharacterDetail } from "../../../types/api";
 import { theme } from "../../../styles/theme";
 import type { CharacterManagementHubResource } from "../../../domain/characterManagementHubModule";

@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import {
-  Alert,
   Modal,
   Pressable,
   StyleSheet,
@@ -8,6 +7,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { AppAlert as Alert } from '../../../platform/AppAlert';
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   ChevronRight,

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type ElementRef } from 'react';
 import {
-  Alert,
   Pressable,
   StyleSheet,
   Switch,
   Text,
   View,
 } from 'react-native';
+import { AppAlert as Alert } from '../../../platform/AppAlert';
 import { Fish, GripVertical, House, Map, Plus, ScrollText, Shield, Swords, Trash2, Users } from 'lucide-react-native';
 import ReanimatedSwipeable, {
   type SwipeableMethods,

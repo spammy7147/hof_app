@@ -1,6 +1,5 @@
 import { memo, useCallback, useMemo, useState } from "react";
 import {
-  Alert,
   FlatList,
   Image,
   Modal,
@@ -10,6 +9,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { AppAlert as Alert } from '../platform/AppAlert';
 
 import {
   displayCharacterName,
