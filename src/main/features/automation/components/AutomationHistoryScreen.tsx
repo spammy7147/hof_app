@@ -173,7 +173,7 @@ export function AutomationHistoryScreen({
 }
 function HistoryEventContent({ event }: { event: AutomationHistoryEvent }) {
   return <>
-    <Text style={styles.eventTitle}>{event.entryDisplayName ?? (event.type ? AUTOMATION_TYPE_METADATA[event.type].label : '시스템')} · {kindLabel(event.kind)}</Text>
+    <Text style={styles.eventTitle}>{event.entryDisplayName ?? (event.type ? AUTOMATION_TYPE_METADATA[event.type].label : '시스템')} · {event.reasonCode === 'ACTION_PREPARATION_FAILED' && event.kind === 'ACTION_FAILED' ? '준비 실패' : kindLabel(event.kind)}</Text>
     <Text style={styles.eventTime}>기록 시각  {new Date(event.occurredAt).toLocaleString('ko-KR')}</Text>
     {event.targetName || event.targetKey ? <View style={styles.factGroup}><Text style={styles.fact}><Text style={styles.factLabel}>대상  </Text>{event.targetName ?? event.targetKey}</Text></View> : null}
     {event.presetName || event.presetId || event.actionKind ? <View style={styles.details}>{event.actionKind ? <Text style={styles.detailChip}>동작 {actionLabel(event.actionKind, event.type)}</Text> : null}{event.presetName || event.presetId ? <Text style={styles.detailChip}>프리셋 {event.presetName ?? `저장된 프리셋 ${event.presetId}`}</Text> : null}</View> : null}
@@ -297,6 +297,7 @@ function reasonLabel(value: string) {
   if (value.includes('DAILY_LIMIT')) return '오늘 실행 가능한 횟수를 모두 사용함';
   if (value.includes('PRESET') || value.includes('PARTY') || value.includes('TARGET_MISSING')) return '필수 자동화 설정을 확인해야 함';
   if (value === 'NO_RUNNABLE_ACTION') return '현재 실행 조건을 만족하는 작업이 없음';
+  if (value === 'ACTION_PREPARATION_FAILED') return '준비 단계에서 전송하지 않고 해당 대상을 잠시 보류함';
   if (value === 'ACTION_FAILED') return '실행 중 오류가 발생해 자동 재시도 대상으로 전환됨';
   return '해당 시점의 자동화 판단 결과';
 }

@@ -788,6 +788,16 @@ export type TypedAutomationRuntimeResponse = {
   lastError: string | null;
   currentAction: TypedAutomationCurrentActionResponse | null;
   dailyRefresh: AdventureDailyRefreshResponse;
+  preparationFailures?: AutomationPreparationFailure[];
+};
+
+export type AutomationPreparationFailure = {
+  entryId: number;
+  entryDisplayName: string | null;
+  targetKey: string | null;
+  targetName: string | null;
+  message: string;
+  retryAt: string;
 };
 
 export type TypedAutomationCurrentActionResponse = {

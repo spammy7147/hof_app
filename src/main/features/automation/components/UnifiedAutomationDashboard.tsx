@@ -115,6 +115,21 @@ export function UnifiedAutomationDashboard({
           </>
         )}
 
+        {running ? runtime.preparationFailures?.map((failure) => {
+          const entry = aggregate.entries.find((item) => item.id === failure.entryId);
+          const label = failure.entryDisplayName ?? (entry ? AUTOMATION_TYPE_METADATA[entry.type].label : '자동화');
+          return <View key={`${failure.entryId}:${failure.targetKey ?? ''}`} accessibilityRole="alert" style={styles.warningList}>
+            <Text style={styles.warningText}>{label} · 준비 실패</Text>
+            {failure.targetName ? <Text style={styles.stopReason}>{failure.targetName}</Text> : null}
+            <Text style={styles.stopReason}>{failure.message}</Text>
+            <Text style={styles.metaText}>
+              {new Date(failure.retryAt).getTime() > (nowMs ?? Date.now())
+                ? `재판단 예정 ${new Date(failure.retryAt).toLocaleString('ko-KR')}`
+                : '예정 시각이 되어 최신 상태를 다시 확인합니다.'}
+            </Text>
+          </View>;
+        }) : null}
+
         <View style={styles.runtimeMeta}>
           <Text style={styles.metaText}>오늘 모험맵 {formatAdventureDailyRefresh(runtime.dailyRefresh).replace(/^오늘 /, '')}</Text>
           {warningCount > 0 ? (
