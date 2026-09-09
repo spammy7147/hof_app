@@ -75,9 +75,10 @@ export function useCharacterSync({
       setCharacterSyncLabel(`전체 상세 동기화 ${progress}${currentName ? ` · ${currentName}` : ''}`);
     } else {
       setCharacterSyncLabel(null);
+      closeSubscription();
     }
     return true;
-  }, []);
+  }, [closeSubscription]);
 
   const openSubscriptionRef = useRef<(
     jobId: number,
@@ -109,15 +110,16 @@ export function useCharacterSync({
       setCharacterSyncError(event.message ?? '전체 캐릭터 상세 동기화가 실패했습니다.');
       return;
     }
+    const terminalGeneration = subscriptionGenerationRef.current;
     const acceptRoster = observations.beginRosterObservation();
     api.fetchCharacterSyncJob(event.jobId)
-      .then((snapshot) => applySnapshot(
-        snapshot,
-        acceptRoster,
-        syncGeneration,
-      ))
+      .then((snapshot) => {
+        if (terminalGeneration !== subscriptionGenerationRef.current) return;
+        applySnapshot(snapshot, acceptRoster, syncGeneration);
+      })
       .catch((error: unknown) => {
-        if (syncGeneration === syncGenerationRef.current) {
+        if (terminalGeneration === subscriptionGenerationRef.current
+          && syncGeneration === syncGenerationRef.current) {
           setCharacterSyncError(describeError(error));
         }
       });
@@ -126,63 +128,55 @@ export function useCharacterSync({
     applySnapshot,
     closeSubscription,
     describeError,
-      observations,
+    observations,
   ]);
 
-  /** 연결 단절 시 snapshot 확인 후 진행 중인 동일 job만 1.2초 뒤 재구독한다. */
+  /** EOF와 오류를 같은 복구 경로로 모으고 최신 snapshot 확인 후에만 재구독한다. */
   const openSubscription = useCallback((
     jobId: number,
     syncGeneration: number,
   ) => {
     if (syncGeneration !== syncGenerationRef.current) return;
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    subscriptionRef.current?.close();
-    const subscriptionGeneration = ++subscriptionGenerationRef.current;
+    closeSubscription();
+    const subscriptionGeneration = subscriptionGenerationRef.current;
+    const isCurrent = () => subscriptionGeneration === subscriptionGenerationRef.current
+      && syncGeneration === syncGenerationRef.current && currentJobIdRef.current === jobId;
+    const recover = () => {
+      if (!isCurrent()) return;
+      // close가 즉시 onClose를 불러도 이전 연결 세대를 먼저 무효화해 중복 복구하지 않는다.
+      closeSubscription();
+      const recoveryGeneration = subscriptionGenerationRef.current;
+      const recoveryIsCurrent = () => recoveryGeneration === subscriptionGenerationRef.current
+        && syncGeneration === syncGenerationRef.current && currentJobIdRef.current === jobId;
+      let failedAttempts = 0;
+      const inspect = async () => {
+        if (!recoveryIsCurrent()) return;
+        const acceptRoster = observations.beginRosterObservation();
+        try {
+          const snapshot = await api.fetchCharacterSyncJob(jobId);
+          if (!recoveryIsCurrent() || !applySnapshot(snapshot, acceptRoster, syncGeneration)) return;
+          if (snapshot.status === 'running' || snapshot.status === 'pending') {
+            reconnectTimerRef.current = setTimeout(() => {
+              if (recoveryIsCurrent()) openSubscriptionRef.current(jobId, syncGeneration);
+            }, RECONNECT_DELAY_MS);
+          }
+        } catch (error: unknown) {
+          if (!recoveryIsCurrent()) return;
+          setCharacterSyncError(describeError(error));
+          const delay = Math.min(RECONNECT_DELAY_MS * 2 ** Math.min(failedAttempts++, 5), 30_000);
+          reconnectTimerRef.current = setTimeout(() => { void inspect(); }, delay);
+        }
+      };
+      void inspect();
+    };
     subscriptionRef.current = api.subscribeCharacterSyncJob(jobId, {
       onEvent: (event) => {
-        if (subscriptionGeneration !== subscriptionGenerationRef.current) return;
-        handleEvent(event, syncGeneration);
+        if (isCurrent()) handleEvent(event, syncGeneration);
       },
-      onError: () => {
-        if (
-          subscriptionGeneration !== subscriptionGenerationRef.current ||
-          syncGeneration !== syncGenerationRef.current
-        ) return;
-        subscriptionGenerationRef.current += 1;
-        subscriptionRef.current?.close();
-        subscriptionRef.current = null;
-        const acceptRoster = observations.beginRosterObservation();
-        api.fetchCharacterSyncJob(jobId)
-          .then((snapshot) => {
-            const applied = applySnapshot(
-              snapshot,
-              acceptRoster,
-              syncGeneration,
-            );
-            if (
-              applied &&
-              (snapshot.status === 'running' || snapshot.status === 'pending')
-            ) {
-              reconnectTimerRef.current = setTimeout(() => {
-                if (syncGeneration !== syncGenerationRef.current) return;
-                openSubscriptionRef.current(
-                  jobId,
-                  syncGeneration,
-                );
-              }, RECONNECT_DELAY_MS);
-            }
-          })
-          .catch((error: unknown) => {
-            if (syncGeneration === syncGenerationRef.current) {
-              setCharacterSyncError(describeError(error));
-            }
-          });
-      },
+      onError: recover,
+      onClose: recover,
     });
-  }, [api, applySnapshot, describeError, handleEvent, observations]);
+  }, [api, applySnapshot, closeSubscription, describeError, handleEvent, observations]);
 
   useEffect(() => {
     openSubscriptionRef.current = openSubscription;

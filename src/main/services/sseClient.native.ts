@@ -38,6 +38,9 @@ export function createSseConnection(
         eventSource.removeEventListener(eventType, listener);
       });
       eventSource.close();
+      // react-native-sse는 error callback이 반환된 뒤에도 polling을 예약한다.
+      // callback 안에서 닫은 경우 그 뒤에 생긴 예약까지 취소한다.
+      queueMicrotask(() => eventSource.close());
     },
   };
 }
