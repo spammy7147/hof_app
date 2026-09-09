@@ -206,6 +206,9 @@ export class CharacterManagementHubModule {
   private rosterProjectionGenerationById = new Map<number, number>();
   private rosterObservationRequest = 0;
   private pendingPatternChange: CharacterPatternChange | null = null;
+  private recoveryPreviewGeneration = 0;
+  private recoveryRequestGeneration = 0;
+  private recoveryActionKind: 'check' | 'retry' | 'preview' | 'accept' | null = null;
   private roster = new Map<number, HofCharacter>();
   private resource: CharacterManagementHubResource;
 
@@ -425,6 +428,7 @@ export class CharacterManagementHubModule {
       : undefined;
     if (transferSource && !observedTransferSource) return;
     this.selectionGeneration += 1;
+    this.recoveryPreviewGeneration += 1;
     this.transferGeneration += 1;
     this.pendingPatternChange = null;
     const request = ++this.requestGeneration;
@@ -439,7 +443,7 @@ export class CharacterManagementHubModule {
       warningMessage: null,
       identityResolution: null,
       patternConflict: null,
-      deepSync: idleDeepSync(),
+      deepSync: { ...this.resource.deepSync, preview: null },
       transfer: observedTransferSource
         ? {
             ...idleTransfer(),
@@ -465,17 +469,18 @@ export class CharacterManagementHubModule {
   ): void {
     if (!this.isActiveLease(expectedGeneration, expectedSelectionGeneration)) return;
     this.selectionGeneration += 1;
+    this.recoveryPreviewGeneration += 1;
     this.transferGeneration += 1;
     this.requestGeneration += 1;
     this.pendingPatternChange = null;
-    this.replace(emptyResource(
+    this.replace({ ...emptyResource(
       this.actionsFor(
         this.generation,
         this.selectionGeneration,
         this.transferGeneration,
       ),
       [...this.roster.values()],
-    ));
+    ), deepSync: { ...this.resource.deepSync, preview: null } });
     void this.recoveryAction('check', this.generation, this.selectionGeneration);
   }
 
@@ -754,7 +759,8 @@ export class CharacterManagementHubModule {
       actions.acceptRecovery = () => this.recoveryAction('accept', generation, selectionGeneration);
     }
     actions.dismissRecoveryPreview = () => {
-      if (!this.isActiveLease(generation, selectionGeneration) || this.resource.deepSync.recoveryBusy) return;
+      if (!this.isActiveLease(generation, selectionGeneration)) return;
+      this.recoveryPreviewGeneration += 1;
       this.replace({ ...this.resource, deepSync: { ...this.resource.deepSync, preview: null } });
     };
     if (this.backend.linkCharacter) {
@@ -1018,67 +1024,33 @@ export class CharacterManagementHubModule {
   ): Promise<CharacterDeepSyncResponse | void> {
     const synchronize = this.backend.deepSync;
     const selected = this.currentTarget(expectedGeneration, expectedSelectionGeneration);
-    if (
-      !synchronize ||
-      !selected ||
-      this.resource.deepSync.status === 'running' || this.resource.deepSync.recoveryBusy ||
-      operationNeedsAttention(this.resource.deepSync.job)
-    ) return undefined;
-    this.replace({
-      ...this.resource,
-      deepSync: {
-        status: 'running',
-        progress: { characterId: selected.id, progress: [] },
-        errorMessage: null,
-      },
-    });
+    if (!synchronize || !selected || this.resource.deepSync.status === 'running'
+      || this.resource.deepSync.recoveryBusy || operationNeedsAttention(this.resource.deepSync.job)) return;
+    // 서버 작업은 계정에 속한다. 화면 선택 세대가 바뀌어도 진행과 복구 보호를 유지한다.
+    const isCurrentAccount = () => this.accountKey != null && this.generation === expectedGeneration;
+    this.replace({ ...this.resource, deepSync: {
+      status: 'running', progress: { characterId: selected.id, progress: [] }, errorMessage: null,
+    } });
     try {
       const result = await synchronize(selected.id, (progress) => {
-        if (!this.isCurrentTarget(
-          selected.id,
-          expectedGeneration,
-          expectedSelectionGeneration,
-        )) return;
-        this.replace({
-          ...this.resource,
-          deepSync: { ...this.resource.deepSync, status: 'running', progress, errorMessage: null },
-        });
+        if (!isCurrentAccount()) return;
+        this.replace({ ...this.resource, deepSync: { ...this.resource.deepSync, status: 'running', progress, errorMessage: null } });
       }, (job) => {
-        if (!this.isCurrentTarget(selected.id, expectedGeneration, expectedSelectionGeneration)) return;
+        if (!isCurrentAccount()) return;
         this.replace({ ...this.resource, deepSync: { ...this.resource.deepSync, job } });
       });
-      if (!this.isCurrentTarget(
-        selected.id,
-        expectedGeneration,
-        expectedSelectionGeneration,
-      )) return undefined;
-      await this.reloadStored(expectedGeneration, expectedSelectionGeneration);
-      if (!this.isCurrentTarget(
-        selected.id,
-        expectedGeneration,
-        expectedSelectionGeneration,
-      )) return undefined;
-      this.replace({
-        ...this.resource,
-        deepSync: { ...this.resource.deepSync, status: 'completed', progress: result, errorMessage: null },
-      });
-      return result;
+      if (!isCurrentAccount()) return;
+      if (this.isCurrentTarget(selected.id, expectedGeneration, expectedSelectionGeneration)) {
+        await this.reloadStored(expectedGeneration, expectedSelectionGeneration);
+      }
+      if (!isCurrentAccount()) return;
+      this.replace({ ...this.resource, deepSync: { ...this.resource.deepSync, status: 'completed', progress: result, errorMessage: null } });
+      return this.isCurrentTarget(selected.id, expectedGeneration, expectedSelectionGeneration) ? result : undefined;
     } catch (error: unknown) {
-      if (!this.isCurrentTarget(
-        selected.id,
-        expectedGeneration,
-        expectedSelectionGeneration,
-      )) return undefined;
-      this.replace({
-        ...this.resource,
-        deepSync: {
-          ...this.resource.deepSync,
-          status: 'error',
-          progress: this.resource.deepSync.progress,
-          errorMessage: toUserFacingErrorMessage(error),
-        },
-      });
-      return undefined;
+      if (!isCurrentAccount()) return;
+      this.replace({ ...this.resource, deepSync: {
+        ...this.resource.deepSync, status: 'error', errorMessage: toUserFacingErrorMessage(error),
+      } });
     }
   }
 
@@ -1089,7 +1061,8 @@ export class CharacterManagementHubModule {
   ): Promise<void> {
     const selected = this.currentTarget(generation, selectionGeneration);
     const state = this.resource.deepSync;
-    if (!this.isActiveLease(generation, selectionGeneration) || state.recoveryBusy || state.status === 'running') return;
+    if (!this.isActiveLease(generation, selectionGeneration) || state.status === 'running'
+      || (state.recoveryBusy && (action !== 'check' || this.recoveryActionKind !== 'check'))) return;
     const job = state.job;
     if (action === 'check' && !this.backend.loadCurrentOperation) return;
     if (action !== 'check' && !job) return;
@@ -1097,8 +1070,10 @@ export class CharacterManagementHubModule {
     if (action === 'preview' && !this.backend.previewRecovery) return;
     if (action === 'accept' && (!this.backend.acceptRecovery || !state.preview || state.preview.jobId !== job?.id)) return;
     if (action !== 'check' && (job?.status === 'RUNNING' || job?.status === 'PENDING')) return;
-    const isCurrent = () => this.isActiveLease(generation, selectionGeneration)
-      && this.resource.selectedCharacter?.id === selected?.id;
+    const recoveryRequest = ++this.recoveryRequestGeneration;
+    this.recoveryActionKind = action;
+    const isCurrent = () => this.isActiveGeneration(generation) && recoveryRequest === this.recoveryRequestGeneration;
+    const previewGeneration = this.recoveryPreviewGeneration;
     const observe = (observed: CharacterOperationJob) => {
       if (!isCurrent()) return;
       this.replace({ ...this.resource, deepSync: {
@@ -1111,7 +1086,8 @@ export class CharacterManagementHubModule {
     try {
       if (action === 'preview') {
         const preview = await this.backend.previewRecovery!(job!.id);
-        if (isCurrent() && preview.jobId === job!.id && preview.characterId === job!.targetCharacterId) {
+        if (isCurrent() && previewGeneration === this.recoveryPreviewGeneration
+          && preview.jobId === job!.id && preview.characterId === job!.targetCharacterId) {
           this.replace({ ...this.resource, deepSync: { ...this.resource.deepSync, preview } });
         }
         return;
@@ -1134,7 +1110,8 @@ export class CharacterManagementHubModule {
         status: failed ? 'error' : observed?.status === 'COMPLETED' ? 'completed' : 'idle',
         errorMessage: failed ? observed.message : null,
       } });
-      if (action !== 'check' && selected && observed?.targetCharacterId === selected.id) {
+      if (action !== 'check' && selected && observed?.targetCharacterId === selected.id
+        && this.isCurrentTarget(selected.id, generation, selectionGeneration)) {
         if (action === 'accept') await this.refresh(generation, selectionGeneration);
         else await this.reloadStored(generation, selectionGeneration);
       }
@@ -1144,7 +1121,13 @@ export class CharacterManagementHubModule {
         ...this.resource.deepSync, status: 'error', preview: null, errorMessage: toUserFacingErrorMessage(error),
       } });
     } finally {
-      if (isCurrent()) this.replace({ ...this.resource, deepSync: { ...this.resource.deepSync, recoveryBusy: false } });
+      if (isCurrent()) {
+        this.recoveryActionKind = null;
+        this.replace({ ...this.resource, deepSync: { ...this.resource.deepSync, recoveryBusy: false } });
+        if (selectionGeneration !== this.selectionGeneration && !operationNeedsAttention(this.resource.deepSync.job)) {
+          void this.recoveryAction('check', generation, this.selectionGeneration);
+        }
+      }
     }
   }
 

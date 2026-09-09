@@ -16,19 +16,14 @@ import {
   GraduationCap,
   PackageOpen,
   Pencil,
-  RefreshCw,
   Sparkles,
   UserRoundX,
   type LucideIcon,
 } from "lucide-react-native";
-import type {
-  CharacterDeepSyncResponse,
-} from "../../../types/api";
 import { theme } from "../../../styles/theme";
 import { toUserFacingErrorMessage } from "../../../domain/userFacingErrors";
 import type { CharacterManagementHubResource } from "../../../domain/characterManagementHubModule";
-import { operationNeedsAttention } from "../../../domain/characterManagementHubModule";
-import { CharacterRecoveryPanel } from './CharacterRecoveryPanel';
+import { CharacterSyncControl } from '../CharacterSyncScreen';
 import { CharacterItemsScreen } from "../items/CharacterItemsScreen";
 import { CharacterSettingsTransferScreen } from "../transfer/CharacterSettingsTransferScreen";
 
@@ -54,8 +49,6 @@ export function CharacterManagementScreen({
   const identityResolution = characterHub.identityResolution;
   const [showAllIdentityCandidates, setShowAllIdentityCandidates] =
     useState(false);
-  const deepSyncProgress = characterHub.deepSync.progress;
-  const deepSyncBusy = characterHub.deepSync.status === "running";
   const canTransfer = characterHub.actions.previewTransfer != null
     && characterHub.actions.executeTransfer != null;
   const classOptions = (detail.patternOptions ?? []).filter(
@@ -163,35 +156,8 @@ export function CharacterManagementScreen({
           description="같은 HOF 계정의 다른 캐릭터 설정을 복사합니다."
           onPress={() => setTransferOpen(true)}
         />
-        <ActionRow
-          icon={RefreshCw}
-          title={deepSyncBusy ? "동기화 중…" : "전체 설정 동기화"}
-          description="현재 설정과 저장 패턴·장비 저장 1·2를 다시 확인합니다."
-          disabled={deepSyncBusy || characterHub.deepSync.recoveryBusy || operationNeedsAttention(characterHub.deepSync.job)}
-          onPress={() => {
-            void characterHub.actions.deepSync?.();
-          }}
-        />
+        <CharacterSyncControl characterHub={characterHub} />
       </View>
-      <CharacterRecoveryPanel characterHub={characterHub} />
-      {deepSyncProgress && !characterHub.deepSync.job && (
-        <View style={styles.card}>
-          <Text style={styles.label}>전체 설정 동기화</Text>
-          {deepSyncProgress.progress.length === 0 ? (
-            <Text style={styles.description}>작업을 시작하고 있습니다.</Text>
-          ) : (
-            deepSyncProgress.progress.slice(-5).map((step, index) => (
-              <Text
-                key={`${step.phase}-${step.completedSteps}-${index}`}
-                style={styles.description}
-              >
-                {deepSyncProgressLabel(step)} · {step.completedSteps}/
-                {step.totalSteps}
-              </Text>
-            ))
-          )}
-        </View>
-      )}
       <Modal
         visible={renameOpen}
         transparent
@@ -579,15 +545,3 @@ const styles = StyleSheet.create({
   },
   grip: { width: 36, height: 4, alignSelf: "center", borderRadius: 3, backgroundColor: "#4c596a", marginTop: 9 },
 });
-
-function deepSyncProgressLabel(
-  step: CharacterDeepSyncResponse["progress"][number],
-) {
-  if (step.phase === "CURRENT") return "현재 설정 확인";
-  if (step.phase === "SAVED_PATTERN")
-    return `저장 패턴 ${step.patternSlotCode ?? ""} 확인`;
-  if (step.phase === "EQUIPMENT_PRESET")
-    return `장비 저장 ${step.equipmentSlotNumber ?? ""} 확인`;
-  if (step.phase === "RESTORE") return "원래 설정 복구";
-  return "완료";
-}

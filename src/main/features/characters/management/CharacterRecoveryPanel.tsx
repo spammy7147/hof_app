@@ -17,7 +17,7 @@ export function CharacterRecoveryPanel({ characterHub }: { characterHub: Charact
     ? null : state.errorMessage;
   const lastStep = job?.deepSync?.progress.at(-1);
   const restoring = job?.recoveryStatus === 'RESTORING' || (executing && job?.collectionStatus === 'FAILED');
-  const needsReview = job && ['REQUIRED', 'RESTORING', 'UNAVAILABLE'].includes(job.recoveryStatus ?? '');
+  const needsReview = !executing && job && ['REQUIRED', 'RESTORING', 'UNAVAILABLE'].includes(job.recoveryStatus ?? '');
   const canRetry = needsReview && job.recoveryStatus !== 'UNAVAILABLE' && job.canRetryRecovery !== false;
   const preview = state.preview?.jobId === job?.id ? state.preview : null;
   const characterName = characterHub.characters.find((character) => character.id === job?.targetCharacterId)?.name;
@@ -90,6 +90,9 @@ function collectionLabel(job: CharacterOperationJob): string {
 }
 
 function recoveryLabel(job: CharacterOperationJob): string {
+  if ((job.status === 'RUNNING' || job.status === 'PENDING') && job.recoveryStatus === 'REQUIRED') {
+    return '수집 후 시작 전 설정으로 복원 예정';
+  }
   return job.recoveryStatus ? {
     NOT_STARTED: '원격 변경 전', REQUIRED: '복구 필요', RESTORING: '복원 중 · 아직 확인되지 않음',
     RESTORED: '복원 완료', UNAVAILABLE: '원본 없음 · 현재 상태 확인 필요', ACCEPTED: '현재 상태 수락',

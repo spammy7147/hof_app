@@ -1,3 +1,4 @@
+import { CharacterSyncControl, type CharacterSyncControls } from "../features/characters/CharacterSyncScreen";
 import type { ElementRef, ReactNode } from "react";
 import {
   useCallback,
@@ -27,7 +28,6 @@ import type { UnifiedAutomationController } from "../domain/unifiedAutomationCon
 import { theme } from "../styles/theme";
 import type {
   FishingBattleTarget,
-  CharacterSyncJobResponse,
   HofObservedStatusResponse,
   HofStatusResponse,
   PartyPresetResponse,
@@ -46,17 +46,11 @@ type MainSession = {
 
 type CharacterSubTabId = "characters" | "presets";
 
-type MainScreenProps = {
+type MainScreenProps = CharacterSyncControls & {
   session: MainSession | null;
   status: HofStatusResponse | null;
   battle: BattleResource;
   characterHub: CharacterManagementHubResource;
-  characterSyncLabel: string | null;
-  characterSyncJob?: CharacterSyncJobResponse | null;
-  onSyncCharacterRoster?: () => Promise<void>;
-  onStartCharacterFullSync?: () => Promise<void>;
-  onStopCharacterSync?: () => Promise<void>;
-  onResumeCharacterSync?: () => Promise<void>;
   notice: string | null;
   onLoadPresetPatterns?: (preset: PartyPresetResponse, characters: HofCharacter[]) => Promise<string>;
   onOpenCaptcha: () => void;
@@ -82,6 +76,10 @@ export function MainScreen({
   characterHub,
   characterSyncLabel,
   characterSyncJob,
+  characterSyncError,
+  characterRosterResult,
+  characterRosterError,
+  onCheckCharacterSync,
   onSyncCharacterRoster,
   onStartCharacterFullSync,
   onStopCharacterSync,
@@ -108,6 +106,7 @@ export function MainScreen({
   );
   const [characterSubTabId, setCharacterSubTabId] =
     useState<CharacterSubTabId>("characters");
+  const [characterTabVisited, setCharacterTabVisited] = useState(false);
   const selectedCharacter = characterHub.selectedCharacter;
   const [automationEditorOpen, setAutomationEditorOpen] = useState(false);
   const [dataLogOpen, setDataLogOpen] = useState(false);
@@ -121,6 +120,46 @@ export function MainScreen({
     !dataLogOpen &&
     !townDetailFullScreen &&
     !isCharacterDetailOpen;
+
+  const tabArgs: RenderActiveTabArgs = {
+    activeTabId,
+    status,
+    authenticated: session?.loggedIn === true,
+    battle,
+    characterSyncLabel,
+    characterSyncJob,
+    characterSyncError,
+    characterRosterResult,
+    characterRosterError,
+    onCheckCharacterSync,
+    onSyncCharacterRoster,
+    onStartCharacterFullSync,
+    onStopCharacterSync,
+    onResumeCharacterSync,
+    onLoadPresetPatterns,
+    onOpenCaptcha,
+    onOpenAppSettings: () => setActiveTabId("settings"),
+    onCloseAppSettings: () => setActiveTabId("home"),
+    onStatusObserved,
+    automationController,
+    partyPresetCatalog,
+    characterHub,
+    onLogout,
+    characterSubTabId,
+    setCharacterSubTabId,
+    townApi,
+    resolveCaptcha,
+    pendingBattleTarget,
+    consumePendingBattleTarget,
+    passMaintenance,
+    onOpenFishingBattle: (target) => {
+      setPendingBattleTarget(target);
+      setActiveTabId("battle");
+    },
+    onAutomationEditorModeChange: setAutomationEditorOpen,
+    onDataLogModeChange: setDataLogOpen,
+    onTownDetailOpenChange: setTownDetailOpen,
+  };
 
   return (
     <SafeAreaView edges={["top", "bottom"]} style={styles.safeArea}>
@@ -151,62 +190,32 @@ export function MainScreen({
               {passMaintenance.manualAvailable ? <Text style={styles.passWarningAction}>직접 인증</Text> : null}
             </Pressable>
           ) : null}
-          {renderActiveTab({
-          activeTabId,
-          status,
-          authenticated: session?.loggedIn === true,
-          battle,
-          characterSyncLabel,
-          characterSyncJob,
-          onSyncCharacterRoster,
-          onStartCharacterFullSync,
-          onStopCharacterSync,
-          onResumeCharacterSync,
-          onLoadPresetPatterns,
-          onOpenCaptcha,
-          onOpenAppSettings: () => setActiveTabId("settings"),
-          onCloseAppSettings: () => setActiveTabId("home"),
-          onStatusObserved,
-          automationController,
-          partyPresetCatalog,
-          characterHub,
-          onLogout,
-          characterSubTabId,
-          setCharacterSubTabId,
-          townApi,
-          resolveCaptcha,
-          pendingBattleTarget,
-          consumePendingBattleTarget,
-          passMaintenance,
-          onOpenFishingBattle: (target) => {
-            setPendingBattleTarget(target);
-            setActiveTabId("battle");
-          },
-          onAutomationEditorModeChange: setAutomationEditorOpen,
-          onDataLogModeChange: setDataLogOpen,
-          onTownDetailOpenChange: setTownDetailOpen,
-          })}
+          {activeTabId !== "characters" && renderActiveTab(tabArgs)}
+          {characterTabVisited && <View style={activeTabId === "characters" ? styles.persistentTab : styles.hidden}
+            accessibilityElementsHidden={activeTabId !== "characters"}
+            importantForAccessibility={activeTabId === "characters" ? "auto" : "no-hide-descendants"}>
+            <FixedBottomActionHost>
+              {renderActiveTab({ ...tabArgs, activeTabId: "characters" })}
+            </FixedBottomActionHost>
+          </View>}
         </FixedBottomActionHost>
       </View>
 
       {showBottomTabs ? (
-        <BottomTabBar activeTabId={activeTabId} onChangeTab={setActiveTabId} />
+        <BottomTabBar activeTabId={activeTabId} onChangeTab={(tab) => {
+          if (tab === "characters") setCharacterTabVisited(true);
+          setActiveTabId(tab);
+        }} />
       ) : null}
     </SafeAreaView>
   );
 }
 
-type RenderActiveTabArgs = {
+type RenderActiveTabArgs = CharacterSyncControls & {
   activeTabId: MainRouteId;
   status: HofStatusResponse | null;
   authenticated: boolean;
   battle: BattleResource;
-  characterSyncLabel: string | null;
-  characterSyncJob?: CharacterSyncJobResponse | null;
-  onSyncCharacterRoster?: () => Promise<void>;
-  onStartCharacterFullSync?: () => Promise<void>;
-  onStopCharacterSync?: () => Promise<void>;
-  onResumeCharacterSync?: () => Promise<void>;
   onLoadPresetPatterns?: (preset: PartyPresetResponse, characters: HofCharacter[]) => Promise<string>;
   onOpenCaptcha: () => void;
   onOpenAppSettings: () => void;
@@ -241,6 +250,10 @@ function renderActiveTab({
   battle,
   characterSyncLabel,
   characterSyncJob,
+  characterSyncError,
+  characterRosterResult,
+  characterRosterError,
+  onCheckCharacterSync,
   onSyncCharacterRoster,
   onStartCharacterFullSync,
   onStopCharacterSync,
@@ -307,67 +320,22 @@ function renderActiveTab({
       ) : (
         <View style={styles.tabPanel}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>캐릭터</Text>
+            <Text numberOfLines={1} maxFontSizeMultiplier={1.3} style={styles.sectionTitle}>캐릭터</Text>
             <View style={styles.sectionActions}>
-              <Text style={styles.sectionMeta}>
-                {characterSyncLabel ?? `${characters.length}명`}
-              </Text>
-              {characterSyncLabel == null &&
-                characterSyncJob?.status !== "running" &&
-                characterSyncJob?.status !== "pending" &&
-                characterSyncJob?.status !== "stopped" &&
-                onSyncCharacterRoster && (
-                  <Pressable
-                    accessibilityLabel="캐릭터 목록 동기화"
-                    accessibilityRole="button"
-                    onPress={() => void onSyncCharacterRoster()}
-                    style={styles.syncControl}
-                  >
-                    <Text style={styles.syncControlText}>목록 동기화</Text>
-                  </Pressable>
-                )}
-              {characterSyncLabel == null &&
-                characterSyncJob?.status !== "running" &&
-                characterSyncJob?.status !== "pending" &&
-                characterSyncJob?.status !== "stopped" &&
-                onStartCharacterFullSync && (
-                  <Pressable
-                    accessibilityLabel="전체 캐릭터 상세 동기화"
-                    accessibilityRole="button"
-                    onPress={() => void onStartCharacterFullSync()}
-                    style={[styles.syncControl, styles.syncControlPrimary]}
-                  >
-                    <Text
-                      style={[
-                        styles.syncControlText,
-                        styles.syncControlPrimaryText,
-                      ]}
-                    >
-                      전체 상세 동기화
-                    </Text>
-                  </Pressable>
-                )}
-              {(characterSyncJob?.status === "running" ||
-                characterSyncJob?.status === "pending") && (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => void onStopCharacterSync?.()}
-                  style={styles.syncControl}
-                >
-                  <Text style={styles.syncControlText}>
-                    현재 캐릭터 후 중지
-                  </Text>
-                </Pressable>
-              )}
-              {characterSyncJob?.status === "stopped" && (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => void onResumeCharacterSync?.()}
-                  style={styles.syncControl}
-                >
-                  <Text style={styles.syncControlText}>이어하기</Text>
-                </Pressable>
-              )}
+              <Text numberOfLines={1} maxFontSizeMultiplier={1.3} style={styles.sectionMeta}>{characters.length}명</Text>
+              <CharacterSyncControl
+                characterHub={characterHub}
+                characterSyncLabel={characterSyncLabel}
+                characterSyncJob={characterSyncJob}
+                characterSyncError={characterSyncError}
+                characterRosterResult={characterRosterResult}
+                characterRosterError={characterRosterError}
+                onCheckCharacterSync={onCheckCharacterSync}
+                onSyncCharacterRoster={onSyncCharacterRoster}
+                onStartCharacterFullSync={onStartCharacterFullSync}
+                onStopCharacterSync={onStopCharacterSync}
+                onResumeCharacterSync={onResumeCharacterSync}
+              />
             </View>
           </View>
           <View style={styles.characterSubTabs}>
@@ -544,6 +512,8 @@ function CharacterDetailScroll({ children }: { children: ReactNode }) {
 }
 
 const styles = StyleSheet.create({
+  persistentTab: { flex: 1 },
+  hidden: { display: "none" },
   safeArea: {
     flex: 1,
     backgroundColor: theme.colors.background,
@@ -638,7 +608,6 @@ const styles = StyleSheet.create({
   sectionActions: {
     flex: 1,
     flexDirection: "row",
-    flexWrap: "wrap",
     alignItems: "center",
     justifyContent: "flex-end",
     gap: theme.spacing.sm,
@@ -653,24 +622,6 @@ const styles = StyleSheet.create({
     color: theme.colors.accentGreen,
     fontSize: 15,
     fontWeight: "900",
-  },
-  syncControl: {
-    minHeight: 44,
-    justifyContent: "center",
-    paddingHorizontal: 10,
-    borderRadius: 9,
-    backgroundColor: theme.colors.surfaceAlt,
-  },
-  syncControlText: {
-    color: theme.colors.text,
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  syncControlPrimary: {
-    backgroundColor: theme.colors.accentGreen,
-  },
-  syncControlPrimaryText: {
-    color: theme.colors.buttonText,
   },
   characterSubTabs: {
     flexDirection: "row",

@@ -20,7 +20,6 @@ import { normalizeHofAssetUrl } from "../domain/hofAssets";
 import { theme } from "../styles/theme";
 import type { HofCharacter } from "../types/api";
 import type { CharacterManagementHubResource } from "../domain/characterManagementHubModule";
-import { CharacterRecoveryPanel } from '../features/characters/management/CharacterRecoveryPanel';
 
 type CharacterListProps = {
   characterHub: CharacterManagementHubResource;
@@ -155,7 +154,6 @@ export function CharacterList({
   if (characters.length === 0) {
     return (
       <View style={styles.empty}>
-        <CharacterRecoveryPanel characterHub={characterHub} />
         <Text style={styles.emptyTitle}>캐릭터 0명</Text>
         <Text style={styles.emptyText}>
           로그인 후 캐릭터 동기화를 진행하세요.
@@ -166,7 +164,6 @@ export function CharacterList({
 
   return (
     <View style={styles.list}>
-      <CharacterRecoveryPanel characterHub={characterHub} />
       <View style={styles.lifecycleTabs}>
         {(["ACTIVE", "MISSING", "ARCHIVED"] as const).map((value) => (
           <Pressable

@@ -679,7 +679,7 @@ describe('character management hub module', () => {
     assert.equal(requests[1]?.slotName, '대회랑');
   });
 
-  it('owns deep-sync progress and ignores progress after selection changes', async () => {
+  it('캐릭터를 바꿔도 같은 계정의 동기화 진행과 결과를 유지하고 새 실행을 막는다', async () => {
     let reportProgress!: (progress: CharacterDeepSyncResponse) => void;
     let syncCalls = 0;
     const completion = deferred<CharacterDeepSyncResponse>();
@@ -703,12 +703,19 @@ describe('character management hub module', () => {
     reportProgress({ characterId: 1, progress: [] });
     assert.equal(hub.getSnapshot().deepSync.status, 'running');
     await hub.getSnapshot().actions.select(second);
+    assert.equal(hub.getSnapshot().deepSync.status, 'running');
+    await hub.getSnapshot().actions.deepSync?.();
+    assert.equal(syncCalls, 1);
+    hub.getSnapshot().actions.close();
     reportProgress({ characterId: 1, progress: [] });
+    assert.equal(hub.getSnapshot().deepSync.progress?.characterId, first.id);
+    await hub.getSnapshot().actions.select(second);
     completion.resolve({ characterId: 1, progress: [] });
     assert.equal(await pending, undefined);
 
     assert.equal(hub.getSnapshot().selectedCharacter?.id, second.id);
-    assert.equal(hub.getSnapshot().deepSync.status, 'idle');
+    assert.equal(hub.getSnapshot().deepSync.status, 'completed');
+    assert.equal(hub.getSnapshot().deepSync.progress?.characterId, first.id);
   });
 
   it('binds saved-pattern and identity-link actions to the selected stable record', async () => {

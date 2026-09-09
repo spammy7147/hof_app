@@ -35,7 +35,6 @@ describe('useCharacterSync roster observation', () => {
       useCharacterSync({
         api,
         describeError: String,
-        onNotice: () => undefined,
         observations: observations.sink,
       });
       return null;
@@ -87,7 +86,6 @@ describe('useCharacterSync roster observation', () => {
       sync = useCharacterSync({
         api,
         describeError: String,
-        onNotice: () => undefined,
         observations: observations.sink,
       });
       return null;
@@ -131,7 +129,6 @@ describe('useCharacterSync roster observation', () => {
       sync = useCharacterSync({
         api,
         describeError: String,
-        onNotice: () => undefined,
         observations: observations.sink,
       });
       return null;
@@ -165,7 +162,6 @@ describe('useCharacterSync roster observation', () => {
       sync = useCharacterSync({
         api,
         describeError: String,
-        onNotice: () => undefined,
         observations: noOpObservations,
       });
       return null;
@@ -209,7 +205,6 @@ describe('useCharacterSync roster observation', () => {
       sync = useCharacterSync({
         api,
         describeError: String,
-        onNotice: () => undefined,
         observations: noOpObservations,
       });
       return null;
@@ -249,7 +244,6 @@ describe('useCharacterSync roster observation', () => {
       sync = useCharacterSync({
         api,
         describeError: String,
-        onNotice: () => undefined,
         observations: noOpObservations,
       });
       return null;
@@ -275,9 +269,8 @@ describe('useCharacterSync roster observation', () => {
     await act(async () => { renderer.unmount(); });
   });
 
-  it('clears the progress label and publishes an error when manual sync cannot start', async () => {
+  it('실행 실패를 동기화 상태에 보존하고 재설정할 때 지운다', async () => {
     let sync!: ReturnType<typeof useCharacterSync>;
-    const notices: Array<string | null> = [];
     const api = {
       subscribeHofStatus: () => () => undefined,
       async startCharacterSyncJob() {
@@ -288,7 +281,6 @@ describe('useCharacterSync roster observation', () => {
       sync = useCharacterSync({
         api,
         describeError: (error) => error instanceof Error ? error.message : String(error),
-        onNotice: (message) => notices.push(message),
         observations: noOpObservations,
       });
       return null;
@@ -299,9 +291,33 @@ describe('useCharacterSync roster observation', () => {
     await act(async () => { await sync.startCharacterFullSync(); });
 
     assert.equal(sync.characterSyncLabel, null);
-    assert.deepEqual(notices, ['start failed']);
+    assert.equal(sync.characterSyncError, 'start failed');
+    await act(async () => { sync.resetCharacterSync(); });
+    assert.equal(sync.characterSyncError, null);
     await act(async () => { renderer.unmount(); });
   });
+});
+
+it('과거 전체 상세 작업을 다시 조회해도 새 목록 동기화 실패를 지우지 않는다', async () => {
+  let sync!: ReturnType<typeof useCharacterSync>;
+  const observations = recordingObservations();
+  const api = {
+    subscribeHofStatus: () => () => undefined,
+    startCharacterSyncJob: async () => syncJob(),
+    subscribeCharacterSyncJob: () => ({ close: () => undefined }),
+    fetchCharacterSyncJob: async () => ({ ...syncJob(), status: 'completed' }),
+    syncCharacterRoster: async () => { throw new Error('목록 조회 실패'); },
+  } as unknown as BackendApiClient;
+  const Harness = () => { sync = useCharacterSync({ api, describeError: String, observations: observations.sink }); return null; };
+  let renderer!: ReactTestRenderer;
+  await act(async () => { renderer = create(React.createElement(Harness)); });
+  await act(async () => { await sync.startCharacterFullSync(); });
+  await act(async () => { await sync.checkCharacterSync(); });
+  await act(async () => { await sync.syncCharacterRoster(); });
+  await act(async () => { await sync.checkCharacterSync(); });
+  assert.equal(sync.characterRosterError, 'Error: 목록 조회 실패');
+  assert.equal(sync.characterSyncJob?.status, 'completed');
+  await act(async () => { renderer.unmount(); });
 });
 
 function syncJob(): CharacterSyncJobResponse {

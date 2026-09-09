@@ -57,6 +57,8 @@ describe('캐릭터 복구 화면', () => {
     await rntl.render(React.createElement(Screen, { hub: makeHub({ loadCurrentOperation: async () => collecting }) }));
     assert.ok(await rntl.screen.findByText('저장 패턴 수집 · 3/11'));
     assert.equal(rntl.screen.queryByText('시작 전 설정 복원 중'), null);
+    assert.ok(rntl.screen.queryByText('원본 복구: 복구 필요') === null);
+    assert.ok(rntl.screen.queryByRole('button', { name: '보존된 원본으로 복구 재시도' }) === null);
   });
 
   it('수집과 복구가 완료되면 완료 요약만 표시한다', async () => {

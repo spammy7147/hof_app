@@ -97,7 +97,10 @@ describe('CharacterDetail stat allocation', () => {
     assert.ok(text().includes('1행'));
 
     await openTab('관리');
-    assert.ok(text().includes('작업을 시작하고 있습니다.'));
+    assert.ok(!text().includes('전체 설정 동기화를 시작하고 있습니다.'));
+    await act(async () => renderer.root.findAllByProps({ accessibilityLabel: '동기화 · 진행 중' })[0]?.props.onPress());
+    assert.ok(text().includes('전체 설정 동기화를 시작하고 있습니다.'));
+    await act(async () => renderer.unmount());
   });
 
   it('renders transfer preview and progress from the same hub resource', async () => {

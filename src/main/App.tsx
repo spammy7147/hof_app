@@ -201,7 +201,6 @@ function AuthenticatedApp({
     session?.loggedIn === true ? session : null,
   );
   const [status, setStatus] = useState<HofStatusResponse | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [manualActionPending, setManualActionPending] = useState(false);
   const describeError = useCallback(
     (error: unknown): string => toUserFacingErrorMessage(error),
@@ -217,14 +216,6 @@ function AuthenticatedApp({
     () => api.subscribeManualActionState(setManualActionPending),
     [api],
   );
-
-  /** 전역 안내가 화면을 영구 점유하지 않도록 잠시 보여준 뒤 자동으로 닫는다. */
-  useEffect(() => {
-    if (notice == null) return undefined;
-
-    const timer = setTimeout(() => setNotice(null), NOTICE_DURATION_MS);
-    return () => clearTimeout(timer);
-  }, [notice]);
 
   const beginCharacterPatternEdit = useCallback(
     () => automationController.changeState("pause"),
@@ -248,6 +239,10 @@ function AuthenticatedApp({
   const {
     characterSyncLabel,
     characterSyncJob,
+    characterSyncError,
+    characterRosterResult,
+    characterRosterError,
+    checkCharacterSync,
     syncCharacterRoster,
     startCharacterFullSync,
     stopCharacterSync,
@@ -258,7 +253,6 @@ function AuthenticatedApp({
   } = useCharacterSync({
     api,
     describeError,
-    onNotice: setNotice,
     observations: characterObservations,
   });
   const {
@@ -353,11 +347,15 @@ function AuthenticatedApp({
         characterHub={characterHub}
         characterSyncLabel={characterSyncLabel}
         characterSyncJob={characterSyncJob}
+        characterSyncError={characterSyncError}
+        characterRosterResult={characterRosterResult}
+        characterRosterError={characterRosterError}
+        onCheckCharacterSync={checkCharacterSync}
         onSyncCharacterRoster={syncCharacterRoster}
         onStartCharacterFullSync={startCharacterFullSync}
         onStopCharacterSync={stopCharacterSync}
         onResumeCharacterSync={resumeCharacterSync}
-        notice={notice}
+        notice={null}
         onLoadPresetPatterns={(preset, characters) => loadPartyPresetPatterns(api, preset, characters)}
         onOpenCaptcha={handleOpenCaptchaModal}
         onStatusObserved={handleStatusObserved}
@@ -382,7 +380,7 @@ function AuthenticatedApp({
           status={bootstrap.status}
         />
       ) : null}
-      {manualActionPending ? (
+      {manualActionPending && !characterSyncLabel && characterHub.deepSync.status !== 'running' && !characterHub.deepSync.recoveryBusy ? (
         <View
           accessibilityLabel="요청 처리 중"
           accessibilityLiveRegion="polite"
@@ -453,7 +451,6 @@ function AuthenticatedBootstrapRecovery({
   );
 }
 
-const NOTICE_DURATION_MS = 5_000;
 
 const styles = StyleSheet.create({
   container: {

@@ -28,6 +28,7 @@ const reactNativeMock = {
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: host('Text'),
   View: host('View'),
+  Modal: host('Modal'),
 };
 const iconsMock = new Proxy({}, { get: (_target, property) => host(String(property)) });
 type Loader = (request: string, parent: NodeModule | undefined, isMain: boolean) => unknown;
@@ -560,7 +561,7 @@ describe('MainScreen automation editor chrome', () => {
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'BottomTabBar').length, 1);
   });
 
-  it('offers separate roster and full-detail sync actions from the character header', async () => {
+  it('opens separate roster and full-detail actions only inside the sync screen', async () => {
     let rosterSyncCalls = 0;
     let fullSyncCalls = 0;
     const props = mainProps({
@@ -571,8 +572,10 @@ describe('MainScreen automation editor chrome', () => {
     await act(async () => { renderer = create(React.createElement(MainScreen, props)); });
 
     await act(async () => renderer.root.find((node) => String(node.type) === 'BottomTabBar').props.onChangeTab('characters'));
-    const rosterSyncButton = renderer.root.findByProps({ accessibilityLabel: '캐릭터 목록 동기화' });
-    const fullSyncButton = renderer.root.findByProps({ accessibilityLabel: '전체 캐릭터 상세 동기화' });
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '목록 동기화' }).length, 0);
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '동기화' }).props.onPress());
+    const rosterSyncButton = renderer.root.findByProps({ accessibilityLabel: '목록 동기화' });
+    const fullSyncButton = renderer.root.findByProps({ accessibilityLabel: '전체 상세 동기화' });
     await act(async () => rosterSyncButton.props.onPress());
     await act(async () => fullSyncButton.props.onPress());
 

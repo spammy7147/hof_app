@@ -12,7 +12,11 @@ const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>
   React.createElement(name, { ...props, ref }, props.children as React.ReactNode)
 ));
 
-let publishNotice: ((message: string | null) => void) | null = null;
+let manualActionListener: ((pending: boolean) => void) | null = null;
+let deepSyncStatus = 'idle';
+let recoveryBusy = false;
+let syncError: string | null = null;
+let syncLabel: string | null = null;
 let selectPushNotification: ((response: PushNotificationResponseLike) => void) | null = null;
 let openCaptchaCalls = 0;
 let logoutCalls = 0;
@@ -51,7 +55,7 @@ class BackendApiClientMock {
   setSessionMutationsBlocked(blocked: boolean) { mutationsBlocked = blocked; }
   async runBattle(request: unknown) { battleCalls += 1; battleRequests.push(request); return battleResponse(); }
   async fetchStatus() { return { characterSyncRequired: false }; }
-  subscribeManualActionState(listener: (pending: boolean) => void) { listener(false); return () => undefined; }
+  subscribeManualActionState(listener: (pending: boolean) => void) { manualActionListener = listener; listener(false); return () => { manualActionListener = null; }; }
 }
 const backendApiClient = new BackendApiClientMock();
 
@@ -89,10 +93,10 @@ moduleWithLoader._load = (request, parent, isMain) => {
   }
   if (request.endsWith('/features/characters/useCharacterSync')) {
     return {
-      useCharacterSync: ({ onNotice }: { onNotice: (message: string | null) => void }) => {
-        publishNotice = onNotice;
+      useCharacterSync: () => {
         return {
-          characterSyncLabel: null,
+          characterSyncLabel: syncLabel,
+          characterSyncError: syncError,
           loadSavedCharacters: syncCharacters,
           startAutomaticSyncIfRequired: syncCharacters,
           resetCharacterSync: () => undefined,
@@ -112,7 +116,7 @@ moduleWithLoader._load = (request, parent, isMain) => {
           warningMessage: null,
           identityResolution: null,
           patternConflict: null,
-          deepSync: { status: 'idle', progress: null, errorMessage: null },
+          deepSync: { status: deepSyncStatus, recoveryBusy, progress: null, errorMessage: null },
           transfer: {
             status: 'idle', sourceCharacter: null, targetCharacterId: null,
             request: null, preview: null, progress: null, result: null, errorMessage: null,
@@ -167,7 +171,11 @@ const realSetTimeout = globalThis.setTimeout;
 const realClearTimeout = globalThis.clearTimeout;
 
 afterEach(() => {
-  publishNotice = null;
+  manualActionListener = null;
+  deepSyncStatus = 'idle';
+  recoveryBusy = false;
+  syncError = null;
+  syncLabel = null;
   selectPushNotification = null;
   openCaptchaCalls = 0;
   logoutCalls = 0;
@@ -184,24 +192,37 @@ afterEach(() => {
 });
 
 describe('App system notice', () => {
-  it('dismisses a service connection notice without restarting the app', async () => {
-    const timers = fakeTimeouts();
+  it('동기화 오류는 별도 화면으로 전달하고 공용 안내에 표시하지 않는다', async () => {
+    syncError = '서비스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.';
     let renderer!: ReactTestRenderer;
-    await act(async () => {
-      renderer = create(React.createElement(App));
-      await Promise.resolve();
-      await Promise.resolve();
-    });
+    await act(async () => { renderer = create(React.createElement(App)); });
+    try {
+      assert.equal(mainScreen(renderer).props.characterSyncError, syncError);
+      assert.equal(mainScreen(renderer).props.notice, null);
+    } finally { await act(async () => renderer.unmount()); }
+  });
 
-    await act(async () => {
-      publishNotice?.('서비스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.');
-    });
-    assert.equal(mainScreen(renderer).props.notice, '서비스에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.');
-
-    await act(async () => { timers.runAll(); });
-
-    assert.equal(mainScreen(renderer).props.notice, null);
-    await act(async () => { renderer.unmount(); });
+  it('동기화·복구 진행 중 탐색을 가로막지 않고 일반 요청의 처리 표시는 유지한다', async () => {
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(App)); });
+    try {
+      await act(async () => { manualActionListener?.(true); });
+      assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '요청 처리 중' }).length > 0);
+      syncLabel = '목록 동기화 중';
+      await act(async () => { renderer.update(React.createElement(App)); });
+      assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '요청 처리 중' }).length, 0);
+      syncLabel = null;
+      deepSyncStatus = 'running';
+      await act(async () => { renderer.update(React.createElement(App)); });
+      assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '요청 처리 중' }).length, 0);
+      deepSyncStatus = 'failed';
+      recoveryBusy = true;
+      await act(async () => { renderer.update(React.createElement(App)); });
+      assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '요청 처리 중' }).length, 0);
+      recoveryBusy = false;
+      await act(async () => { renderer.update(React.createElement(App)); });
+      assert.ok(renderer.root.findAllByProps({ accessibilityLabel: '요청 처리 중' }).length > 0);
+    } finally { await act(async () => renderer.unmount()); }
   });
 
   it('재렌더와 인증 복구 동안 기능 상태를 유지하고 새 로그인에서는 카테고리를 초기화한다', async () => {

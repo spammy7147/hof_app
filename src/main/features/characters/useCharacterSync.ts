@@ -17,7 +17,6 @@ import { shouldStartAutomaticCharacterSync } from '../../domain/characterSyncPol
 type UseCharacterSyncOptions = {
   api: BackendApiClient;
   describeError: (error: unknown) => string;
-  onNotice: (message: string | null) => void;
   observations: CharacterManagementObservationSink;
 };
 
@@ -30,11 +29,14 @@ type UseCharacterSyncOptions = {
 export function useCharacterSync({
   api,
   describeError,
-  onNotice,
   observations,
 }: UseCharacterSyncOptions) {
   const [characterSyncLabel, setCharacterSyncLabel] = useState<string | null>(null);
   const [characterSyncJob, setCharacterSyncJob] = useState<CharacterSyncJobResponse | null>(null);
+  const [characterSyncError, setCharacterSyncError] = useState<string | null>(null);
+  const [characterRosterError, setCharacterRosterError] = useState<string | null>(null);
+  const [characterRosterResult, setCharacterRosterResult] = useState<string | null>(null);
+  const currentJobIdRef = useRef<number | null>(null);
   const subscriptionRef = useRef<SseSubscription | null>(null);
   const subscriptionGenerationRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -60,8 +62,10 @@ export function useCharacterSync({
     acceptRoster: (characters: CharacterSyncJobResponse['characters']) => boolean,
     expectedSyncGeneration: number,
   ): boolean => {
-    if (expectedSyncGeneration !== syncGenerationRef.current) return false;
+    if (expectedSyncGeneration !== syncGenerationRef.current
+      || (currentJobIdRef.current != null && snapshot.jobId !== currentJobIdRef.current)) return false;
     setCharacterSyncJob(snapshot);
+    setCharacterSyncError(snapshot.status === 'failed' ? snapshot.message ?? '전체 상세 동기화가 실패했습니다.' : null);
     acceptRoster(snapshot.characters);
     if (snapshot.status === 'running' || snapshot.status === 'pending') {
       const progress = snapshot.rosterCount > 0
@@ -91,7 +95,7 @@ export function useCharacterSync({
     if (event.character) observations.observeCharacter(event.character);
     setCharacterSyncJob((current) => current ? {
       ...current,
-      status: event.eventType === 'stopped' ? 'stopped' : current.status,
+      status: event.eventType === 'stopped' || event.eventType === 'completed' || event.eventType === 'failed' ? event.eventType : current.status,
       rosterCount: event.rosterCount,
       syncedCount: event.syncedCount,
       message: event.message,
@@ -102,7 +106,7 @@ export function useCharacterSync({
     closeSubscription();
     setCharacterSyncLabel(null);
     if (event.eventType === 'failed') {
-      onNotice(event.message ?? '전체 캐릭터 상세 동기화가 실패했습니다.');
+      setCharacterSyncError(event.message ?? '전체 캐릭터 상세 동기화가 실패했습니다.');
       return;
     }
     const acceptRoster = observations.beginRosterObservation();
@@ -114,7 +118,7 @@ export function useCharacterSync({
       ))
       .catch((error: unknown) => {
         if (syncGeneration === syncGenerationRef.current) {
-          onNotice(describeError(error));
+          setCharacterSyncError(describeError(error));
         }
       });
   }, [
@@ -122,8 +126,7 @@ export function useCharacterSync({
     applySnapshot,
     closeSubscription,
     describeError,
-    onNotice,
-    observations,
+      observations,
   ]);
 
   /** 연결 단절 시 snapshot 확인 후 진행 중인 동일 job만 1.2초 뒤 재구독한다. */
@@ -174,12 +177,12 @@ export function useCharacterSync({
           })
           .catch((error: unknown) => {
             if (syncGeneration === syncGenerationRef.current) {
-              onNotice(describeError(error));
+              setCharacterSyncError(describeError(error));
             }
           });
       },
     });
-  }, [api, applySnapshot, describeError, handleEvent, observations, onNotice]);
+  }, [api, applySnapshot, describeError, handleEvent, observations]);
 
   useEffect(() => {
     openSubscriptionRef.current = openSubscription;
@@ -190,11 +193,13 @@ export function useCharacterSync({
 
     const syncGeneration = syncGenerationRef.current;
     closeSubscription();
+    setCharacterSyncError(null);
     setCharacterSyncLabel('전체 상세 동기화 준비 중');
     const startPromise = (async () => {
       try {
         const job = await api.startCharacterSyncJob();
         if (syncGeneration !== syncGenerationRef.current) return;
+        currentJobIdRef.current = job.jobId;
         setCharacterSyncJob(job);
         openSubscription(
           job.jobId,
@@ -203,7 +208,7 @@ export function useCharacterSync({
       } catch (error) {
         if (syncGeneration !== syncGenerationRef.current) return;
         setCharacterSyncLabel(null);
-        onNotice(describeError(error));
+        setCharacterSyncError(describeError(error));
       }
     })();
     fullSyncStartPromiseRef.current = startPromise;
@@ -213,7 +218,7 @@ export function useCharacterSync({
       }
     });
     return startPromise;
-  }, [api, closeSubscription, describeError, onNotice, openSubscription]);
+  }, [api, closeSubscription, describeError, openSubscription]);
 
   const loadSavedCharacters = useCallback(async () => {
     const acceptRoster = observations.beginRosterObservation();
@@ -227,17 +232,20 @@ export function useCharacterSync({
 
     const syncGeneration = syncGenerationRef.current;
     const acceptRoster = observations.beginRosterObservation();
+    setCharacterRosterError(null);
+    setCharacterRosterResult(null);
     setCharacterSyncLabel('목록 동기화 중');
     const syncPromise = (async () => {
       try {
         const incoming = await api.syncCharacterRoster();
         if (syncGeneration !== syncGenerationRef.current) return;
         acceptRoster(incoming);
+        setCharacterRosterResult(`목록 동기화 완료 · ${incoming.length}명 · ${new Date().toLocaleTimeString()} 확인`);
         setCharacterSyncLabel(null);
       } catch (error) {
         if (syncGeneration !== syncGenerationRef.current) return;
         setCharacterSyncLabel(null);
-        onNotice(describeError(error));
+        setCharacterRosterError(describeError(error));
       }
     })();
     rosterSyncPromiseRef.current = syncPromise;
@@ -247,7 +255,7 @@ export function useCharacterSync({
       }
     });
     return syncPromise;
-  }, [api, describeError, observations, onNotice]);
+  }, [api, describeError, observations]);
 
   /** 새 로그인 홈 roster가 관측되면 같은 응답 헤더로 인한 재귀 호출 없이 저장 목록을 다시 읽는다. */
   const handleRosterObservation = useCallback((status: HofObservedStatusResponse) => {
@@ -259,13 +267,15 @@ export function useCharacterSync({
 
     latestRosterObservationRef.current = observedAt;
     if (rosterSyncPromiseRef.current) return;
+    const syncGeneration = syncGenerationRef.current;
     void loadSavedCharacters().catch((error: unknown) => {
+      if (syncGeneration !== syncGenerationRef.current) return;
       if (latestRosterObservationRef.current === observedAt) {
         latestRosterObservationRef.current = null;
       }
-      onNotice(describeError(error));
+      setCharacterRosterError(describeError(error));
     });
-  }, [describeError, loadSavedCharacters, onNotice]);
+  }, [describeError, loadSavedCharacters]);
 
   useEffect(
     () => api.subscribeHofStatus(handleRosterObservation),
@@ -278,32 +288,43 @@ export function useCharacterSync({
     await startFullSyncJob();
   }, [startFullSyncJob]);
 
+  const checkCharacterSync = useCallback(async () => {
+    if (!characterSyncJob) return;
+    const generation = syncGenerationRef.current;
+    const acceptRoster = observations.beginRosterObservation();
+    try {
+      const snapshot = await api.fetchCharacterSyncJob(characterSyncJob.jobId);
+      if (!applySnapshot(snapshot, acceptRoster, generation)) return;
+      if (snapshot.status === 'running' || snapshot.status === 'pending') {
+        if (!subscriptionRef.current && !reconnectTimerRef.current) openSubscription(snapshot.jobId, generation);
+      } else closeSubscription();
+    } catch (error) {
+      if (generation === syncGenerationRef.current) setCharacterSyncError(describeError(error));
+    }
+  }, [api, applySnapshot, characterSyncJob, closeSubscription, describeError, observations, openSubscription]);
+
   const stopCharacterSync = useCallback(async () => {
     if (!characterSyncJob) return;
-    const syncGeneration = syncGenerationRef.current;
+    const generation = syncGenerationRef.current;
     const acceptRoster = observations.beginRosterObservation();
-    applySnapshot(
-      await api.stopCharacterSyncJob(characterSyncJob.jobId),
-      acceptRoster,
-      syncGeneration,
-    );
-  }, [api, applySnapshot, characterSyncJob, observations]);
+    try {
+      applySnapshot(await api.stopCharacterSyncJob(characterSyncJob.jobId), acceptRoster, generation);
+    } catch (error) {
+      if (generation === syncGenerationRef.current) setCharacterSyncError(describeError(error));
+    }
+  }, [api, applySnapshot, characterSyncJob, describeError, observations]);
 
   const resumeCharacterSync = useCallback(async () => {
     if (!characterSyncJob) return;
-    const syncGeneration = syncGenerationRef.current;
+    const generation = syncGenerationRef.current;
     const acceptRoster = observations.beginRosterObservation();
-    const snapshot = await api.resumeCharacterSyncJob(characterSyncJob.jobId);
-    if (!applySnapshot(
-      snapshot,
-      acceptRoster,
-      syncGeneration,
-    )) return;
-    openSubscription(
-      snapshot.jobId,
-      syncGeneration,
-    );
-  }, [api, applySnapshot, characterSyncJob, observations, openSubscription]);
+    try {
+      const snapshot = await api.resumeCharacterSyncJob(characterSyncJob.jobId);
+      if (applySnapshot(snapshot, acceptRoster, generation)) openSubscription(snapshot.jobId, generation);
+    } catch (error) {
+      if (generation === syncGenerationRef.current) setCharacterSyncError(describeError(error));
+    }
+  }, [api, applySnapshot, characterSyncJob, describeError, observations, openSubscription]);
 
   /** 로그아웃에서 화면 목록, 진행 표시와 연결을 원자적으로 초기화한다. */
   const resetCharacterSync = useCallback(() => {
@@ -313,6 +334,10 @@ export function useCharacterSync({
     closeSubscription();
     setCharacterSyncLabel(null);
     setCharacterSyncJob(null);
+    currentJobIdRef.current = null;
+    setCharacterSyncError(null);
+    setCharacterRosterResult(null);
+    setCharacterRosterError(null);
     automaticSyncEvaluatedRef.current = false;
     latestRosterObservationRef.current = null;
   }, [closeSubscription]);
@@ -327,6 +352,10 @@ export function useCharacterSync({
   return {
     characterSyncLabel,
     characterSyncJob,
+    characterSyncError,
+    characterRosterResult,
+    characterRosterError,
+    checkCharacterSync,
     syncCharacterRoster,
     startCharacterFullSync: startFullSyncJob,
     stopCharacterSync,
