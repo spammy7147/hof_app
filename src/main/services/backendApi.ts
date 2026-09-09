@@ -1282,6 +1282,7 @@ const CHARACTER_SYNC_EVENT_TYPES: CharacterSyncEventType[] = [
   'characterFailed',
   'completed',
   'failed',
+  'stopped',
   'heartbeat',
 ];
 
