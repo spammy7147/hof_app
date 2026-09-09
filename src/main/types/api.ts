@@ -1102,7 +1102,16 @@ export type CharacterTransferPreview = {
   executable: boolean;
 };
 export type CharacterTransferStepResult = { stepId: string; status: 'COMPLETED' | 'FAILED' | 'SKIPPED'; message: string };
-export type CharacterTransferExecutionResult = { targetCharacterId: number; results: CharacterTransferStepResult[]; nextStepIndex: number };
+export type CharacterTransferExecutionResult = {
+  targetCharacterId: number;
+  results: CharacterTransferStepResult[];
+  nextStepIndex: number;
+  /** 진행 중인 결과와 구형 작업에는 최종 관측 정보가 없다. */
+  outcome?: 'COMPLETED' | 'PARTIALLY_APPLIED' | 'RECHECK_REQUIRED' | null;
+  currentSettings?: { pattern: CharacterPatternSetting; equipment?: HofCharacterEquipment[] | null } | null;
+  finalSettingsConfirmed?: boolean;
+  message?: string | null;
+};
 export type CharacterDeepSyncProgress = { phase: 'CURRENT' | 'SAVED_PATTERN' | 'EQUIPMENT_PRESET' | 'RESTORE' | 'COMPLETED'; completedSteps: number; totalSteps: number; patternSlotCode: string | null; equipmentSlotNumber: number | null };
 export type CharacterDeepSyncResponse = { characterId: number; progress: CharacterDeepSyncProgress[] };
 export type CharacterOperationJob = {

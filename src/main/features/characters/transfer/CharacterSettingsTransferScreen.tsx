@@ -66,6 +66,7 @@ export function CharacterSettingsTransferScreen({
   );
   const preview = transfer.preview;
   const result = transfer.progress ?? transfer.result;
+  const observed = result?.currentSettings;
   const busy = transfer.status === "previewing" || transfer.status === "running";
   const error = transfer.errorMessage;
   const primaryRunsPreview = preview == null
@@ -349,6 +350,36 @@ export function CharacterSettingsTransferScreen({
       {result && (
         <View style={styles.preview}>
           <Text style={styles.heading}>실행 결과</Text>
+          {result.outcome && (
+            <Text accessibilityRole={result.outcome === "COMPLETED" ? "text" : "alert"}
+              style={result.outcome === "COMPLETED" ? styles.heading : styles.warning}>
+              {{
+                COMPLETED: "설정 가져오기를 완료했습니다.",
+                PARTIALLY_APPLIED: "일부 항목을 완료하지 못했습니다.",
+                RECHECK_REQUIRED: "현재 캐릭터 설정을 다시 확인해야 합니다.",
+              }[result.outcome]}
+            </Text>
+          )}
+          {result.message && <Text style={styles.muted}>{result.message}</Text>}
+          {!result.outcome && transfer.result && <Text style={styles.warning}>
+            이전 작업에는 최종 확인 정보가 없습니다. 현재 캐릭터 설정을 확인해 주세요.
+          </Text>}
+          {observed && <View>
+              <Text style={styles.heading}>확인된 현재 캐릭터 설정</Text>
+              {observed.pattern.rows.map((row, index) => (
+                <Text key={index} style={styles.muted}>
+                  {index + 1}. {target.patternOptions?.find(option => option.type === "CONDITION" && option.value === row.judge)?.label || row.judge}{" "}
+                  {row.quantity} → {target.patternOptions?.find(option => option.type === "SKILL" && option.value === row.skill)?.label || row.skill}
+                </Text>
+              ))}
+              <Text style={styles.muted}>
+                위치 · {observed.pattern.position === "front" ? "전열" : observed.pattern.position === "back" ? "후열" : observed.pattern.position}
+                {" / 호위 · "}{target.positionGuard.guardValue === observed.pattern.guard ? target.positionGuard.guardText || observed.pattern.guard : observed.pattern.guard}
+              </Text>
+              {observed.equipment != null && <Text style={styles.muted}>
+                장비 · {observed.equipment.length ? observed.equipment.map(item => item.name).join(", ") : "장착 장비 없음"}
+              </Text>}
+          </View>}
           {result.results.map((item) => (
             <Text
               key={item.stepId}
