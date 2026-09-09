@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ArrowLeft } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
@@ -34,33 +34,81 @@ export function AutomationHistoryScreen({
   const [convergenceLoading, setConvergenceLoading] = useState(false);
   const [convergenceError, setConvergenceError] = useState<string | null>(null);
   const [releasingAttemptId, setReleasingAttemptId] = useState<number | null>(null);
+  const loaders = useRef({ load, loadConvergence, allowFreshDecision });
+  useLayoutEffect(() => { loaders.current = { load, loadConvergence, allowFreshDecision }; });
+  const mounted = useRef(false);
+  const pageRequest = useRef(0);
+  const convergenceRequest = useRef(0);
+  const pageBusy = useRef(false);
+  const releaseBusy = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      pageRequest.current += 1;
+      convergenceRequest.current += 1;
+      pageBusy.current = false;
+      releaseBusy.current = false;
+    };
+  }, []);
+  // 부모의 loader 콜백 교체는 이 화면이 누적한 페이지의 수명주기를 바꾸지 않는다.
   const fetchPage = useCallback(async (next?: number) => {
+    if (!mounted.current || pageBusy.current) return;
+    pageBusy.current = true;
+    const request = ++pageRequest.current;
+    const isCurrent = () => mounted.current && request === pageRequest.current;
     setLoading(true); setError(null);
-    try { const page = await load(next); setCycles((current) => next == null ? page.cycles : [...current, ...page.cycles]); setCursor(page.nextCursor); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : '자동화 기록을 불러오지 못했습니다.'); }
-    finally { setLoading(false); }
-  }, [load]);
+    try {
+      const page = await loaders.current.load(next);
+      if (!isCurrent()) return;
+      setCycles((current) => next == null ? page.cycles : [...current, ...page.cycles]);
+      setCursor(page.nextCursor);
+    } catch (reason) {
+      if (isCurrent()) setError(reason instanceof Error ? reason.message : '자동화 기록을 불러오지 못했습니다.');
+    } finally {
+      if (isCurrent()) { pageBusy.current = false; setLoading(false); }
+    }
+  }, []);
   useEffect(() => { void fetchPage(); }, [fetchPage]);
   const refreshConvergence = useCallback(async () => {
-    if (!loadConvergence) return;
+    const loader = loaders.current.loadConvergence;
+    if (!mounted.current || !loader || releaseBusy.current) return;
+    const request = ++convergenceRequest.current;
+    const isCurrent = () => mounted.current && request === convergenceRequest.current;
     setConvergenceLoading(true); setConvergenceError(null);
-    try { setConvergence(await loadConvergence()); }
-    catch (reason) { setConvergenceError(reason instanceof Error ? reason.message : '결과 확인 상태를 불러오지 못했습니다.'); }
-    finally { setConvergenceLoading(false); }
-  }, [loadConvergence]);
-  useEffect(() => { void refreshConvergence(); }, [refreshConvergence]);
+    try {
+      const result = await loader();
+      if (isCurrent()) setConvergence(result);
+    } catch (reason) {
+      if (isCurrent()) setConvergenceError(reason instanceof Error ? reason.message : '결과 확인 상태를 불러오지 못했습니다.');
+    } finally {
+      if (isCurrent()) setConvergenceLoading(false);
+    }
+  }, []);
+  const hasConvergence = loadConvergence != null;
+  useEffect(() => { void refreshConvergence(); }, [refreshConvergence, hasConvergence]);
   const release = useCallback(async (attemptId: number) => {
-    if (!allowFreshDecision || releasingAttemptId != null) return;
-    setReleasingAttemptId(attemptId); setConvergenceError(null);
-    try { setConvergence(await allowFreshDecision(attemptId)); }
-    catch (reason) { setConvergenceError(reason instanceof Error ? reason.message : '새 행동 판단을 허용하지 못했습니다.'); }
-    finally { setReleasingAttemptId(null); }
-  }, [allowFreshDecision, releasingAttemptId]);
+    const allow = loaders.current.allowFreshDecision;
+    if (!mounted.current || !allow || releaseBusy.current) return;
+    releaseBusy.current = true;
+    // 변경 요청보다 먼저 시작한 GET의 성공·오류 응답을 모두 폐기한다.
+    const request = ++convergenceRequest.current;
+    const isCurrent = () => mounted.current && request === convergenceRequest.current;
+    setConvergenceLoading(false); setReleasingAttemptId(attemptId); setConvergenceError(null);
+    try {
+      const result = await allow(attemptId);
+      if (isCurrent()) setConvergence(result);
+    } catch (reason) {
+      if (isCurrent()) setConvergenceError(reason instanceof Error ? reason.message : '새 행동 판단을 허용하지 못했습니다.');
+    } finally {
+      if (isCurrent()) { releaseBusy.current = false; setReleasingAttemptId(null); }
+    }
+  }, []);
   const latestEvent = cycles[0]?.events.at(-1);
   return <NestableScrollContainer contentContainerStyle={styles.container} stickyHeaderIndices={[0]} style={styles.scroller}>
     <View style={styles.header}><Pressable accessibilityLabel="통합 자동화로" accessibilityRole="button" onPress={onBack} style={styles.back}><ArrowLeft color={theme.colors.text} size={20} /></Pressable><View><Text style={styles.title}>자동화 기록</Text><Text style={styles.subtitle}>실제 판단 순서와 실행·스킵 결과를 시간순으로 확인합니다.</Text></View></View>
     {loadConvergence ? <View accessibilityLabel="자동화 결과 확인 상태" style={styles.convergenceSection}>
-      <View style={styles.convergenceHeader}><View><Text style={styles.convergenceEyebrow}>현재 결과 확인</Text><Text style={styles.convergenceHeading}>중복 실행 방지 상태</Text></View><Pressable accessibilityLabel="수렴 상태 새로고침" accessibilityRole="button" disabled={convergenceLoading} onPress={() => { void refreshConvergence(); }} style={styles.refreshButton}><Text style={styles.refreshText}>{convergenceLoading ? '확인 중' : '새로고침'}</Text></Pressable></View>
+      <View style={styles.convergenceHeader}><View><Text style={styles.convergenceEyebrow}>현재 결과 확인</Text><Text style={styles.convergenceHeading}>중복 실행 방지 상태</Text></View><Pressable accessibilityLabel="수렴 상태 새로고침" accessibilityRole="button" disabled={convergenceLoading || releasingAttemptId != null} onPress={() => { void refreshConvergence(); }} style={styles.refreshButton}><Text style={styles.refreshText}>{convergenceLoading ? '확인 중' : '새로고침'}</Text></Pressable></View>
       {convergenceError ? <Text accessibilityRole="alert" style={styles.error}>{convergenceError}</Text> : null}
       {convergence?.battleGate ? <View style={styles.gateCard}>
         <Text style={styles.gateTitle}>전투 캡차 대기</Text>
