@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useSyncExternalStore } from 'react';
+import { useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 
 import {
   CharacterManagementHubModule,
@@ -92,15 +92,17 @@ export function useCharacterManagementHub(
   accountKey: unknown | null,
   integration: CharacterManagementHubIntegration,
 ): CharacterManagementHubBinding {
+  const integrationRef = useRef(integration);
+  useLayoutEffect(() => { integrationRef.current = integration; }, [integration]);
+  // 연관 카탈로그의 콜백 갱신은 캐릭터 목록·선택·진행 중 관측의 수명주기를 바꾸지 않는다.
   const module = useMemo(
     () => new CharacterManagementHubModule(
-      createCharacterManagementHubBackend(api, integration),
+      createCharacterManagementHubBackend(api, {
+        reloadRelatedPresets: () => integrationRef.current.reloadRelatedPresets(),
+        beginPatternEdit: () => integrationRef.current.beginPatternEdit(),
+      }),
     ),
-    [
-      api,
-      integration.beginPatternEdit,
-      integration.reloadRelatedPresets,
-    ],
+    [api],
   );
   const resource = useSyncExternalStore(
     module.subscribe,
