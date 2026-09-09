@@ -42,7 +42,7 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
-    "postinstall": "node scripts/patch-draggable-flatlist.mjs && node scripts/patch-expo-notifications.mjs",
+    "postinstall": "node scripts/patch-draggable-flatlist.mjs && node scripts/patch-expo-notifications.mjs && node scripts/patch-react-native-web-modal.mjs",
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",

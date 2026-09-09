@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -314,7 +317,7 @@ export function CharacterPatternScreen({
       <Modal visible={setupOpen} transparent animationType="slide" onRequestClose={() => setSetupOpen(false)}>
         <View style={styles.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setSetupOpen(false)} />
-          <View style={styles.sheet}>
+          <ScrollView style={styles.scrollSheet} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">
             <View style={styles.grip} />
             <Text style={styles.sheetTitle}>위치·호위 선택</Text>
             <Text style={styles.sheetNote}>선택한 위치·호위는 하단 저장 버튼을 누를 때 HOF 서버에 반영됩니다.</Text>
@@ -347,14 +350,14 @@ export function CharacterPatternScreen({
             <Pressable onPress={() => setSetupOpen(false)} style={styles.primarySheetButton}>
               <Text style={styles.primarySheetButtonText}>완료</Text>
             </Pressable>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
 
       <Modal visible={commitOpen} transparent animationType="slide" onRequestClose={() => setCommitOpen(false)}>
-        <View style={styles.overlay}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setCommitOpen(false)} />
-          <View style={styles.sheet}>
+          <ScrollView style={styles.scrollSheet} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">
             <View style={styles.grip} />
             <Text style={styles.sheetTitle}>저장</Text>
             <Text style={styles.sheetNote}>패턴 {rows.length}행을 저장한 뒤 위치·호위를 저장하고 전체 설정을 확인합니다.</Text>
@@ -416,14 +419,14 @@ export function CharacterPatternScreen({
                 <Text style={styles.primarySheetButtonText}>{alsoSave ? "저장하고 슬롯에도 보관" : "현재 설정 저장"}</Text>
               </Pressable>
             </View>
-          </View>
-        </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={standaloneSaveOpen} transparent animationType="slide" onRequestClose={() => setStandaloneSaveOpen(false)}>
-        <View style={styles.overlay}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setStandaloneSaveOpen(false)} />
-          <View style={styles.sheet}>
+          <ScrollView style={styles.scrollSheet} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">
             <View style={styles.grip} />
             <Text style={styles.sheetTitle}>빈 슬롯</Text>
             <TextInput
@@ -449,8 +452,8 @@ export function CharacterPatternScreen({
                 <Text style={styles.primarySheetButtonText}>저장</Text>
               </Pressable>
             </View>
-          </View>
-        </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
       <Modal
         visible={slotsOpen}
@@ -463,11 +466,11 @@ export function CharacterPatternScreen({
             style={StyleSheet.absoluteFill}
             onPress={() => setSlotsOpen(false)}
           />
-          <View style={styles.sheet}>
+          <ScrollView style={styles.scrollSheet} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">
             <Text style={styles.sheetTitle}>저장 패턴</Text>
             {detail.patternSlots.map((slot) => (
               <View key={slot.slot} style={styles.slot}>
-                <Text style={styles.slotName}>
+                <Text style={[styles.slotName, styles.slotLabel]}>
                   {slot.canLoad ? slot.label : "빈 슬롯"}
                 </Text>
                 <View style={styles.slotActions}>
@@ -520,7 +523,7 @@ export function CharacterPatternScreen({
                 </View>
               </View>
             ))}
-          </View>
+          </ScrollView>
         </View>
       </Modal>
       <Modal
@@ -530,7 +533,7 @@ export function CharacterPatternScreen({
         onRequestClose={dismissConflict}
       >
         <View style={styles.overlay}>
-          <View style={styles.sheet}>
+          <ScrollView style={styles.scrollSheet} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">
             <Text style={styles.sheetTitle}>
               서버에서 패턴이 변경되었습니다
             </Text>
@@ -566,7 +569,7 @@ export function CharacterPatternScreen({
                 <Text style={styles.deleteText}>덮어쓰기</Text>
               </Pressable>
             </View>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
     </View>
@@ -879,15 +882,14 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.overlay,
     justifyContent: "flex-end",
   },
-  sheet: {
+  scrollSheet: {
+    flexGrow: 0,
     maxHeight: "78%",
     backgroundColor: theme.colors.surface,
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
-    paddingHorizontal: 14,
-    paddingBottom: 22,
-    gap: 7,
   },
+  sheetContent: { paddingHorizontal: 14, paddingBottom: 22, gap: 7 },
   grip: { width: 36, height: 4, alignSelf: "center", borderRadius: 3, backgroundColor: "#4c596a", marginVertical: 8 },
   sheetTitle: { color: theme.colors.text, fontSize: 18, fontWeight: "900" },
   sheetNote: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 17 },
@@ -911,7 +913,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   slotName: { flex: 1, minWidth: 0, color: theme.colors.text, fontWeight: "800" },
-  slotActions: { flexDirection: "row", flexShrink: 0, gap: 8, marginLeft: 8 },
+  slotLabel: { minWidth: 48 },
+  slotActions: { flexDirection: "row", flexWrap: "wrap", flexShrink: 1, gap: 8, marginLeft: 8 },
   slotTouch: {
     width: 64,
     minHeight: 48,

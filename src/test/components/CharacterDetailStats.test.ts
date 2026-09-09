@@ -20,6 +20,8 @@ const reactNativeMock = {
   Modal: host('Modal'),
   Pressable: host('Pressable'),
   ScrollView: host('ScrollView'),
+  KeyboardAvoidingView: host('KeyboardAvoidingView'),
+  Platform: { OS: 'android' },
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: host('Text'),
   TextInput: host('TextInput'),

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -204,45 +205,47 @@ export function CharacterManagementScreen({
         <View style={styles.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setClassOpen(false)} />
           <View style={styles.sheet}>
-            <View style={styles.grip} />
-            <Text style={styles.heading}>전직</Text>
-            <Text style={styles.description}>서버에서 현재 가능한 전직 후보만 표시합니다.</Text>
-            {classOptions.map((option) => (
-              <Pressable
-                key={option.value}
-                onPress={() => setSelectedClass(option.value)}
-                style={[styles.classChoice, selectedClass === option.value && styles.classSelected]}
-              >
-                <Text style={styles.label}>{option.label}</Text>
-              </Pressable>
-            ))}
-            <View style={styles.classCompare}>
-              <View style={styles.compareCard}>
-                <Text style={styles.compareLabel}>현재</Text>
-                <Text style={styles.label}>{detail.job}</Text>
+            <ScrollView contentContainerStyle={styles.classOptions}>
+              <View style={styles.grip} />
+              <Text style={styles.heading}>전직</Text>
+              <Text style={styles.description}>서버에서 현재 가능한 전직 후보만 표시합니다.</Text>
+              {classOptions.map((option) => (
+                <Pressable
+                  key={option.value}
+                  onPress={() => setSelectedClass(option.value)}
+                  style={[styles.classChoice, selectedClass === option.value && styles.classSelected]}
+                >
+                  <Text style={styles.label}>{option.label}</Text>
+                </Pressable>
+              ))}
+              <View style={styles.classCompare}>
+                <View style={styles.compareCard}>
+                  <Text style={styles.compareLabel}>현재</Text>
+                  <Text style={styles.label}>{detail.job}</Text>
+                </View>
+                <Text style={styles.arrow}>→</Text>
+                <View style={styles.compareCard}>
+                  <Text style={styles.compareLabel}>변경</Text>
+                  <Text style={styles.label}>{classOptions.find((option) => option.value === selectedClass)?.label ?? "선택"}</Text>
+                </View>
               </View>
-              <Text style={styles.arrow}>→</Text>
-              <View style={styles.compareCard}>
-                <Text style={styles.compareLabel}>변경</Text>
-                <Text style={styles.label}>{classOptions.find((option) => option.value === selectedClass)?.label ?? "선택"}</Text>
+              <View style={[styles.inline, styles.classActions]}>
+                <Button label="취소" onPress={() => setClassOpen(false)} />
+                <Button
+                  disabled={!selectedClass}
+                  label="전직"
+                  onPress={() => {
+                    if (!selectedClass) return;
+                    const classValue = selectedClass;
+                    setClassOpen(false);
+                    if (actions.changeClass) run(
+                      () => actions.changeClass!(classValue),
+                      `${detail.job}에서 ${classOptions.find((option) => option.value === classValue)?.label} 직업으로 전직하시겠습니까?`,
+                    );
+                  }}
+                />
               </View>
-            </View>
-            <View style={styles.inline}>
-              <Button label="취소" onPress={() => setClassOpen(false)} />
-              <Button
-                disabled={!selectedClass}
-                label="전직"
-                onPress={() => {
-                  if (!selectedClass) return;
-                  const classValue = selectedClass;
-                  setClassOpen(false);
-                  if (actions.changeClass) run(
-                    () => actions.changeClass!(classValue),
-                    `${detail.job}에서 ${classOptions.find((option) => option.value === classValue)?.label} 직업으로 전직하시겠습니까?`,
-                  );
-                }}
-              />
-            </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -511,6 +514,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
   },
   classSelected: { borderColor: theme.colors.accentGreen },
+  classOptions: { gap: 13 },
+  classActions: { flexWrap: "wrap" },
   classCompare: {
     minHeight: 48,
     flexDirection: "row",

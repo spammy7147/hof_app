@@ -249,23 +249,25 @@ export function CharacterStatusScreen({
         <View style={styles.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setTargetOpen(false)} />
           <View style={styles.targetSheet}>
-            <View style={styles.grip} />
-            <Text style={styles.sheetTitle}>원하는 추가 패턴 수</Text>
-            {CHARACTER_PATTERN_THRESHOLDS.map((_, index) => {
-              const plan = plans[index];
-              return (
-                <Pressable
-                  key={index}
-                  accessibilityRole="button"
-                  disabled={!plan}
-                  onPress={() => { setTargetPatterns(index + 1); setTargetOpen(false); }}
-                  style={[styles.targetOption, !plan && styles.disabled]}
-                >
-                  <Text style={styles.targetOptionText}>기본 + {index + 1}</Text>
-                  <Text style={styles.targetOptionMeta}>{plan ? `INT +${plan.addInt} · SPD +${plan.addSpd}` : "선택할 수 없음"}</Text>
-                </Pressable>
-              );
-            })}
+            <ScrollView contentContainerStyle={styles.targetOptions}>
+              <View style={styles.grip} />
+              <Text style={styles.sheetTitle}>원하는 추가 패턴 수</Text>
+              {CHARACTER_PATTERN_THRESHOLDS.map((_, index) => {
+                const plan = plans[index];
+                return (
+                  <Pressable
+                    key={index}
+                    accessibilityRole="button"
+                    disabled={!plan}
+                    onPress={() => { setTargetPatterns(index + 1); setTargetOpen(false); }}
+                    style={[styles.targetOption, !plan && styles.disabled]}
+                  >
+                    <Text style={styles.targetOptionText}>기본 + {index + 1}</Text>
+                    <Text style={styles.targetOptionMeta}>{plan ? `INT +${plan.addInt} · SPD +${plan.addSpd}` : "선택할 수 없음"}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -406,6 +408,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 19,
     backgroundColor: "#1b2430",
   },
+  targetOptions: { gap: 7 },
   grip: { width: 36, height: 4, alignSelf: "center", borderRadius: 3, backgroundColor: "#4c596a", marginVertical: 9 },
   sheetTitle: { color: theme.colors.text, fontSize: 17, fontWeight: "900" },
   sheetSubtitle: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18, marginTop: 4, marginBottom: 8 },
