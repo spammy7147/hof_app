@@ -364,6 +364,7 @@ export function HomeTabScreen({
     load={(cursor) => automationController.fetchHistory(cursor)}
     loadConvergence={() => automationController.fetchConvergence()}
     allowFreshDecision={(attemptId) => automationController.allowFreshDecision(attemptId)}
+    allowLocalFreshDecision={(actionId) => automationController.allowLocalFreshDecision(actionId)}
   />;
 
   const showPageHeader = route !== 'editor';

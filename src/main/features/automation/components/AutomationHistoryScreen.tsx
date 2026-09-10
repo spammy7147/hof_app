@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { ArrowLeft } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
 import { AUTOMATION_TYPE_METADATA } from '../../../domain/typedAutomation';
+import { AppAlert } from '../../../platform/AppAlert';
 import { theme } from '../../../styles/theme';
 import type {
   AutomationConvergenceActionKind,
@@ -18,6 +19,7 @@ type AutomationHistoryScreenProps = {
   load: (cursor?: number) => Promise<AutomationHistoryPage>;
   loadConvergence?: () => Promise<AutomationConvergenceStatus>;
   allowFreshDecision?: (attemptId: number) => Promise<AutomationConvergenceStatus>;
+  allowLocalFreshDecision?: (actionId: number) => Promise<AutomationConvergenceStatus>;
 };
 
 export function AutomationHistoryScreen({
@@ -25,6 +27,7 @@ export function AutomationHistoryScreen({
   load,
   loadConvergence,
   allowFreshDecision,
+  allowLocalFreshDecision,
 }: AutomationHistoryScreenProps) {
   const [cycles, setCycles] = useState<AutomationHistoryCycle[]>([]);
   const [cursor, setCursor] = useState<number | null>(null);
@@ -33,9 +36,9 @@ export function AutomationHistoryScreen({
   const [convergence, setConvergence] = useState<AutomationConvergenceStatus | null>(null);
   const [convergenceLoading, setConvergenceLoading] = useState(false);
   const [convergenceError, setConvergenceError] = useState<string | null>(null);
-  const [releasingAttemptId, setReleasingAttemptId] = useState<number | null>(null);
-  const loaders = useRef({ load, loadConvergence, allowFreshDecision });
-  useLayoutEffect(() => { loaders.current = { load, loadConvergence, allowFreshDecision }; });
+  const [releasingKey, setReleasingKey] = useState<string | null>(null);
+  const loaders = useRef({ load, loadConvergence, allowFreshDecision, allowLocalFreshDecision });
+  useLayoutEffect(() => { loaders.current = { load, loadConvergence, allowFreshDecision, allowLocalFreshDecision }; });
   const mounted = useRef(false);
   const pageRequest = useRef(0);
   const convergenceRequest = useRef(0);
@@ -87,28 +90,35 @@ export function AutomationHistoryScreen({
   }, []);
   const hasConvergence = loadConvergence != null;
   useEffect(() => { void refreshConvergence(); }, [refreshConvergence, hasConvergence]);
-  const release = useCallback(async (attemptId: number) => {
-    const allow = loaders.current.allowFreshDecision;
+  const release = useCallback(async (id: number, kind: 'remote' | 'local' = 'remote') => {
+    const allow = kind === 'local' ? loaders.current.allowLocalFreshDecision : loaders.current.allowFreshDecision;
     if (!mounted.current || !allow || releaseBusy.current) return;
     releaseBusy.current = true;
     // 변경 요청보다 먼저 시작한 GET의 성공·오류 응답을 모두 폐기한다.
     const request = ++convergenceRequest.current;
     const isCurrent = () => mounted.current && request === convergenceRequest.current;
-    setConvergenceLoading(false); setReleasingAttemptId(attemptId); setConvergenceError(null);
+    setConvergenceLoading(false); setReleasingKey(`${kind}:${id}`); setConvergenceError(null);
     try {
-      const result = await allow(attemptId);
+      const result = await allow(id);
       if (isCurrent()) setConvergence(result);
     } catch (reason) {
       if (isCurrent()) setConvergenceError(reason instanceof Error ? reason.message : '새 행동 판단을 허용하지 못했습니다.');
     } finally {
-      if (isCurrent()) { releaseBusy.current = false; setReleasingAttemptId(null); }
+      if (isCurrent()) { releaseBusy.current = false; setReleasingKey(null); }
     }
   }, []);
+  const confirmRelease = (id: number, kind: 'remote' | 'local') => {
+    if (!mounted.current || releaseBusy.current) return;
+    AppAlert.alert(kind === 'local' ? '후처리 보류 해제' : '자동화 보류 해제', '이 범위를 최신 상태에서 다시 판단합니다. 이전 행동을 다시 제출하지 않습니다.', [
+      { text: '취소', style: 'cancel' },
+      { text: '새 판단 허용', onPress: () => { void release(id, kind); } },
+    ]);
+  };
   const latestEvent = cycles[0]?.events.at(-1);
   return <NestableScrollContainer contentContainerStyle={styles.container} stickyHeaderIndices={[0]} style={styles.scroller}>
     <View style={styles.header}><Pressable accessibilityLabel="통합 자동화로" accessibilityRole="button" onPress={onBack} style={styles.back}><ArrowLeft color={theme.colors.text} size={20} /></Pressable><View><Text style={styles.title}>자동화 기록</Text><Text style={styles.subtitle}>실제 판단 순서와 실행·스킵 결과를 시간순으로 확인합니다.</Text></View></View>
     {loadConvergence ? <View accessibilityLabel="자동화 결과 확인 상태" style={styles.convergenceSection}>
-      <View style={styles.convergenceHeader}><View><Text style={styles.convergenceEyebrow}>현재 결과 확인</Text><Text style={styles.convergenceHeading}>중복 실행 방지 상태</Text></View><Pressable accessibilityLabel="수렴 상태 새로고침" accessibilityRole="button" disabled={convergenceLoading || releasingAttemptId != null} onPress={() => { void refreshConvergence(); }} style={styles.refreshButton}><Text style={styles.refreshText}>{convergenceLoading ? '확인 중' : '새로고침'}</Text></Pressable></View>
+      <View style={styles.convergenceHeader}><View><Text style={styles.convergenceEyebrow}>현재 결과 확인</Text><Text style={styles.convergenceHeading}>중복 실행 방지 상태</Text></View><Pressable accessibilityLabel="수렴 상태 새로고침" accessibilityRole="button" disabled={convergenceLoading || releasingKey != null} onPress={() => { void refreshConvergence(); }} style={styles.refreshButton}><Text style={styles.refreshText}>{convergenceLoading ? '확인 중' : '새로고침'}</Text></Pressable></View>
       {convergenceError ? <Text accessibilityRole="alert" style={styles.error}>{convergenceError}</Text> : null}
       {convergence?.battleGate ? <View style={styles.gateCard}>
         <Text style={styles.gateTitle}>전투 캡차 대기</Text>
@@ -123,17 +133,38 @@ export function AutomationHistoryScreen({
         <Text style={styles.scope}>영향  {item.impactScope}</Text>
         {item.result === 'PENDING' ? <Text style={styles.observation}>관측 {item.successfulObservationCount}/5</Text> : null}
         <Text style={styles.convergenceMessage}>{item.reasonMessage}</Text>
+        {item.reasonCode ? <Text style={styles.diagnostic}>이유 코드  {item.reasonCode}</Text> : null}
+        {item.evidenceCaseId ? <Text style={styles.diagnostic}>증거  {item.evidenceCaseId}</Text> : null}
         <Text style={styles.releaseCondition}>{item.releaseCondition}</Text>
         {item.nextProbeAt ? <Text style={styles.next}>다음 확인 {new Date(item.nextProbeAt).toLocaleString('ko-KR')}</Text> : null}
         {item.canAllowFreshDecision && allowFreshDecision ? <Pressable
           accessibilityLabel={`${convergenceActionLabel(item.actionKind)} 새 행동 판단 허용`}
           accessibilityRole="button"
-          disabled={releasingAttemptId != null}
-          onPress={() => { void release(item.attemptId); }}
+          disabled={releasingKey != null}
+          onPress={() => confirmRelease(item.attemptId, 'remote')}
           style={styles.releaseButton}
-        ><Text style={styles.releaseButtonText}>{releasingAttemptId === item.attemptId ? '처리 중' : '새 행동 판단 허용'}</Text></Pressable> : null}
+        ><Text style={styles.releaseButtonText}>{releasingKey === `remote:${item.attemptId}` ? '처리 중' : '새 행동 판단 허용'}</Text></Pressable> : null}
       </View>)}
-      {!convergenceLoading && convergence && !convergence.battleGate && convergence.items.length === 0 ? <Text style={styles.convergenceEmpty}>현재 결과를 재확인 중인 행동이 없습니다.</Text> : null}
+      {convergence?.localResults?.map((item) => <View key={`local:${item.actionId}`} style={styles.convergenceCard}>
+        <Text style={styles.convergenceResult}>{item.status === 'RESULT_HELD' ? '후처리 보류' : '후처리 재시도'}</Text>
+        <Text style={styles.convergenceTitle}>{actionLabel(item.actionKind)}</Text>
+        {item.entryDisplayName ? <Text style={styles.scope}>{item.entryDisplayName}</Text> : null}
+        {item.remoteResult === 'APPLIED' ? <Text style={styles.observation}>원격 적용 확인</Text> : null}
+        <Text style={styles.scope}>영향  {item.impactScope}</Text>
+        <Text style={styles.convergenceMessage}>{item.reasonMessage}</Text>
+        <Text style={styles.diagnostic}>이유 코드  {item.reasonCode}</Text>
+        {item.evidenceCaseId ? <Text style={styles.diagnostic}>증거  {item.evidenceCaseId}</Text> : null}
+        <Text style={styles.releaseCondition}>{item.releaseCondition}</Text>
+        {item.nextAttemptAt ? <Text style={styles.next}>다음 후처리 {new Date(item.nextAttemptAt).toLocaleString('ko-KR')}</Text> : null}
+        {item.canAllowFreshDecision && allowLocalFreshDecision ? <Pressable
+          accessibilityLabel={`${actionLabel(item.actionKind)} 후처리 보류 새 행동 판단 허용`}
+          accessibilityRole="button"
+          disabled={releasingKey != null}
+          onPress={() => confirmRelease(item.actionId, 'local')}
+          style={styles.releaseButton}
+        ><Text style={styles.releaseButtonText}>{releasingKey === `local:${item.actionId}` ? '처리 중' : '새 행동 판단 허용'}</Text></Pressable> : null}
+      </View>)}
+      {!convergenceLoading && convergence && !convergence.battleGate && convergence.items.length === 0 && !convergence.localResults?.length ? <Text style={styles.convergenceEmpty}>현재 결과를 재확인 중인 행동이 없습니다.</Text> : null}
     </View> : null}
     {error ? <><Text accessibilityRole="alert" style={styles.error}>{error}</Text><Pressable accessibilityRole="button" onPress={() => { void fetchPage(); }}><Text style={styles.link}>다시 시도</Text></Pressable></> : null}
     {!loading && cycles.length === 0 && !error ? <Text style={styles.empty}>아직 자동화 기록이 없습니다.</Text> : null}

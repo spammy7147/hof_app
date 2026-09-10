@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { describe, it } from 'node:test';
 import React from 'react';
+import type { AlertButton } from 'react-native';
+let alertButtons: AlertButton[] = [];
 import { act, create, type ReactTestInstance } from 'react-test-renderer';
 import type { AutomationHistoryPage } from '../../main/types/api';
 import type { AutomationConvergenceStatus } from '../../main/types/api';
@@ -13,6 +15,7 @@ const originalLoad = moduleWithLoader._load;
 moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') return {
     ActivityIndicator: host('ActivityIndicator'), Pressable: host('Pressable'),
+    Alert: { alert: (_title: string, _message?: string, buttons: AlertButton[] = []) => { alertButtons = buttons; } },
     StyleSheet: { create: <T,>(styles: T) => styles, hairlineWidth: 1 }, Text: host('Text'), View: host('View'),
   };
   if (request === 'lucide-react-native') return { ArrowLeft: host('ArrowLeft') };
@@ -369,6 +372,10 @@ describe('AutomationHistoryScreen', () => {
 
     const button = renderer.root.findByProps({ accessibilityLabel: '레이드 시작 새 행동 판단 허용' });
     await act(async () => { button.props.onPress(); });
+    assert.deepEqual(calls, []);
+    const confirm = alertButtons.find(button => button.text === '새 판단 허용');
+    assert.ok(confirm?.onPress);
+    await act(async () => { confirm.onPress?.(); });
 
     assert.deepEqual(calls, [88]);
     assert.ok(!treeText(renderer.root).includes('보류된 결과'));

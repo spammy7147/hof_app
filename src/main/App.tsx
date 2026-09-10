@@ -187,6 +187,7 @@ function AuthenticatedApp({
         fetchHistory: (cursor) => api.fetchAutomationHistory(cursor),
         fetchConvergence: () => api.fetchAutomationConvergence(),
         allowFreshDecision: (attemptId) => api.allowFreshAutomationDecision(attemptId),
+        allowLocalFreshDecision: (actionId) => api.allowFreshLocalAutomationDecision(actionId),
         fetchQuests: () => api.fetchQuests(),
         changeState: (action) => api.changeUnifiedAutomationState(action),
       }),

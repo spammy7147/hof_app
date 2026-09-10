@@ -584,6 +584,10 @@ export class BackendApiClient {
     return this.request(`/api/automation/unified/convergence/${attemptId}/allow-fresh-decision`, { method: 'POST' });
   }
 
+  allowFreshLocalAutomationDecision(actionId: number): Promise<AutomationConvergenceStatus> {
+    return this.request(`/api/automation/unified/convergence/local-results/${actionId}/allow-fresh-decision`, { method: 'POST' });
+  }
+
   async fetchQuests(): Promise<QuestSnapshot[]> {
     const snapshots = await this.request<Array<Omit<QuestSnapshot, 'rewards'> & { rewards?: unknown }>>('/api/quests');
     return snapshots.map(normalizeQuestSnapshot);

@@ -1502,6 +1502,8 @@ describe('BackendApiClient', () => {
     await client.fetchAutomationConvergence();
     mockFetchWithCapture({ battleGate: null, items: [] }, requests);
     await client.allowFreshAutomationDecision(77);
+    mockFetchWithCapture({ battleGate: null, items: [], localResults: [] }, requests);
+    await client.allowFreshLocalAutomationDecision(88);
 
     assert.deepEqual(
       requests.map((request) => [request.url, request.init.method ?? 'GET']),
@@ -1522,6 +1524,7 @@ describe('BackendApiClient', () => {
         ['http://backend.test/api/quests/R%2F610/claim', 'POST'],
         ['http://backend.test/api/automation/unified/convergence', 'GET'],
         ['http://backend.test/api/automation/unified/convergence/77/allow-fresh-decision', 'POST'],
+        ['http://backend.test/api/automation/unified/convergence/local-results/88/allow-fresh-decision', 'POST'],
       ],
     );
     assert.equal(requests[1]?.init.body, '{"type":"QUEST"}');

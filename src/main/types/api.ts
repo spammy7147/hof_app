@@ -764,9 +764,26 @@ export type AutomationConvergenceItem = {
   releaseCondition: string;
   canAllowFreshDecision: boolean;
 };
+export type AutomationLocalResult = {
+  actionId: number;
+  entryId: number | null;
+  entryDisplayName: string | null;
+  actionKind: string;
+  status: 'RESULT_PENDING' | 'RESULT_HELD';
+  remoteResult: AutomationConvergenceResult | null;
+  retryAttempt: number;
+  nextAttemptAt: string | null;
+  reasonCode: string;
+  reasonMessage: string;
+  evidenceCaseId: string | null;
+  impactScope: string;
+  releaseCondition: string;
+  canAllowFreshDecision: boolean;
+};
 export type AutomationConvergenceStatus = {
   battleGate: AutomationBattleGateStatus | null;
   items: AutomationConvergenceItem[];
+  localResults?: AutomationLocalResult[];
 };
 
 export type TypedAutomationLifecycle = 'RUNNING' | 'DRAINING' | 'PAUSED' | 'STOPPED';
