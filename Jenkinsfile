@@ -359,12 +359,7 @@ REMOTE_SCRIPT
                         payload="$(printf \
                           '{"versionCode":%s,"versionName":"%s","fileName":"%s","fileSize":%s,"sha256":"%s","gitRevision":"%s","jenkinsBuild":%s}' \
                           "$VERSION_CODE" "$VERSION_NAME" "$ARTIFACT_NAME" "$apk_size" "$apk_sha256" "$GIT_REVISION" "$BUILD_NUMBER")"
-                        curl --fail --silent --show-error \
-                          --request POST \
-                          --header 'Content-Type: application/json' \
-                          --header "X-HOF-Release-Token: $HOF_RELEASE_PUBLISH_TOKEN" \
-                          --data-binary "$payload" \
-                          "$BACKEND_RELEASE_PUBLISH_URL"
+                        printf '%s' "$payload" | python3 scripts/publish-android-release.py
                         printf '\nPublished APK: %s\n' "$ARTIFACT_NAME"
                     '''
                 }
