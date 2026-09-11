@@ -1008,7 +1008,7 @@ describe('BackendApiClient', () => {
     const { BackendApiClient } = await loadBackendApi();
     const client = new BackendApiClient('http://backend.test');
     const request = {
-      sourceCharacterId: 6, targetCharacterId: 7,
+      sourceCharacterId: 6, targetCharacterId: 7, confirmationToken: 'fixture-preview',
       transfer: { includeCurrentPattern: true, savedPatternMappings: [{ sourceSlot: '0', targetSlot: '1' }], includeStats: false, includeSkills: false, includeEquipment: false },
     };
     const completed = { targetCharacterId: 7, results: [{ stepId: 'pattern:0', status: 'COMPLETED', message: '완료' }], nextStepIndex: 1 };
@@ -1425,7 +1425,7 @@ describe('BackendApiClient', () => {
         : operation === 'restore'
           ? restoreCharacter(client, 7, onProgress)
           : executeCharacterTransfer(client, {
-            sourceCharacterId: 6, targetCharacterId: 7,
+            sourceCharacterId: 6, targetCharacterId: 7, confirmationToken: 'fixture-preview',
             transfer: { includeCurrentPattern: true, savedPatternMappings: [], includeStats: false, includeSkills: false, includeEquipment: false },
           }, [], onProgress);
       const ended = assert.rejects(pending, /로그인 세션이 변경/);

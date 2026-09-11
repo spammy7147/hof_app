@@ -10,8 +10,10 @@ import {
 import { AppAlert as Alert } from '../../../platform/AppAlert';
 
 import type {
+  CharacterPatternSetting,
   CharacterTransferPreview,
   CharacterTransferPreviewRequest,
+  HofCharacterDetail,
 } from "../../../types/api";
 import { theme } from "../../../styles/theme";
 import { FixedBottomAction } from "../../../components/FixedBottomAction";
@@ -342,7 +344,11 @@ export function CharacterSettingsTransferScreen({
           {preview.steps.map((step, index) => (
             <View key={step.id} style={styles.step}>
               <Text style={styles.stepNumber}>{index + 1}</Text>
-              <Text style={styles.stepText}>{transferStepLabel(step)}</Text>
+              <View style={styles.stepContent}>
+                <Text style={styles.stepText}>{transferStepLabel(step, target)}</Text>
+                {step.setting && <PatternSettingSummary setting={step.setting} target={target} />}
+                {step.identity?.description ? <Text style={styles.muted}>{step.identity.description}</Text> : null}
+              </View>
             </View>
           ))}
         </View>
@@ -357,6 +363,7 @@ export function CharacterSettingsTransferScreen({
                 COMPLETED: "설정 가져오기를 완료했습니다.",
                 PARTIALLY_APPLIED: "일부 항목을 완료하지 못했습니다.",
                 RECHECK_REQUIRED: "현재 캐릭터 설정을 다시 확인해야 합니다.",
+                PREVIEW_CHANGED: "변경된 미리보기를 다시 확인해야 합니다.",
               }[result.outcome]}
             </Text>
           )}
@@ -366,16 +373,7 @@ export function CharacterSettingsTransferScreen({
           </Text>}
           {observed && <View>
               <Text style={styles.heading}>확인된 현재 캐릭터 설정</Text>
-              {observed.pattern.rows.map((row, index) => (
-                <Text key={index} style={styles.muted}>
-                  {index + 1}. {target.patternOptions?.find(option => option.type === "CONDITION" && option.value === row.judge)?.label || row.judge}{" "}
-                  {row.quantity} → {target.patternOptions?.find(option => option.type === "SKILL" && option.value === row.skill)?.label || row.skill}
-                </Text>
-              ))}
-              <Text style={styles.muted}>
-                위치 · {observed.pattern.position === "front" ? "전열" : observed.pattern.position === "back" ? "후열" : observed.pattern.position}
-                {" / 호위 · "}{target.positionGuard.guardValue === observed.pattern.guard ? target.positionGuard.guardText || observed.pattern.guard : observed.pattern.guard}
-              </Text>
+              <PatternSettingSummary setting={observed.pattern} target={target} />
               {observed.equipment != null && <Text style={styles.muted}>
                 장비 · {observed.equipment.length ? observed.equipment.map(item => item.name).join(", ") : "장착 장비 없음"}
               </Text>}
@@ -582,19 +580,42 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     textAlign: "center",
   },
-  stepText: { flex: 1, color: theme.colors.text, lineHeight: 19 },
+  stepContent: { flex: 1, gap: 4, paddingVertical: 8 },
+  stepText: { color: theme.colors.text, lineHeight: 19 },
   warning: { color: "#f1bd67", lineHeight: 20 },
   error: { color: theme.colors.danger, lineHeight: 20 },
 });
 
-function transferStepLabel(step: CharacterTransferPreview["steps"][number]) {
+function PatternSettingSummary({ setting, target }: { setting: CharacterPatternSetting; target: HofCharacterDetail }) {
+  return <View>
+    {setting.rows.map((row, index) => (
+      <Text key={index} style={styles.muted}>
+        {index + 1}. {target.patternOptions?.find(option => option.type === "CONDITION" && option.value === row.judge)?.label || row.judge}{" "}
+        {row.quantity} → {target.patternOptions?.find(option => option.type === "SKILL" && option.value === row.skill)?.label || row.skill}
+      </Text>
+    ))}
+    <Text style={styles.muted}>
+      위치 · {setting.position === "front" ? "전열" : setting.position === "back" ? "후열" : setting.position}
+      {" / 호위 · "}{target.positionGuard.guardValue === setting.guard ? target.positionGuard.guardText || setting.guard : setting.guard}
+    </Text>
+  </View>;
+}
+
+function transferStepLabel(step: CharacterTransferPreview["steps"][number], target: HofCharacterDetail) {
   if (step.sourceSlot && step.targetSlot) {
     return `저장 패턴 ${step.name || step.sourceSlot} → 대상 슬롯 ${step.targetSlot}${step.replacesExisting ? " 교체" : " 저장"}`;
   }
-  if (step.amounts) return "추가 가능한 스탯을 배분합니다.";
-  if (step.skillValue) return "배울 수 있는 스킬을 습득합니다.";
-  if (step.itemValue) return `${step.equipmentPart ?? "장비"} 장비를 적용합니다.`;
+  if (step.amounts) return `스탯 배분 · ${Object.entries(step.amounts).map(([stat, amount]) => `${stat} +${amount}`).join(" · ")}`;
+  if (step.skillValue) {
+    const skill = [...target.learnedSkills, ...target.learnableSkills].find(item => item.value === step.skillValue);
+    return `스킬 습득 · ${skill?.name ? `${skill.name} (${step.skillValue})` : step.skillValue}`;
+  }
+  if (step.itemValue) return `${step.equipmentPart ?? "장비"} · ${step.identity?.name ||
+    target.equipmentCandidates?.find(item => item.value === step.itemValue)?.name || step.itemValue}`;
+  if (step.slotNumber != null) return `장비 설정을 슬롯 ${step.slotNumber}에 저장합니다.`;
+  if (step.type === "REMOVE_ALL_EQUIPMENT" || step.id.endsWith(":clear")) return "현재 장비를 모두 해제합니다.";
   if (step.id.includes("equipment")) return "장비 설정을 적용합니다.";
+  if (step.id === "preserve-current-pattern") return "대상의 최초 패턴·위치·호위를 복원합니다.";
   if (step.id.includes("current-pattern")) return "현재 패턴·위치·호위를 적용합니다.";
   return "선택한 설정을 적용합니다.";
 }

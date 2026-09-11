@@ -3,7 +3,7 @@ import type {
   CharacterDeepSyncResponse,
   CharacterOperationJob,
   CharacterTransferExecutionResult,
-  CharacterTransferPreviewRequest,
+  CharacterTransferExecuteRequest,
   HofCharacter,
 } from '../../types/api';
 
@@ -59,7 +59,7 @@ export function restoreCharacter(
 
 export function executeCharacterTransfer(
   api: ManualSequenceApi,
-  request: CharacterTransferPreviewRequest,
+  request: CharacterTransferExecuteRequest,
   completedStepIds: string[] = [],
   onProgress?: (progress: CharacterTransferExecutionResult) => void,
 ): Promise<CharacterTransferExecutionResult> {

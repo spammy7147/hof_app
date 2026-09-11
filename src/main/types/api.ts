@@ -1093,6 +1093,9 @@ export type CharacterTransferPreviewRequest = {
   targetCharacterId: number;
   transfer: CharacterTransferRequest;
 };
+export type CharacterTransferExecuteRequest = CharacterTransferPreviewRequest & {
+  confirmationToken: string;
+};
 export type CharacterTransferIssue = {
   code: string;
   itemKey: string;
@@ -1101,7 +1104,10 @@ export type CharacterTransferIssue = {
 };
 export type CharacterTransferStep = {
   id: string;
+  type?: 'APPLY_CURRENT_PATTERN' | 'SAVE_PATTERN_SLOT' | 'ALLOCATE_STATS' | 'LEARN_SKILL'
+    | 'EQUIP_ITEM' | 'REMOVE_ALL_EQUIPMENT' | 'SAVE_EQUIPMENT_PRESET';
   dependsOn: string[];
+  setting?: CharacterPatternSetting;
   sourceSlot?: string;
   targetSlot?: string;
   name?: string;
@@ -1110,6 +1116,8 @@ export type CharacterTransferStep = {
   skillValue?: string;
   equipmentPart?: string;
   itemValue?: string;
+  identity?: HofCharacterEquipment | null;
+  slotNumber?: number;
 };
 export type CharacterTransferPreview = {
   sourceCharacterId: number;
@@ -1117,6 +1125,7 @@ export type CharacterTransferPreview = {
   steps: CharacterTransferStep[];
   issues: CharacterTransferIssue[];
   executable: boolean;
+  confirmationToken?: string | null;
 };
 export type CharacterTransferStepResult = { stepId: string; status: 'COMPLETED' | 'FAILED' | 'SKIPPED'; message: string };
 export type CharacterTransferExecutionResult = {
@@ -1124,10 +1133,11 @@ export type CharacterTransferExecutionResult = {
   results: CharacterTransferStepResult[];
   nextStepIndex: number;
   /** 진행 중인 결과와 구형 작업에는 최종 관측 정보가 없다. */
-  outcome?: 'COMPLETED' | 'PARTIALLY_APPLIED' | 'RECHECK_REQUIRED' | null;
+  outcome?: 'COMPLETED' | 'PARTIALLY_APPLIED' | 'RECHECK_REQUIRED' | 'PREVIEW_CHANGED' | null;
   currentSettings?: { pattern: CharacterPatternSetting; equipment?: HofCharacterEquipment[] | null } | null;
   finalSettingsConfirmed?: boolean;
   message?: string | null;
+  preview?: CharacterTransferPreview | null;
 };
 export type CharacterDeepSyncProgress = { phase: 'CURRENT' | 'SAVED_PATTERN' | 'EQUIPMENT_PRESET' | 'RESTORE' | 'COMPLETED'; completedSteps: number; totalSteps: number; patternSlotCode: string | null; equipmentSlotNumber: number | null };
 export type CharacterDeepSyncResponse = { characterId: number; progress: CharacterDeepSyncProgress[] };

@@ -899,6 +899,47 @@ describe('character management hub module', () => {
     assert.equal(hub.getSnapshot().selectedCharacter?.id, second.id);
   });
 
+  it('바뀐 미리보기를 재확인해야 실행하며 이전 확인창과 clear 콜백은 새 미리보기에 적용되지 않는다', async () => {
+    const request = transferRequest(2, 1);
+    const before = { ...transferPreview(2, 1), confirmationToken: 'before' };
+    const after = { ...transferPreview(2, 1), confirmationToken: 'after', steps: [{ id: 'skill:new', dependsOn: [], skillValue: 'new' }] };
+    const submitted: unknown[] = [];
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async (characterId) => freshDetail(characterId),
+      previewTransfer: async () => before,
+      executeTransfer: async (value) => {
+        submitted.push(value);
+        return submitted.length === 1
+          ? { targetCharacterId: 1, results: [], nextStepIndex: 0, outcome: 'PREVIEW_CHANGED', preview: after, message: '변경된 미리보기를 다시 확인해 주세요.' }
+          : { targetCharacterId: 1, results: [], nextStepIndex: 0, outcome: 'COMPLETED', finalSettingsConfirmed: true };
+      },
+    }));
+    const target = makeHofCharacter(1);
+    hub.activate('account-1');
+    hub.observeRoster([target, makeHofCharacter(2)]);
+    await hub.getSnapshot().actions.select(target);
+    await hub.getSnapshot().actions.previewTransfer?.(request);
+    const oldActions = hub.getSnapshot().actions;
+
+    await oldActions.executeTransfer?.();
+
+    assert.equal(hub.getSnapshot().transfer.status, 'ready');
+    assert.equal(hub.getSnapshot().transfer.preview, after);
+    assert.equal(hub.getSnapshot().transfer.result, null);
+    assert.equal(hub.getSnapshot().transfer.progress, null);
+    assert.match(hub.getSnapshot().transfer.errorMessage!, /다시 확인/);
+    await oldActions.executeTransfer?.();
+    oldActions.clearTransfer();
+    assert.equal(submitted.length, 1);
+    assert.equal(hub.getSnapshot().transfer.preview, after);
+    await hub.getSnapshot().actions.executeTransfer?.();
+    assert.deepEqual(submitted, [
+      { ...request, confirmationToken: 'before' },
+      { ...request, confirmationToken: 'after' },
+    ]);
+    assert.equal(hub.getSnapshot().transfer.status, 'completed');
+  });
+
   it('owns a transfer preview for exact stable source and target records', async () => {
     const request = transferRequest(2, 1);
     const preview = transferPreview(2, 1);
@@ -943,7 +984,7 @@ describe('character management hub module', () => {
       loadStoredDetail: async (characterId) => freshDetail(characterId),
       previewTransfer: async () => preview,
       executeTransfer: async (submitted, onProgress) => {
-        assert.deepEqual(submitted, request);
+        assert.deepEqual(submitted, { ...request, confirmationToken: preview.confirmationToken });
         onProgress(progress);
         return result;
       },
@@ -1182,5 +1223,6 @@ function transferPreview(
     steps: [],
     issues: [],
     executable: true,
+    confirmationToken: 'fixture-preview',
   };
 }

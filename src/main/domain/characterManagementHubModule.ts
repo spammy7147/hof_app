@@ -12,6 +12,7 @@ import type {
   CharacterTransferExecutionResult,
   CharacterTransferPreview,
   CharacterTransferPreviewRequest,
+  CharacterTransferExecuteRequest,
   HofCharacter,
   HofCharacterDetail,
   CharacterStat,
@@ -56,7 +57,7 @@ export type CharacterManagementHubBackend = {
     request: CharacterTransferPreviewRequest,
   ) => Promise<CharacterTransferPreview>;
   executeTransfer?: (
-    request: CharacterTransferPreviewRequest,
+    request: CharacterTransferExecuteRequest,
     onProgress: (progress: CharacterTransferExecutionResult) => void,
   ) => Promise<CharacterTransferExecutionResult>;
   reloadRelatedPresets?: () => Promise<void>;
@@ -1303,6 +1304,14 @@ export class CharacterManagementHubModule {
         expectedSelectionGeneration,
       )
     ) return undefined;
+    const confirmationToken = transfer.preview.confirmationToken;
+    if (!confirmationToken) {
+      this.replace({
+        ...this.resource,
+        transfer: { ...transfer, status: 'error', errorMessage: '미리보기 확인 정보가 없습니다. 미리보기를 다시 불러와 주세요.' },
+      });
+      return undefined;
+    }
     const transferGeneration = this.transferGeneration;
     this.replace({
       ...this.resource,
@@ -1316,7 +1325,7 @@ export class CharacterManagementHubModule {
     });
     let result: CharacterTransferExecutionResult;
     try {
-      result = await execute(request, (progress) => {
+      result = await execute({ ...request, confirmationToken }, (progress) => {
         if (
           progress.targetCharacterId !== targetCharacterId ||
           !this.isCurrentTransfer(
@@ -1367,6 +1376,26 @@ export class CharacterManagementHubModule {
         },
       });
       return undefined;
+    }
+    if (result.outcome === 'PREVIEW_CHANGED') {
+      const preview = result.preview;
+      if (!preview?.confirmationToken || preview.sourceCharacterId !== source.id || preview.targetCharacterId !== targetCharacterId) {
+        this.replace({
+          ...this.resource,
+          transfer: { ...this.resource.transfer, status: 'error', errorMessage: '변경된 미리보기를 확인하지 못했습니다. 다시 불러와 주세요.' },
+        });
+        return undefined;
+      }
+      const nextGeneration = ++this.transferGeneration;
+      this.replace({
+        ...this.resource,
+        transfer: {
+          ...this.resource.transfer, status: 'ready', preview, progress: null, result: null,
+          errorMessage: result.message ?? '변경된 미리보기를 다시 확인해 주세요.',
+        },
+        actions: this.actionsFor(expectedGeneration, expectedSelectionGeneration, nextGeneration),
+      });
+      return result;
     }
     this.replace({
       ...this.resource,

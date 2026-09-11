@@ -19,6 +19,7 @@ import type {
   CharacterPatternApplyRequest,
   CharacterPatternOperationResult,
   CharacterTransferPreviewRequest,
+  CharacterTransferExecuteRequest,
   CharacterTransferPreview,
   CharacterOperationJob,
   CharacterRecoveryPreview,
@@ -124,7 +125,7 @@ export type ManualSequenceRequests = {
   loadSavedPattern: (characterId: number, slotCode: string) => Promise<CharacterPatternOperationResult>;
   startDeepSync: (characterId: number) => Promise<CharacterOperationJob>;
   startRestore: (characterId: number) => Promise<CharacterOperationJob>;
-  startTransfer: (request: CharacterTransferPreviewRequest, completedStepIds: string[]) => Promise<CharacterOperationJob>;
+  startTransfer: (request: CharacterTransferExecuteRequest, completedStepIds: string[]) => Promise<CharacterOperationJob>;
   fetchOperation: (jobId: number) => Promise<CharacterOperationJob>;
   retryRecovery: (jobId: number) => Promise<CharacterOperationJob>;
   listCharacters: () => Promise<HofCharacter[]>;
