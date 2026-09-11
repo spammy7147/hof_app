@@ -114,14 +114,22 @@ function AuctionMarketPanel({ api }: Pick<Props, 'api'>) {
   if (!town.data) return <LoadState loading={town.status === 'loading'} error={town.error} retry={town.reload} />;
   const selectedItem = town.data.items.find((item) => item.itemKey === selected[0]) ?? null;
   return <View style={styles.container}><TownItemList rows={rows} selectionMode="single" selectedIds={selected} onSelectionChange={setSelected} emptyMessage={null}
-    header={<View style={styles.section}><TextInput accessibilityLabel="낙찰 시세 검색어" value={query} onChangeText={setQuery} placeholder="품목명 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} /></View>}
+    header={<View style={styles.section}>
+      <TextInput accessibilityLabel="낙찰 시세 검색어" value={query} onChangeText={setQuery} placeholder="품목명 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} />
+      <Text style={styles.muted}>최초 관측일 기준 최근 30일의 저장된 낙찰 기록 전체를 집계합니다.</Text>
+      <Text style={styles.muted}>관측일은 실제 거래일과 다를 수 있습니다.</Text>
+    </View>}
     footer={selectedItem ? <PriceChart item={selectedItem} /> : null} />
   </View>;
 }
 
 function PriceChart({ item }: { item: AuctionMarketItem }) {
   const points = item.points.slice(-24); const max = Math.max(1, ...points.map((point) => point.unitPrice));
-  return <View accessibilityLabel={`${item.name} 가격 차트 ${points.length}개 관측`} style={styles.chart}><Text style={styles.chartTitle}>{item.name} 단가 추이</Text><View style={styles.bars}>{points.map((point, index) => <View accessibilityLabel={`${new Date(point.observedAt).toLocaleString()} 단가 ${point.unitPrice} 총액 ${point.totalPrice} 수량 ${point.quantity}`} accessible key={`${point.observedAt}-${index}`} style={[styles.bar, { height: Math.max(3, Math.round(48 * point.unitPrice / max)) }]} />)}</View></View>;
+  return <View accessibilityLabel={`${item.name} 가격 차트 ${points.length}개 관측`} style={styles.chart}>
+    <Text style={styles.chartTitle}>{item.name} 단가 추이</Text>
+    <Text style={styles.muted}>그래프는 최근 {points.length}건 · 날짜는 최초 관측일</Text>
+    <View style={styles.bars}>{points.map((point, index) => <View accessibilityLabel={`최초 관측 ${new Date(point.observedAt).toLocaleString()} 단가 ${point.unitPrice} 총액 ${point.totalPrice} 수량 ${point.quantity}`} accessible key={`${point.observedAt}-${index}`} style={[styles.bar, { height: Math.max(3, Math.round(48 * point.unitPrice / max)) }]} />)}</View>
+  </View>;
 }
 
 function bidListingRow(item: AuctionListingResponse): TownRowResponse {

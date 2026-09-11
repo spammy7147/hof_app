@@ -117,6 +117,23 @@ describe('AuctionPanel', () => {
     assert.equal(text().includes('보유 3'), false);
   });
 
+  it('전체 집계와 최근 그래프의 범위 및 최초 관측일 기준을 구분해 안내한다', async () => {
+    const response = market();
+    response.items[0] = {
+      ...response.items[0], tradeCount: 601, volume: 1203, averageUnitPrice: 199,
+      minimumUnitPrice: 1, maximumUnitPrice: 200, latestUnitPrice: 200,
+      points: Array.from({ length: 100 }, () => ({
+        totalPrice: 400, unitPrice: 200, quantity: 2, observedAt: '2026-07-31T00:00:00Z', kind: 'SOLD',
+      })),
+    };
+    await render(React.createElement(AuctionPanel, { api: api(async () => response), mode: 'market' }));
+    assert.ok(text().includes('최초 관측일 기준 최근 30일의 저장된 낙찰 기록 전체를 집계합니다.'));
+    assert.ok(text().includes('관측일은 실제 거래일과 다를 수 있습니다.'));
+    await press('Potion 시세 이력 열기. 최근 총액 $400 · 최근 단가 $200 · 평균 $199 · 최저 $1 · 최고 $200 · 총 거래량 1,203개 · 601건');
+    assert.ok(text().includes('그래프는 최근 24건 · 날짜는 최초 관측일'));
+    assert.equal(mounted!.root.findAll((node) => String(node.type) === 'View' && String(node.props.accessibilityLabel ?? '').startsWith('최초 관측 ')).length, 24);
+  });
+
   it('출품은 서버 기간만 선택하고 수량, 개시가, 설명의 경계를 검증한다', async () => {
     const exhibit = { entryActionId: 'exhibit-entry', actionId: 'put-a', durations: [{ value: '24', label: '24시간' }, { value: '72', label: '3일' }], result: null, items: [{ ...auction().listings[0], rowKey: 'item:item-7', action: 'EXHIBIT', listingId: null, actionId: 'put-a', candidateId: 'item-7', name: 'Elixir' }] };
     await render(React.createElement(AuctionPanel, { api: api(async () => auction(), async () => exhibit), mode: 'auction' }));
