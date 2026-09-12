@@ -1,7 +1,8 @@
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   Image,
+  Keyboard,
   Modal,
   Pressable,
   StyleSheet,
@@ -10,6 +11,7 @@ import {
   View,
 } from "react-native";
 import { AppAlert as Alert } from '../platform/AppAlert';
+import { focusAccessibilityTarget, getAccessibilityFocusTarget } from '../platform/accessibilityFocus';
 
 import {
   displayCharacterName,
@@ -23,6 +25,7 @@ import type { CharacterManagementHubResource } from "../domain/characterManageme
 
 type CharacterListProps = {
   characterHub: CharacterManagementHubResource;
+  active?: boolean;
 };
 
 /**
@@ -30,12 +33,31 @@ type CharacterListProps = {
  */
 export function CharacterList({
   characterHub,
+  active = true,
 }: CharacterListProps) {
   const { characters } = characterHub;
   const [lifecycle, setLifecycle] = useState<"ACTIVE" | "MISSING" | "ARCHIVED">(
     "ACTIVE",
   );
   const [query, setQuery] = useState("");
+  const listRef = useRef<FlatList<HofCharacter>>(null);
+  const lifecycleRef = useRef<View>(null);
+  const rowRefs = useRef(new Map<number, View>());
+  const currentOffset = useRef(0);
+  const returnTo = useRef<{ characterId: number; offset: number; index: number } | null>(null);
+  const restoringFocus = useRef(false);
+  const finishFocusRestore = useCallback((node: View | null) => {
+    focusAccessibilityTarget(getAccessibilityFocusTarget(node));
+    returnTo.current = null;
+    restoringFocus.current = false;
+  }, []);
+  const setRowRef = useCallback((id: number, node: View | null) => {
+    if (node) rowRefs.current.set(id, node);
+    else rowRefs.current.delete(id);
+    if (active && node && restoringFocus.current && returnTo.current?.characterId === id) {
+      finishFocusRestore(node);
+    }
+  }, [active, finishFocusRestore]);
   const [linkTarget, setLinkTarget] = useState<HofCharacter | null>(null);
   const [copySource, setCopySource] = useState<HofCharacter | null>(null);
   const [copyQuery, setCopyQuery] = useState("");
@@ -74,6 +96,25 @@ export function CharacterList({
     () => new Map(characters.map((character) => [character.id, character])),
     [characters],
   );
+  useEffect(() => {
+    if (!active) {
+      restoringFocus.current = false;
+      return;
+    }
+    const target = returnTo.current;
+    if (!target) return;
+    restoringFocus.current = true;
+    listRef.current?.scrollToOffset({ offset: target.offset, animated: false });
+    const index = orderedCharacters.findIndex((item) => item.id === target.characterId);
+    const row = index < 0 ? null : rowRefs.current.get(target.characterId);
+    if (index >= 0 && (index !== target.index || !row)) {
+      // 마운트된 행도 화면 밖에 있을 수 있으므로 순서가 바뀌면 현재 위치로 이동한다.
+      listRef.current?.scrollToIndex({ index, animated: false });
+      if (row) finishFocusRestore(row);
+    } else {
+      finishFocusRestore(row ?? lifecycleRef.current);
+    }
+  }, [active, finishFocusRestore, orderedCharacters]);
   /**
    * row 컴포넌트는 ID만 넘기므로 실제 캐릭터 객체를 찾아 상위 화면에 전달한다.
    */
@@ -81,10 +122,13 @@ export function CharacterList({
     (characterId: number) => {
       const character = charactersById.get(characterId);
       if (character) {
+        returnTo.current = { characterId, offset: currentOffset.current, index: orderedCharacters.findIndex((item) => item.id === characterId) };
+        restoringFocus.current = false;
+        Keyboard.dismiss();
         void characterHub.actions.select(character);
       }
     },
-    [characterHub.actions, charactersById],
+    [characterHub.actions, charactersById, orderedCharacters],
   );
   const handleRestoreCharacter = useCallback(
     async (characterId: number) => {
@@ -116,6 +160,7 @@ export function CharacterList({
         name={displayCharacterName(item)}
         lifecycle={item.lifecycle ?? "ACTIVE"}
         onPressCharacter={handlePressCharacter}
+        onRowRef={setRowRef}
         onArchive={() => void characterHub.actions.archiveCharacter?.(item.id)}
         restoring={restoringCharacterId === item.id}
         restoreDisabled={restoringCharacterId !== null}
@@ -149,11 +194,12 @@ export function CharacterList({
       characterHub.actions,
       handleRestoreCharacter,
       restoringCharacterId,
+      setRowRef,
     ],
   );
   if (characters.length === 0) {
     return (
-      <View style={styles.empty}>
+      <View ref={lifecycleRef} accessible accessibilityRole="header" accessibilityLabel="캐릭터 0명" style={styles.empty}>
         <Text style={styles.emptyTitle}>캐릭터 0명</Text>
         <Text style={styles.emptyText}>
           로그인 후 캐릭터 동기화를 진행하세요.
@@ -168,6 +214,10 @@ export function CharacterList({
         {(["ACTIVE", "MISSING", "ARCHIVED"] as const).map((value) => (
           <Pressable
             key={value}
+            ref={lifecycle === value ? lifecycleRef : undefined}
+            accessibilityRole="button"
+            accessibilityLabel={value === "ACTIVE" ? "캐릭터" : value === "MISSING" ? "사라짐" : "보관함"}
+            accessibilityState={{ selected: lifecycle === value }}
             onPress={() => setLifecycle(value)}
             style={[
               styles.lifecycleTab,
@@ -203,6 +253,17 @@ export function CharacterList({
         style={styles.search}
       />
       <FlatList
+        accessibilityLabel="캐릭터 목록"
+        ref={listRef}
+        onScroll={(event) => {
+          if (active) currentOffset.current = event.nativeEvent.contentOffset.y;
+        }}
+        onScrollToIndexFailed={({ index, averageItemLength }) => {
+          if (active && restoringFocus.current) {
+            listRef.current?.scrollToOffset({ offset: index * averageItemLength, animated: false });
+          }
+        }}
+        scrollEventThrottle={16}
         contentContainerStyle={styles.listContent}
         contentInsetAdjustmentBehavior="automatic"
         data={orderedCharacters}
@@ -300,7 +361,12 @@ export function CharacterList({
                   onPress={() => {
                     const source = copySource;
                     setCopySource(null);
-                    if (source) void characterHub.actions.openTransfer(source, target);
+                    if (source) {
+                      returnTo.current = { characterId: source.id, offset: currentOffset.current, index: orderedCharacters.findIndex((item) => item.id === source.id) };
+                      restoringFocus.current = false;
+                      Keyboard.dismiss();
+                      void characterHub.actions.openTransfer(source, target);
+                    }
                   }}
                   style={styles.targetRow}
                 >
@@ -335,6 +401,7 @@ type CharacterRowProps = {
   job: string;
   lifecycle: "ACTIVE" | "MISSING" | "ARCHIVED";
   onPressCharacter: (characterId: number) => void;
+  onRowRef: (id: number, node: View | null) => void;
   onArchive: () => void;
   onRestore: () => void;
   restoring?: boolean;
@@ -357,6 +424,7 @@ const CharacterRow = memo(function CharacterRow({
   job,
   lifecycle,
   onPressCharacter,
+  onRowRef,
   onArchive,
   onRestore,
   restoring = false,
@@ -367,7 +435,7 @@ const CharacterRow = memo(function CharacterRow({
 }: CharacterRowProps) {
   const normalizedImageUrl = normalizeHofAssetUrl(imageUrl);
   /**
-   * 부모에게 전체 row 객체 대신 안정적인 HOF 캐릭터 ID만 전달한다.
+   * 부모에게 전체 row 객체 대신 로컬 캐릭터 기록 ID를 전달한다.
    */
   const handlePress = useCallback(() => {
     onPressCharacter(characterId);
@@ -376,7 +444,9 @@ const CharacterRow = memo(function CharacterRow({
   return (
     <View style={styles.rowCard}>
       <Pressable
+        ref={(node) => onRowRef(characterId, node)}
         accessibilityRole="button"
+        accessibilityLabel={`${name}, ${levelText}, ${job}`}
         disabled={lifecycle !== "ACTIVE"}
         onPress={handlePress}
         style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}

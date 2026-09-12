@@ -123,6 +123,7 @@ export function MainScreen({
 
   const tabArgs: RenderActiveTabArgs = {
     activeTabId,
+    characterTabActive: activeTabId === "characters",
     status,
     authenticated: session?.loggedIn === true,
     battle,
@@ -213,6 +214,7 @@ export function MainScreen({
 
 type RenderActiveTabArgs = CharacterSyncControls & {
   activeTabId: MainRouteId;
+  characterTabActive: boolean;
   status: HofStatusResponse | null;
   authenticated: boolean;
   battle: BattleResource;
@@ -245,6 +247,7 @@ type RenderActiveTabArgs = CharacterSyncControls & {
  */
 function renderActiveTab({
   activeTabId,
+  characterTabActive,
   status,
   authenticated,
   battle,
@@ -309,60 +312,70 @@ function renderActiveTab({
         />
       );
     case "characters":
-      return selectedCharacter ? (
-        <View style={[styles.tabPanel, styles.detailPanel]}>
-          <CharacterDetailScroll>
-            <CharacterDetail
-              characterHub={characterHub}
-            />
-          </CharacterDetailScroll>
-        </View>
-      ) : (
-        <View style={styles.tabPanel}>
-          <View style={styles.sectionHeader}>
-            <Text numberOfLines={1} maxFontSizeMultiplier={1.3} style={styles.sectionTitle}>캐릭터</Text>
-            <View style={styles.sectionActions}>
-              <Text numberOfLines={1} maxFontSizeMultiplier={1.3} style={styles.sectionMeta}>{characters.length}명</Text>
-              <CharacterSyncControl
-                characterHub={characterHub}
-                characterSyncLabel={characterSyncLabel}
-                characterSyncJob={characterSyncJob}
-                characterSyncError={characterSyncError}
-                characterRosterResult={characterRosterResult}
-                characterRosterError={characterRosterError}
-                onCheckCharacterSync={onCheckCharacterSync}
-                onSyncCharacterRoster={onSyncCharacterRoster}
-                onStartCharacterFullSync={onStartCharacterFullSync}
-                onStopCharacterSync={onStopCharacterSync}
-                onResumeCharacterSync={onResumeCharacterSync}
-              />
+      return (
+        <>
+          <View
+            style={selectedCharacter ? styles.hidden : styles.persistentTab}
+            accessibilityElementsHidden={selectedCharacter != null}
+            importantForAccessibility={selectedCharacter ? "no-hide-descendants" : "auto"}
+          >
+            <FixedBottomActionHost>
+              <View style={styles.tabPanel}>
+                <View style={styles.sectionHeader}>
+                  <Text numberOfLines={1} maxFontSizeMultiplier={1.3} style={styles.sectionTitle}>캐릭터</Text>
+                  <View style={styles.sectionActions}>
+                    <Text numberOfLines={1} maxFontSizeMultiplier={1.3} style={styles.sectionMeta}>{characters.length}명</Text>
+                    <CharacterSyncControl
+                      characterHub={characterHub}
+                      characterSyncLabel={characterSyncLabel}
+                      characterSyncJob={characterSyncJob}
+                      characterSyncError={characterSyncError}
+                      characterRosterResult={characterRosterResult}
+                      characterRosterError={characterRosterError}
+                      onCheckCharacterSync={onCheckCharacterSync}
+                      onSyncCharacterRoster={onSyncCharacterRoster}
+                      onStartCharacterFullSync={onStartCharacterFullSync}
+                      onStopCharacterSync={onStopCharacterSync}
+                      onResumeCharacterSync={onResumeCharacterSync}
+                    />
+                  </View>
+                </View>
+                <View style={styles.characterSubTabs}>
+                  <CharacterSubTabButton
+                    active={characterSubTabId === "characters"}
+                    label="캐릭터창"
+                    onPress={() => setCharacterSubTabId("characters")}
+                  />
+                  <CharacterSubTabButton
+                    active={characterSubTabId === "presets"}
+                    label="프리셋"
+                    onPress={() => setCharacterSubTabId("presets")}
+                  />
+                </View>
+                {characterSubTabId === "characters" ? (
+                  <CharacterList
+                    characterHub={characterHub}
+                    active={characterTabActive && !selectedCharacter}
+                  />
+                ) : (
+                  <PartyPresetList
+                    authenticated={authenticated}
+                    characters={characters}
+                    partyPresetCatalog={partyPresetCatalog}
+                    onLoadPresetPatterns={onLoadPresetPatterns}
+                  />
+                )}
+              </View>
+            </FixedBottomActionHost>
+          </View>
+          {selectedCharacter && (
+            <View style={[styles.tabPanel, styles.detailPanel]}>
+              <CharacterDetailScroll>
+                <CharacterDetail characterHub={characterHub} active={characterTabActive} />
+              </CharacterDetailScroll>
             </View>
-          </View>
-          <View style={styles.characterSubTabs}>
-            <CharacterSubTabButton
-              active={characterSubTabId === "characters"}
-              label="캐릭터창"
-              onPress={() => setCharacterSubTabId("characters")}
-            />
-            <CharacterSubTabButton
-              active={characterSubTabId === "presets"}
-              label="프리셋"
-              onPress={() => setCharacterSubTabId("presets")}
-            />
-          </View>
-          {characterSubTabId === "characters" ? (
-            <CharacterList
-              characterHub={characterHub}
-            />
-          ) : (
-            <PartyPresetList
-              authenticated={authenticated}
-              characters={characters}
-              partyPresetCatalog={partyPresetCatalog}
-              onLoadPresetPatterns={onLoadPresetPatterns}
-            />
           )}
-        </View>
+        </>
       );
     case "town":
       return (

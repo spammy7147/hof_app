@@ -26,12 +26,13 @@ import { toUserFacingErrorMessage } from "../../../domain/userFacingErrors";
 import type { CharacterManagementHubResource } from "../../../domain/characterManagementHubModule";
 import { CharacterSyncControl } from '../CharacterSyncScreen';
 import { CharacterItemsScreen } from "../items/CharacterItemsScreen";
-import { CharacterSettingsTransferScreen } from "../transfer/CharacterSettingsTransferScreen";
 
 export function CharacterManagementScreen({
   characterHub,
+  onImportSettings,
 }: {
   characterHub: CharacterManagementHubResource;
+  onImportSettings: () => void;
 }) {
   const detail = characterHub.detail!;
   const actions = characterHub.actions;
@@ -44,9 +45,6 @@ export function CharacterManagementScreen({
   const [itemsBusy, setItemsBusy] = useState(false);
   const [classOpen, setClassOpen] = useState(false);
   const [selectedClass, setSelectedClass] = useState<string | null>(null);
-  const [transferOpen, setTransferOpen] = useState(
-    characterHub.transfer.sourceCharacter != null,
-  );
   const identityResolution = characterHub.identityResolution;
   const [showAllIdentityCandidates, setShowAllIdentityCandidates] =
     useState(false);
@@ -73,13 +71,6 @@ export function CharacterManagementScreen({
           },
         ])
       : void action();
-  if (transferOpen && canTransfer)
-    return (
-      <CharacterSettingsTransferScreen
-        characterHub={characterHub}
-        onBack={() => setTransferOpen(false)}
-      />
-    );
   return (
     <View style={styles.screen}>
       {itemsOpen && (
@@ -155,7 +146,8 @@ export function CharacterManagementScreen({
           icon={Copy}
           title="설정 가져오기"
           description="같은 HOF 계정의 다른 캐릭터 설정을 복사합니다."
-          onPress={() => setTransferOpen(true)}
+          disabled={!canTransfer}
+          onPress={onImportSettings}
         />
         <CharacterSyncControl characterHub={characterHub} />
       </View>

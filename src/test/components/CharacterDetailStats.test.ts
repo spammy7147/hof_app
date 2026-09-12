@@ -15,6 +15,7 @@ const host = (name: string) => React.forwardRef<unknown, Record<string, unknown>
 const reactNativeMock = {
   ActivityIndicator: host('ActivityIndicator'),
   Alert: { alert: () => undefined },
+  BackHandler: { addEventListener: () => ({ remove: () => undefined }) },
   FlatList: host('FlatList'),
   Image: host('Image'),
   Modal: host('Modal'),
@@ -859,6 +860,7 @@ describe('CharacterDetail stat allocation', () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(CharacterManagementScreen, {
+        onImportSettings: () => undefined,
         characterHub: hubWithDetail(makeHofCharacterDetail(), {
           actions: {
             prepareItems: async () => { preparations += 1; },
@@ -1046,6 +1048,7 @@ describe('CharacterDetail stat allocation', () => {
     let renderer!: ReturnType<typeof create>;
     await act(async () => {
       renderer = create(React.createElement(CharacterManagementScreen, {
+        onImportSettings: () => undefined,
         characterHub: hubWithDetail(detail, {
           identityResolution: {
             message: '새 캐릭터 연결을 선택해 주세요.',

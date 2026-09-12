@@ -22,11 +22,13 @@ import type { CharacterManagementHubResource } from "../../../domain/characterMa
 type Props = {
   characterHub: CharacterManagementHubResource;
   onBack: () => void;
+  backLabel?: "패턴" | "관리";
 };
 
 export function CharacterSettingsTransferScreen({
   characterHub,
   onBack,
+  backLabel = "관리",
 }: Props) {
   const target = characterHub.detail!;
   const { characters, transfer } = characterHub;
@@ -170,13 +172,12 @@ export function CharacterSettingsTransferScreen({
     <View style={styles.screen}>
       <View style={styles.header}>
         <Pressable
-          onPress={() => {
-            characterHub.actions.clearTransfer();
-            onBack();
-          }}
+          accessibilityRole="button"
+          accessibilityLabel={backLabel === "관리" ? "관리로 돌아가기" : "패턴으로 돌아가기"}
+          onPress={onBack}
           style={styles.touch}
         >
-          <Text style={styles.muted}>‹ 관리</Text>
+          <Text style={styles.muted}>‹ {backLabel}</Text>
         </Pressable>
         <Text style={styles.title}>설정 가져오기</Text>
         <View style={styles.touch} />

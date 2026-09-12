@@ -1,6 +1,5 @@
-import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { ArrowLeft, RefreshCw } from "lucide-react-native";
+import { useCallback, useEffect, useState } from "react";
+import { BackHandler, Pressable, StyleSheet, Text, View } from "react-native";
 
 import type { CharacterManagementHubResource } from "../../domain/characterManagementHubModule";
 import { theme } from "../../styles/theme";
@@ -22,6 +21,7 @@ const tabs: Array<[Tab, string]> = [
 
 export type CharacterSettingsNavigatorProps = {
   characterHub: CharacterManagementHubResource;
+  active?: boolean;
 };
 
 export function CharacterSettingsNavigator(
@@ -31,32 +31,31 @@ export function CharacterSettingsNavigator(
     props.characterHub.transfer.sourceCharacter ? "management" : "status",
   );
   const [statusHelpOpen, setStatusHelpOpen] = useState(false);
-  const [patternTransferOpen, setPatternTransferOpen] = useState(false);
+  const [transferTab, setTransferTab] = useState<"pattern" | "management" | null>(
+    props.characterHub.transfer.sourceCharacter ? "management" : null,
+  );
   const detail = props.characterHub.detail;
   const canTransfer = props.characterHub.actions.previewTransfer != null
     && props.characterHub.actions.executeTransfer != null;
+  const close = props.characterHub.actions.close;
+  const clearTransfer = props.characterHub.actions.clearTransfer;
+  const transferOpen = canTransfer && transferTab === tab;
+  const closeTransfer = useCallback(() => {
+    clearTransfer();
+    setTransferTab(null);
+  }, [clearTransfer]);
+  useEffect(() => {
+    if (props.active === false) return;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (transferOpen) closeTransfer();
+      else close();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [close, closeTransfer, props.active, transferOpen]);
   if (!detail) return null;
   return (
     <View style={styles.root}>
-      <View style={styles.top}>
-        <Pressable
-          accessibilityRole="button"
-          onPress={props.characterHub.actions.close}
-          accessibilityLabel="캐릭터 목록으로"
-          style={styles.iconButton}
-        >
-          <ArrowLeft color={theme.colors.text} size={21} />
-        </Pressable>
-        <Text style={styles.title}>캐릭터 설정</Text>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => void props.characterHub.actions.refresh()}
-          accessibilityLabel="캐릭터 동기화"
-          style={styles.iconButton}
-        >
-          <RefreshCw color={theme.colors.text} size={19} />
-        </Pressable>
-      </View>
       <View accessibilityRole="tablist" style={styles.tabs}>
         {tabs.map(([id, label]) => (
           <Pressable
@@ -80,17 +79,19 @@ export function CharacterSettingsNavigator(
           onOpenHelp={() => setStatusHelpOpen(true)}
         />
       )}
-      {tab === "pattern" && patternTransferOpen && canTransfer ? (
+      {transferOpen && (
         <CharacterSettingsTransferScreen
           characterHub={props.characterHub}
-          onBack={() => setPatternTransferOpen(false)}
+          onBack={closeTransfer}
+          backLabel={tab === "pattern" ? "패턴" : "관리"}
         />
-      ) : tab === "pattern" && (
+      )}
+      {tab === "pattern" && !transferOpen && (
         <CharacterPatternScreen
           characterHub={props.characterHub}
           onImportSettings={
             canTransfer
-              ? () => setPatternTransferOpen(true)
+              ? () => setTransferTab("pattern")
               : undefined
           }
         />
@@ -101,9 +102,10 @@ export function CharacterSettingsNavigator(
       {tab === "skills" && (
         <CharacterSkillsScreen characterHub={props.characterHub} />
       )}
-      {tab === "management" && (
+      {tab === "management" && !transferOpen && (
         <CharacterManagementScreen
           characterHub={props.characterHub}
+          onImportSettings={() => setTransferTab("management")}
         />
       )}
     </View>
@@ -112,23 +114,6 @@ export function CharacterSettingsNavigator(
 
 const styles = StyleSheet.create({
   root: { paddingBottom: 28 },
-  top: {
-    minHeight: 56,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 12,
-    backgroundColor: theme.colors.header,
-  },
-  iconButton: {
-    width: 40,
-    height: 40,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 9,
-    backgroundColor: theme.colors.surfaceAlt,
-  },
-  title: { color: theme.colors.text, fontSize: 17, fontWeight: "900" },
   tabs: {
     minHeight: 44,
     flexDirection: "row",

@@ -173,10 +173,8 @@ describe('MainScreen automation editor chrome', () => {
     }))));
     const detail = renderer.root.find((node) => String(node.type) === 'CharacterDetail');
     assert.equal(detail.props.characterHub, detailHub);
-    assert.deepEqual(
-      Object.keys(detail.props).filter((key) => !['children', 'ref'].includes(key)),
-      ['characterHub'],
-    );
+    assert.equal(detail.props.active, true);
+    assert.equal(detail.props.onClose, undefined);
   });
 
   it('consumes one supplied catalog resource without owning backend callbacks', async () => {

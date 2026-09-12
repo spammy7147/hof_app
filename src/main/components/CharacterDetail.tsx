@@ -1,4 +1,6 @@
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { useEffect } from "react";
+import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, View } from "react-native";
+import { ArrowLeft, RefreshCw } from "lucide-react-native";
 
 import { CharacterSettingsNavigator } from "../features/characters/CharacterSettingsNavigator";
 import type { CharacterManagementHubResource } from "../domain/characterManagementHubModule";
@@ -6,10 +8,11 @@ import { theme } from "../styles/theme";
 
 type CharacterDetailProps = {
   characterHub: CharacterManagementHubResource;
+  active?: boolean;
 };
 
-/** 캐릭터 설정 전용 화면의 loading/error 경계와 탭 navigator만 소유한다. */
-export function CharacterDetail({ characterHub }: CharacterDetailProps) {
+/** 조회 상태에 관계없이 목록 복귀를 제공하고 정상 상세의 탭 탐색을 조립한다. */
+export function CharacterDetail({ characterHub, active = true }: CharacterDetailProps) {
   const {
     selectedCharacter: character,
     detail,
@@ -17,30 +20,62 @@ export function CharacterDetail({ characterHub }: CharacterDetailProps) {
     errorMessage,
     warningMessage,
   } = characterHub;
-  if (isLoading)
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator color={theme.colors.accentGreen} />
-        <Text style={styles.muted}>캐릭터 정보를 불러오는 중입니다.</Text>
-      </View>
-    );
-  if (errorMessage)
-    return (
-      <Text accessibilityRole="alert" style={styles.error}>
-        {errorMessage}
-      </Text>
-    );
-  if (!character || !detail) return null;
+  const ready = !isLoading && !errorMessage && detail != null;
+  const close = characterHub.actions.close;
+  useEffect(() => {
+    if (!active || !character || ready) return;
+    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
+      close();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [active, character, close, ready]);
+  if (!character) return null;
   return (
     <View>
-      {warningMessage ? (
-        <Text accessibilityRole="alert" style={styles.warning}>
-          {warningMessage}
-        </Text>
-      ) : null}
-      <CharacterSettingsNavigator
-        characterHub={characterHub}
-      />
+      <View style={styles.top}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="캐릭터 목록으로"
+          onPress={close}
+          style={styles.iconButton}
+        >
+          <ArrowLeft color={theme.colors.text} size={21} />
+        </Pressable>
+        <Text style={styles.title}>캐릭터 설정</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="캐릭터 동기화"
+          disabled={isLoading}
+          onPress={() => void characterHub.actions.refresh()}
+          style={styles.iconButton}
+        >
+          <RefreshCw color={theme.colors.text} size={19} />
+        </Pressable>
+      </View>
+      {isLoading ? (
+        <View style={styles.loading}>
+          <ActivityIndicator color={theme.colors.accentGreen} />
+          <Text style={styles.muted}>캐릭터 정보를 불러오는 중입니다.</Text>
+        </View>
+      ) : errorMessage ? (
+        <Text accessibilityRole="alert" style={styles.error}>{errorMessage}</Text>
+      ) : !detail ? (
+        <Text accessibilityRole="alert" style={styles.error}>캐릭터 정보를 표시할 수 없습니다.</Text>
+      ) : (
+        <>
+          {warningMessage ? (
+            <Text accessibilityRole="alert" style={styles.warning}>
+              {warningMessage}
+            </Text>
+          ) : null}
+          <CharacterSettingsNavigator
+            key={character.id}
+            characterHub={characterHub}
+            active={active}
+          />
+        </>
+      )}
     </View>
   );
 }
@@ -78,6 +113,23 @@ export function extractPrimaryStatValues(
 }
 
 const styles = StyleSheet.create({
+  top: {
+    minHeight: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    backgroundColor: theme.colors.header,
+  },
+  iconButton: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
+    backgroundColor: theme.colors.surfaceAlt,
+  },
+  title: { color: theme.colors.text, fontSize: 17, fontWeight: "900" },
   loading: {
     minHeight: 180,
     alignItems: "center",
