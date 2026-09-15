@@ -31,7 +31,7 @@ describe('RewardPanel', () => {
         ...before,
         boxes: [{ ...before.boxes[0], owned: 52 }],
         result: {
-          status: 'SUCCESS', messages: [], refreshRequired: true,
+          status: 'SUCCESS', messages: ['Plumpy Fish (Stash)을 개봉합니다.'], refreshRequired: true,
           items: [{ name: 'Weapon Box (Dagger&MainGauche) (Stash)', quantity: 1, detail: '단검 종류의 장비가 들어 있습니다.', imageUrl: null }],
         },
       };
@@ -43,6 +43,7 @@ describe('RewardPanel', () => {
       await press('1개 열기');
 
       assert.equal(text().includes('Weapon Box (Dagger&MainGauche) (Stash) ×1'), true);
+      assert.equal(text().includes('Plumpy Fish (Stash)을 개봉합니다.'), true);
       assert.equal(text().includes('보유 52'), true);
       assert.equal(text().includes('결과 확인 필요'), false);
       assert.equal(button('작업 완료 알림').props.accessibilityRole, 'alert');
