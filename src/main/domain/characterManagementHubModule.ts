@@ -87,7 +87,7 @@ export type CharacterManagementHubActions = {
   removeEquipment?: (equipmentPart: string) => Promise<void>;
   saveEquipmentPreset?: (slotNumber: 1 | 2) => Promise<void>;
   loadEquipmentPreset?: (slotNumber: 1 | 2) => Promise<void>;
-  savePattern?: (change: CharacterPatternChange) => Promise<void>;
+  savePattern?: (change: CharacterPatternChange) => Promise<CharacterPatternOperationResult | void>;
   resolvePatternConflict?: () => Promise<void>;
   loadSavedPattern?: (slotCode: string) => Promise<CharacterPatternOperationResult>;
   deleteSavedPattern?: (slotCode: string) => Promise<CharacterPatternOperationResult>;
@@ -145,6 +145,11 @@ export type CharacterManagementHubResource = {
     message: string;
   } | null;
   patternConflict: CharacterPatternOperationResult | null;
+  patternOperation: {
+    pending: boolean;
+    result: CharacterPatternOperationResult | null;
+    appliedVersion: number;
+  };
   deepSync: CharacterManagementDeepSyncState;
   transfer: CharacterManagementTransferState;
   actions: CharacterManagementHubActions;
@@ -444,6 +449,7 @@ export class CharacterManagementHubModule {
       warningMessage: null,
       identityResolution: null,
       patternConflict: null,
+      patternOperation: { pending: false, result: null, appliedVersion: 0 },
       deepSync: { ...this.resource.deepSync, preview: null },
       transfer: observedTransferSource
         ? {
@@ -908,27 +914,14 @@ export class CharacterManagementHubModule {
     )) {
       return {};
     }
-    const result = await apply(request);
-    if (!this.isCurrentTarget(
+    return this.runPatternOperation(
       request.characterId,
       expectedGeneration,
       expectedSelectionGeneration,
-    )) {
-      return {};
-    }
-    if (isPatternConflict(result)) {
-      this.replace({ ...this.resource, patternConflict: result });
-      return result;
-    }
-    this.replace({ ...this.resource, patternConflict: null });
-    await this.reloadStored(expectedGeneration, expectedSelectionGeneration);
-    return this.isCurrentTarget(
-      request.characterId,
-      expectedGeneration,
-      expectedSelectionGeneration,
-    )
-      ? result
-      : {};
+      () => apply(request),
+      request.slotAction === 'NONE' ? '현재 설정을 저장했습니다.' : '현재 설정과 저장 패턴을 저장했습니다.',
+      true,
+    );
   }
 
   private async savePattern(
@@ -936,13 +929,13 @@ export class CharacterManagementHubModule {
     expectedGeneration: number,
     expectedSelectionGeneration: number,
     force = false,
-  ): Promise<void> {
+  ): Promise<CharacterPatternOperationResult | void> {
     const detail = this.resource.detail;
     const target = this.currentTarget(
       expectedGeneration,
       expectedSelectionGeneration,
     );
-    if (!detail || !target || detail.id !== target.id) return;
+    if (!detail || !target || detail.id !== target.id || this.resource.patternOperation.pending) return;
     this.pendingPatternChange = change;
     const result = await this.applyPattern(
       {
@@ -958,7 +951,9 @@ export class CharacterManagementHubModule {
       expectedGeneration,
       expectedSelectionGeneration,
     );
-    if (!isPatternConflict(result)) this.pendingPatternChange = null;
+    if (this.isCurrentTarget(target.id, expectedGeneration, expectedSelectionGeneration)
+      && result.type === 'Completed') this.pendingPatternChange = null;
+    return result;
   }
 
   private async resolvePatternConflict(
@@ -983,18 +978,8 @@ export class CharacterManagementHubModule {
     const load = this.backend.loadSavedPattern;
     const selected = this.currentTarget(expectedGeneration, expectedSelectionGeneration);
     if (!load || !selected) return {};
-    const result = await load(selected.id, slotCode);
-    if (!this.isCurrentTarget(
-      selected.id,
-      expectedGeneration,
-      expectedSelectionGeneration,
-    )) return {};
-    await this.reloadStored(expectedGeneration, expectedSelectionGeneration);
-    return this.isCurrentTarget(
-      selected.id,
-      expectedGeneration,
-      expectedSelectionGeneration,
-    ) ? result : {};
+    return this.runPatternOperation(selected.id, expectedGeneration, expectedSelectionGeneration,
+      () => load(selected.id, slotCode), '저장 패턴을 불러왔습니다.', true);
   }
 
   private async deleteSavedPattern(
@@ -1005,18 +990,53 @@ export class CharacterManagementHubModule {
     const remove = this.backend.deleteSavedPattern;
     const selected = this.currentTarget(expectedGeneration, expectedSelectionGeneration);
     if (!remove || !selected) return {};
-    const result = await remove(selected.id, slotCode);
-    if (!this.isCurrentTarget(
-      selected.id,
-      expectedGeneration,
-      expectedSelectionGeneration,
-    )) return {};
-    await this.reloadStored(expectedGeneration, expectedSelectionGeneration);
-    return this.isCurrentTarget(
-      selected.id,
-      expectedGeneration,
-      expectedSelectionGeneration,
-    ) ? result : {};
+    return this.runPatternOperation(selected.id, expectedGeneration, expectedSelectionGeneration,
+      () => remove(selected.id, slotCode), '저장 패턴을 삭제했습니다.', false);
+  }
+
+  private async runPatternOperation(
+    characterId: number,
+    generation: number,
+    selectionGeneration: number,
+    operation: () => Promise<CharacterPatternOperationResult>,
+    completedMessage: string,
+    replacesDraft: boolean,
+  ): Promise<CharacterPatternOperationResult> {
+    const isCurrent = () => this.isCurrentTarget(characterId, generation, selectionGeneration);
+    if (!isCurrent() || this.resource.patternOperation.pending) return {};
+    this.replace({ ...this.resource, patternConflict: null,
+      patternOperation: { ...this.resource.patternOperation, pending: true, result: null } });
+    try {
+      let result = normalizePatternResult(await operation(), completedMessage);
+      if (!isCurrent()) return {};
+      if (result.type !== 'Conflict' && result.type !== 'Rejected') {
+        const reload = this.reloadStored(generation, selectionGeneration);
+        const request = this.requestGeneration;
+        await reload;
+        if (!isCurrent()) return {};
+        if (result.type === 'Completed') {
+          if (request !== this.requestGeneration) {
+            result = { type: 'RefreshRequired', message: '변경은 완료됐지만 최신 상세 확인이 아직 끝나지 않았습니다. 현재 상태를 다시 확인해 주세요.' };
+          } else if (this.resource.warningMessage) {
+            result = { type: 'RefreshRequired', message: `변경은 완료됐지만 상세를 다시 읽지 못했습니다. ${this.resource.warningMessage}` };
+          }
+        }
+      }
+      this.replace({ ...this.resource,
+        patternConflict: result.type === 'Conflict' ? result : null,
+        patternOperation: {
+          pending: false, result,
+          appliedVersion: this.resource.patternOperation.appliedVersion
+            + (result.type === 'Completed' && replacesDraft ? 1 : 0),
+        },
+      });
+      return result;
+    } catch (error) {
+      if (!isCurrent()) return {};
+      const result: CharacterPatternOperationResult = { type: 'RefreshRequired', message: toUserFacingErrorMessage(error) };
+      this.replace({ ...this.resource, patternOperation: { ...this.resource.patternOperation, pending: false, result } });
+      return result;
+    }
   }
 
   private async deepSync(
@@ -1537,6 +1557,7 @@ function emptyResource(
     warningMessage: null,
     identityResolution: null,
     patternConflict: null,
+    patternOperation: { pending: false, result: null, appliedVersion: 0 },
     deepSync: idleDeepSync(),
     transfer: idleTransfer(),
     actions,
@@ -1651,8 +1672,15 @@ function toCharacterCommand(
   }
 }
 
-function isPatternConflict(result: CharacterPatternOperationResult): boolean {
-  return result.currentRevision != null || (result.rowDiffs?.length ?? 0) > 0;
+function normalizePatternResult(result: CharacterPatternOperationResult, completedMessage: string): CharacterPatternOperationResult {
+  const type = result.type ?? (result.currentRevision != null ? 'Conflict'
+    : result.code != null ? 'Rejected'
+    : result.completedSteps != null ? 'PartiallyApplied'
+    : result.revision != null ? 'Completed' : 'RefreshRequired');
+  return { ...result, type,
+    message: result.message || result.messages?.join('\n')
+      || (type === 'Completed' ? completedMessage : '저장 결과를 확인하지 못했습니다. 현재 상태를 다시 확인해 주세요.'),
+  };
 }
 
 function idleDeepSync(): CharacterManagementDeepSyncState {

@@ -1241,7 +1241,18 @@ export type CharacterPatternRowDiff = {
   before: CharacterPatternRowValue | null;
   current: CharacterPatternRowValue | null;
 };
-export type CharacterPatternOperationResult = { revision?: string; currentRevision?: string; rowDiffs?: CharacterPatternRowDiff[]; code?: string; message?: string; messages?: string[] };
+export type CharacterPatternOperationResult = {
+  // 구버전 서버에는 type이 없으므로 관리 허브에서 기존 필드도 해석한다.
+  type?: 'Completed' | 'Conflict' | 'Rejected' | 'PartiallyApplied' | 'RefreshRequired';
+  revision?: string;
+  currentRevision?: string;
+  rowDiffs?: CharacterPatternRowDiff[];
+  code?: string;
+  message?: string;
+  messages?: string[];
+  completedSteps?: number;
+  nextStep?: string;
+};
 
 export type CharacterSyncEventResponse = {
   eventId: number;

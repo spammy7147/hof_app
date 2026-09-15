@@ -73,11 +73,35 @@ export function CharacterPatternScreen({
   const [pendingSlot, setPendingSlot] = useState<string | null>(null);
   const visibleConflict = characterHub.patternConflict;
   const dismissConflict = characterHub.actions.dismissPatternConflict;
+  const { pending, appliedVersion } = characterHub.patternOperation;
+  const [inputError, setInputError] = useState<string | null>(null);
   const [automationPauseNotice, setAutomationPauseNotice] = useState(false);
   const rowKey = useRef(0);
   const pauseRequested = useRef(false);
+  const keepDraft = useRef(false);
+  const returnToSlots = useRef(false);
+  const applied = useRef({ characterId: detail.id, version: appliedVersion });
+  const base = useRef({
+    rows: detail.actionPatterns.map(({ judge, quantity, skill }) => ({ judge, quantity, skill })),
+    position: detail.positionGuard.selectedPosition,
+    guard: detail.positionGuard.guardValue,
+  });
   const capacity = initial.length;
   useEffect(() => {
+    const explicitChange = applied.current.characterId !== detail.id || applied.current.version !== appliedVersion;
+    if (keepDraft.current && !explicitChange) return;
+    if (explicitChange) {
+      setSlotsOpen(applied.current.characterId === detail.id && returnToSlots.current);
+      returnToSlots.current = false;
+    }
+    applied.current = { characterId: detail.id, version: appliedVersion };
+    keepDraft.current = false;
+    setInputError(null);
+    base.current = {
+      rows: initial.map(({ judge, quantity, skill }) => ({ judge, quantity, skill })),
+      position: detail.positionGuard.selectedPosition,
+      guard: detail.positionGuard.guardValue,
+    };
     setRows(initial);
     setSelected(0);
     setPosition(detail.positionGuard.selectedPosition);
@@ -90,14 +114,19 @@ export function CharacterPatternScreen({
     setAlsoSave(false);
     setAutomationPauseNotice(false);
     pauseRequested.current = false;
-  }, [detail.positionGuard, initial]);
+  }, [detail.id, detail.positionGuard, initial, appliedVersion]);
   const beginEdit = () => {
+    keepDraft.current = true;
     if (pauseRequested.current) return;
     pauseRequested.current = true;
     if (onBeginEdit) {
       setAutomationPauseNotice(true);
       void onBeginEdit();
     }
+  };
+  const closeCommit = () => {
+    returnToSlots.current = false;
+    setCommitOpen(false);
   };
   const conditionOptions = (detail.patternOptions ?? []).filter(
     (option) => option.type === "CONDITION",
@@ -116,6 +145,8 @@ export function CharacterPatternScreen({
       (item) => item.type === type && item.value === value,
     )?.label ?? value;
   const update = (index: number, patch: Partial<Row>) => {
+    if (pending) return;
+    setInputError(null);
     beginEdit();
     setRows((current) =>
       current.map((row, rowIndex) =>
@@ -124,6 +155,7 @@ export function CharacterPatternScreen({
     );
   };
   const add = () => {
+    if (pending) return;
     if (rows.length <= capacity) {
       beginEdit();
       setRows((current) => [
@@ -134,6 +166,7 @@ export function CharacterPatternScreen({
     }
   };
   const remove = () => {
+    if (pending) return;
     beginEdit();
     setRows((current) => {
       const next = current.filter((_, index) => index !== selected);
@@ -149,12 +182,17 @@ export function CharacterPatternScreen({
     targetSlotCode?: string,
     name?: string,
   ) => {
+    if (pending) return;
+    const invalidRow = rows.findIndex((row) => !/^-?\d+$/.test(row.quantity)
+      || Number(row.quantity) < -2147483648 || Number(row.quantity) > 2147483647);
+    if (invalidRow >= 0) {
+      setInputError(`${invalidRow + 1}번 행 기준값을 정수로 입력해 주세요.`);
+      return;
+    }
+    setInputError(null);
+    keepDraft.current = true;
     await savePattern?.({
-      base: {
-        rows: settingRows(initial),
-        position: detail.positionGuard.selectedPosition,
-        guard: detail.positionGuard.guardValue,
-      },
+      base: base.current,
       draft: {
         rows: settingRows(rows),
         position,
@@ -164,18 +202,20 @@ export function CharacterPatternScreen({
       targetSlotCode,
       slotName: name,
     });
-    setPendingSlot(null);
-    setSlotName("");
   };
   const dirty =
     JSON.stringify(settingRows(rows)) !==
-      JSON.stringify(settingRows(initial)) ||
-    position !== detail.positionGuard.selectedPosition ||
-    guard !== detail.positionGuard.guardValue;
+      JSON.stringify(base.current.rows) ||
+    position !== base.current.position ||
+    guard !== base.current.guard;
+  const feedback = inputError ? (
+    <Text accessibilityRole="alert" style={styles.warning}>{inputError}</Text>
+  ) : <PatternFeedback characterHub={characterHub} />;
   const loadedSlotCount = detail.patternSlots.filter((slot) => slot.canLoad).length;
   const emptySlotCount = detail.patternSlots.length - loadedSlotCount;
   return (
     <View style={styles.screen}>
+      {!commitOpen && !standaloneSaveOpen && !slotsOpen && feedback}
       <View style={styles.quickRow}>
         <Pressable accessibilityRole="button" onPress={() => setSlotsOpen(true)} style={styles.savedBar}>
           <View style={styles.savedCopy}>
@@ -185,12 +225,12 @@ export function CharacterPatternScreen({
           <Text style={styles.chevron}>›</Text>
         </Pressable>
         {onImportSettings && (
-          <Pressable accessibilityRole="button" onPress={onImportSettings} style={styles.importButton}>
+          <Pressable accessibilityRole="button" disabled={pending} onPress={onImportSettings} style={styles.importButton}>
             <Text style={styles.importText}>다른 캐릭터{`\n`}가져오기</Text>
           </Pressable>
         )}
       </View>
-      <Pressable accessibilityRole="button" onPress={() => setSetupOpen(true)} style={styles.setupBar}>
+      <Pressable accessibilityRole="button" disabled={pending} onPress={() => setSetupOpen(true)} style={styles.setupBar}>
         <Text style={styles.setupLabel}>위치</Text>
         <Text style={styles.setupValue}>{positionText(position)}</Text>
         <Text style={styles.setupLabel}>호위</Text>
@@ -207,6 +247,7 @@ export function CharacterPatternScreen({
         data={rows}
         keyExtractor={(row) => row.key}
         onDragEnd={({ data, to }) => {
+          if (pending) return;
           beginEdit();
           setRows(data);
           setSelected(to);
@@ -230,6 +271,7 @@ export function CharacterPatternScreen({
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`${index + 1}번 행 이동`}
+                disabled={pending}
                 onPress={() => setSelected(index)}
                 onLongPress={drag}
                 delayLongPress={180}
@@ -250,6 +292,7 @@ export function CharacterPatternScreen({
                 </Pressable>
                 <TextInput
                   accessibilityLabel={`${index + 1}번 기준값`}
+                  editable={!pending}
                   keyboardType="number-pad"
                   value={row.quantity}
                   onChangeText={(value) =>
@@ -288,11 +331,9 @@ export function CharacterPatternScreen({
       <FixedBottomAction>
         <Pressable
           accessibilityRole="button"
-          disabled={rows.length !== capacity}
+          disabled={pending || rows.length !== capacity}
           onPress={() => {
-            setAlsoSave(false);
-            setPendingSlot(null);
-            setSlotName("");
+            returnToSlots.current = false;
             setCommitOpen(true);
           }}
           style={[styles.save, rows.length !== capacity && styles.disabled]}
@@ -328,7 +369,7 @@ export function CharacterPatternScreen({
                   key={item.value}
                   label={positionText(item.value)}
                   active={position === item.value}
-                  onPress={() => { beginEdit(); setPosition(item.value); }}
+                  onPress={() => { if (pending) return; beginEdit(); setPosition(item.value); }}
                 />
               ))}
             </View>
@@ -339,7 +380,7 @@ export function CharacterPatternScreen({
                   key={value}
                   label={guardText(value)}
                   active={guard === value}
-                  onPress={() => { beginEdit(); setGuard(value); }}
+                  onPress={() => { if (pending) return; beginEdit(); setGuard(value); }}
                 />
               ))}
             </View>
@@ -354,16 +395,18 @@ export function CharacterPatternScreen({
         </View>
       </Modal>
 
-      <Modal visible={commitOpen} transparent animationType="slide" onRequestClose={() => setCommitOpen(false)}>
+      <Modal visible={commitOpen && !visibleConflict} transparent animationType="slide" onRequestClose={closeCommit}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.overlay}>
-          <Pressable style={StyleSheet.absoluteFill} onPress={() => setCommitOpen(false)} />
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeCommit} />
           <ScrollView style={styles.scrollSheet} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">
             <View style={styles.grip} />
             <Text style={styles.sheetTitle}>저장</Text>
+            {feedback}
             <Text style={styles.sheetNote}>패턴 {rows.length}행을 저장한 뒤 위치·호위를 저장하고 전체 설정을 확인합니다.</Text>
             {emptySlotCount > 0 && (
               <Pressable
                 accessibilityRole="checkbox"
+                disabled={pending}
                 accessibilityState={{ checked: alsoSave }}
                 onPress={() => {
                   const next = !alsoSave;
@@ -390,12 +433,13 @@ export function CharacterPatternScreen({
                       key={slot.slot}
                       label={`빈 슬롯 ${Number(slot.slot) + 1}`}
                       active={pendingSlot === slot.slot}
-                      onPress={() => setPendingSlot(slot.slot)}
+                      onPress={() => { if (!pending) setPendingSlot(slot.slot); }}
                     />
                   ))}
                 </View>
                 <TextInput
                   accessibilityLabel="패턴 저장 이름"
+                  editable={!pending}
                   maxLength={6}
                   value={slotName}
                   onChangeText={setSlotName}
@@ -406,12 +450,11 @@ export function CharacterPatternScreen({
               </>
             )}
             <View style={styles.controls}>
-              <Pressable onPress={() => setCommitOpen(false)} style={styles.control}><Text style={styles.controlText}>취소</Text></Pressable>
+              <Pressable onPress={closeCommit} style={styles.control}><Text style={styles.controlText}>취소</Text></Pressable>
               <Pressable
                 accessibilityRole="button"
-                disabled={alsoSave && (!pendingSlot || !slotName.trim())}
+                disabled={pending || (alsoSave && (!pendingSlot || !slotName.trim()))}
                 onPress={() => {
-                  setCommitOpen(false);
                   void apply(alsoSave ? "SAVE_EMPTY" : "NONE", pendingSlot ?? undefined, slotName.trim() || undefined);
                 }}
                 style={[styles.primarySheetButton, alsoSave && (!pendingSlot || !slotName.trim()) && styles.disabled]}
@@ -423,14 +466,16 @@ export function CharacterPatternScreen({
         </KeyboardAvoidingView>
       </Modal>
 
-      <Modal visible={standaloneSaveOpen} transparent animationType="slide" onRequestClose={() => setStandaloneSaveOpen(false)}>
+      <Modal visible={standaloneSaveOpen && !visibleConflict} transparent animationType="slide" onRequestClose={() => setStandaloneSaveOpen(false)}>
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setStandaloneSaveOpen(false)} />
           <ScrollView style={styles.scrollSheet} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">
             <View style={styles.grip} />
             <Text style={styles.sheetTitle}>빈 슬롯</Text>
+            {feedback}
             <TextInput
               accessibilityLabel="패턴 저장 이름"
+              editable={!pending}
               maxLength={6}
               value={slotName}
               onChangeText={setSlotName}
@@ -442,9 +487,8 @@ export function CharacterPatternScreen({
               <Pressable onPress={() => setStandaloneSaveOpen(false)} style={styles.control}><Text style={styles.controlText}>취소</Text></Pressable>
               <Pressable
                 accessibilityRole="button"
-                disabled={!slotName.trim() || !pendingSlot}
+                disabled={pending || !slotName.trim() || !pendingSlot}
                 onPress={() => {
-                  setStandaloneSaveOpen(false);
                   void apply("SAVE_EMPTY", pendingSlot ?? undefined, slotName.trim());
                 }}
                 style={[styles.primarySheetButton, (!slotName.trim() || !pendingSlot) && styles.disabled]}
@@ -468,6 +512,19 @@ export function CharacterPatternScreen({
           />
           <ScrollView style={styles.scrollSheet} contentContainerStyle={styles.sheetContent} keyboardShouldPersistTaps="handled">
             <Text style={styles.sheetTitle}>저장 패턴</Text>
+            {feedback}
+            {dirty && (
+              <View>
+                <Text style={styles.sheetNote}>편집한 내용이 있습니다. 슬롯에 보관하거나 교체하려면 현재 설정을 먼저 저장해 주세요.</Text>
+                <Pressable accessibilityRole="button" disabled={pending} onPress={() => {
+                  returnToSlots.current = true;
+                  setSlotsOpen(false);
+                  setCommitOpen(true);
+                }} style={styles.primarySheetButton}>
+                  <Text style={styles.primarySheetButtonText}>현재 설정 저장으로 이동</Text>
+                </Pressable>
+              </View>
+            )}
             {detail.patternSlots.map((slot) => (
               <View key={slot.slot} style={styles.slot}>
                 <Text style={[styles.slotName, styles.slotLabel]}>
@@ -478,6 +535,7 @@ export function CharacterPatternScreen({
                     <>
                       <SlotAction
                         label="불러오기"
+                        disabled={pending}
                         onPress={() => {
                           const load = () => {
                             setSlotsOpen(false);
@@ -493,15 +551,21 @@ export function CharacterPatternScreen({
                       />
                       <SlotAction
                         label="교체"
-                        disabled={dirty}
+                        disabled={pending || dirty}
                         onPress={() => {
-                          setSlotsOpen(false);
-                          void apply("REPLACE", slot.slot, slot.label);
+                          Alert.alert("저장 패턴 교체", `기존 “${slot.label}” 슬롯을 삭제한 뒤 현재 서버 설정을 같은 이름으로 다시 저장합니다.`, [
+                            { text: "취소", style: "cancel" },
+                            { text: "교체", onPress: () => {
+                              setSlotsOpen(false);
+                              void apply("REPLACE", slot.slot, slot.label);
+                            } },
+                          ]);
                         }}
                       />
                       <SlotAction
                         danger
                         label="삭제"
+                        disabled={pending}
                         onPress={() => {
                           setSlotsOpen(false);
                           void onDeleteSaved?.(slot.slot);
@@ -511,10 +575,10 @@ export function CharacterPatternScreen({
                   ) : (
                     <SlotAction
                       label="저장"
-                      disabled={dirty}
+                      disabled={pending || dirty}
                       onPress={() => {
+                        if (pendingSlot !== slot.slot) setSlotName("");
                         setPendingSlot(slot.slot);
-                        setSlotName("");
                         setSlotsOpen(false);
                         setStandaloneSaveOpen(true);
                       }}
@@ -561,6 +625,7 @@ export function CharacterPatternScreen({
                 <Text style={styles.controlText}>취소</Text>
               </Pressable>
               <Pressable
+                disabled={pending}
                 onPress={() => {
                   void characterHub.actions.resolvePatternConflict?.();
                 }}
@@ -580,6 +645,46 @@ function formatPatternRow(
   row: { judge: string; quantity: string; skill: string } | null,
 ) {
   return row ? `${row.judge} · ${row.quantity} · ${row.skill}` : "행 없음";
+}
+
+function PatternFeedback({ characterHub }: { characterHub: CharacterManagementHubResource }) {
+  const { pending, result } = characterHub.patternOperation;
+  const [showServer, setShowServer] = useState(false);
+  if (pending) return <Text accessibilityRole="alert" style={styles.sheetNote}>패턴 변경을 처리하고 있습니다.</Text>;
+  if (!result || result.type === 'Conflict') return null;
+  const needsCheck = result.type === 'RefreshRequired' || result.type === 'PartiallyApplied';
+  const nextStep = ({ POSITION_GUARD: '위치·호위 저장', SAVE_SLOT: '패턴 슬롯 보관' } as Record<string, string>)[result.nextStep ?? ''];
+  const detail = characterHub.detail;
+  return (
+    <View>
+      <Text accessibilityRole="alert" style={result.type === 'Completed' ? styles.sheetNote : styles.warning}>{result.message}</Text>
+      {result.type === 'PartiallyApplied' && (
+        <>
+          <Text style={styles.sheetNote}>완료한 단계: {result.completedSteps}</Text>
+          {nextStep && <Text style={styles.sheetNote}>다음 단계: {nextStep}</Text>}
+        </>
+      )}
+      {needsCheck && (
+        <Pressable accessibilityRole="button" onPress={() => {
+          setShowServer(true);
+          void characterHub.actions.refresh();
+        }} style={styles.control}>
+          <Text style={styles.controlText}>현재 서버 상태 다시 확인</Text>
+        </Pressable>
+      )}
+      {showServer && needsCheck && detail && (
+        <View>
+          <Text style={styles.sheetLabel}>마지막으로 확인한 서버 설정</Text>
+          <Text style={styles.sheetNote}>편집 내용은 유지됩니다. 확인만으로 변경을 다시 제출하지 않습니다.</Text>
+          {characterHub.warningMessage && <Text accessibilityRole="alert" style={styles.warning}>{characterHub.warningMessage}</Text>}
+          <Text style={styles.sheetNote}>{positionText(detail.positionGuard.selectedPosition)} · {guardText(detail.positionGuard.guardValue)}</Text>
+          {detail.actionPatterns.map((row, index) => (
+            <Text key={index} style={styles.sheetNote}>{index + 1}행 · {row.judgeText} · {row.quantity} · {row.skillText}</Text>
+          ))}
+        </View>
+      )}
+    </View>
+  );
 }
 
 function positionText(value: string) {

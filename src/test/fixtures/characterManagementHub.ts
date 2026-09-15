@@ -27,6 +27,7 @@ export function makeCharacterManagementHubResource(
     warningMessage: null,
     identityResolution: null,
     patternConflict: null,
+    patternOperation: { pending: false, result: null, appliedVersion: 0 },
     deepSync: { status: 'idle', progress: null, errorMessage: null },
     transfer: {
       status: 'idle',

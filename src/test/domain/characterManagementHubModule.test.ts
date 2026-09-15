@@ -662,7 +662,8 @@ describe('character management hub module', () => {
 
     const change = patternChange();
     await hub.getSnapshot().actions.savePattern?.(change);
-    assert.equal(hub.getSnapshot().patternConflict, conflict);
+    assert.deepEqual(hub.getSnapshot().patternConflict?.rowDiffs, conflict.rowDiffs);
+    assert.equal(hub.getSnapshot().patternConflict?.currentRevision, conflict.currentRevision);
     assert.equal(hub.getSnapshot().detail, detail);
     assert.equal(loads, 1);
     assert.equal(requests[0]?.characterId, character.id);
