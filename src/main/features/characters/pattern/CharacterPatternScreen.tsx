@@ -128,6 +128,11 @@ export function CharacterPatternScreen({
     returnToSlots.current = false;
     setCommitOpen(false);
   };
+  const changeSlotName = (value: string) => {
+    if (pending) return;
+    keepDraft.current = true;
+    setSlotName(value);
+  };
   const conditionOptions = (detail.patternOptions ?? []).filter(
     (option) => option.type === "CONDITION",
   );
@@ -446,7 +451,7 @@ export function CharacterPatternScreen({
                   editable={!pending}
                   maxLength={6}
                   value={slotName}
-                  onChangeText={setSlotName}
+                  onChangeText={changeSlotName}
                   placeholder="이름 · 최대 6자"
                   placeholderTextColor={theme.colors.textMuted}
                   style={styles.slotNameInput}
@@ -482,7 +487,7 @@ export function CharacterPatternScreen({
               editable={!pending}
               maxLength={6}
               value={slotName}
-              onChangeText={setSlotName}
+              onChangeText={changeSlotName}
               placeholder="이름 · 최대 6자"
               placeholderTextColor={theme.colors.textMuted}
               style={styles.slotNameInput}

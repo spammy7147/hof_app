@@ -143,10 +143,12 @@ it('정상 저장은 첫 슬롯 코드와 이름을 보내고 완료 후 서버 
 });
 
 it('슬롯 보관 실패 후 저장 이름과 선택을 유지한다', async () => {
-  await openPattern({ applyPattern: async () => ({ type: 'Rejected', code: 'SLOT_NOT_EMPTY', message: '선택한 슬롯이 변경되었습니다.' }) });
+  const hub = await openPattern({ applyPattern: async () => ({ type: 'Rejected', code: 'SLOT_NOT_EMPTY', message: '선택한 슬롯이 변경되었습니다.' }) });
   await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: /저장 패턴/ }));
   await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: '저장' }));
   await rntl.fireEvent.changeText(rntl.screen.getByLabelText('패턴 저장 이름'), '시험');
+  await rntl.act(() => hub.getSnapshot().actions.reloadStored());
+  assert.ok(rntl.screen.getByDisplayValue('시험'));
   await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: '저장' }));
   assert.ok(rntl.screen.getByText('선택한 슬롯이 변경되었습니다.'));
   assert.ok(rntl.screen.getByDisplayValue('시험'));
