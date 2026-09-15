@@ -176,6 +176,48 @@ describe('UnifiedAutomationDashboard', () => {
     assert.equal(openedSettings, 1);
   });
 
+  it('퀘스트 원인 경고만 표시하고 설정을 연 뒤 최신 응답에서 해소한다', async () => {
+    const warning = '탑 파티 · 4번 자리 마법사: 저장 패턴 1: 불러올 수 없어요. 현재 표시: 빈슬롯.\n'
+      + '영향 퀘스트·맵: 탑 열쇠 (adventure_map/tower), 탑 열쇠 EASY (adventure_map/tower-easy)';
+    const aggregate = networkStopped();
+    aggregate.entries = [
+      { ...aggregate.entries[0]!, id: 5, type: 'QUEST', warnings: [warning] },
+      { ...aggregate.entries[0]!, id: 6, type: 'RAID', priority: 1, ready: true, warnings: [] },
+    ];
+    aggregate.runtime = {
+      ...aggregate.runtime, lifecycle: 'RUNNING', stopReason: null, lastError: null, currentAction: null, warnings: [warning],
+    };
+    let openedEntry: number | null = null;
+    const onOpenModule = (entryId: number) => { openedEntry = entryId; };
+    const renderer = await renderDashboard(aggregate, () => undefined, undefined, undefined, onOpenModule);
+    assert.equal(hasText(renderer.root, '설정 경고 1개'), true);
+    assert.equal(treeText(renderer.root).includes('다른 사용자가 진행 중인'), false);
+
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: '설정 경고 1개, 자세히 보기' }).props.onPress();
+    });
+    assert.equal(hasText(renderer.root, warning), true);
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: `레이드 설정 경고: ${warning}` }).length, 0);
+    await act(async () => {
+      renderer.root.findByProps({ accessibilityLabel: `퀘스트 설정 경고: ${warning}` }).props.onPress();
+    });
+    assert.equal(openedEntry, 5);
+
+    const restored = {
+      ...aggregate,
+      entries: aggregate.entries.map((entry) => ({ ...entry, ready: true, warnings: [] })),
+      runtime: { ...aggregate.runtime, warnings: [] },
+    };
+    await act(async () => {
+      renderer.update(React.createElement(UnifiedAutomationDashboard, {
+        aggregate: restored, busy: false, onChangeState: () => undefined,
+        onOpenCaptcha: () => undefined, onOpenModule, onOpenSettings: () => undefined,
+      }));
+    });
+    assert.equal(hasText(renderer.root, '설정 경고 0개'), true);
+    assert.equal(hasText(renderer.root, warning), false);
+  });
+
   it('keeps captcha waiting separate from network stop', async () => {
     let opened = 0;
     const aggregate = networkStopped();
