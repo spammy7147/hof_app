@@ -302,3 +302,21 @@ it('저장 후 상세 조회가 새 조회에 밀리면 이전 상세로 초안�
   await rntl.act(async () => { finishRefresh(detail()); await refresh; });
   assert.ok(rntl.screen.getByDisplayValue('21'));
 });
+
+it('교체 중 기존 슬롯만 삭제되면 같은 슬롯과 이름으로 보관을 다시 준비한다', async () => {
+  let stored = { ...detail(), patternSlots: [{ slot: '0', label: '시험', canLoad: true }] };
+  let calls = 0;
+  await openPattern({ loadStoredDetail: async () => structuredClone(stored), applyPattern: async () => {
+    calls++;
+    stored = { ...stored, patternSlots: [{ slot: '0', label: '빈슬롯', canLoad: false }] };
+    return { type: 'PartiallyApplied', completedSteps: 3, nextStep: 'SAVE_SLOT', message: '기존 슬롯은 삭제됐지만 보관하지 못했습니다.' };
+  } });
+  await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: /저장 패턴/ }));
+  await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: '교체' }));
+  await rntl.act(async () => { await confirmation.find((button) => button.text === '교체')?.onPress?.(); });
+  assert.ok(rntl.screen.getByText('기존 슬롯은 삭제됐지만 보관하지 못했습니다.'));
+  await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: /저장 패턴/ }));
+  await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: '저장' }));
+  assert.ok(rntl.screen.getByDisplayValue('시험'));
+  assert.equal(calls, 1);
+});

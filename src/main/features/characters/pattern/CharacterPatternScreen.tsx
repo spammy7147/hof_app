@@ -191,6 +191,10 @@ export function CharacterPatternScreen({
     }
     setInputError(null);
     keepDraft.current = true;
+    if (slotAction !== 'NONE') {
+      setPendingSlot(targetSlotCode ?? null);
+      setSlotName(name ?? '');
+    }
     await savePattern?.({
       base: base.current,
       draft: {
