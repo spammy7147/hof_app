@@ -50,7 +50,7 @@ function StashPanel({ api, resolveCaptcha }: Props) {
   if (!data) return <LoadState loading={town.status === 'loading'} error={town.error} reload={town.reload} />;
   const selected = data.boxes.find((box) => box.id === selectedIds[0]);
   const refresh = async () => { await town.reload(); setResponse(null); };
-  const result = data.result ?? town.result;
+  const result = response ? response.result ?? town.result : null;
   return (
     <View style={styles.container}>
       <View style={styles.list}>

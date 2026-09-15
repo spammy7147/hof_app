@@ -3,6 +3,7 @@ import Module from 'node:module';
 import { afterEach, describe, it } from 'node:test';
 import React from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
+import type { StashResponse } from '../../main/types/api';
 
 const host = (name: string) => (props: Record<string, unknown>) => React.createElement(name, props, props.children as React.ReactNode);
 const reactNativeMock = {
@@ -18,6 +19,51 @@ const { RewardPanel } = require('../../main/features/town/panels/RewardPanel') a
 let mounted: ReactTestRenderer | null = null; afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; });
 
 describe('RewardPanel', () => {
+  for (const finish of ['결과 확인', '마을 정보 새로고침']) {
+    it(`상자 보상과 최신 보유량을 표시하고 ${finish}으로 닫아도 추가 개봉하지 않는다`, async () => {
+      let loads = 0;
+      const calls: unknown[] = [];
+      const before: StashResponse = {
+        boxes: [{ id: 'fish', label: 'Plumpy Fish (Stash)', selectable: true, owned: 53, cost: 10, detail: 'h:1 / Bind' }],
+        actions: [{ action: 'ONE', label: '1개 열기' }], result: null,
+      };
+      const after: StashResponse = {
+        ...before,
+        boxes: [{ ...before.boxes[0], owned: 52 }],
+        result: {
+          status: 'SUCCESS', messages: [], refreshRequired: true,
+          items: [{ name: 'Weapon Box (Dagger&MainGauche) (Stash)', quantity: 1, detail: '단검 종류의 장비가 들어 있습니다.', imageUrl: null }],
+        },
+      };
+      await render(React.createElement(RewardPanel, {
+        api: api(async () => { loads += 1; return loads === 1 ? before : { ...after, result: null }; },
+          async (_path, request) => { calls.push(request); return after; }), mode: 'stash',
+      }));
+      await press('Plumpy Fish (Stash) 선택');
+      await press('1개 열기');
+
+      assert.equal(text().includes('Weapon Box (Dagger&MainGauche) (Stash) ×1'), true);
+      assert.equal(text().includes('보유 52'), true);
+      assert.equal(text().includes('결과 확인 필요'), false);
+      assert.equal(button('작업 완료 알림').props.accessibilityRole, 'alert');
+      await press(finish);
+      assert.equal(mounted!.root.findAll((node) => String(node.type) === 'Modal' && node.props.visible).length, 0);
+      assert.equal(loads, finish === '마을 정보 새로고침' ? 2 : 1);
+      assert.deepEqual(calls, [{ boxCandidateId: 'fish', action: 'ONE' }]);
+    });
+  }
+
+  it('마지막 상자 개봉 뒤 사라진 후보의 선택을 해제한다', async () => {
+    const data = stashData();
+    await render(React.createElement(RewardPanel, {
+      api: api(async () => data, async () => ({ ...data, boxes: [], result: result() })), mode: 'stash',
+    }));
+    await press('Treasure Box 선택');
+    await press('1개 열기');
+    assert.equal(button('1개 열기').props.disabled, true);
+    assert.equal(text().includes('Treasure Box'), false);
+  });
+
   it('상자 1개와 서버가 제공한 고정 action을 한 번 눌러 제출한다', async () => {
     const calls: unknown[] = [];
     const data = { boxes: [{ id: 'box', label: 'Treasure Box', selectable: true, owned: 76, cost: 0, detail: 'Treasure Box x76' }, { id: 'display', label: '선택 불가', selectable: false, owned: null, cost: 0, detail: null }], actions: [{ action: 'ONE', label: '1개 열기' }, { action: 'THOUSAND', label: '1000개 열기' }], result: null } as const;
