@@ -193,10 +193,14 @@ describe('TownTabScreen', () => {
     await act(async () => scroller.props.onScroll({ nativeEvent: { contentOffset: { y: 384 } } }));
 
     await press(renderer.root, '낚시터 열기');
-    await act(async () => scroller.props.onScroll({ nativeEvent: { contentOffset: { y: 0 } } }));
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '마을 화면 스크롤' }).props.onScroll({ nativeEvent: { contentOffset: { y: 0 } } }));
     await press(renderer.root, '마을 메뉴 목록으로');
 
     assert.deepEqual(scrollToCalls, [{ animated: false, y: 384 }]);
+    const restoredScroller = renderer.root.findByProps({ accessibilityLabel: '마을 화면 스크롤' });
+    await act(async () => restoredScroller.props.onContentSizeChange(400, 2000));
+    await act(async () => restoredScroller.props.onContentSizeChange(400, 2100));
+    assert.deepEqual(scrollToCalls, [{ animated: false, y: 384 }, { animated: false, y: 384 }]);
   });
 
   it('상점 상세의 긴 가상 목록은 같은 방향의 외부 ScrollView와 분리한다', async () => {

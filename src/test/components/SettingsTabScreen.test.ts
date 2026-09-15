@@ -14,6 +14,7 @@ const originalLoad = moduleWithLoader._load;
 moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') return {
     Pressable: host('Pressable'),
+    ScrollView: host('ScrollView'),
     StyleSheet: { create: <T,>(styles: T) => styles },
     Switch: host('Switch'),
     Text: host('Text'),

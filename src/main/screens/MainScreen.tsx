@@ -1,19 +1,15 @@
 import { CharacterSyncControl, type CharacterSyncControls } from "../features/characters/CharacterSyncScreen";
-import type { ElementRef, ReactNode } from "react";
 import {
   useCallback,
-  useRef,
   useState,
 } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { NestableScrollContainer } from "react-native-draggable-flatlist";
 
 import type { BattleResource } from "../features/battle/useBattleResource";
 import type { CaptchaPassResource } from "../features/captcha/useCaptchaPassMaintenance";
 import { BottomTabBar } from "../components/BottomTabBar";
 import { FixedBottomActionHost } from "../components/FixedBottomAction";
-import { scrollFocusedInputIntoView } from "../components/keyboardAwareScroll";
 import { CharacterDetail } from "../components/CharacterDetail";
 import { CharacterList } from "../components/CharacterList";
 import { PartyPresetList } from "../components/PartyPresetList";
@@ -370,9 +366,7 @@ function renderActiveTab({
           </View>
           {selectedCharacter && (
             <View style={[styles.tabPanel, styles.detailPanel]}>
-              <CharacterDetailScroll>
-                <CharacterDetail characterHub={characterHub} active={characterTabActive} />
-              </CharacterDetailScroll>
+              <CharacterDetail characterHub={characterHub} active={characterTabActive} />
             </View>
           )}
         </>
@@ -399,15 +393,13 @@ function renderActiveTab({
       );
     case "settings":
       return (
-        <TabScrollContainer>
-          <SettingsTabScreen
+        <SettingsTabScreen
             authenticated={authenticated}
             onBack={onCloseAppSettings}
             onLogout={onLogout}
             onOpenCaptcha={onOpenCaptcha}
             passMaintenance={passMaintenance}
-          />
-        </TabScrollContainer>
+        />
       );
   }
 }
@@ -481,49 +473,6 @@ function renderSystemMessage(
   );
 }
 
-/**
- * 스크롤이 필요한 탭 화면에 공통 padding과 ScrollView 설정을 적용한다.
- */
-function TabScrollContainer({ children }: { children: ReactNode }) {
-  const scrollRef = useRef<ScrollView>(null);
-  return (
-    <ScrollView
-      automaticallyAdjustKeyboardInsets
-      contentContainerStyle={styles.container}
-      contentInsetAdjustmentBehavior="automatic"
-      keyboardDismissMode="interactive"
-      keyboardShouldPersistTaps="handled"
-      onFocus={(event) =>
-        scrollFocusedInputIntoView(scrollRef.current, event.nativeEvent.target)
-      }
-      ref={scrollRef}
-      style={styles.tabScroller}
-    >
-      {children}
-    </ScrollView>
-  );
-}
-
-function CharacterDetailScroll({ children }: { children: ReactNode }) {
-  const scrollRef = useRef<ElementRef<typeof NestableScrollContainer>>(null);
-  return (
-    <NestableScrollContainer
-      automaticallyAdjustKeyboardInsets
-      contentContainerStyle={styles.detailContainer}
-      contentInsetAdjustmentBehavior="automatic"
-      keyboardDismissMode="interactive"
-      keyboardShouldPersistTaps="handled"
-      onFocus={(event) =>
-        scrollFocusedInputIntoView(scrollRef.current, event.nativeEvent.target)
-      }
-      ref={scrollRef}
-      style={styles.tabScroller}
-    >
-      {children}
-    </NestableScrollContainer>
-  );
-}
-
 const styles = StyleSheet.create({
   persistentTab: { flex: 1 },
   hidden: { display: "none" },
@@ -537,9 +486,6 @@ const styles = StyleSheet.create({
   fullScreenContent: {
     backgroundColor: theme.colors.background,
   },
-  tabScroller: {
-    flex: 1,
-  },
   tabPanel: {
     flex: 1,
     gap: 10,
@@ -550,14 +496,6 @@ const styles = StyleSheet.create({
     gap: 0,
     paddingHorizontal: 0,
     paddingTop: 0,
-  },
-  container: {
-    padding: theme.spacing.lg,
-    paddingBottom: theme.spacing.xl,
-    gap: theme.spacing.lg,
-  },
-  detailContainer: {
-    paddingBottom: 0,
   },
   systemMessages: {
     gap: theme.spacing.md,

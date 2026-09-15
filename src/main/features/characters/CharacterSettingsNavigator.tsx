@@ -9,6 +9,7 @@ import { CharacterEquipmentScreen } from "./equipment/CharacterEquipmentScreen";
 import { CharacterSkillsScreen } from "./skills/CharacterSkillsScreen";
 import { CharacterManagementScreen } from "./management/CharacterManagementScreen";
 import { CharacterSettingsTransferScreen } from "./transfer/CharacterSettingsTransferScreen";
+import { CharacterContentScroll } from "./CharacterContentScroll";
 
 type Tab = "status" | "pattern" | "equipment" | "skills" | "management";
 const tabs: Array<[Tab, string]> = [
@@ -54,9 +55,7 @@ export function CharacterSettingsNavigator(
     return () => subscription.remove();
   }, [close, closeTransfer, props.active, transferOpen]);
   if (!detail) return null;
-  return (
-    <View style={styles.root}>
-      <View accessibilityRole="tablist" style={styles.tabs}>
+  const tabBar = <View accessibilityRole="tablist" style={styles.tabs}>
         {tabs.map(([id, label]) => (
           <Pressable
             key={id}
@@ -70,7 +69,14 @@ export function CharacterSettingsNavigator(
             </Text>
           </Pressable>
         ))}
-      </View>
+      </View>;
+  if (transferOpen) return <View style={styles.root}>
+    {tabBar}
+    <CharacterSettingsTransferScreen characterHub={props.characterHub} onBack={closeTransfer} backLabel={tab === "pattern" ? "패턴" : "관리"} />
+  </View>;
+  return (
+    <CharacterContentScroll>
+      {tabBar}
       {tab === "status" && (
         <CharacterStatusScreen
           characterHub={props.characterHub}
@@ -79,14 +85,7 @@ export function CharacterSettingsNavigator(
           onOpenHelp={() => setStatusHelpOpen(true)}
         />
       )}
-      {transferOpen && (
-        <CharacterSettingsTransferScreen
-          characterHub={props.characterHub}
-          onBack={closeTransfer}
-          backLabel={tab === "pattern" ? "패턴" : "관리"}
-        />
-      )}
-      {tab === "pattern" && !transferOpen && (
+      {tab === "pattern" && (
         <CharacterPatternScreen
           characterHub={props.characterHub}
           onImportSettings={
@@ -102,18 +101,18 @@ export function CharacterSettingsNavigator(
       {tab === "skills" && (
         <CharacterSkillsScreen characterHub={props.characterHub} />
       )}
-      {tab === "management" && !transferOpen && (
+      {tab === "management" && (
         <CharacterManagementScreen
           characterHub={props.characterHub}
           onImportSettings={() => setTransferTab("management")}
         />
       )}
-    </View>
+    </CharacterContentScroll>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { paddingBottom: 28 },
+  root: { flex: 1, minHeight: 0 },
   tabs: {
     minHeight: 44,
     flexDirection: "row",

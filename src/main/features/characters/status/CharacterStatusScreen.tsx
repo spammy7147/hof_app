@@ -189,6 +189,7 @@ export function CharacterStatusScreen({
           <Pressable style={StyleSheet.absoluteFill} onPress={onCloseHelp} />
           <View style={styles.sheet}>
             <View style={styles.grip} />
+            <Pressable accessibilityRole="button" accessibilityLabel="스탯 도움말 닫기" onPress={onCloseHelp} style={styles.closeButton}><Text style={styles.closeText}>닫기</Text></Pressable>
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.sheetTitle}>스탯 역할</Text>
               <Text style={styles.sheetSubtitle}>패턴 요구 수치는 Real INT와 Real SPD만 사용합니다.</Text>
@@ -239,7 +240,6 @@ export function CharacterStatusScreen({
                   </Pressable>
                 </View>
               )}
-              <Pressable onPress={onCloseHelp} style={styles.closeButton}><Text style={styles.closeText}>닫기</Text></Pressable>
             </ScrollView>
           </View>
         </View>
@@ -249,6 +249,7 @@ export function CharacterStatusScreen({
         <View style={styles.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setTargetOpen(false)} />
           <View style={styles.targetSheet}>
+            <Pressable accessibilityRole="button" accessibilityLabel="추가 패턴 수 선택 취소" onPress={() => setTargetOpen(false)} style={styles.closeButton}><Text style={styles.closeText}>취소</Text></Pressable>
             <ScrollView contentContainerStyle={styles.targetOptions}>
               <View style={styles.grip} />
               <Text style={styles.sheetTitle}>원하는 추가 패턴 수</Text>
@@ -437,7 +438,7 @@ const styles = StyleSheet.create({
   recommendRemaining: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: "900" },
   recommendButton: { minHeight: 40, alignItems: "center", justifyContent: "center", borderRadius: 7, backgroundColor: theme.colors.accentGreen },
   recommendButtonText: { color: theme.colors.buttonText, fontWeight: "900" },
-  closeButton: { minHeight: 42, alignItems: "center", justifyContent: "center", marginTop: 12, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 8, backgroundColor: theme.colors.surfaceAlt },
+  closeButton: { minHeight: 44, alignItems: "center", justifyContent: "center", marginTop: 12, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 8, backgroundColor: theme.colors.surfaceAlt },
   closeText: { color: theme.colors.text, fontWeight: "900" },
   targetOption: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12, borderRadius: 9, backgroundColor: theme.colors.surfaceAlt },
   targetOptionText: { color: theme.colors.text, fontWeight: "900" },

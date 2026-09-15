@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { ArrowLeft } from 'lucide-react-native';
 
 import { PrimaryButton } from '../components/PrimaryButton';
@@ -61,6 +61,7 @@ export function SettingsTabScreen({
         <View style={styles.headerSpacer} />
       </View>
 
+      <ScrollView automaticallyAdjustKeyboardInsets contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled" style={styles.scroller}>
       <View style={styles.panel}>
         <View style={styles.panelTitleRow}>
           <View style={styles.panelTitleCopy}>
@@ -104,6 +105,7 @@ export function SettingsTabScreen({
       </View>
 
       <PrimaryButton label="로그아웃" variant="secondary" onPress={onLogout} />
+      </ScrollView>
     </View>
   );
 }
@@ -118,10 +120,12 @@ function StatusRow({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    gap: theme.spacing.lg,
-  },
+  container: { flex: 1 },
+  scroller: { flex: 1 },
+  body: { gap: theme.spacing.lg, padding: theme.spacing.lg, paddingBottom: theme.spacing.xl },
   header: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
     minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',

@@ -23,6 +23,7 @@ export function TownTabScrollContainer({ townApi, resolveCaptcha, onOpenFishingB
   const scrollRef = useRef<ScrollView>(null);
   const currentOffset = useRef(0);
   const capturedListOffset = useRef(0);
+  const restoreAfterLayout = useRef(false);
   const [menuId, setMenuId] = useState<TownMenuId | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
 
@@ -42,6 +43,7 @@ export function TownTabScrollContainer({ townApi, resolveCaptcha, onOpenFishingB
         controlledMenuId={menuId}
         controlledDetailOpen={detailOpen}
         onDetailStateChange={(nextMenuId, open) => {
+          if (!open) restoreAfterLayout.current = true;
           setMenuId(nextMenuId);
           setDetailOpen(open);
           onDetailOpenChange?.(open);
@@ -57,6 +59,11 @@ export function TownTabScrollContainer({ townApi, resolveCaptcha, onOpenFishingB
             accessibilityLabel="마을 화면 스크롤"
             automaticallyAdjustKeyboardInsets
             contentContainerStyle={styles.container}
+            onContentSizeChange={detailOpen ? undefined : () => {
+              if (!restoreAfterLayout.current) return;
+              restoreAfterLayout.current = false;
+              scrollRef.current?.scrollTo({ animated: false, y: capturedListOffset.current });
+            }}
             contentInsetAdjustmentBehavior="automatic"
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"

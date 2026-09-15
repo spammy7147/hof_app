@@ -23,6 +23,8 @@ export function TownMenuGrid({
     <FlatList
       columnWrapperStyle={styles.row}
       data={[...menus]}
+      // 외부 ScrollView가 이동을 맡으므로 복귀 직후에도 전체 메뉴 높이가 필요하다.
+      initialNumToRender={menus.length}
       keyExtractor={({ id }) => id}
       ListEmptyComponent={<EmptyMenuList />}
       numColumns={2}

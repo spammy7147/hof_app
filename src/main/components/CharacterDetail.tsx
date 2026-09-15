@@ -32,7 +32,7 @@ export function CharacterDetail({ characterHub, active = true }: CharacterDetail
   }, [active, character, close, ready]);
   if (!character) return null;
   return (
-    <View>
+    <View style={styles.screen}>
       <View style={styles.top}>
         <Pressable
           accessibilityRole="button"
@@ -113,6 +113,7 @@ export function extractPrimaryStatValues(
 }
 
 const styles = StyleSheet.create({
+  screen: { flex: 1, minHeight: 0 },
   top: {
     minHeight: 56,
     flexDirection: "row",
@@ -122,14 +123,14 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.header,
   },
   iconButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 9,
     backgroundColor: theme.colors.surfaceAlt,
   },
-  title: { color: theme.colors.text, fontSize: 17, fontWeight: "900" },
+  title: { flex: 1, textAlign: "center", color: theme.colors.text, fontSize: 17, fontWeight: "900" },
   loading: {
     minHeight: 180,
     alignItems: "center",

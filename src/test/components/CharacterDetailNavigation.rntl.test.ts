@@ -108,6 +108,22 @@ async function systemBack() {
   return consumed;
 }
 
+// 실제 좌표·관성 터치는 Android 검증 앱으로 확인한다. 이 검사는 외부 스크롤이
+// 고정 탐색 영역을 다시 감싸는 회귀를 실제 MainScreen 조립 경계에서 막는다.
+it('상세의 다섯 탭에서 목록 복귀는 본문 스크롤과 독립적으로 동작한다', async () => {
+  await openList();
+  for (const tab of ['정보', '패턴', '장비', '스킬', '관리']) {
+    await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: /소셜/ }));
+    await rntl.fireEvent.press(rntl.screen.getByRole('tab', { name: tab }));
+    const back = rntl.screen.getByRole('button', { name: '캐릭터 목록으로' });
+    for (let parent = back.parent; parent; parent = parent.parent) {
+      assert.notEqual(parent.type, 'ScrollView', '목록 복귀 영역은 외부 본문 스크롤에도 포함되면 안 됩니다.');
+    }
+    await rntl.fireEvent.press(back);
+    assert.ok(rntl.screen.getByLabelText('캐릭터 목록'));
+  }
+});
+
 it('검색한 캐릭터 상세에서 시스템 뒤로가기로 원래 검색 목록에 돌아온다', async () => {
   await openList();
   await rntl.fireEvent.changeText(rntl.screen.getByLabelText('캐릭터 검색'), 'Social');

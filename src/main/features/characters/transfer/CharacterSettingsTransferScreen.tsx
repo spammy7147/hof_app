@@ -7,6 +7,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { CharacterContentScroll } from '../CharacterContentScroll';
 import { AppAlert as Alert } from '../../../platform/AppAlert';
 
 import type {
@@ -182,6 +183,7 @@ export function CharacterSettingsTransferScreen({
         <Text style={styles.title}>설정 가져오기</Text>
         <View style={styles.touch} />
       </View>
+      <CharacterContentScroll>
       <View style={styles.tabs}>
         {(["ACTIVE", "MISSING", "ARCHIVED"] as const).map((value) => (
           <Pressable
@@ -432,6 +434,7 @@ export function CharacterSettingsTransferScreen({
           </View>
         </FixedBottomAction>
       ) : null}
+      </CharacterContentScroll>
     </View>
   );
 }
@@ -458,7 +461,7 @@ function Toggle({
 }
 
 const styles = StyleSheet.create({
-  screen: { gap: 12 },
+  screen: { flex: 1, minHeight: 0, gap: 12 },
   header: {
     flexDirection: "row",
     alignItems: "center",

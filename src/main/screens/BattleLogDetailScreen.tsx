@@ -28,7 +28,7 @@ export function BattleLogDetailScreen({ title, url, onBack }: BattleLogDetailScr
 const styles = StyleSheet.create({
   screen: { flex: 1, gap: theme.spacing.md, padding: theme.spacing.lg },
   header: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md },
-  compactButton: { minHeight: 36, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
+  compactButton: { minHeight: 44, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
   title: { flex: 1, color: theme.colors.text, fontSize: 17, fontWeight: '900' },
   panel: {
     flex: 1,

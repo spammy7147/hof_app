@@ -167,10 +167,11 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
       assertNever(route)
     );
     const panelKey = `${selectedMenu.id}:${townApiIdentity}`;
-    const detail = (
-      <TownDetailShell key={panelKey} menu={selectedMenu} onBack={closeDetail}>{panel}</TownDetailShell>
+    return (
+      <TownDetailShell key={panelKey} menu={selectedMenu} onBack={closeDetail}>
+        {renderContent?.(panel, route.virtualized) ?? panel}
+      </TownDetailShell>
     );
-    return renderContent?.(detail, route.virtualized) ?? detail;
   }
 
   const list = (

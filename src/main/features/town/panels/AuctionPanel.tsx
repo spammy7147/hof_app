@@ -74,6 +74,7 @@ function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
       ? <ActionButton label="출품" disabled={busy || !exhibitRequest} onPress={() => exhibitRequest && void town.submit(exhibitRequest).catch(() => undefined)} />
       : null;
   return <View style={styles.container}>
+        {exhibit ? <ActionButton label="옥션 목록으로" disabled={busy} onPress={() => { setExhibit(null); resetExhibitDraft(); town.resetOutcome(); }} /> : null}
     <TownItemList rows={exhibit ? exhibitRows : rows} selectionMode="single" selectedIds={exhibit ? exhibitSelected : selected}
       fixedAction={fixedAction}
       onSelectionChange={(ids) => { if (!busy) (exhibit ? setExhibitSelected : setSelected)(ids); }}
@@ -84,7 +85,6 @@ function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
           {data.capabilities.claimItemActionId ? <ActionButton grouped label="낙찰 아이템 수령" disabled={busy} onPress={() => void town.submit({ kind: 'CLAIM_ITEM', body: { actionId: data.capabilities.claimItemActionId! } }).catch(() => undefined)} /> : null}
           {data.capabilities.claimFundsActionId ? <ActionButton grouped label="Funds 수령" disabled={busy} onPress={() => void town.submit({ kind: 'CLAIM_FUNDS', body: { actionId: data.capabilities.claimFundsActionId! } }).catch(() => undefined)} /> : null}
         </View> : null}
-        {exhibit ? <ActionButton label="옥션 목록으로" disabled={busy} onPress={() => { setExhibit(null); resetExhibitDraft(); town.resetOutcome(); }} /> : null}
       </View>}
       footer={<View style={styles.section}>
         {!exhibit && chosen ? <Field label="입찰가" value={bidPrice} setValue={setBidPrice} disabled={busy} numeric /> : null}

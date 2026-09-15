@@ -46,7 +46,7 @@ const styles = StyleSheet.create({
     gap: theme.spacing.md,
     paddingHorizontal: theme.spacing.lg,
   },
-  compactButton: { minHeight: 36, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
+  compactButton: { minHeight: 44, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
   title: { flex: 1, color: theme.colors.text, fontSize: 17, fontWeight: '900' },
   webView: { flex: 1, backgroundColor: theme.colors.background },
   statePanel: {

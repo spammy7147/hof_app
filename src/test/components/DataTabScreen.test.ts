@@ -94,8 +94,7 @@ describe('DataTabScreen recent battle card', () => {
 
     const launch = renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '통계 보기');
     await act(async () => { launch.props.onPress(); });
-    const adventureList = renderer.root.find((node) => String(node.type) === 'FlatList');
-    assert.deepEqual(adventureList.props.stickyHeaderIndices, [0]);
+    assertControlsOutsideList(renderer.root);
     assert.deepEqual(periods, [undefined, 'DAY']);
     assert.deepEqual(['일간', '주간', '월간', '얼어붙은 산', '2회', '1회'].filter((value) => !flattenText(renderer.root).includes(value)), []);
 
@@ -103,6 +102,12 @@ describe('DataTabScreen recent battle card', () => {
     await act(async () => { weekly.props.onPress(); });
     assert.deepEqual(periods, [undefined, 'DAY', 'WEEK']);
     assert.deepEqual(['승률', '경험치', '전리품', '승/패/무'].filter((value) => text.includes(value)), []);
+    const refresh = renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '새로고침');
+    await act(async () => { refresh.props.onPress(); });
+    assert.deepEqual(periods, [undefined, 'DAY', 'WEEK', 'WEEK']);
+    const back = renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '돌아가기');
+    await act(async () => { back.props.onPress(); });
+    assert.ok(renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '통계 보기'));
   });
 
   it('renders the approved concise battle details', async () => {
@@ -146,14 +151,19 @@ describe('DataTabScreen recent battle card', () => {
     mountedRenderer = renderer;
     const openButton = renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '로그 보기');
     await act(async () => { openButton.props.onPress(); });
-    const battleList = renderer.root.find((node) => String(node.type) === 'FlatList');
-    assert.deepEqual(battleList.props.stickyHeaderIndices, [0]);
+    assertControlsOutsideList(renderer.root);
     const defeatTab = renderer.root.find((node) => (
       String(node.type) === 'Pressable'
       && node.props.accessibilityRole === 'tab'
       && flattenText(node).includes('패배')
     ));
     await act(async () => { defeatTab.props.onPress(); });
+    const refresh = renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '새로고침');
+    await act(async () => { refresh.props.onPress(); });
+    assert.deepEqual(queries.slice(-2), [
+      { limit: 40, offset: 0, outcome: 'DEFEAT' },
+      { limit: 40, offset: 0, outcome: 'DEFEAT' },
+    ]);
     const copyButton = renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '링크 복사');
     await act(async () => { copyButton.props.onPress(); });
     const detailButton = renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '상세 보기');
@@ -165,6 +175,22 @@ describe('DataTabScreen recent battle card', () => {
     assert.ok(flattenText(renderer.root).includes('Frosty Mountain- 대충산'));
   });
 });
+
+/** 관성 스크롤이 상단 조작을 가로채지 않도록 버튼·필터의 스크롤 조상을 검증한다.
+ * 실제 터치 반응은 DataScreenScrollApp을 설치한 Android 검증으로 확인한다. */
+function assertControlsOutsideList(root: ReactTestInstance) {
+  const controls = root.findAll((node) => (
+    (String(node.type) === 'PrimaryButton' && ['돌아가기', '새로고침'].includes(node.props.label))
+    || (String(node.type) === 'Pressable' && node.props.accessibilityRole === 'tab')
+  ));
+  assert.ok(controls.length >= 5);
+  for (const control of controls) {
+    for (let parent = control.parent; parent; parent = parent.parent) {
+      assert.ok(!['FlatList', 'ScrollView'].includes(String(parent.type)),
+        '상단 버튼과 필터는 스크롤 목록의 터치 처리에 포함되면 안 됩니다.');
+    }
+  }
+}
 
 async function renderBattleCard(): Promise<ReactTestInstance> {
   let renderer!: ReactTestRenderer;

@@ -49,6 +49,7 @@ moduleWithLoader._load = (request, parent, isMain) => (
     : request === 'react-native-safe-area-context' ? { SafeAreaView: host('SafeAreaView') }
     : request === 'react-native-draggable-flatlist' ? {
       __esModule: true,
+      NestableScrollContainer: host('NestableScrollContainer'),
       default: draggableFlatList('DraggableFlatList'),
       NestableDraggableFlatList: draggableFlatList('NestableDraggableFlatList'),
     }
@@ -578,12 +579,10 @@ describe('CharacterDetail stat allocation', () => {
 
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'DraggableFlatList').length, 0);
     assert.equal(renderer.root.findAll((node) => String(node.type) === 'NestableDraggableFlatList').length, 1);
-    const mainScreenSource = readFileSync(resolve(process.cwd(), 'src/main/screens/MainScreen.tsx'), 'utf8');
-    assert.match(
-      mainScreenSource,
-      /function CharacterDetailScroll[\s\S]*?<NestableScrollContainer/,
-      '캐릭터 상세 바깥 스크롤도 중첩 드래그 목록과 같은 스크롤 컨테이너를 사용해야 한다',
-    );
+    const scroller = renderer.root.find((node) => String(node.type) === 'NestableScrollContainer');
+    assert.equal(scroller.findAll((node) => String(node.type) === 'NestableDraggableFlatList').length, 1);
+    assert.equal(scroller.findAllByProps({ accessibilityLabel: '캐릭터 목록으로' }).length, 0);
+
   });
 
   it('shows armor candidates when changing the shield slot', async () => {

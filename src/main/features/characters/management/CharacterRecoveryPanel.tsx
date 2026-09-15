@@ -57,6 +57,11 @@ export function CharacterRecoveryPanel({ characterHub }: { characterHub: Charact
       {preview && <Modal visible transparent animationType="slide" onRequestClose={actions.dismissRecoveryPreview}>
         <View style={styles.overlay}>
           <View accessibilityViewIsModal style={styles.sheet}>
+              <Pressable accessible accessibilityRole="button" accessibilityLabel="현재 상태 수락 취소"
+                disabled={Boolean(busy)} accessibilityState={{ disabled: Boolean(busy) }}
+                style={styles.button} onPress={actions.dismissRecoveryPreview}>
+                <Text style={styles.buttonText}>취소</Text>
+              </Pressable>
             <ScrollView contentContainerStyle={styles.previewContent}>
               <Text accessibilityRole="header" style={styles.title}>현재 서버 설정 확인</Text>
               <Text style={styles.text}>{preview.name}</Text>
@@ -71,11 +76,7 @@ export function CharacterRecoveryPanel({ characterHub }: { characterHub: Charact
               <Text style={styles.text}>위치 · {positionLabel(preview.positionGuard.selectedPosition)} / 호위 · {preview.positionGuard.guardText || preview.positionGuard.guardValue}</Text>
               <Text style={styles.note}>이 설정을 현재 상태로 수락해 작업을 종료합니다. 최초 설정의 복원 성공으로 기록하지 않으며 자동화를 정지합니다. 수락 시 서버 상태를 다시 확인합니다.</Text>
               {button('이 상태로 종료하고 자동화 정지', actions.acceptRecovery)}
-              <Pressable accessible accessibilityRole="button" accessibilityLabel="현재 상태 수락 취소"
-                disabled={Boolean(busy)} accessibilityState={{ disabled: Boolean(busy) }}
-                style={styles.button} onPress={actions.dismissRecoveryPreview}>
-                <Text style={styles.buttonText}>취소</Text>
-              </Pressable>
+
             </ScrollView>
           </View>
         </View>

@@ -233,11 +233,12 @@ export function NewAutomationEditor({ entry, saving, mutationMessage, onBack, on
     </View>;
   }
 
-  return <NestableScrollContainer contentContainerStyle={styles.container} style={styles.scroller}>
+  return <View style={styles.screen}>
     <View style={styles.header}>
       <Pressable accessibilityLabel="자동화 설정으로" accessibilityRole="button" onPress={onBack} style={styles.icon}><ArrowLeft color={theme.colors.text} size={20} /></Pressable>
       <View style={styles.copy}><Text style={styles.title}>{AUTOMATION_TYPE_METADATA[entry.type].label} 자동화</Text><Text style={styles.help}>{description(entry.type)}</Text></View>
     </View>
+    <NestableScrollContainer contentContainerStyle={styles.unionContent} style={styles.scroller}>
     <View style={styles.card}><Text style={styles.label}>자동화 사용</Text><Switch accessibilityLabel="자동화 사용" value={enabled} onValueChange={setEnabled} /></View>
     {mutationMessage ? <Text style={styles.warning}>{mutationMessage}</Text> : null}
     <>
@@ -272,7 +273,7 @@ export function NewAutomationEditor({ entry, saving, mutationMessage, onBack, on
     <Pressable accessibilityLabel="자동화 저장" accessibilityRole="button" accessibilityState={{ disabled: saving }} disabled={saving} onPress={() => { void save(); }} style={styles.save}>
       <Save color={theme.colors.buttonText} size={18} /><Text style={styles.saveText}>{saving ? '저장 중' : '저장'}</Text>
     </Pressable>
-  </NestableScrollContainer>;
+  </NestableScrollContainer></View>;
 }
 
 function PresetTrigger({ name, value, presets, onPress }: { name: string; value: PresetSelection; presets: Parameters<typeof formatAutomationPresetSelection>[1]; onPress: () => void }) {

@@ -21,7 +21,7 @@ loader._load = (request, parent, isMain) => request === 'react-native' ? {
       renderItem?.({ item, index, separators: { highlight() {}, unhighlight() {}, updateProps() {} } })))),
   Alert: { alert: (_title: string, _message: string, buttons: AlertButton[]) => { confirmation = buttons.find(item => item.text === '가져오기'); } },
   StyleSheet: { create: <T,>(value: T) => value, flatten: (value: unknown) => Array.isArray(value) ? Object.assign({}, ...value.filter(Boolean)) : value },
-} : original(request, parent, isMain);
+} : request === 'react-native-draggable-flatlist' ? { NestableScrollContainer: host('ScrollView') } : original(request, parent, isMain);
 const rntl = require('@testing-library/react-native/pure') as typeof import('@testing-library/react-native/pure');
 const { CharacterSettingsTransferScreen } = require('../../main/features/characters/transfer/CharacterSettingsTransferScreen') as typeof import('../../main/features/characters/transfer/CharacterSettingsTransferScreen');
 loader._load = original;

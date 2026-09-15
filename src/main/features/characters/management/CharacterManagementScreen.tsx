@@ -197,6 +197,7 @@ export function CharacterManagementScreen({
         <View style={styles.overlay}>
           <Pressable style={StyleSheet.absoluteFill} onPress={() => setClassOpen(false)} />
           <View style={styles.sheet}>
+            <Button label="취소" onPress={() => setClassOpen(false)} />
             <ScrollView contentContainerStyle={styles.classOptions}>
               <View style={styles.grip} />
               <Text style={styles.heading}>전직</Text>
@@ -222,7 +223,6 @@ export function CharacterManagementScreen({
                 </View>
               </View>
               <View style={[styles.inline, styles.classActions]}>
-                <Button label="취소" onPress={() => setClassOpen(false)} />
                 <Button
                   disabled={!selectedClass}
                   label="전직"

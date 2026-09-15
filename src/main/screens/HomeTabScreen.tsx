@@ -368,7 +368,28 @@ export function HomeTabScreen({
   />;
 
   const showPageHeader = route !== 'editor';
+  const pageHeader = showPageHeader ? (<View style={[styles.header, route === 'settings' && styles.fixedHeader]}>
+          {route === 'settings' ? (
+            <Pressable accessibilityLabel="통합 자동화로" accessibilityRole="button" onPress={() => setRoute('dashboard')} style={styles.iconButton}>
+              <ArrowLeft color={theme.colors.text} size={20} />
+            </Pressable>
+          ) : null}
+          <View style={styles.headerCopy}>
+            <Text style={styles.title}>{route === 'dashboard' ? '통합 자동화' : '자동화 설정'}</Text>
+            <Text style={styles.subtitle}>{route === 'dashboard' ? '앱을 닫아도 서버에서 계속 진행돼요' : '필요한 항목만 추가하고 드래그로 우선순위를 정하세요'}</Text>
+          </View>
+          <Pressable
+            accessibilityLabel="자동화 실행 규칙 보기"
+            accessibilityRole="button"
+            onPress={() => setRulesOpen((current) => !current)}
+            style={styles.iconButton}
+          >
+            <Info color={theme.colors.textMuted} size={20} />
+          </Pressable>
+        </View>) : null;
   return (
+    <View style={styles.scroller}>
+    {route === 'settings' ? pageHeader : null}
     <NestableScrollContainer
       contentContainerStyle={styles.container}
       contentInsetAdjustmentBehavior="automatic"
@@ -385,27 +406,7 @@ export function HomeTabScreen({
         />
       ) : null}
 
-      {showPageHeader ? (
-        <View style={styles.header}>
-          {route === 'settings' ? (
-            <Pressable accessibilityLabel="통합 자동화로" onPress={() => setRoute('dashboard')} style={styles.iconButton}>
-              <ArrowLeft color={theme.colors.text} size={20} />
-            </Pressable>
-          ) : null}
-          <View style={styles.headerCopy}>
-            <Text style={styles.title}>{route === 'dashboard' ? '통합 자동화' : '자동화 설정'}</Text>
-            <Text style={styles.subtitle}>{route === 'dashboard' ? '앱을 닫아도 서버에서 계속 진행돼요' : '필요한 항목만 추가하고 드래그로 우선순위를 정하세요'}</Text>
-          </View>
-          <Pressable
-            accessibilityLabel="자동화 실행 규칙 보기"
-            accessibilityRole="button"
-            onPress={() => setRulesOpen((current) => !current)}
-            style={styles.iconButton}
-          >
-            <Info color={theme.colors.textMuted} size={20} />
-          </Pressable>
-        </View>
-      ) : null}
+      {route !== 'settings' ? pageHeader : null}
 
       {showPageHeader && rulesOpen ? (
         <View style={styles.ruleBand}>
@@ -454,6 +455,7 @@ export function HomeTabScreen({
       ) : null}
 
     </NestableScrollContainer>
+    </View>
   );
 }
 
@@ -462,10 +464,11 @@ const styles = StyleSheet.create({
   scroller: { flex: 1 },
   container: { gap: theme.spacing.md, padding: theme.spacing.lg, paddingBottom: theme.spacing.xl },
   header: { alignItems: 'center', flexDirection: 'row', gap: 9 },
+  fixedHeader: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.sm },
   headerCopy: { flex: 1 },
   title: { color: theme.colors.text, fontSize: 21, fontWeight: '900' },
   subtitle: { color: theme.colors.textMuted, fontSize: 12, marginTop: 3 },
-  iconButton: { alignItems: 'center', borderRadius: 20, height: 40, justifyContent: 'center', width: 40 },
+  iconButton: { alignItems: 'center', borderRadius: 20, height: 44, justifyContent: 'center', width: 44 },
   ruleBand: { borderBottomColor: theme.colors.border, borderBottomWidth: 1, gap: 5, paddingBottom: theme.spacing.md },
   ruleTitle: { color: theme.colors.text, fontSize: 14, fontWeight: '800', marginBottom: 2 },
   ruleText: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18 },

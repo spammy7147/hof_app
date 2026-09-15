@@ -68,6 +68,8 @@ const styles = StyleSheet.create({
     gap: theme.spacing.sm,
   },
   header: {
+    marginHorizontal: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
     minHeight: 60,
     flexDirection: 'row',
     alignItems: 'center',
@@ -111,7 +113,7 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
-    minHeight: 160,
+    minHeight: 0,
     gap: theme.spacing.xs,
   },
   pressed: {

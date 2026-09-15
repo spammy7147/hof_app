@@ -40,6 +40,19 @@ moduleWithLoader._load = originalLoad;
 afterEach(async () => { await rntl.cleanup(); alerts.length = 0; });
 
 describe('AutomationHistoryScreen with RNTL', () => {
+  it('본문의 스크롤 responder 밖에서 돌아간다', async () => {
+    let backs = 0;
+    await rntl.render(React.createElement(AutomationHistoryScreen, {
+      onBack: () => { backs += 1; }, load: async () => ({ cycles: [], nextCursor: null }),
+    }));
+    const back = rntl.screen.getByRole('button', { name: '통합 자동화로' });
+    for (let node = back.parent; node; node = node.parent) {
+      assert.notEqual(node.type, 'NestableScrollContainer');
+    }
+    await rntl.fireEvent.press(back);
+    assert.equal(backs, 1);
+  });
+
   it('shows fishing cast and obstruction battle in separate numbered decisions', async () => {
     const homeEvent = historyEvent(1, 0, 10, 'HOME_QUEST', 'SKIPPED', 'HOME_IDLE', null);
     const fishingEvent = historyEvent(2, 1, 11, 'FISHING', 'SELECTED', 'RUNNABLE', 'FISHING_TOWN');

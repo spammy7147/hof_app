@@ -211,18 +211,20 @@ function AdventureMapStatsScreen({ authenticated, onBack, onLoad }: {
     </View>
   );
   return (
-    <FlatList
-      contentContainerStyle={styles.logListContainer} data={maps} ListHeaderComponent={header}
-      ListEmptyComponent={!loading && !error ? <StatePanel message={`${selectedPeriod.label} 패배·무승부 기록이 없습니다.`} /> : null}
-      keyExtractor={(map) => map.mapCode}
-      renderItem={({ item }) => <View style={styles.mapRow}>
-        <Text style={styles.mapName} numberOfLines={2}>{item.mapName.trim() || item.mapCode}</Text>
-        <Text style={[styles.mapCount, styles.defeatText]}>{item.defeats}회</Text>
-        <Text style={styles.mapCount}>{item.draws}회</Text>
-      </View>}
-      stickyHeaderIndices={[0]}
-      style={styles.list}
-    />
+    <View style={styles.list}>
+      <View style={styles.fixedHeader}>{header}</View>
+      <FlatList
+        contentContainerStyle={styles.logListContainer} data={maps}
+        ListEmptyComponent={!loading && !error ? <StatePanel message={`${selectedPeriod.label} 패배·무승부 기록이 없습니다.`} /> : null}
+        keyExtractor={(map) => map.mapCode}
+        renderItem={({ item }) => <View style={styles.mapRow}>
+          <Text style={styles.mapName} numberOfLines={2}>{item.mapName.trim() || item.mapCode}</Text>
+          <Text style={[styles.mapCount, styles.defeatText]}>{item.defeats}회</Text>
+          <Text style={styles.mapCount}>{item.draws}회</Text>
+        </View>}
+        style={styles.list}
+      />
+    </View>
   );
 }
 
@@ -336,20 +338,21 @@ function BattleLogScreen({
   }
 
   return (
-    <FlatList
-      contentContainerStyle={styles.logListContainer}
-      data={logs}
-      ItemSeparatorComponent={LogSeparator}
-      keyExtractor={(log) => String(log.id)}
-      ListEmptyComponent={!isLoading ? <StatePanel message="저장된 전투 기록이 없습니다." /> : null}
-      ListFooterComponent={isLoadingMore ? <ActivityIndicator color={theme.colors.accentGreen} /> : null}
-      ListHeaderComponent={header}
-      onEndReached={() => { void loadMore(); }}
-      onEndReachedThreshold={0.35}
-      renderItem={({ item }) => <BattleLogCard log={item} onOpenDetail={() => setDetailLog(item)} />}
-      stickyHeaderIndices={[0]}
-      style={styles.list}
-    />
+    <View style={styles.list}>
+      <View style={styles.fixedHeader}>{header}</View>
+      <FlatList
+        contentContainerStyle={styles.logListContainer}
+        data={logs}
+        ItemSeparatorComponent={LogSeparator}
+        keyExtractor={(log) => String(log.id)}
+        ListEmptyComponent={!isLoading ? <StatePanel message="저장된 전투 기록이 없습니다." /> : null}
+        ListFooterComponent={isLoadingMore ? <ActivityIndicator color={theme.colors.accentGreen} /> : null}
+        onEndReached={() => { void loadMore(); }}
+        onEndReachedThreshold={0.35}
+        renderItem={({ item }) => <BattleLogCard log={item} onOpenDetail={() => setDetailLog(item)} />}
+        style={styles.list}
+      />
+    </View>
   );
 }
 
@@ -432,6 +435,8 @@ function LogSeparator() {
 
 const styles = StyleSheet.create({
   list: { flex: 1 },
+  // 관성 스크롤의 터치 처리가 돌아가기·새로고침·필터를 가로채지 않도록 목록 밖에 둔다.
+  fixedHeader: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg },
   container: { gap: theme.spacing.lg, padding: theme.spacing.lg, paddingBottom: theme.spacing.xl },
   header: {
     minHeight: 40,
@@ -442,7 +447,7 @@ const styles = StyleSheet.create({
   },
   title: { color: theme.colors.text, fontSize: 22, fontWeight: '900' },
   logScreenTitle: { flex: 1, color: theme.colors.text, fontSize: 19, fontWeight: '900', textAlign: 'center' },
-  compactButton: { minHeight: 36, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
+  compactButton: { minHeight: 44, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
   statePanel: {
     minHeight: 76,
     alignItems: 'center',
@@ -509,7 +514,7 @@ const styles = StyleSheet.create({
   },
   logLaunchCopy: { gap: theme.spacing.xs },
   logScreenHeaderStack: { backgroundColor: theme.colors.background, gap: theme.spacing.md, marginBottom: theme.spacing.lg },
-  logListContainer: { padding: theme.spacing.lg, paddingBottom: theme.spacing.xl },
+  logListContainer: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.xl },
   filterRow: { flexDirection: 'row', gap: theme.spacing.xs },
   filterButton: {
     minHeight: 38,
