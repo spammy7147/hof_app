@@ -6,21 +6,32 @@ import { theme } from '../styles/theme';
 export type BattleLogDetailScreenProps = {
   title: string;
   url: string;
+  html?: string;
   onBack: () => void;
 };
 
-/** Web/테스트 환경에서는 새 브라우저 탭으로 원본 로그를 연다. */
-export function BattleLogDetailScreen({ title, url, onBack }: BattleLogDetailScreenProps) {
+/** 웹에서 HTML 보관본을 표시·다운로드하고 원본 링크는 새 창으로 연다. */
+export function BattleLogDetailScreen({ title, url, html, onBack }: BattleLogDetailScreenProps) {
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
         <PrimaryButton label="로그로" variant="secondary" onPress={onBack} style={styles.compactButton} />
         <Text style={styles.title} numberOfLines={1}>{title}</Text>
       </View>
-      <View style={styles.panel}>
+      {html ? <>
+        <PrimaryButton label="HTML 저장" onPress={() => {
+          const blobUrl = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = 'defeated-battle-log.html';
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+        }} />
+        <iframe title="보관된 전투 HTML" sandbox="" srcDoc={html} style={{ flex: 1, width: '100%', border: 0, background: '#fff' }} />
+      </> : <View style={styles.panel}>
         <Text style={styles.message}>웹에서는 원본 전투 로그를 새 창으로 엽니다.</Text>
         <PrimaryButton label="상세 보기" onPress={() => { void Linking.openURL(url); }} />
-      </View>
+      </View>}
     </View>
   );
 }

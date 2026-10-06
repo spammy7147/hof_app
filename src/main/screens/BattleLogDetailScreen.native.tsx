@@ -1,12 +1,13 @@
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
+import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 
 import { PrimaryButton } from '../components/PrimaryButton';
 import { theme } from '../styles/theme';
 import type { BattleLogDetailScreenProps } from './BattleLogDetailScreen';
 
-/** 저장된 공개 로그 URL을 앱 내부 네이티브 WebView 전체화면으로 표시한다. */
-export function BattleLogDetailScreen({ title, url, onBack }: BattleLogDetailScreenProps) {
+/** 패배 HTML 보관본 또는 공개 로그 URL을 앱 내부 WebView로 표시한다. */
+export function BattleLogDetailScreen({ title, url, html, onBack }: BattleLogDetailScreenProps) {
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
@@ -16,7 +17,9 @@ export function BattleLogDetailScreen({ title, url, onBack }: BattleLogDetailScr
       <WebView
         allowsBackForwardNavigationGestures
         mixedContentMode="always"
-        originWhitelist={['http://*', 'https://*']}
+        originWhitelist={html ? ['about:*'] : ['http://*', 'https://*']}
+        javaScriptEnabled={!html}
+        onShouldStartLoadWithRequest={(request: ShouldStartLoadRequest) => !html || request.url === 'about:blank'}
         renderError={() => (
           <View style={styles.statePanel}>
             <Text style={styles.errorText}>원본 전투 로그를 열지 못했습니다.</Text>
@@ -29,7 +32,7 @@ export function BattleLogDetailScreen({ title, url, onBack }: BattleLogDetailScr
           </View>
         )}
         setSupportMultipleWindows={false}
-        source={{ uri: url }}
+        source={html ? { html } : { uri: url }}
         startInLoadingState
         style={styles.webView}
       />

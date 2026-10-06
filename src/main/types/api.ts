@@ -164,6 +164,7 @@ export type BattleLogResponse = {
   ally: BattleSideResponse;
   rawLogUrl: string | null;
   createdAt: string;
+  hasArchivedHtml?: boolean;
 };
 
 export type BattleLogOutcome = 'VICTORY' | 'DEFEAT' | 'DRAW';

@@ -400,6 +400,10 @@ export class BackendApiClient {
   /**
    * 데이터 탭에 보여줄 최근 전투 로그를 조회한다.
    */
+  fetchBattleLogHtml(logId: number): Promise<{ html: string }> {
+    return this.request(`/api/battle/logs/${logId}/html`);
+  }
+
   fetchBattleLogs(query: BattleLogQuery = {}): Promise<BattleLogResponse[]> {
     const params = new URLSearchParams({
       limit: String(query.limit ?? 20),

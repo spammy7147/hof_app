@@ -61,6 +61,32 @@ afterEach(async () => {
 });
 
 describe('DataTabScreen recent battle card', () => {
+  it('원본 링크가 없는 패배도 서버 보관 HTML을 열고 저장 버튼을 제공한다', async () => {
+    const requested: number[] = [];
+    const html = '<!doctype html><html><body>패배 전투 상세</body></html>';
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(React.createElement(DataTabScreen, {
+        authenticated: true,
+        battle: makeBattleResource({
+          loadLogs: async () => [{ ...battleLog, outcome: 'DEFEAT', rawLogUrl: null, hasArchivedHtml: true }],
+          loadStats: async () => emptyStats,
+          loadLogHtml: async (id) => { requested.push(id); return { html }; },
+        }),
+      }));
+    });
+    mountedRenderer = renderer;
+    await act(async () => { renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '로그 보기').props.onPress(); });
+    await act(async () => { renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '보관된 HTML 보기').props.onPress(); });
+    assert.deepEqual(requested, [battleLog.id]);
+    const frame = renderer.root.findByType('iframe');
+    assert.equal(frame.props.srcDoc, html);
+    assert.equal(frame.props.sandbox, '');
+    assert.ok(renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === 'HTML 저장'));
+    await act(async () => { renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '로그로').props.onPress(); });
+    assert.equal(renderer.root.findAllByType('iframe').length, 0);
+  });
+
   it('keeps Funds on data home and opens period-specific adventure-map statistics', async () => {
     const periods: Array<string | undefined> = [];
     let renderer!: ReactTestRenderer;

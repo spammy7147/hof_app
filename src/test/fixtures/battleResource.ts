@@ -6,6 +6,7 @@ export function makeBattleResource(overrides: Partial<BattleResource> = {}): Bat
     loadCategories: async () => undefined,
     loadMaps: async () => [],
     loadLogs: async () => [],
+    loadLogHtml: async () => { throw new Error('예상하지 않은 HTML 조회'); },
     run: async () => { throw new Error('예상하지 않은 전투 실행'); },
     loadStats: async () => { throw new Error('예상하지 않은 통계 조회'); },
     ...overrides,

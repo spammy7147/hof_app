@@ -110,6 +110,7 @@ export function useBattleResource({
     loadMaps: loadBattleMaps,
     run: runBattle,
     loadLogs: loadBattleLogs,
+    loadLogHtml: (logId: number) => api.fetchBattleLogHtml(logId),
     loadStats: loadBattleStats,
   };
 }

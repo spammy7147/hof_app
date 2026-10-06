@@ -97,6 +97,7 @@ export function DataTabScreen({
         authenticated={authenticated}
         onBack={() => setLogScreenOpen(false)}
         onLoadBattleLogs={onLoadBattleLogs}
+        onLoadBattleLogHtml={battle.loadLogHtml}
       />
     );
   }
@@ -234,13 +235,17 @@ function BattleLogScreen({
   authenticated,
   onBack,
   onLoadBattleLogs,
+  onLoadBattleLogHtml,
 }: {
   authenticated: boolean;
   onBack: () => void;
   onLoadBattleLogs: (query?: BattleLogQuery) => Promise<BattleLogResponse[]>;
+  onLoadBattleLogHtml?: (logId: number) => Promise<{ html: string }>;
 }) {
   const [filter, setFilter] = useState<LogFilter>('ALL');
   const [detailLog, setDetailLog] = useState<BattleLogResponse | null>(null);
+  const [detailHtml, setDetailHtml] = useState<string | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
   const [logs, setLogs] = useState<BattleLogResponse[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -328,12 +333,13 @@ function BattleLogScreen({
   ), [errorMessage, filter, isLoading, loadFirstPage, onBack]);
 
   const detailUrl = safeHttpUrl(detailLog?.rawLogUrl ?? null);
-  if (detailLog && detailUrl) {
+  if (detailLog && (detailUrl || detailHtml)) {
     return (
       <BattleLogDetailScreen
         title={formatBattleLogMap(detailLog)}
-        url={detailUrl}
-        onBack={() => setDetailLog(null)}
+        url={detailUrl ?? ''}
+        html={detailHtml ?? undefined}
+        onBack={() => { setDetailLog(null); setDetailHtml(null); }}
       />
     );
   }
@@ -341,6 +347,7 @@ function BattleLogScreen({
   return (
     <View style={styles.list}>
       <View style={styles.fixedHeader}>{header}</View>
+      {loadingDetail ? <ActivityIndicator color={theme.colors.accentGreen} /> : null}
       <FlatList
         contentContainerStyle={styles.logListContainer}
         data={logs}
@@ -350,7 +357,21 @@ function BattleLogScreen({
         ListFooterComponent={isLoadingMore ? <ActivityIndicator color={theme.colors.accentGreen} /> : null}
         onEndReached={() => { void loadMore(); }}
         onEndReachedThreshold={0.35}
-        renderItem={({ item }) => <BattleLogCard log={item} onOpenDetail={() => setDetailLog(item)} />}
+        renderItem={({ item }) => <BattleLogCard log={item} onOpenDetail={() => {
+          if (loadingDetail) return;
+          if (!item.hasArchivedHtml || !onLoadBattleLogHtml) {
+            setDetailHtml(null);
+            setDetailLog(item);
+            return;
+          }
+          setLoadingDetail(true);
+          void onLoadBattleLogHtml(item.id).then(({ html }) => {
+            setDetailHtml(html);
+            setDetailLog(item);
+          }).catch((error: unknown) => {
+            setErrorMessage(error instanceof Error ? error.message : '보관된 HTML을 불러오지 못했습니다.');
+          }).finally(() => setLoadingDetail(false));
+        }} />}
         style={styles.list}
       />
     </View>
@@ -377,16 +398,16 @@ function BattleLogCard({ log, onOpenDetail }: { log: BattleLogResponse; onOpenDe
       <Text style={styles.logMeta} numberOfLines={2}>{formatBattleLogParty(log)}</Text>
       <Text style={styles.logText}>{formatBattleLogFunds(log)}</Text>
       {log.quest ? <Text style={styles.questText} numberOfLines={2}>{log.quest}</Text> : null}
-      {detailUrl ? (
+      {detailUrl || log.hasArchivedHtml ? (
         <View style={styles.linkPanel}>
           <View style={styles.linkActions}>
-            <PrimaryButton label="상세 보기" onPress={onOpenDetail} style={styles.linkButton} />
-            <PrimaryButton
+            <PrimaryButton label={log.hasArchivedHtml ? '보관된 HTML 보기' : '상세 보기'} onPress={onOpenDetail} style={styles.linkButton} />
+            {detailUrl ? <PrimaryButton
               label={copied ? '복사됨' : '링크 복사'}
               variant="secondary"
               onPress={() => { void copyLink(); }}
               style={styles.linkButton}
-            />
+            /> : null}
           </View>
         </View>
       ) : (
