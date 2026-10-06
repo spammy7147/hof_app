@@ -76,6 +76,9 @@ describe('DataTabScreen recent battle card', () => {
               dailyFunds: 100,
               weeklyFunds: 200,
               monthlyFunds: 300,
+              dailyBattles: 12,
+              weeklyBattles: 345,
+              monthlyBattles: 1234,
               adventureMapOutcomes: [{ mapCode: 'snow22', mapName: '얼어붙은 산', defeats: 2, draws: 1 }],
             });
           },
@@ -86,7 +89,7 @@ describe('DataTabScreen recent battle card', () => {
     const text = flattenText(renderer.root);
 
     assert.deepEqual(
-      ['일일 펀드', '$ 100', '주간 펀드', '월요일~일요일', '$ 200', '월간 펀드', '$ 300', '모험맵 통계']
+      ['일일 펀드', '$ 100', '총 12전', '주간 펀드', '월요일~일요일', '$ 200', '총 345전', '월간 펀드', '$ 300', '총 1,234전', '모험맵 통계']
         .filter((value) => !text.includes(value)),
       [],
     );
@@ -280,5 +283,8 @@ const emptyStats: BattleStatsResponse = {
   dailyFunds: 0,
   weeklyFunds: 0,
   monthlyFunds: 0,
+  dailyBattles: 0,
+  weeklyBattles: 0,
+  monthlyBattles: 0,
   adventureMapOutcomes: [],
 };

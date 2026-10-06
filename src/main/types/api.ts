@@ -188,6 +188,9 @@ export type BattleStatsResponse = {
   dailyFunds: number;
   weeklyFunds: number;
   monthlyFunds: number;
+  dailyBattles: number;
+  weeklyBattles: number;
+  monthlyBattles: number;
   adventureMapOutcomes: AdventureMapOutcomeStatsResponse[];
 };
 

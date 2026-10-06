@@ -18,6 +18,32 @@ const { CardPanel } = require('../../main/features/town/panels/CardPanel') as ty
 let mounted: ReactTestRenderer | null = null; afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; });
 
 describe('CardPanel', () => {
+  for (const [mode, searchLabel] of [['identify', '감정 카드 검색'], ['upgrade', '강화 카드 검색'], ['change', '변화 카드 검색'], ['sell', '판매 카드 검색']] as const) {
+    it(`${mode} 상단에서 카드명·등급·설명을 검색하고 선택을 유지한다`, async () => {
+      const cards = [card('bat', "Bat's Card"), { ...card('soul', "Soul Taker's Card"), rarity: 'Rare', detail: '보스 보상', blankCardValue: 1 }];
+      const data = { cards, baseCards: cards, materialCards: [], selectedBaseCandidateId: null, selectionSlots: 1, minQuantity: 1, maxQuantity: 2, history: [], result: null };
+      let optionCalls = 0;
+      await render(React.createElement(CardPanel, { api: api(async () => data, async () => { optionCalls += 1; return { ...data, selectedBaseCandidateId: 'soul' }; }), mode }));
+      const list = mounted!.root.findAll((node) => String(node.type) === 'FlatList')[0];
+      const header = list.props.ListHeaderComponent;
+      assert.equal(header.props.children[0].props.label, searchLabel, '검색창을 목록 상단의 첫 항목으로 표시한다');
+      for (const query of ['  SOUL TAKER  ', 'rare', '보스 보상']) {
+        await change(searchLabel, query);
+        assert.equal(text().includes("Bat's Card"), false);
+        assert.equal(text().includes("Soul Taker's Card"), true);
+      }
+      const selectionLabel = `${mode === 'upgrade' || mode === 'change' ? '베이스 카드 ' : ''}Soul Taker's Card 선택`;
+      await press(selectionLabel);
+      await change(searchLabel, '일치하지 않는 이름');
+      assert.equal(list.props.data.length, 0);
+      assert.equal(list.props.ListEmptyComponent.props.children, '검색 결과가 없습니다.');
+      await change(searchLabel, '');
+      assert.equal(text().includes("Bat's Card"), true);
+      assert.equal(button(selectionLabel).props.accessibilityState.checked, true);
+      assert.equal(optionCalls, mode === 'upgrade' || mode === 'change' ? 1 : 0, '검색은 서버 요청 없이 처리한다');
+    });
+  }
+
   it('감정은 라디오가 있는 카드 한 장만 확인 후 제출한다', async () => {
     const calls: unknown[] = []; const data = { selectionSlots: 1, cards: [card('a', 'Bat Card'), { ...card('display', 'Joker Card'), selectable: false }], result: null };
     await render(React.createElement(CardPanel, { api: api(async () => data, async (_path, request) => { calls.push(request); return { ...data, result: result('SUCCESS') }; }), mode: 'identify' }));

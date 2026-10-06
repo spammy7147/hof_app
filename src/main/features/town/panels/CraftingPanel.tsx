@@ -8,6 +8,7 @@ import type {
 } from '../../../types/api';
 import type { TownApi } from '../api/townApi';
 import { TownActionResult } from '../components/TownActionResult';
+import { TownCategoryDropdown as CategoryDropdown } from '../components/TownCategoryDropdown';
 import { TownItemList } from '../components/TownItemList';
 import { useTownFeature } from '../hooks/useTownFeature';
 
@@ -171,7 +172,7 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
       onSelectionChange={(ids) => {
         setSelectedIds(ids.filter((id) => id.startsWith('recipe:')).map((id) => id.slice('recipe:'.length)).slice(0, 1));
       }}
-      header={<View style={styles.section}><Text style={styles.title}>{title}</Text><CategoryDropdown data={data} disabled={town.status === 'submitting'} onSelect={setRequestedCategoryId} />{mode === 'create' || mode === 'refine' || mode === 'veteran' ? <CraftingSearch value={searchQuery} onChange={setSearchQuery} resultCount={visibleItems.length} subject={mode === 'create' ? '제작물품' : '제련 아이템'} /> : null}{town.status === 'loading' ? <Text accessibilityLiveRegion="polite" style={styles.hint}>선택한 종류의 제작품을 불러오는 중...</Text> : null}{data.activeJob ? <View accessibilityLiveRegion="polite" style={styles.job}><Text style={styles.label}>{data.activeJob.label}</Text><Text style={styles.warning}>{remainingTimeLabel(remaining)}</Text>{data.activeJob.completionAvailable ? <ActionButton label={remaining != null && remaining > 0 ? '제작 상태 확인' : '제작 결과 확인'} disabled={town.status === 'submitting'} onPress={() => submit({ kind: 'complete' })} /> : remaining === 0 ? <ActionButton label="제작 상태 확인" disabled={town.status === 'loading' || town.status === 'submitting'} onPress={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}</View> : null}</View>}
+      header={<View style={styles.section}><Text style={styles.title}>{title}</Text><CategoryDropdown triggerLabel="제작 종류 선택" data={data} disabled={town.status === 'submitting'} onSelect={setRequestedCategoryId} />{mode === 'create' || mode === 'refine' || mode === 'veteran' ? <CraftingSearch value={searchQuery} onChange={setSearchQuery} resultCount={visibleItems.length} subject={mode === 'create' ? '제작물품' : '제련 아이템'} /> : null}{town.status === 'loading' ? <Text accessibilityLiveRegion="polite" style={styles.hint}>선택한 종류의 제작품을 불러오는 중...</Text> : null}{data.activeJob ? <View accessibilityLiveRegion="polite" style={styles.job}><Text style={styles.label}>{data.activeJob.label}</Text><Text style={styles.warning}>{remainingTimeLabel(remaining)}</Text>{data.activeJob.completionAvailable ? <ActionButton label={remaining != null && remaining > 0 ? '제작 상태 확인' : '제작 결과 확인'} disabled={town.status === 'submitting'} onPress={() => submit({ kind: 'complete' })} /> : remaining === 0 ? <ActionButton label="제작 상태 확인" disabled={town.status === 'loading' || town.status === 'submitting'} onPress={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}</View> : null}</View>}
       footer={mode === 'create' || mode === 'refine' || mode === 'veteran' ? resultFooter : footer} emptyMessage={town.status === 'loading' ? null : normalizedQuery ? '검색 결과가 없습니다.' : '현재 분류에 표시할 품목이 없습니다.'} /></View>
     {createControls}
     {refineControls}
@@ -233,34 +234,6 @@ function remainingTimeLabel(remainingSeconds: number | null): string {
     minutes > 0 ? `${minutes}분` : null,
   ].filter(Boolean).join(' ');
   return `약 ${duration} 후 제작 결과 확인 가능`;
-}
-function CategoryDropdown({ data, disabled, onSelect }: { data: CraftingResponse; disabled: boolean; onSelect: (id: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const selected = data.categories.find((category) => category.id === data.currentCategoryId)
-    ?? data.categories.find((category) => category.current)
-    ?? null;
-  const close = () => setOpen(false);
-  return <View style={styles.materialField}>
-    <Text style={styles.label}>종류</Text>
-    <Pressable accessibilityLabel="제작 종류 선택" accessibilityRole="button" accessibilityState={{ disabled, expanded: open }} disabled={disabled} onPress={() => setOpen(true)} style={({ pressed }) => [styles.dropdown, disabled && styles.disabled, pressed && styles.pressed]}>
-      <Text numberOfLines={1} style={[styles.dropdownText, !selected && styles.dropdownPlaceholder]}>{selected?.label ?? '종류를 선택하세요'}</Text>
-      <Text style={styles.chevron}>⌄</Text>
-    </Pressable>
-    <Modal animationType="fade" onRequestClose={close} transparent visible={open}>
-      <View accessibilityViewIsModal style={styles.modalRoot}>
-        <Pressable accessibilityLabel="제작 종류 선택 닫기" accessibilityRole="button" onPress={close} style={styles.modalBackdrop} />
-        <View style={styles.dropdownSheet}>
-          <View style={styles.dropdownHeader}>
-            <Text style={styles.dropdownTitle}>제작 종류 선택</Text>
-            <Pressable accessibilityLabel="제작 종류 선택 닫기" accessibilityRole="button" onPress={close} style={styles.closeButton}><Text style={styles.closeText}>×</Text></Pressable>
-          </View>
-          <ScrollView accessibilityRole="radiogroup" keyboardShouldPersistTaps="handled" style={styles.materialOptions}>
-            {data.categories.map((category) => <CategoryOption key={category.id} checked={category.id === selected?.id} label={category.label} onPress={() => { close(); if (category.id !== selected?.id) onSelect(category.id); }} />)}
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
-  </View>;
 }
 function CategoryOption({ checked, label, accessibilityLabel = `${label} 분류`, onPress }: { checked: boolean; label: string; accessibilityLabel?: string; onPress: () => void }) {
   return <Pressable accessibilityLabel={accessibilityLabel} accessibilityRole="radio" accessibilityState={{ checked }} onPress={onPress} style={[styles.materialOption, checked && styles.materialOptionSelected]}>

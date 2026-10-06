@@ -141,21 +141,21 @@ export function DataTabScreen({
   );
 }
 
-/** 데이터 첫 화면에는 Funds 요약만 유지한다. */
+/** 데이터 첫 화면에 같은 기간의 Funds와 총 전투 수를 표시한다. */
 function FundsStatsPanel({ stats }: { stats: BattleStatsResponse }) {
   return (
     <View style={styles.statsStack}>
       <View style={styles.fundsGrid}>
-        <StatCard label="일일 펀드" value={formatFunds(stats.dailyFunds)} />
-        <StatCard label="주간 펀드" hint="월요일~일요일" value={formatFunds(stats.weeklyFunds)} />
-        <StatCard label="월간 펀드" value={formatFunds(stats.monthlyFunds)} />
+        <StatCard label="일일 펀드" value={formatFunds(stats.dailyFunds)} battles={stats.dailyBattles} />
+        <StatCard label="주간 펀드" hint="월요일~일요일" value={formatFunds(stats.weeklyFunds)} battles={stats.weeklyBattles} />
+        <StatCard label="월간 펀드" value={formatFunds(stats.monthlyFunds)} battles={stats.monthlyBattles} />
       </View>
 
     </View>
   );
 }
 
-function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function StatCard({ label, value, hint, battles }: { label: string; value: string; hint?: string; battles: number }) {
   return (
     <View style={styles.statCard}>
       <View style={styles.statLabelRow}>
@@ -163,6 +163,7 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint?:
         {hint ? <Text style={styles.statHint}>{hint}</Text> : null}
       </View>
       <Text style={styles.statValue} numberOfLines={1}>{value}</Text>
+      {battles !== undefined ? <Text style={styles.statLabel}>총 {battles.toLocaleString('en-US')}전</Text> : null}
     </View>
   );
 }

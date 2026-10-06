@@ -35,7 +35,11 @@ describe('ExchangePanel', () => {
     const pending = deferred<unknown>();
     const value = data('EVENT', { categories: [{ id: 'all', label: '전부', current: true }, { id: 'type:event & rare', label: '이벤트', current: false }] });
     await render(React.createElement(ExchangePanel, { api: api(async (path) => { paths.push(path); return path.includes('?') ? pending.promise : value; }), mode: 'event' }));
+    assert.equal(mounted!.root.find((node) => String(node.type) === 'Modal').props.visible, false);
+    await press('교환 종류 선택');
+    assert.equal(mounted!.root.find((node) => String(node.type) === 'Modal').props.visible, true);
     await press('이벤트 분류');
+    assert.equal(mounted!.root.find((node) => String(node.type) === 'Modal').props.visible, false);
     assert.equal(paths.includes('/api/town/exchanges/event?categoryCandidateId=type%3Aevent%20%26%20rare'), true);
     assert.equal(button('교환').props.disabled, true);
     await act(async () => pending.resolve({ ...value, currentCategoryId: 'type:event & rare' }));
@@ -48,6 +52,7 @@ describe('ExchangePanel', () => {
       gradeActions: [{ id: 'junk', label: 'Junk 등급 교환', consumedItemsPerPress: 1, allowsTargetSelection: false }],
     });
     await render(React.createElement(ExchangePanel, { api: api(async (path) => path.includes('?') ? pending.promise : legacy), mode: 'legacy' }));
+    await press('교환 종류 선택');
     await press('무기 분류');
 
     assert.equal(button('전부 분류').props.disabled, true);

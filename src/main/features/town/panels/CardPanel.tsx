@@ -23,6 +23,7 @@ export function CardPanel({ api, mode, resolveCaptcha }: Props) {
 }
 
 function IdentifyPanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
+  const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<string[]>([]); const [response, setResponse] = useState<CardIdentifyResponse | null>(null);
   const load = useCallback(() => api.load<CardIdentifyResponse>('/api/town/cards/identify'), [api]);
   const submitAction = useCallback(async (request: CardIdentifyRequest) => { const next = await api.submit<CardIdentifyRequest, CardIdentifyResponse>('/api/town/cards/identify', request); setResponse(next); if (next.result?.status === 'SUCCESS') setSelected([]); return next.result ?? info('카드 감정 결과를 갱신했습니다.'); }, [api]);
@@ -30,12 +31,13 @@ function IdentifyPanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
   useEffect(() => { if (!data) return; const live = new Set(data.cards.map((it) => it.id)); setSelected((current) => current.filter((id) => live.has(id))); }, [data]);
   if (!data) return <LoadState loading={town.status === 'loading'} error={town.error} retry={town.reload} />;
   const card = data.cards.find((it) => it.id === selected[0]);
-  return <PanelList rows={data.cards} selectedIds={selected} selectionMode="single" onSelectionChange={setSelected} header={<Text style={styles.muted}>감정할 카드 1장을 선택하세요.</Text>}
+  return <PanelList rows={filterCards(data.cards, query)} emptyMessage={query.trim() ? '검색 결과가 없습니다.' : undefined} selectedIds={selected} selectionMode="single" onSelectionChange={setSelected} header={<View style={styles.section}><CardSearch label="감정 카드 검색" value={query} onChange={setQuery} /><Text style={styles.muted}>감정할 카드 1장을 선택하세요.</Text></View>}
     fixedAction={<ActionButton label="선택 카드 감정" disabled={!card || town.status === 'submitting'} onPress={() => card && void town.submit({ candidateId: card.id }).catch(() => undefined)} />}
     footer={<View style={styles.section}>{data.result ?? town.result ? <TownActionResult result={(data.result ?? town.result)!} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}</View>} />;
 }
 
 function PairPanel({ api, mode, resolveCaptcha }: Props & { mode: 'upgrade' | 'change' }) {
+  const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<string[]>([]); const [quantityText, setQuantityText] = useState('1'); const [response, setResponse] = useState<CardPairResponse | null>(null); const [options, setOptions] = useState<CardPairResponse | null>(null); const [optionsLoading, setOptionsLoading] = useState(false); const [optionsError, setOptionsError] = useState<string | null>(null); const [materialPickerOpen, setMaterialPickerOpen] = useState(false); const optionsSequence = useRef(0); const mounted = useRef(true);
   const path = `/api/town/cards/${mode}` as const; const title = mode === 'upgrade' ? '카드 강화' : '카드 변화';
   const load = useCallback(() => api.load<CardPairResponse>(path), [api, path]);
@@ -46,7 +48,7 @@ function PairPanel({ api, mode, resolveCaptcha }: Props & { mode: 'upgrade' | 'c
   const materialLabel = mode === 'upgrade' ? '추가 카드' : '합성 재료';
   const baseCards = data.baseCards.length ? data.baseCards : town.data?.baseCards ?? [];
   const materialCards = options?.materialCards ?? [];
-  const baseRows = baseCards.map((it) => row(it, `base:${it.id}`, '베이스 카드'));
+  const baseRows = filterCards(baseCards, query).map((it) => row(it, `base:${it.id}`, '베이스 카드'));
   const base = selected.find((id) => id.startsWith('base:')); const material = selected.find((id) => id.startsWith('material:'));
   const baseCard = baseCards.find((it) => `base:${it.id}` === base); const materialCard = materialCards.find((it) => `material:${it.id}` === material);
   const limit = options ?? data; const selectedMaxQuantity = Math.min(limit.maxQuantity, baseCard?.owned ?? limit.maxQuantity, materialCard?.owned ?? limit.maxQuantity);
@@ -93,8 +95,8 @@ function PairPanel({ api, mode, resolveCaptcha }: Props & { mode: 'upgrade' | 'c
     {action}
     {feedback}
   </View>;
-  const list = <PanelList rows={baseRows} selectedIds={selected.filter((id) => id.startsWith('base:'))} selectionMode="single" onSelectionChange={changeSelection}
-    header={<View style={styles.section}><Text style={styles.muted}>베이스 카드 1장을 선택한 뒤 하단에서 {materialLabel}를 검색해 선택하세요.</Text>{data.history.length ? <History lines={data.history} /> : null}</View>}
+  const list = <PanelList rows={baseRows} emptyMessage={query.trim() ? '검색 결과가 없습니다.' : undefined} selectedIds={selected.filter((id) => id.startsWith('base:'))} selectionMode="single" onSelectionChange={changeSelection}
+    header={<View style={styles.section}><CardSearch label={mode === 'upgrade' ? '강화 카드 검색' : '변화 카드 검색'} value={query} onChange={setQuery} /><Text style={styles.muted}>베이스 카드 1장을 선택한 뒤 하단에서 {materialLabel}를 검색해 선택하세요.</Text>{data.history.length ? <History lines={data.history} /> : null}</View>}
     footer={null} />;
   return <>
     <View style={styles.container}>
@@ -110,14 +112,14 @@ function SellPanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
   const load = useCallback(() => api.load<CardSellResponse>('/api/town/cards/sell'), [api]);
   const submitAction = useCallback(async (request: CardSellRequest) => { const next = await api.submit<CardSellRequest, CardSellResponse>('/api/town/cards/sell', request); setResponse(next); if (next.result?.status === 'SUCCESS') { setSelected([]); setQuantities({}); } return next.result ?? info('카드 판매 결과를 갱신했습니다.'); }, [api]);
   const town = useTownFeature({ load, submitAction, resolveCaptcha, featureKey: 'card-sell' }); const data = response ?? town.data;
-  const visibleCards = useMemo(() => { const needle = query.trim().toLowerCase(); return data?.cards.filter((card) => !needle || [card.label, card.rarity, ...card.restrictions, card.detail].filter(Boolean).join(' ').toLowerCase().includes(needle)) ?? []; }, [data, query]);
+  const visibleCards = useMemo(() => filterCards(data?.cards ?? [], query), [data, query]);
   useEffect(() => { if (!data) return; const live = new Set(data.cards.map((it) => it.id)); setSelected((current) => current.filter((id) => live.has(id))); }, [data]);
   if (!data) return <LoadState loading={town.status === 'loading'} error={town.error} retry={town.reload} />;
   const lines = selected.flatMap((id) => { const card = data.cards.find((it) => it.id === id); if (!card) return []; const quantity = Number(quantities[id] ?? '1'); const valid = /^\d+$/.test(quantities[id] ?? '1') && Number.isSafeInteger(quantity) && quantity >= 1 && quantity <= (card.maxQuantity ?? card.owned ?? 0); return [{ card, quantity, valid }]; });
   const expected = lines.reduce((sum, it) => sum + (it.valid ? (it.card.blankCardValue ?? 0) * it.quantity : 0), 0);
   return <View style={styles.container}>
-    <View style={styles.listArea} testID="card-sell-list"><TownItemList rows={visibleCards.map((card) => row(card))} selectedIds={selected} selectionMode="multiple" onSelectionChange={(ids) => { setSelected(ids); setQuantities((current) => ({ ...current, ...Object.fromEntries(ids.map((id) => [id, current[id] ?? '1'])) })); }}
-      header={<View style={styles.section}><Text style={styles.muted}>판매 대가는 Funds가 아니라 Blank Card입니다. 판매할 카드만 직접 선택하세요.</Text><TextInput accessibilityLabel="판매 카드 검색" value={query} onChangeText={setQuery} placeholder="카드명·등급 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} /></View>}
+    <View style={styles.listArea} testID="card-sell-list"><TownItemList rows={visibleCards.map((card) => row(card))} emptyMessage={query.trim() ? '검색 결과가 없습니다.' : undefined} selectedIds={selected} selectionMode="multiple" onSelectionChange={(ids) => { setSelected(ids); setQuantities((current) => ({ ...current, ...Object.fromEntries(ids.map((id) => [id, current[id] ?? '1'])) })); }}
+      header={<View style={styles.section}><CardSearch label="판매 카드 검색" value={query} onChange={setQuery} /><Text style={styles.muted}>판매 대가는 Funds가 아니라 Blank Card입니다. 판매할 카드만 직접 선택하세요.</Text></View>}
       renderSelectedFooter={(selectedRow) => { const line = lines.find(({ card }) => card.id === selectedRow.id); return line ? <QuantityInput inputAccessibilityLabel={`${line.card.label} 판매 수량`} label="판매 수량" value={quantities[line.card.id] ?? '1'} onChange={(value) => setQuantities((current) => ({ ...current, [line.card.id]: value }))} min={1} max={line.card.maxQuantity ?? line.card.owned ?? 0} valid={line.valid} /> : null; }}
       footer={data.result ?? town.result ? <View style={styles.section}><TownActionResult result={(data.result ?? town.result)!} /></View> : null} /></View>
     <View style={styles.sellActionBar} testID="card-sell-action-bar"><Text style={styles.total}>예상 Blank Card +{expected.toLocaleString()}장</Text>{lines.some(({ card }) => card.blankCardValue == null) ? <Text accessibilityRole="alert" style={styles.error}>일부 카드의 교환량을 확인하지 못해 예상 합계가 실제와 다를 수 있습니다.</Text> : null}{data.blankCardsOwned != null ? <Text style={styles.muted}>현재 보유 {data.blankCardsOwned.toLocaleString()}장</Text> : null}<ActionButton label="선택 카드 판매" disabled={!lines.length || lines.some((it) => !it.valid) || town.status === 'submitting'} onPress={() => void town.submit({ cards: lines.map(({ card, quantity }) => ({ candidateId: card.id, quantity })) }).catch(() => undefined)} />{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}</View>
@@ -145,6 +147,13 @@ function SoulEchoPanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
     footer={<View style={styles.section}>{!categoryId ? <Text accessibilityRole="alert" style={styles.error}>현재 품목 분류를 확인하지 못했습니다.</Text> : null}{data.result ?? town.result ? <TownActionResult result={(data.result ?? town.result)!} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}</View>} />;
 }
 
+function filterCards(cards: CardItemResponse[], query: string) {
+  const needle = query.trim().toLowerCase();
+  return cards.filter((card) => !needle || [card.label, card.rarity, ...card.restrictions, card.detail].filter(Boolean).join(' ').toLowerCase().includes(needle));
+}
+function CardSearch({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return <TextInput accessibilityLabel={label} autoCapitalize="none" autoCorrect={false} returnKeyType="search" value={value} onChangeText={onChange} placeholder="카드명·등급·설명 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} />;
+}
 function PanelList({ rows, ...props }: { rows: CardItemResponse[] | TownRowResponse[] } & Omit<ComponentProps<typeof TownItemList>, 'rows'>) { return <View style={styles.container}><TownItemList rows={rows.map((it) => 'imageUrl' in it ? it : row(it))} {...props} /></View>; }
 function row(item: CardItemResponse, id = item.id, prefix?: string): TownRowResponse { const detail = [prefix, item.rarity, ...item.restrictions, item.detail].filter(Boolean).join(' · '); return { id, label: item.label, accessibilityLabel: prefix ? `${prefix} ${item.label} 선택` : undefined, selectable: item.selectable, detail: detail || null, imageUrl: null, price: item.cost, quantity: item.owned }; }
 function MaterialSelectField({ disabled, label, open, placeholder, selected, onOpen }: { disabled: boolean; label: string; open: boolean; placeholder: string; selected: CardItemResponse | undefined; onOpen: () => void }) {
@@ -161,7 +170,7 @@ function MaterialSelectField({ disabled, label, open, placeholder, selected, onO
 }
 function SearchableMaterialSelect({ cards, label, selectedId, onClose, onSelect }: { cards: CardItemResponse[]; label: string; selectedId: string | null; onClose: () => void; onSelect: (candidateId: string) => void }) {
   const [query, setQuery] = useState('');
-  const visibleCards = useMemo(() => { const needle = query.trim().toLowerCase(); return cards.filter((card) => card.selectable && (!needle || [card.label, card.rarity, ...card.restrictions, card.detail].filter(Boolean).join(' ').toLowerCase().includes(needle))); }, [cards, query]);
+  const visibleCards = useMemo(() => filterCards(cards, query).filter((card) => card.selectable), [cards, query]);
   return <Modal animationType="slide" onRequestClose={onClose} presentationStyle="overFullScreen" transparent visible>
     <View accessibilityViewIsModal style={styles.modalRoot}>
       <Pressable accessibilityLabel={`${label} 선택 배경 닫기`} accessibilityRole="button" onPress={onClose} style={styles.modalBackdrop} />
