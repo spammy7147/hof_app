@@ -7,17 +7,20 @@ export type BattleLogDetailScreenProps = {
   title: string;
   url: string;
   html?: string;
+  notice?: string;
+  archiveOnly?: boolean;
   onBack: () => void;
 };
 
 /** 웹에서 HTML 보관본을 표시·다운로드하고 원본 링크는 새 창으로 연다. */
-export function BattleLogDetailScreen({ title, url, html, onBack }: BattleLogDetailScreenProps) {
+export function BattleLogDetailScreen({ title, url, html, notice, archiveOnly, onBack }: BattleLogDetailScreenProps) {
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
         <PrimaryButton label="로그로" variant="secondary" onPress={onBack} style={styles.compactButton} />
         <Text style={styles.title} numberOfLines={1}>{title}</Text>
       </View>
+      {notice ? <Text style={styles.message}>{notice}</Text> : null}
       {html ? <>
         <PrimaryButton label="HTML 저장" onPress={() => {
           const blobUrl = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
@@ -28,7 +31,7 @@ export function BattleLogDetailScreen({ title, url, html, onBack }: BattleLogDet
           setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
         }} />
         <iframe title="보관된 전투 HTML" sandbox="" srcDoc={html} style={{ flex: 1, width: '100%', border: 0, background: '#fff' }} />
-      </> : <View style={styles.panel}>
+      </> : archiveOnly ? <View style={styles.panel}><Text style={styles.message}>상세 보관본이 없습니다.</Text></View> : <View style={styles.panel}>
         <Text style={styles.message}>웹에서는 원본 전투 로그를 새 창으로 엽니다.</Text>
         <PrimaryButton label="상세 보기" onPress={() => { void Linking.openURL(url); }} />
       </View>}

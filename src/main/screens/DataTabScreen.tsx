@@ -25,6 +25,7 @@ import type {
   AdventureMapOutcomeStatsResponse,
   AdventureMapStatsPeriod,
   BattleLogOutcome,
+  BattleLogHtmlResponse,
   BattleLogQuery,
   BattleLogResponse,
   BattleStatsResponse,
@@ -207,7 +208,7 @@ function AdventureMapStatsScreen({ authenticated, onBack, onLoad }: {
           onPress={() => setPeriod(option.id)} style={[styles.filterButton, period === option.id && styles.filterButtonActive]}
         ><Text style={[styles.filterLabel, period === option.id && styles.filterLabelActive]}>{option.label}</Text></Pressable>)}
       </View>
-      <Text style={styles.description}>{selectedPeriod.description} · 패배와 무승부가 발생한 맵만 표시합니다.</Text>
+      <Text style={styles.description}>{selectedPeriod.description} · 총 횟수는 승리를 포함한 저장된 전투 기준입니다. 패배·무승부가 있는 맵만 표시합니다.</Text>
       {error ? <StatePanel message={error} error /> : null}
       <View style={styles.mapTableHeader}><Text style={styles.mapName}>모험맵</Text><Text style={styles.mapMetricHeader}>패배</Text><Text style={styles.mapMetricHeader}>무승부</Text></View>
     </View>
@@ -220,7 +221,10 @@ function AdventureMapStatsScreen({ authenticated, onBack, onLoad }: {
         ListEmptyComponent={!loading && !error ? <StatePanel message={`${selectedPeriod.label} 패배·무승부 기록이 없습니다.`} /> : null}
         keyExtractor={(map) => map.mapCode}
         renderItem={({ item }) => <View style={styles.mapRow}>
-          <Text style={styles.mapName} numberOfLines={2}>{item.mapName.trim() || item.mapCode}</Text>
+          <View style={styles.mapIdentity}>
+            <Text style={[styles.mapName, styles.mapTitle]} numberOfLines={2}>{item.mapName.trim() || item.mapCode}</Text>
+            <Text style={styles.mapTotal}>총 {item.totalBattles?.toLocaleString('en-US') ?? '—'}회</Text>
+          </View>
           <Text style={[styles.mapCount, styles.defeatText]}>{item.defeats}회</Text>
           <Text style={styles.mapCount}>{item.draws}회</Text>
         </View>}
@@ -240,10 +244,11 @@ function BattleLogScreen({
   authenticated: boolean;
   onBack: () => void;
   onLoadBattleLogs: (query?: BattleLogQuery) => Promise<BattleLogResponse[]>;
-  onLoadBattleLogHtml?: (logId: number) => Promise<{ html: string }>;
+  onLoadBattleLogHtml?: (logId: number) => Promise<BattleLogHtmlResponse>;
 }) {
   const [filter, setFilter] = useState<LogFilter>('ALL');
   const [detailLog, setDetailLog] = useState<BattleLogResponse | null>(null);
+  const [detailNotice, setDetailNotice] = useState<string | undefined>();
   const [detailHtml, setDetailHtml] = useState<string | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [logs, setLogs] = useState<BattleLogResponse[]>([]);
@@ -333,13 +338,15 @@ function BattleLogScreen({
   ), [errorMessage, filter, isLoading, loadFirstPage, onBack]);
 
   const detailUrl = safeHttpUrl(detailLog?.rawLogUrl ?? null);
-  if (detailLog && (detailUrl || detailHtml)) {
+  if (detailLog) {
     return (
       <BattleLogDetailScreen
         title={formatBattleLogMap(detailLog)}
         url={detailUrl ?? ''}
         html={detailHtml ?? undefined}
-        onBack={() => { setDetailLog(null); setDetailHtml(null); }}
+        notice={detailNotice}
+        archiveOnly={detailLog.outcome === 'DEFEAT'}
+        onBack={() => { setDetailLog(null); setDetailHtml(null); setDetailNotice(undefined); }}
       />
     );
   }
@@ -359,13 +366,19 @@ function BattleLogScreen({
         onEndReachedThreshold={0.35}
         renderItem={({ item }) => <BattleLogCard log={item} onOpenDetail={() => {
           if (loadingDetail) return;
-          if (!item.hasArchivedHtml || !onLoadBattleLogHtml) {
+          if ((!item.hasArchivedHtml && (!item.detailArchiveStatus || item.detailArchiveStatus === 'NONE')) || !onLoadBattleLogHtml) {
             setDetailHtml(null);
+            setDetailNotice(item.outcome === 'DEFEAT' ? '저장된 상세 로그가 없습니다.' : undefined);
             setDetailLog(item);
             return;
           }
           setLoadingDetail(true);
-          void onLoadBattleLogHtml(item.id).then(({ html }) => {
+          void onLoadBattleLogHtml(item.id).then(({ html, archiveStatus, kind }) => {
+            const status = archiveStatus ?? item.detailArchiveStatus ?? 'SUMMARY';
+            setDetailNotice(status === 'PENDING' ? '상세 로그를 보관 중입니다. 잠시 후 다시 확인해 주세요.'
+              : status === 'FAILED' ? '상세 로그를 보관하지 못했습니다. 원본 링크가 만료되었거나 수집에 실패했습니다.'
+              : status === 'SUMMARY' || kind === 'RESPONSE' ? '전투 응답 요약입니다. 턴별 상세 로그 보관본은 없습니다.'
+              : status === 'NONE' ? '저장된 상세 로그가 없습니다.' : undefined);
             setDetailHtml(html);
             setDetailLog(item);
           }).catch((error: unknown) => {
@@ -398,10 +411,13 @@ function BattleLogCard({ log, onOpenDetail }: { log: BattleLogResponse; onOpenDe
       <Text style={styles.logMeta} numberOfLines={2}>{formatBattleLogParty(log)}</Text>
       <Text style={styles.logText}>{formatBattleLogFunds(log)}</Text>
       {log.quest ? <Text style={styles.questText} numberOfLines={2}>{log.quest}</Text> : null}
-      {detailUrl || log.hasArchivedHtml ? (
+      {detailUrl || log.hasArchivedHtml || log.outcome === 'DEFEAT' ? (
         <View style={styles.linkPanel}>
+          {log.detailArchiveStatus === 'PENDING' ? <Text style={styles.logMeta}>상세 로그 보관 중</Text> : null}
+          {log.detailArchiveStatus === 'FAILED' ? <Text style={styles.logMeta}>상세 로그 보관 실패</Text> : null}
+          {log.detailArchiveStatus === 'SUMMARY' || (!log.detailArchiveStatus && log.hasArchivedHtml) ? <Text style={styles.logMeta}>전투 응답 요약만 보관됨</Text> : null}
           <View style={styles.linkActions}>
-            <PrimaryButton label={log.hasArchivedHtml ? '보관된 HTML 보기' : '상세 보기'} onPress={onOpenDetail} style={styles.linkButton} />
+            <PrimaryButton label={log.outcome === 'DEFEAT' || log.hasArchivedHtml ? '세부 로그 보기' : '상세 보기'} onPress={onOpenDetail} style={styles.linkButton} />
             {detailUrl ? <PrimaryButton
               label={copied ? '복사됨' : '링크 복사'}
               variant="secondary"
@@ -519,6 +535,9 @@ const styles = StyleSheet.create({
     borderTopColor: theme.colors.border,
     paddingTop: theme.spacing.sm,
   },
+  mapIdentity: { flex: 1, gap: 4 },
+  mapTitle: { flex: 0 },
+  mapTotal: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '700' },
   mapName: { flex: 1, color: theme.colors.text, fontSize: 13, fontWeight: '800', lineHeight: 18 },
   mapCount: { width: 54, color: theme.colors.accentBlue, fontSize: 13, fontWeight: '900', textAlign: 'right' },
   mapTableHeader: { flexDirection: 'row', gap: theme.spacing.md, borderBottomWidth: 1, borderBottomColor: theme.colors.borderStrong, paddingBottom: theme.spacing.sm },

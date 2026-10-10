@@ -7,14 +7,15 @@ import { theme } from '../styles/theme';
 import type { BattleLogDetailScreenProps } from './BattleLogDetailScreen';
 
 /** 패배 HTML 보관본 또는 공개 로그 URL을 앱 내부 WebView로 표시한다. */
-export function BattleLogDetailScreen({ title, url, html, onBack }: BattleLogDetailScreenProps) {
+export function BattleLogDetailScreen({ title, url, html, notice, archiveOnly, onBack }: BattleLogDetailScreenProps) {
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
         <PrimaryButton label="로그로" variant="secondary" onPress={onBack} style={styles.compactButton} />
         <Text style={styles.title} numberOfLines={1}>{title}</Text>
       </View>
-      <WebView
+      {notice ? <Text style={styles.stateText}>{notice}</Text> : null}
+      {!html && archiveOnly ? <View style={styles.statePanel}><Text style={styles.stateText}>상세 보관본이 없습니다.</Text></View> : <WebView
         allowsBackForwardNavigationGestures
         mixedContentMode="always"
         originWhitelist={html ? ['about:*'] : ['http://*', 'https://*']}
@@ -22,20 +23,20 @@ export function BattleLogDetailScreen({ title, url, html, onBack }: BattleLogDet
         onShouldStartLoadWithRequest={(request: ShouldStartLoadRequest) => !html || request.url === 'about:blank'}
         renderError={() => (
           <View style={styles.statePanel}>
-            <Text style={styles.errorText}>원본 전투 로그를 열지 못했습니다.</Text>
+            <Text style={styles.errorText}>전투 로그를 열지 못했습니다.</Text>
           </View>
         )}
         renderLoading={() => (
           <View style={styles.statePanel}>
             <ActivityIndicator color={theme.colors.accentGreen} />
-            <Text style={styles.stateText}>원본 전투 로그 불러오는 중</Text>
+            <Text style={styles.stateText}>전투 로그 불러오는 중</Text>
           </View>
         )}
         setSupportMultipleWindows={false}
         source={html ? { html } : { uri: url }}
         startInLoadingState
         style={styles.webView}
-      />
+      />}
     </View>
   );
 }

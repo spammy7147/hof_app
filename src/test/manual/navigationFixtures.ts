@@ -47,7 +47,7 @@ export const navigationBattle = makeBattleResource({
     keyMode: 'NOT_REQUIRED', keyCount: null, requiredTime: 10, supportsThreeBattles: true, enabled: true, resolved: true, iconUrl: null, rawHref: '' })),
   loadStats: async () => ({ accountId: 1, dailyFunds: 100, weeklyFunds: 700, monthlyFunds: 3000,
     dailyBattles: 10, weeklyBattles: 70, monthlyBattles: 300,
-    adventureMapOutcomes: many(index => ({ mapCode: `map-${index}`, mapName: `검증 모험맵 ${index}`, defeats: index, draws: 1 })) }),
+    adventureMapOutcomes: many(index => ({ mapCode: `map-${index}`, mapName: `검증 모험맵 ${index}`, totalBattles: index + 10, defeats: index, draws: 1 })) }),
   loadLogs: async query => logs.filter(log => !query?.outcome || log.outcome === query.outcome)
     .slice(query?.offset ?? 0, (query?.offset ?? 0) + (query?.limit ?? 40)),
   run: () => rejectNavigationMutation('전투'),

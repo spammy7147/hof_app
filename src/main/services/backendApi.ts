@@ -9,6 +9,7 @@ import type {
   BattleResultResponse,
   BattleStatsResponse,
   AdventureMapStatsPeriod,
+  BattleLogHtmlResponse,
   CaptchaChallengeResponse,
   CaptchaPassMaintenanceResponse,
   CharacterSyncEventResponse,
@@ -400,7 +401,7 @@ export class BackendApiClient {
   /**
    * 데이터 탭에 보여줄 최근 전투 로그를 조회한다.
    */
-  fetchBattleLogHtml(logId: number): Promise<{ html: string }> {
+  fetchBattleLogHtml(logId: number): Promise<BattleLogHtmlResponse> {
     return this.request(`/api/battle/logs/${logId}/html`);
   }
 

@@ -24,7 +24,7 @@ const stats: BattleStatsResponse = {
   accountId: 1, dailyFunds: 100, weeklyFunds: 700, monthlyFunds: 3000,
   dailyBattles: 10, weeklyBattles: 70, monthlyBattles: 300,
   adventureMapOutcomes: Array.from({ length: 60 }, (_, index) => ({
-    mapCode: `map-${index + 1}`, mapName: `검증 모험맵 ${index + 1}`, defeats: index + 1, draws: 1,
+    mapCode: `map-${index + 1}`, mapName: `검증 모험맵 ${index + 1}`, totalBattles: index + 10, defeats: index + 1, draws: 1,
   })),
 };
 const side = { hpCurrent: 0, hpMax: 100, survivorsAlive: 0, survivorsMax: 3, totalDamage: 50, turnCurrent: 12, turnMax: 12 };

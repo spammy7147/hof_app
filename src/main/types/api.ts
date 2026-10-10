@@ -165,6 +165,14 @@ export type BattleLogResponse = {
   rawLogUrl: string | null;
   createdAt: string;
   hasArchivedHtml?: boolean;
+  detailArchiveStatus?: BattleDetailArchiveStatus;
+};
+
+export type BattleDetailArchiveStatus = 'NONE' | 'SUMMARY' | 'PENDING' | 'READY' | 'FAILED';
+export type BattleLogHtmlResponse = {
+  html: string | null;
+  archiveStatus?: BattleDetailArchiveStatus;
+  kind?: 'DETAIL' | 'RESPONSE' | 'NONE';
 };
 
 export type BattleLogOutcome = 'VICTORY' | 'DEFEAT' | 'DRAW';
@@ -178,6 +186,7 @@ export type BattleLogQuery = {
 export type AdventureMapOutcomeStatsResponse = {
   mapCode: string;
   mapName: string;
+  totalBattles: number;
   defeats: number;
   draws: number;
 };

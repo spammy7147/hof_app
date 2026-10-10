@@ -61,7 +61,7 @@ afterEach(async () => {
 });
 
 describe('DataTabScreen recent battle card', () => {
-  it('원본 링크가 없는 패배도 서버 보관 HTML을 열고 저장 버튼을 제공한다', async () => {
+  it('원본 링크가 만료돼도 세부 로그에서 상세 보관본을 표시한다', async () => {
     const requested: number[] = [];
     const html = '<!doctype html><html><body>패배 전투 상세</body></html>';
     let renderer!: ReactTestRenderer;
@@ -69,15 +69,15 @@ describe('DataTabScreen recent battle card', () => {
       renderer = create(React.createElement(DataTabScreen, {
         authenticated: true,
         battle: makeBattleResource({
-          loadLogs: async () => [{ ...battleLog, outcome: 'DEFEAT', rawLogUrl: null, hasArchivedHtml: true }],
+          loadLogs: async () => [{ ...battleLog, outcome: 'DEFEAT', rawLogUrl: 'https://hof.zerosic.com/index.php?log=expired', hasArchivedHtml: true, detailArchiveStatus: 'READY' }],
           loadStats: async () => emptyStats,
-          loadLogHtml: async (id) => { requested.push(id); return { html }; },
+          loadLogHtml: async (id) => { requested.push(id); return { html, archiveStatus: 'READY' as const, kind: 'DETAIL' as const }; },
         }),
       }));
     });
     mountedRenderer = renderer;
     await act(async () => { renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '로그 보기').props.onPress(); });
-    await act(async () => { renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '보관된 HTML 보기').props.onPress(); });
+    await act(async () => { renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '세부 로그 보기').props.onPress(); });
     assert.deepEqual(requested, [battleLog.id]);
     const frame = renderer.root.findByType('iframe');
     assert.equal(frame.props.srcDoc, html);
@@ -86,6 +86,32 @@ describe('DataTabScreen recent battle card', () => {
     await act(async () => { renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '로그로').props.onPress(); });
     assert.equal(renderer.root.findAllByType('iframe').length, 0);
   });
+
+  for (const status of ['PENDING', 'FAILED', 'SUMMARY', 'NONE'] as const) {
+    it(`패배 보관 상태 ${status}를 상세 완료로 오인하지 않고 설명한다`, async () => {
+      const html = status === 'SUMMARY' ? '<html><body>전투 응답 요약</body></html>' : null;
+      let renderer!: ReactTestRenderer;
+      await act(async () => {
+        renderer = create(React.createElement(DataTabScreen, {
+          authenticated: true,
+          battle: makeBattleResource({
+            loadLogs: async () => [{ ...battleLog, outcome: 'DEFEAT', rawLogUrl: 'https://hof.zerosic.com/index.php?log=expired',
+              detailArchiveStatus: status, hasArchivedHtml: html !== null }],
+            loadStats: async () => emptyStats,
+            loadLogHtml: async () => ({ html, archiveStatus: status, kind: html ? 'RESPONSE' : 'NONE' }),
+          }),
+        }));
+      });
+      mountedRenderer = renderer;
+      await act(async () => { renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '로그 보기').props.onPress(); });
+      await act(async () => { renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '세부 로그 보기').props.onPress(); });
+      const message = { PENDING: '상세 로그를 보관 중입니다.', FAILED: '상세 로그를 보관하지 못했습니다.',
+        SUMMARY: '전투 응답 요약입니다.', NONE: '저장된 상세 로그가 없습니다.' }[status];
+      assert.ok(flattenText(renderer.root).join(' ').includes(message));
+      assert.equal(renderer.root.findAllByType('iframe').length, html ? 1 : 0);
+      assert.equal(renderer.root.findAll((node) => String(node.type) === 'PrimaryButton' && node.props.label === '상세 보기').length, 0);
+    });
+  }
 
   it('keeps Funds on data home and opens period-specific adventure-map statistics', async () => {
     const periods: Array<string | undefined> = [];
@@ -105,7 +131,7 @@ describe('DataTabScreen recent battle card', () => {
               dailyBattles: 12,
               weeklyBattles: 345,
               monthlyBattles: 1234,
-              adventureMapOutcomes: [{ mapCode: 'snow22', mapName: '얼어붙은 산', defeats: 2, draws: 1 }],
+              adventureMapOutcomes: [{ mapCode: 'snow22', mapName: '얼어붙은 산', totalBattles: period === 'WEEK' ? 40 : 10, defeats: 2, draws: 1 }],
             });
           },
         }),
@@ -125,11 +151,13 @@ describe('DataTabScreen recent battle card', () => {
     await act(async () => { launch.props.onPress(); });
     assertControlsOutsideList(renderer.root);
     assert.deepEqual(periods, [undefined, 'DAY']);
-    assert.deepEqual(['일간', '주간', '월간', '얼어붙은 산', '2회', '1회'].filter((value) => !flattenText(renderer.root).includes(value)), []);
+    assert.deepEqual(['일간', '주간', '월간', '얼어붙은 산', '총 10회', '2회', '1회'].filter((value) => !flattenText(renderer.root).includes(value)), []);
 
     const weekly = renderer.root.find((node) => String(node.type) === 'Pressable' && flattenText(node).includes('주간'));
     await act(async () => { weekly.props.onPress(); });
     assert.deepEqual(periods, [undefined, 'DAY', 'WEEK']);
+    assert.ok(flattenText(renderer.root).includes('총 40회'));
+    assert.equal(flattenText(renderer.root).includes('총 10회'), false);
     assert.deepEqual(['승률', '경험치', '전리품', '승/패/무'].filter((value) => text.includes(value)), []);
     const refresh = renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '새로고침');
     await act(async () => { refresh.props.onPress(); });
