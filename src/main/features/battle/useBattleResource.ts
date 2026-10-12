@@ -96,8 +96,8 @@ export function useBattleResource({
   );
 
   const loadBattleStats = useCallback(
-    (period?: AdventureMapStatsPeriod): Promise<BattleStatsResponse> =>
-      api.fetchBattleStats(period),
+    (period?: AdventureMapStatsPeriod, date?: string): Promise<BattleStatsResponse> =>
+      api.fetchBattleStats(period, date),
     [api],
   );
 

@@ -417,8 +417,8 @@ export class BackendApiClient {
   /**
    * 데이터 탭의 누적 전투 통계를 조회한다.
    */
-  fetchBattleStats(adventurePeriod: AdventureMapStatsPeriod = 'DAY'): Promise<BattleStatsResponse> {
-    return this.request(`/api/battle/stats?adventurePeriod=${adventurePeriod}`);
+  fetchBattleStats(adventurePeriod: AdventureMapStatsPeriod = 'DAY', date?: string): Promise<BattleStatsResponse> {
+    return this.request(`/api/battle/stats?adventurePeriod=${adventurePeriod}${date ? `&date=${encodeURIComponent(date)}` : ''}`);
   }
 
   /**

@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
@@ -126,8 +127,8 @@ export function DataTabScreen({
 
       <View style={styles.logLaunchCard}>
         <View style={styles.logLaunchCopy}>
-          <Text style={styles.sectionTitle}>모험맵 통계</Text>
-          <Text style={styles.description}>모험맵 패배·무승부를 일간·주간·월간으로 확인합니다.</Text>
+          <Text style={styles.sectionTitle}>맵 전투 통계</Text>
+          <Text style={styles.description}>모험맵·전투맵 패배·무승부를 일간·주간·월간으로 확인합니다.</Text>
         </View>
         <PrimaryButton label="통계 보기" onPress={() => setAdventureStatsOpen(true)} />
       </View>
@@ -170,12 +171,36 @@ function StatCard({ label, value, hint, battles }: { label: string; value: strin
   );
 }
 
+function koreanToday(): string {
+  return new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function shiftDate(date: string, days: number): string {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
 function AdventureMapStatsScreen({ authenticated, onBack, onLoad }: {
   authenticated: boolean;
   onBack: () => void;
-  onLoad: (period?: AdventureMapStatsPeriod) => Promise<BattleStatsResponse>;
+  onLoad: (period?: AdventureMapStatsPeriod, date?: string) => Promise<BattleStatsResponse>;
 }) {
   const [period, setPeriod] = useState<AdventureMapStatsPeriod>('DAY');
+  const [date, setDate] = useState(koreanToday);
+  const [dateInput, setDateInput] = useState(date);
+  const [dateError, setDateError] = useState<string | null>(null);
+  const selectDate = (value: string) => {
+    const parsed = new Date(`${value}T00:00:00Z`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(parsed.getTime())
+      || parsed.toISOString().slice(0, 10) !== value || value < '0001-01-01' || value > koreanToday()) {
+      setDateError('오늘 또는 이전 날짜를 YYYY-MM-DD 형식으로 입력해 주세요.');
+      return;
+    }
+    setDateError(null); setDateInput(value);
+    if (value === date) void load();
+    else setDate(value);
+  };
   const [maps, setMaps] = useState<AdventureMapOutcomeStatsResponse[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -183,23 +208,23 @@ function AdventureMapStatsScreen({ authenticated, onBack, onLoad }: {
   const load = useCallback(async () => {
     if (!authenticated) { setError('로그인 계정이 없습니다.'); return; }
     const requestId = ++requestIdRef.current;
-    setLoading(true); setError(null);
+    setLoading(true); setError(null); setMaps([]);
     try {
-      const response = await onLoad(period);
+      const response = await onLoad(period, period === 'DAY' ? date : undefined);
       if (requestId === requestIdRef.current) setMaps(response.adventureMapOutcomes);
     } catch (reason) {
-      if (requestId === requestIdRef.current) setError(reason instanceof Error ? reason.message : '모험맵 통계를 불러오지 못했습니다.');
+      if (requestId === requestIdRef.current) setError(reason instanceof Error ? reason.message : '맵 전투 통계를 불러오지 못했습니다.');
     } finally {
       if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, [authenticated, onLoad, period]);
+  }, [authenticated, onLoad, period, date]);
   useEffect(() => { void load(); return () => { requestIdRef.current += 1; }; }, [load]);
   const selectedPeriod = ADVENTURE_PERIODS.find((item) => item.id === period) ?? ADVENTURE_PERIODS[0];
   const header = (
     <View style={styles.adventureHeaderStack}>
       <View style={styles.header}>
         <PrimaryButton label="돌아가기" variant="secondary" onPress={onBack} style={styles.compactButton} />
-        <Text style={styles.logScreenTitle}>모험맵 통계</Text>
+        <Text style={styles.logScreenTitle}>맵 전투 통계</Text>
         <PrimaryButton label="새로고침" variant="secondary" loading={loading} onPress={load} style={styles.compactButton} />
       </View>
       <View accessibilityRole="tablist" style={styles.filterRow}>
@@ -208,9 +233,23 @@ function AdventureMapStatsScreen({ authenticated, onBack, onLoad }: {
           onPress={() => setPeriod(option.id)} style={[styles.filterButton, period === option.id && styles.filterButtonActive]}
         ><Text style={[styles.filterLabel, period === option.id && styles.filterLabelActive]}>{option.label}</Text></Pressable>)}
       </View>
-      <Text style={styles.description}>{selectedPeriod.description} · 총 횟수는 승리를 포함한 저장된 전투 기준입니다. 패배·무승부가 있는 맵만 표시합니다.</Text>
+      {period === 'DAY' ? <View style={styles.adventureHeaderStack}>
+        <View style={styles.filterRow}>
+          <PrimaryButton label="이전 날" variant="secondary" disabled={date === '0001-01-01'} onPress={() => selectDate(shiftDate(date, -1))} style={styles.compactButton} />
+          <TextInput accessibilityLabel="조회 날짜" value={dateInput} onChangeText={setDateInput}
+            placeholder="YYYY-MM-DD" placeholderTextColor={theme.colors.textMuted} maxLength={10}
+            autoCorrect={false} onSubmitEditing={() => selectDate(dateInput)} style={styles.dateInput} />
+          <PrimaryButton label="다음 날" variant="secondary" disabled={date >= koreanToday()} onPress={() => selectDate(shiftDate(date, 1))} style={styles.compactButton} />
+        </View>
+        <View style={styles.filterRow}>
+          <PrimaryButton label="날짜 조회" onPress={() => selectDate(dateInput)} style={styles.compactButton} />
+          <PrimaryButton label="오늘" variant="secondary" onPress={() => selectDate(koreanToday())} style={styles.compactButton} />
+        </View>
+        {dateError ? <StatePanel message={dateError} error /> : null}
+      </View> : null}
+      <Text style={styles.description}>{period === 'DAY' ? `${date} 00:00부터 ${date === koreanToday() ? '현재까지' : '다음 날 00:00 전까지'} (한국 시간)` : selectedPeriod.description} · 총 횟수는 승리를 포함한 저장된 전투 기준입니다. 패배·무승부가 있는 맵만 표시합니다.</Text>
       {error ? <StatePanel message={error} error /> : null}
-      <View style={styles.mapTableHeader}><Text style={styles.mapName}>모험맵</Text><Text style={styles.mapMetricHeader}>패배</Text><Text style={styles.mapMetricHeader}>무승부</Text></View>
+      <View style={styles.mapTableHeader}><Text style={styles.mapName}>맵</Text><Text style={styles.mapMetricHeader}>총 횟수</Text><Text style={styles.mapMetricHeader}>패배</Text><Text style={styles.mapMetricHeader}>무승부</Text></View>
     </View>
   );
   return (
@@ -218,13 +257,11 @@ function AdventureMapStatsScreen({ authenticated, onBack, onLoad }: {
       <View style={styles.fixedHeader}>{header}</View>
       <FlatList
         contentContainerStyle={styles.logListContainer} data={maps}
-        ListEmptyComponent={!loading && !error ? <StatePanel message={`${selectedPeriod.label} 패배·무승부 기록이 없습니다.`} /> : null}
-        keyExtractor={(map) => map.mapCode}
+        ListEmptyComponent={loading ? <LoadingPanel label="통계 확인 중" /> : !error ? <StatePanel message={`${selectedPeriod.label} 패배·무승부 기록이 없습니다.`} /> : null}
+        keyExtractor={(map) => `${map.categoryId ?? 'adventure_map'}:${map.mapCode}`}
         renderItem={({ item }) => <View style={styles.mapRow}>
-          <View style={styles.mapIdentity}>
-            <Text style={[styles.mapName, styles.mapTitle]} numberOfLines={2}>{item.mapName.trim() || item.mapCode}</Text>
-            <Text style={styles.mapTotal}>총 {item.totalBattles?.toLocaleString('en-US') ?? '—'}회</Text>
-          </View>
+          <Text style={styles.mapName}>{item.mapName.trim() || item.mapCode}</Text>
+          <Text style={[styles.mapCount, styles.mapTotal]}>{item.totalBattles?.toLocaleString('en-US') ?? '—'}회</Text>
           <Text style={[styles.mapCount, styles.defeatText]}>{item.defeats}회</Text>
           <Text style={styles.mapCount}>{item.draws}회</Text>
         </View>}
@@ -499,6 +536,8 @@ const styles = StyleSheet.create({
   },
   stateText: { color: theme.colors.textMuted, fontSize: 14, fontWeight: '800', textAlign: 'center' },
   errorText: { color: theme.colors.danger, fontSize: 14, fontWeight: '800', textAlign: 'center' },
+  dateInput: { flex: 1, minWidth: 0, minHeight: 44, color: theme.colors.text, borderColor: theme.colors.border,
+    borderWidth: 1, borderRadius: theme.radius.sm, textAlign: 'center', fontSize: 16 },
   statsStack: { gap: theme.spacing.lg },
   fundsGrid: { gap: theme.spacing.sm },
   statCard: {
@@ -530,18 +569,16 @@ const styles = StyleSheet.create({
     minHeight: 38,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: theme.spacing.md,
+    gap: theme.spacing.sm,
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
     paddingTop: theme.spacing.sm,
   },
-  mapIdentity: { flex: 1, gap: 4 },
-  mapTitle: { flex: 0 },
-  mapTotal: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '700' },
+  mapTotal: { color: theme.colors.textMuted, fontWeight: '700' },
   mapName: { flex: 1, color: theme.colors.text, fontSize: 13, fontWeight: '800', lineHeight: 18 },
-  mapCount: { width: 54, color: theme.colors.accentBlue, fontSize: 13, fontWeight: '900', textAlign: 'right' },
-  mapTableHeader: { flexDirection: 'row', gap: theme.spacing.md, borderBottomWidth: 1, borderBottomColor: theme.colors.borderStrong, paddingBottom: theme.spacing.sm },
-  mapMetricHeader: { width: 54, color: theme.colors.textMuted, fontSize: 12, fontWeight: '900', textAlign: 'right' },
+  mapCount: { width: 48, color: theme.colors.accentBlue, fontSize: 13, fontWeight: '900', textAlign: 'right', fontVariant: ['tabular-nums'] },
+  mapTableHeader: { flexDirection: 'row', gap: theme.spacing.sm, borderBottomWidth: 1, borderBottomColor: theme.colors.borderStrong, paddingBottom: theme.spacing.sm },
+  mapMetricHeader: { width: 48, color: theme.colors.textMuted, fontSize: 12, fontWeight: '900', textAlign: 'right' },
   emptyInline: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '700' },
   defeatText: { color: theme.colors.danger },
   drawText: { color: theme.colors.accentBlue },

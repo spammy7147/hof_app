@@ -31,6 +31,7 @@ const reactNativeMock = {
   ScrollView: host('ScrollView'),
   StyleSheet: { create: <T,>(styles: T) => styles },
   Text: host('Text'),
+  TextInput: host('TextInput'),
   View: host('View'),
 };
 type Loader = (request: string, parent: NodeModule | undefined, isMain: boolean) => unknown;
@@ -113,7 +114,49 @@ describe('DataTabScreen recent battle card', () => {
     });
   }
 
-  it('keeps Funds on data home and opens period-specific adventure-map statistics', async () => {
+  it('일간 통계에서 날짜 조회와 이전·다음 날 이동을 전달하고 잘못된 날짜는 거부한다', async () => {
+    const requested: Array<[string | undefined, string | undefined]> = [];
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(React.createElement(DataTabScreen, {
+        authenticated: true,
+        battle: makeBattleResource({ loadStats: async (period, date) => {
+          requested.push([period, date]); return emptyStats;
+        } }),
+      }));
+    });
+    mountedRenderer = renderer;
+    const press = async (label: string) => act(async () => {
+      renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === label).props.onPress();
+    });
+    const input = () => renderer.root.find((node) => String(node.type) === 'TextInput');
+    await press('통계 보기');
+    const today = requested.at(-1)?.[1];
+    assert.equal(typeof today, 'string');
+    await act(async () => { input().props.onChangeText('2026-02-28'); });
+    await press('날짜 조회');
+    assert.deepEqual(requested.at(-1), ['DAY', '2026-02-28']);
+    await press('다음 날');
+    assert.deepEqual(requested.at(-1), ['DAY', '2026-03-01']);
+    await press('이전 날');
+    assert.deepEqual(requested.at(-1), ['DAY', '2026-02-28']);
+    const count = requested.length;
+    for (const date of ['2026-02-30', '9999-01-01', 'invalid']) {
+      await act(async () => { input().props.onChangeText(date); });
+      await press('날짜 조회');
+      assert.equal(requested.length, count);
+      assert.ok(flattenText(renderer.root).join(' ').includes('YYYY-MM-DD'));
+    }
+    await press('오늘');
+    assert.deepEqual(requested.at(-1), ['DAY', today]);
+    assert.equal(renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '다음 날').props.disabled, true);
+    await act(async () => {
+      renderer.root.find((node) => String(node.type) === 'Pressable' && flattenText(node).includes('주간')).props.onPress();
+    });
+    assert.deepEqual(requested.at(-1), ['WEEK', undefined]);
+  });
+
+  it('펀드 요약에서 맵 통계를 열고 총 횟수를 패배 왼쪽 열에 표시한다', async () => {
     const periods: Array<string | undefined> = [];
     let renderer!: ReactTestRenderer;
     await act(async () => {
@@ -131,7 +174,10 @@ describe('DataTabScreen recent battle card', () => {
               dailyBattles: 12,
               weeklyBattles: 345,
               monthlyBattles: 1234,
-              adventureMapOutcomes: [{ mapCode: 'snow22', mapName: '얼어붙은 산', totalBattles: period === 'WEEK' ? 40 : 10, defeats: 2, draws: 1 }],
+              adventureMapOutcomes: [
+                { categoryId: 'adventure_map', mapCode: 'snow22', mapName: '얼어붙은 산', totalBattles: period === 'WEEK' ? 40 : 10, defeats: 2, draws: 1 },
+                { categoryId: 'battle_map', mapCode: 'snow22', mapName: '전투 산', totalBattles: 7, defeats: 3, draws: 0 },
+              ],
             });
           },
         }),
@@ -141,7 +187,7 @@ describe('DataTabScreen recent battle card', () => {
     const text = flattenText(renderer.root);
 
     assert.deepEqual(
-      ['일일 펀드', '$ 100', '총 12전', '주간 펀드', '월요일~일요일', '$ 200', '총 345전', '월간 펀드', '$ 300', '총 1,234전', '모험맵 통계']
+      ['일일 펀드', '$ 100', '총 12전', '주간 펀드', '월요일~일요일', '$ 200', '총 345전', '월간 펀드', '$ 300', '총 1,234전', '맵 전투 통계']
         .filter((value) => !text.includes(value)),
       [],
     );
@@ -151,13 +197,17 @@ describe('DataTabScreen recent battle card', () => {
     await act(async () => { launch.props.onPress(); });
     assertControlsOutsideList(renderer.root);
     assert.deepEqual(periods, [undefined, 'DAY']);
-    assert.deepEqual(['일간', '주간', '월간', '얼어붙은 산', '총 10회', '2회', '1회'].filter((value) => !flattenText(renderer.root).includes(value)), []);
+    assert.deepEqual(['일간', '주간', '월간', '총 횟수', '얼어붙은 산', '10회', '2회', '1회', '전투 산', '7회', '3회'].filter((value) => !flattenText(renderer.root).includes(value)), []);
+    const list = renderer.root.find((node) => String(node.type) === 'FlatList');
+    const row = list.find((node) => String(node.type) === 'View' && node.children.length === 4 && flattenText(node).includes('얼어붙은 산'));
+    assert.deepEqual(row.children.map((child) => flattenText(child as ReactTestInstance).join('')), ['얼어붙은 산', '10회', '2회', '1회']);
+    assert.notEqual(list.props.keyExtractor(list.props.data[0]), list.props.keyExtractor(list.props.data[1]));
 
     const weekly = renderer.root.find((node) => String(node.type) === 'Pressable' && flattenText(node).includes('주간'));
     await act(async () => { weekly.props.onPress(); });
     assert.deepEqual(periods, [undefined, 'DAY', 'WEEK']);
-    assert.ok(flattenText(renderer.root).includes('총 40회'));
-    assert.equal(flattenText(renderer.root).includes('총 10회'), false);
+    assert.ok(flattenText(renderer.root).includes('40회'));
+    assert.equal(flattenText(renderer.root).includes('10회'), false);
     assert.deepEqual(['승률', '경험치', '전리품', '승/패/무'].filter((value) => text.includes(value)), []);
     const refresh = renderer.root.find((node) => String(node.type) === 'PrimaryButton' && node.props.label === '새로고침');
     await act(async () => { refresh.props.onPress(); });

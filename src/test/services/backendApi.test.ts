@@ -41,6 +41,19 @@ after(() => {
 });
 
 describe('BackendApiClient', () => {
+  it('맵 통계의 선택 날짜를 API로 보내고 기본 조회는 날짜 없이 유지한다', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test');
+    const urls: string[] = [];
+    globalThis.fetch = async (url) => { urls.push(String(url)); return mockResponse({}); };
+    await client.fetchBattleStats('DAY', '2026-07-01');
+    await client.fetchBattleStats();
+    assert.deepEqual(urls, [
+      'http://backend.test/api/battle/stats?adventurePeriod=DAY&date=2026-07-01',
+      'http://backend.test/api/battle/stats?adventurePeriod=DAY',
+    ]);
+  });
+
   it('프리셋 패턴을 순서대로 로드하고 로컬 캐릭터 ID와 0번 슬롯을 사용한다', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const client = new BackendApiClient('http://backend.test');

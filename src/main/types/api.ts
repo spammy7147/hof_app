@@ -184,6 +184,7 @@ export type BattleLogQuery = {
 };
 
 export type AdventureMapOutcomeStatsResponse = {
+  categoryId?: string;
   mapCode: string;
   mapName: string;
   totalBattles: number;
