@@ -11,10 +11,11 @@ import {
   formatBattleMapMeta,
   groupBattleMaps,
   orderBattleMaps,
+  mergeBattleMapAvailability,
 } from '../../main/domain/battleMaps';
 
 describe('battle map utilities', () => {
-  it('orders enabled maps by name and moves disabled maps last', () => {
+  it('전투 가능 여부에 관계없이 원본 그룹과 맵 순서를 유지한다', () => {
     const ordered = orderBattleMaps([
       {
         categoryId: 'battle_map',
@@ -86,17 +87,34 @@ describe('battle map utilities', () => {
 
     assert.deepEqual(
       ordered.map((map) => map.mapCode),
-      ['arena01', 'snow22', 'z'],
+      ['z', 'arena01', 'snow22'],
     );
   });
 
-  it('sorts unresolved null-code maps safely after resolved maps', () => {
+  it('코드 확인 여부로 원본 맵 순서를 바꾸지 않는다', () => {
     const ordered = orderBattleMaps([
       battleMapFixture({ mapCode: null, resolved: false, name: 'Same map', keyMode: 'UNKNOWN' }),
       battleMapFixture({ mapCode: 'resolved', resolved: true, name: 'Same map' }),
     ]);
 
-    assert.deepEqual(ordered.map((map) => map.mapCode), ['resolved', null]);
+    assert.deepEqual(ordered.map((map) => map.mapCode), [null, 'resolved']);
+  });
+
+  it('사라진 맵은 제자리에 남기고 이번 조회의 전투 가능한 맵만 선택할 수 있다', () => {
+    const missing = battleMapFixture({ mapCode: 'missing', mapOrder: 0 });
+    const current = battleMapFixture({ mapCode: 'current', mapOrder: 1 });
+    const result = mergeBattleMapAvailability([missing, current], [{ ...current, keyCount: 5 }]);
+    assert.deepEqual(result.map((map) => [map.mapCode, map.enabled]), [['missing', false], ['current', true]]);
+    assert.equal(result[1].keyCount, 5);
+    assert.equal(missing.enabled, true);
+    assert.ok(mergeBattleMapAvailability(result, []).every((map) => !map.enabled));
+  });
+
+  it('코드를 확인한 맵은 과거 placeholder를 대체하고 새 맵도 원본 위치에 추가한다', () => {
+    const placeholder = battleMapFixture({ mapCode: null, resolved: false, name: '같은 맵', mapOrder: 2 });
+    const resolved = { ...placeholder, mapCode: 'resolved', resolved: true };
+    const result = mergeBattleMapAvailability([placeholder], [resolved, battleMapFixture({ mapCode: 'new', mapOrder: 1 })]);
+    assert.deepEqual(result.map((map) => map.mapCode), ['new', 'resolved']);
   });
 
   it('builds collision-safe unresolved state keys from the full visible identity', () => {

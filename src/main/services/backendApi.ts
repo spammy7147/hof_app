@@ -388,6 +388,14 @@ export class BackendApiClient {
     return this.request(`/api/battle/categories/${encodeURIComponent(categoryId)}/maps`);
   }
 
+  fetchBattleMapCatalog(categoryId: string): Promise<BattleMapResponse[]> {
+    return this.request(`/api/battle/categories/${encodeURIComponent(categoryId)}/maps/catalog`);
+  }
+
+  fetchBattleMapAvailability(categoryId: string): Promise<BattleMapResponse[]> {
+    return this.request(`/api/battle/categories/${encodeURIComponent(categoryId)}/maps/availability`);
+  }
+
   /**
    * 선택한 맵, 파티, 패턴 로드 정보로 전투를 실행한다.
    */

@@ -37,32 +37,30 @@ export function buildBattleMapStateKey(map: BattleMapResponse): string {
 }
 
 /**
- * 전투/모험맵을 HOF 원본 그룹 순서에 가깝게 정렬한다.
- *
- * @remarks
- * 비활성 맵은 목록 뒤로 보내고, 같은 그룹 안에서는 mapOrder와 이름을 기준으로 안정적으로 정렬한다.
+ * 전투 가능 여부와 코드 확인 여부에 관계없이 HOF 원본 그룹·맵 순서를 유지한다.
  */
 export function orderBattleMaps(maps: BattleMapResponse[]): BattleMapResponse[] {
-  return [...maps].sort((left, right) => {
-    if (left.enabled !== right.enabled) {
-      return left.enabled ? -1 : 1;
+  return [...maps].sort((left, right) => left.groupOrder - right.groupOrder || left.mapOrder - right.mapOrder);
+}
+
+/** 저장된 맵은 사라져도 유지하고, 이번 조회에서 확인된 맵만 선택할 수 있게 한다. */
+export function mergeBattleMapAvailability(
+  knownMaps: BattleMapResponse[],
+  observedMaps: BattleMapResponse[],
+): BattleMapResponse[] {
+  const maps = new Map(knownMaps.map((map) => [buildBattleMapStateKey(map), { ...map, enabled: false }]));
+  for (const map of observedMaps) {
+    // ponytail: 소규모 카탈로그라 순회로 과거 placeholder를 대체한다. 규모가 커지면 이름 인덱스를 사용한다.
+    if (map.resolved) {
+      for (const [key, known] of maps) {
+        if (!known.resolved && known.categoryId === map.categoryId && known.name === map.name && known.groupName === map.groupName) {
+          maps.delete(key);
+        }
+      }
     }
-
-    const groupCompare = left.groupOrder - right.groupOrder;
-    if (groupCompare !== 0) return groupCompare;
-
-    if (left.resolved !== right.resolved) {
-      return left.resolved ? -1 : 1;
-    }
-
-    const mapCompare = left.mapOrder - right.mapOrder;
-    if (mapCompare !== 0) return mapCompare;
-
-    const nameCompare = left.name.localeCompare(right.name, 'ko-KR');
-    if (nameCompare !== 0) return nameCompare;
-
-    return (left.mapCode ?? '').localeCompare(right.mapCode ?? '');
-  });
+    maps.set(buildBattleMapStateKey(map), map);
+  }
+  return orderBattleMaps([...maps.values()]);
 }
 
 /**

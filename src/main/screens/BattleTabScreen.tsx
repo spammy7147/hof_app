@@ -12,7 +12,7 @@ import {
   Trophy,
 } from 'lucide-react-native';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { BattleResource } from '../features/battle/useBattleResource';
 import {
@@ -25,6 +25,7 @@ import {
   formatBattleMapMeta,
   getAutomationMapSkipReason,
   groupBattleMaps,
+  mergeBattleMapAvailability,
   type BattleMapGroup,
 } from '../domain/battleMaps';
 import { getBattleResultRounds } from '../domain/battleResults';
@@ -99,12 +100,13 @@ export function BattleTabScreen({
 }: BattleTabScreenProps) {
   const {
     categories, loading: isLoading, errorMessage,
-    loadCategories: onLoadCategories, loadMaps: onLoadMaps, run: onRunBattle,
+    loadCategories: onLoadCategories, loadMaps: onLoadMaps, loadMapCatalog: onLoadMapCatalog, run: onRunBattle,
   } = battle;
 
   const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
   const [mapsByCategory, setMapsByCategory] = useState<Record<string, BattleMapResponse[]>>({});
-  const [loadingCategoryId, setLoadingCategoryId] = useState<string | null>(null);
+  const [loadingCategories, setLoadingCategories] = useState<Record<string, boolean>>({});
+  const mapRequestIds = useRef<Record<string, number>>({});
   const [mapErrorsByCategory, setMapErrorsByCategory] = useState<Record<string, string>>({});
   const [expandedGroupKeys, setExpandedGroupKeys] = useState<string[]>([]);
   const [expandedMapKey, setExpandedMapKey] = useState<string | null>(null);
@@ -120,46 +122,37 @@ export function BattleTabScreen({
   const orderedCategories = useMemo(() => orderBattleCategories(categories), [categories]);
 
   useEffect(() => {
-    if (!initialTarget || !authenticated) return;
-    const category = categories.find((candidate) => candidate.id === initialTarget.categoryId);
-    if (!category) return;
+    if (!authenticated) return;
     let cancelled = false;
-    setExpandedCategoryId(category.id);
-    setLoadingCategoryId(category.id);
-    onLoadMaps(category.id).then((maps) => {
-      if (cancelled) return;
-      setMapsByCategory((current) => ({ ...current, [category.id]: maps }));
-      const targetMap = maps.find((map) => map.mapCode === initialTarget.mapCode);
-      if (!targetMap) return;
-      const group = groupBattleMaps(maps).find((candidate) => candidate.maps.some((map) => map.mapCode === initialTarget.mapCode));
-      setExpandedGroupKeys(group ? [group.key] : []);
-      setExpandedMapKey(buildBattleMapStateKey(targetMap));
-      onInitialTargetConsumed?.();
-    }).catch((error) => {
-      if (!cancelled) setMapErrorsByCategory((current) => ({ ...current, [category.id]: error instanceof Error ? error.message : '맵 목록을 불러오지 못했습니다.' }));
-    }).finally(() => {
-      if (!cancelled) setLoadingCategoryId((current) => current === category.id ? null : current);
-    });
+    for (const category of categories) {
+      void onLoadMapCatalog(category.id).then((maps) => {
+        if (cancelled) return;
+        setMapsByCategory((current) => ({
+          ...current,
+          [category.id]: mergeBattleMapAvailability(maps, current[category.id] ?? []),
+        }));
+      }).catch(() => {
+        // 카탈로그 조회 실패 시 카테고리를 열어 최신 원본 목록을 다시 조회한다.
+      });
+    }
     return () => { cancelled = true; };
-  }, [authenticated, categories, initialTarget?.categoryId, initialTarget?.mapCode, onInitialTargetConsumed, onLoadMaps]);
+  }, [authenticated, categories, onLoadMapCatalog]);
 
   /**
-   * 선택한 전투 카테고리의 하위 맵 목록을 서버에서 불러온다.
-   *
-   * 이미 한 번 불러온 카테고리는 기본적으로 캐시를 재사용하고, 재시도 버튼처럼 최신 목록이 필요할 때만 force로 다시 요청한다.
+   * 저장된 목록을 유지한 채 카테고리를 열 때마다 최신 전투 가능 상태를 확인한다.
    */
-  const loadMaps = useCallback(async (category: BattleCategoryResponse, force = false) => {
-    if (!force && mapsByCategory[category.id]) return;
-
+  const loadMaps = useCallback(async (category: BattleCategoryResponse) => {
     if (!authenticated) {
       setMapErrorsByCategory((current) => ({
         ...current,
         [category.id]: '로그인 계정이 없습니다.',
       }));
-      return;
+      return null;
     }
 
-    setLoadingCategoryId(category.id);
+    const requestId = (mapRequestIds.current[category.id] ?? 0) + 1;
+    mapRequestIds.current[category.id] = requestId;
+    setLoadingCategories((current) => ({ ...current, [category.id]: true }));
     setMapErrorsByCategory((current) => {
       const next = { ...current };
       delete next[category.id];
@@ -168,19 +161,43 @@ export function BattleTabScreen({
 
     try {
       const loadedMaps = await onLoadMaps(category.id);
+      if (mapRequestIds.current[category.id] !== requestId) return null;
       setMapsByCategory((current) => ({
         ...current,
-        [category.id]: loadedMaps,
+        [category.id]: mergeBattleMapAvailability(current[category.id] ?? [], loadedMaps),
       }));
+      return loadedMaps;
     } catch (error) {
+      if (mapRequestIds.current[category.id] !== requestId) return null;
       setMapErrorsByCategory((current) => ({
         ...current,
         [category.id]: error instanceof Error ? error.message : '맵 목록을 불러오지 못했습니다.',
       }));
+      return null;
     } finally {
-      setLoadingCategoryId((current) => (current === category.id ? null : current));
+      if (mapRequestIds.current[category.id] === requestId) {
+        setLoadingCategories((current) => ({ ...current, [category.id]: false }));
+      }
     }
-  }, [authenticated, mapsByCategory, onLoadMaps]);
+  }, [authenticated, onLoadMaps]);
+
+  useEffect(() => {
+    if (!initialTarget || !authenticated) return;
+    const category = categories.find((candidate) => candidate.id === initialTarget.categoryId);
+    if (!category) return;
+    let cancelled = false;
+    setExpandedCategoryId(category.id);
+    void loadMaps(category).then((maps) => {
+      if (cancelled || !maps) return;
+      const targetMap = maps.find((map) => map.mapCode === initialTarget.mapCode);
+      if (!targetMap) return;
+      const group = groupBattleMaps(maps).find((candidate) => candidate.maps.some((map) => map.mapCode === initialTarget.mapCode));
+      setExpandedGroupKeys(group ? [group.key] : []);
+      setExpandedMapKey(buildBattleMapStateKey(targetMap));
+      onInitialTargetConsumed?.();
+    });
+    return () => { cancelled = true; };
+  }, [authenticated, categories, initialTarget?.categoryId, initialTarget?.mapCode, onInitialTargetConsumed, loadMaps]);
 
   /**
    * 카테고리 카드를 열고 닫는다.
@@ -219,11 +236,12 @@ export function BattleTabScreen({
    * 맵이 열리면 파티 선택기와 전투 실행 버튼이 함께 표시된다.
    */
   const toggleMap = useCallback((map: BattleMapResponse) => {
+    if (loadingCategories[map.categoryId] || mapErrorsByCategory[map.categoryId] || !map.enabled || !map.resolved || map.mapCode == null) return;
     const mapKey = buildBattleMapStateKey(map);
     const willExpand = expandedMapKey !== mapKey;
     setExpandedMapKey(willExpand ? mapKey : null);
 
-  }, [expandedMapKey]);
+  }, [expandedMapKey, loadingCategories, mapErrorsByCategory]);
 
   /**
    * 전투 성공 직후 키/도전/승리 제한을 먼저 화면에서 줄이고, 서버 재조회로 실제 HOF 상태를 다시 맞춘다.
@@ -260,17 +278,9 @@ export function BattleTabScreen({
       }),
     }));
 
-    void onLoadMaps(map.categoryId)
-      .then((loadedMaps) => {
-        setMapsByCategory((current) => ({
-          ...current,
-          [map.categoryId]: loadedMaps,
-        }));
-      })
-      .catch(() => {
-        // 전투 결과는 이미 반영됐으므로, 맵 상태 보정 실패는 다음 목록 새로고침에서 다시 맞춘다.
-      });
-  }, [onLoadMaps]);
+    const category = categories.find((candidate) => candidate.id === map.categoryId);
+    if (category) void loadMaps(category);
+  }, [categories, loadMaps]);
 
   /**
    * 현재 화면에서 선택한 파티/패턴을 백엔드 전투 요청 형식으로 변환해 전투를 실행한다.
@@ -283,6 +293,7 @@ export function BattleTabScreen({
     battleCount: 1 | 3,
   ) => {
     const mapKey = buildBattleMapStateKey(map);
+    if (loadingCategories[map.categoryId] || mapErrorsByCategory[map.categoryId] || !map.enabled) return;
     if (map.mapCode == null || !map.resolved) {
       setRunErrorsByMapKey((current) => ({
         ...current,
@@ -330,7 +341,7 @@ export function BattleTabScreen({
     } finally {
       setRunningMapKey((current) => (current === mapKey ? null : current));
     }
-  }, [authenticated, characters, onRunBattle, refreshMapsAfterBattle]);
+  }, [authenticated, characters, loadingCategories, mapErrorsByCategory, onRunBattle, refreshMapsAfterBattle]);
 
   /**
    * FlatList가 바로 그릴 수 있도록 카테고리/상태/그룹/맵을 하나의 row 배열로 평탄화한다.
@@ -356,7 +367,7 @@ export function BattleTabScreen({
       if (!categoryExpanded) continue;
 
       const errorMessage = mapErrorsByCategory[category.id] ?? null;
-      if (loadingCategoryId === category.id) {
+      if (loadingCategories[category.id]) {
         rows.push({
           type: 'state',
           key: `state:${category.id}:loading`,
@@ -364,10 +375,9 @@ export function BattleTabScreen({
           state: 'loading',
           errorMessage: null,
         });
-        continue;
       }
 
-      if (errorMessage) {
+      if (errorMessage && !loadingCategories[category.id]) {
         rows.push({
           type: 'state',
           key: `state:${category.id}:error`,
@@ -375,11 +385,11 @@ export function BattleTabScreen({
           state: 'error',
           errorMessage,
         });
-        continue;
       }
 
       const groups = groupBattleMaps(maps);
       if (groups.length === 0) {
+        if (loadingCategories[category.id] || errorMessage) continue;
         rows.push({
           type: 'state',
           key: `state:${category.id}:empty`,
@@ -415,7 +425,7 @@ export function BattleTabScreen({
   }, [
     expandedCategoryId,
     expandedGroupKeys,
-    loadingCategoryId,
+    loadingCategories,
     mapErrorsByCategory,
     mapsByCategory,
     orderedCategories,
@@ -465,7 +475,7 @@ export function BattleTabScreen({
               category={item.category}
               errorMessage={item.errorMessage}
               state={item.state}
-              onRetry={() => loadMaps(item.category, true)}
+              onRetry={() => { void loadMaps(item.category); }}
             />
           </View>
         );
@@ -484,6 +494,7 @@ export function BattleTabScreen({
           <View style={styles.mapTreeBranch}>
             <BattleMapRow
               map={item.map}
+              availabilityState={loadingCategories[item.map.categoryId] ? 'checking' : mapErrorsByCategory[item.map.categoryId] ? 'error' : null}
               characters={characters}
               expanded={expandedMapKey === buildBattleMapStateKey(item.map)}
               isRunning={runningMapKey === buildBattleMapStateKey(item.map)}
@@ -500,6 +511,8 @@ export function BattleTabScreen({
     characters,
     expandedMapKey,
     loadMaps,
+    loadingCategories,
+    mapErrorsByCategory,
     partyPresetCatalog,
     resultsByMapKey,
     runBattle,
@@ -595,7 +608,7 @@ function BattleCategoryStatePanel({
     return (
       <View style={styles.treeStatePanel}>
         <ActivityIndicator color={theme.colors.accentGreen} />
-        <Text style={styles.stateText}>맵 목록 확인 중</Text>
+        <Text style={styles.stateText}>전투 가능 상태 확인 중</Text>
       </View>
     );
   }
@@ -664,6 +677,7 @@ function BattleMapGroupRow({ expanded, group, onPress }: BattleMapGroupRowProps)
 
 type BattleMapRowProps = {
   map: BattleMapResponse;
+  availabilityState: 'checking' | 'error' | null;
   characters: HofCharacter[];
   expanded: boolean;
   isRunning: boolean;
@@ -681,6 +695,7 @@ type BattleMapRowProps = {
  */
 function BattleMapRow({
   map,
+  availabilityState,
   characters,
   expanded,
   isRunning,
@@ -691,9 +706,12 @@ function BattleMapRow({
   onRunBattle,
 }: BattleMapRowProps) {
   const unresolved = map.mapCode == null || !map.resolved;
-  const mapUnavailable = !map.enabled || unresolved;
-  const unresolvedReason = unresolved ? getAutomationMapSkipReason(map) : null;
-  const mapMeta = [formatBattleMapMeta(map), unresolvedReason].filter(Boolean).join(' · ');
+  const mapUnavailable = availabilityState != null || !map.enabled || unresolved;
+  const unavailableReason = availabilityState === 'checking' ? '전투 가능 상태 확인 중'
+    : availabilityState === 'error' ? '전투 가능 상태 확인 실패'
+    : !map.enabled && !unresolved ? '현재 전투 불가'
+    : getAutomationMapSkipReason(map);
+  const mapMeta = [formatBattleMapMeta(map), unavailableReason].filter(Boolean).join(' · ');
 
   return (
     <View style={styles.mapItem}>
@@ -725,7 +743,7 @@ function BattleMapRow({
           <ChevronRight color={theme.colors.textMuted} size={15} />
         )}
       </Pressable>
-      {expanded ? (
+      {expanded && !mapUnavailable ? (
         <BattleRunPanel
           characters={characters}
           partyPresetCatalog={partyPresetCatalog}

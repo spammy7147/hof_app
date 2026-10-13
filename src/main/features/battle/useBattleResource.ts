@@ -52,8 +52,13 @@ export function useBattleResource({
    */
   const loadBattleMaps = useCallback(
     (categoryId: string): Promise<BattleMapResponse[]> => {
-      return api.fetchBattleMaps(categoryId);
+      return api.fetchBattleMapAvailability(categoryId);
     },
+    [api],
+  );
+
+  const loadBattleMapCatalog = useCallback(
+    (categoryId: string): Promise<BattleMapResponse[]> => api.fetchBattleMapCatalog(categoryId),
     [api],
   );
 
@@ -108,6 +113,7 @@ export function useBattleResource({
     errorMessage: battleCategoriesError,
     loadCategories: loadBattleCategories,
     loadMaps: loadBattleMaps,
+    loadMapCatalog: loadBattleMapCatalog,
     run: runBattle,
     loadLogs: loadBattleLogs,
     loadLogHtml: (logId: number) => api.fetchBattleLogHtml(logId),
