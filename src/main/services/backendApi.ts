@@ -785,8 +785,8 @@ export class BackendApiClient {
   /**
    * 전체 캐릭터의 일반 상세 동기화 job을 시작한다.
    */
-  async startCharacterSyncJob(): Promise<CharacterSyncJobResponse> {
-    const job = await this.request<CharacterSyncJobResponse>('/api/characters/sync-jobs', {
+  async startCharacterSyncJob(mode: 'DETAIL' | 'DEEP' = 'DETAIL'): Promise<CharacterSyncJobResponse> {
+    const job = await this.request<CharacterSyncJobResponse>(mode === 'DEEP' ? '/api/characters/sync-jobs?mode=DEEP' : '/api/characters/sync-jobs', {
       method: 'POST',
     });
     return normalizeCharacterSyncJob(job);
@@ -795,6 +795,11 @@ export class BackendApiClient {
   /**
    * 캐릭터 동기화 job의 현재 snapshot을 조회한다.
    */
+  async fetchLatestCharacterSyncJob(): Promise<CharacterSyncJobResponse | null> {
+    const job = await this.request<CharacterSyncJobResponse | null>('/api/characters/sync-jobs/current');
+    return job ? normalizeCharacterSyncJob(job) : null;
+  }
+
   async fetchCharacterSyncJob(jobId: number): Promise<CharacterSyncJobResponse> {
     const job = await this.request<CharacterSyncJobResponse>(`/api/characters/sync-jobs/${jobId}`);
     return normalizeCharacterSyncJob(job);

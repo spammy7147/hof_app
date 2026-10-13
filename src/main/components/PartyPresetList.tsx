@@ -15,7 +15,7 @@ import { PartyPresetFolderEditor } from './PartyPresetFolderEditor';
 import { PartyPresetFolderPicker } from './PartyPresetFolderPicker';
 import { PartyPresetSearchResults } from './PartyPresetSearchResults';
 import { PartyPresetTree, type PartyPresetExpandedFolderIds } from './PartyPresetTree';
-import { BATTLE_PARTY_SIZE, type BattlePartyMember } from '../domain/battleParty';
+import { BATTLE_PARTY_SIZE, replaceBattlePartyCharacterIds, type BattlePartyMember } from '../domain/battleParty';
 import {
   buildCreatePartyPresetRequest,
   createPartyFromPreset,
@@ -58,6 +58,15 @@ export function PartyPresetList({
   const [activeSlotIndex, setActiveSlotIndex] = useState(0);
   const [draftName, setDraftName] = useState('');
   const [draftParty, setDraftParty] = useState<BattlePartyMember[]>(emptyPartyMembers());
+  const previousCharactersRef = useRef(characters);
+  useEffect(() => {
+    const previousCharacters = previousCharactersRef.current;
+    previousCharactersRef.current = characters;
+    setDraftParty((party) => replaceBattlePartyCharacterIds(party, previousCharacters, characters));
+    setNewDraft((draft) => draft == null ? null : {
+      ...draft, party: replaceBattlePartyCharacterIds(draft.party, previousCharacters, characters),
+    });
+  }, [characters]);
   const [draftFolderId, setDraftFolderId] = useState<number | null>(null);
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
   const [catalogQuery, setCatalogQuery] = useState('');

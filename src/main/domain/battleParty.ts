@@ -62,6 +62,25 @@ export function sanitizeBattlePartyForCharacters(
   ));
 }
 
+/** 같은 캐릭터 기록의 HOF ID만 교체하고 사용자가 고른 슬롯과 패턴은 유지한다. */
+export function replaceBattlePartyCharacterIds(
+  party: BattlePartyMember[],
+  previousCharacters: HofCharacter[],
+  characters: HofCharacter[],
+): BattlePartyMember[] {
+  const currentByRecord = new Map(characters.map((character) => [character.id, character.hofCharacterId]));
+  const replacements = new Map(previousCharacters.flatMap((character) => {
+    const currentId = currentByRecord.get(character.id);
+    return currentId != null && currentId !== character.hofCharacterId
+      ? [[character.hofCharacterId, currentId] as const] : [];
+  }));
+  if (replacements.size === 0) return party;
+  return party.map((member) => {
+    const characterId = member.characterId == null ? undefined : replacements.get(member.characterId);
+    return characterId == null ? member : { ...member, characterId };
+  });
+}
+
 /**
  * 특정 파티 슬롯에 캐릭터를 배치한다.
  *

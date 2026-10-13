@@ -913,6 +913,21 @@ describe('BackendApiClient', () => {
     assert.equal(requests.some(({ url }) => url.includes('/sync-jobs')), false);
   });
 
+  it('전체 설정 모드를 전송하고 재접속 시 최근 동기화 작업을 조회한다', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test');
+    const requests: CapturedRequest[] = [];
+    mockFetchWithCapture({ jobId: 12, syncMode: 'DEEP', characters: [] }, requests);
+    assert.equal((await client.startCharacterSyncJob('DEEP')).syncMode, 'DEEP');
+    assert.equal((await client.fetchLatestCharacterSyncJob())?.jobId, 12);
+    assert.deepEqual(requests.map(({ url, init }) => [url, init?.method ?? 'GET']), [
+      ['http://backend.test/api/characters/sync-jobs?mode=DEEP', 'POST'],
+      ['http://backend.test/api/characters/sync-jobs/current', 'GET'],
+    ]);
+    mockFetch(null);
+    assert.equal(await client.fetchLatestCharacterSyncJob(), null);
+  });
+
   it('normalizes character detail and sync snapshot image URLs', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const client = new BackendApiClient('http://backend.test');

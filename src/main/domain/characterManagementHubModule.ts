@@ -211,6 +211,7 @@ export class CharacterManagementHubModule {
   private rosterProjectionGeneration = 0;
   private rosterProjectionGenerationById = new Map<number, number>();
   private rosterObservationRequest = 0;
+  private relatedPresetRefresh: Promise<void> = Promise.resolve();
   private pendingPatternChange: CharacterPatternChange | null = null;
   private recoveryPreviewGeneration = 0;
   private recoveryRequestGeneration = 0;
@@ -252,6 +253,7 @@ export class CharacterManagementHubModule {
     this.rosterObservationRequest += 1;
     this.pendingPatternChange = null;
     this.roster = new Map();
+    this.relatedPresetRefresh = Promise.resolve();
     this.rosterProjectionGenerationById.clear();
     this.replace(emptyResource(
       this.actionsFor(
@@ -274,6 +276,7 @@ export class CharacterManagementHubModule {
     this.rosterObservationRequest += 1;
     this.pendingPatternChange = null;
     this.roster = new Map();
+    this.relatedPresetRefresh = Promise.resolve();
     this.rosterProjectionGenerationById.clear();
     this.replace(emptyResource(
       this.actionsFor(
@@ -357,6 +360,19 @@ export class CharacterManagementHubModule {
   }
 
   private applyRoster(characters: HofCharacter[]): void {
+    if (characters.some((character) => {
+      const previous = this.roster.get(character.id);
+      return previous != null && previous.hofCharacterId !== character.hofCharacterId;
+    })) {
+      const generation = this.generation;
+      this.relatedPresetRefresh = Promise.resolve().then(async () => {
+        if (this.isActiveGeneration(generation)) await this.backend.reloadRelatedPresets?.();
+      }).catch((error: unknown) => {
+        if (this.isActiveGeneration(generation)) {
+          this.replace({ ...this.resource, warningMessage: toUserFacingErrorMessage(error) });
+        }
+      });
+    }
     const roster = new Map(characters.map((character) => [character.id, character]));
     for (const characterId of this.rosterProjectionGenerationById.keys()) {
       if (!roster.has(characterId)) {
@@ -837,6 +853,15 @@ export class CharacterManagementHubModule {
       return undefined;
     }
     const result = await execute(command);
+    // ID 변경은 선택 화면과 무관하게 같은 계정의 모든 프리셋에 반영한다.
+    if (command.type === 'KNOCKBACK' && result.type === 'Completed'
+      && this.isActiveGeneration(expectedGeneration)) {
+      const acceptRoster = this.createObservationSink(this.accountKey).beginRosterObservation();
+      const roster = await this.backend.loadRoster?.();
+      if (!this.isActiveGeneration(expectedGeneration)) return undefined;
+      if (roster) acceptRoster(roster);
+      await this.relatedPresetRefresh;
+    }
     if (!this.isCurrentTarget(
       command.characterId,
       expectedGeneration,
@@ -857,7 +882,7 @@ export class CharacterManagementHubModule {
       const acceptRoster = this
         .createObservationSink(this.accountKey)
         .beginRosterObservation();
-      const roster = await this.backend.loadRoster?.();
+      const roster = command.type === 'KNOCKBACK' ? undefined : await this.backend.loadRoster?.();
       if (!this.isCurrentTarget(
         command.characterId,
         expectedGeneration,
@@ -1117,7 +1142,7 @@ export class CharacterManagementHubModule {
         ? await this.backend.retryRecovery!(job!.id, observe)
         : action === 'accept'
           ? await this.backend.acceptRecovery!(job!.id, state.preview!.confirmationToken)
-          : job && operationNeedsAttention(job) && this.backend.loadOperation
+          : job && selected && operationNeedsAttention(job) && this.backend.loadOperation
             ? await this.backend.loadOperation(job.id)
             : await this.backend.loadCurrentOperation!(selected?.id);
       if (!isCurrent()) return;
@@ -1161,14 +1186,11 @@ export class CharacterManagementHubModule {
     const selected = this.currentTarget(expectedGeneration, expectedSelectionGeneration);
     if (!link || !selected) return;
     const roster = await link(selected.id, newHofCharacterId);
-    if (!this.isCurrentTarget(
-      selected.id,
-      expectedGeneration,
-      expectedSelectionGeneration,
-    )) return;
+    if (!this.isActiveGeneration(expectedGeneration)) return;
     if (roster) {
       this.observeRoster(roster);
     }
+    await this.relatedPresetRefresh;
     if (!this.isCurrentTarget(
       selected.id,
       expectedGeneration,
@@ -1190,6 +1212,8 @@ export class CharacterManagementHubModule {
     if (roster) {
       this.observeRoster(roster);
     }
+    await this.relatedPresetRefresh;
+    if (!this.isActiveGeneration(expectedGeneration)) return;
     const selected = this.resource.selectedCharacter;
     if (selected?.id === characterId) await this.resource.actions.refresh();
   }

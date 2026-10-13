@@ -247,6 +247,7 @@ function AuthenticatedApp({
     checkCharacterSync,
     syncCharacterRoster,
     startCharacterFullSync,
+    startCharacterDeepSync,
     stopCharacterSync,
     resumeCharacterSync,
     loadSavedCharacters,
@@ -363,6 +364,7 @@ function AuthenticatedApp({
         onCheckCharacterSync={checkCharacterSync}
         onSyncCharacterRoster={syncCharacterRoster}
         onStartCharacterFullSync={startCharacterFullSync}
+        onStartCharacterDeepSync={startCharacterDeepSync}
         onStopCharacterSync={stopCharacterSync}
         onResumeCharacterSync={resumeCharacterSync}
         notice={pushRegistrationMessage}

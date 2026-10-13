@@ -8,6 +8,7 @@ import {
   type BattlePartyMember,
   isBattlePartyReady,
   sanitizeBattlePartyForCharacters,
+  replaceBattlePartyCharacterIds,
 } from '../../../domain/battleParty';
 import {
   formatBattleOutcome,
@@ -66,21 +67,28 @@ export function BattleRunPanel({
   const [activeSlotIndex, setActiveSlotIndex] = useState(0);
   const presetSeedRef = useRef<BattlePartyMember[] | null>(null);
   const dirtySlotIndexesRef = useRef<Set<number>>(new Set());
+  const previousCharactersRef = useRef(characters);
   const ready = isBattlePartyReady(party, characters);
   const sortieCount = party.filter((member) => member.characterId != null).length;
   const partySelectionComplete = selectedMode != null;
 
   useEffect(() => {
+    const previousCharacters = previousCharactersRef.current;
+    previousCharactersRef.current = characters;
+    if (presetSeedRef.current) {
+      presetSeedRef.current = replaceBattlePartyCharacterIds(presetSeedRef.current, previousCharacters, characters);
+    }
     setParty((current) => {
+      const replaced = replaceBattlePartyCharacterIds(current, previousCharacters, characters);
       const presetSeed = presetSeedRef.current;
       return selectedMode === 'preset' && presetSeed != null
         ? rehydrateExecutablePartyFromPresetSeed(
           presetSeed,
-          current,
+          replaced,
           dirtySlotIndexesRef.current,
           characters,
         )
-        : sanitizeBattlePartyForCharacters(current, characters);
+        : sanitizeBattlePartyForCharacters(replaced, characters);
     });
     setActiveSlotIndex(0);
   }, [characters, selectedMode]);

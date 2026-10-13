@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   formatCharacterSyncProgress,
+  characterSyncTitle,
   shouldCloseCharacterSyncSubscription,
 } from '../../domain/characterSyncJobs';
 import type { BackendApiClient } from '../../services/backendApi';
@@ -65,14 +66,14 @@ export function useCharacterSync({
     if (expectedSyncGeneration !== syncGenerationRef.current
       || (currentJobIdRef.current != null && snapshot.jobId !== currentJobIdRef.current)) return false;
     setCharacterSyncJob(snapshot);
-    setCharacterSyncError(snapshot.status === 'failed' ? snapshot.message ?? '전체 상세 동기화가 실패했습니다.' : null);
+    setCharacterSyncError(snapshot.status === 'failed' ? snapshot.message ?? `${characterSyncTitle(snapshot.syncMode)}에 실패했습니다.` : null);
     acceptRoster(snapshot.characters);
     if (snapshot.status === 'running' || snapshot.status === 'pending') {
       const progress = snapshot.rosterCount > 0
         ? `${snapshot.syncedCount.toLocaleString('en-US')}/${snapshot.rosterCount.toLocaleString('en-US')}`
         : '준비 중';
       const currentName = snapshot.characters.find((item) => item.hofCharacterId === snapshot.currentHofCharacterId)?.name;
-      setCharacterSyncLabel(`전체 상세 동기화 ${progress}${currentName ? ` · ${currentName}` : ''}`);
+      setCharacterSyncLabel(`${characterSyncTitle(snapshot.syncMode)} ${progress}${currentName ? ` · ${currentName}` : ''}`);
     } else {
       setCharacterSyncLabel(null);
       closeSubscription();
@@ -91,12 +92,14 @@ export function useCharacterSync({
   ) => {
     if (syncGeneration !== syncGenerationRef.current) return;
     setCharacterSyncLabel(event.rosterCount > 0
-      ? `전체 상세 동기화 ${formatCharacterSyncProgress(event)}`
-      : '전체 상세 동기화 준비 중');
+      ? `${characterSyncTitle(event.syncMode)} ${formatCharacterSyncProgress(event)}`
+      : `${characterSyncTitle(event.syncMode)} 준비 중`);
     if (event.character) observations.observeCharacter(event.character);
     setCharacterSyncJob((current) => current ? {
       ...current,
-      status: event.eventType === 'stopped' || event.eventType === 'completed' || event.eventType === 'failed' ? event.eventType : current.status,
+      syncMode: event.syncMode ?? current.syncMode,
+      failedCharacterIds: event.failedCharacterIds,
+      status: event.eventType === 'stopped' || event.eventType === 'completed' || event.eventType === 'failed' ? event.eventType : event.status,
       rosterCount: event.rosterCount,
       syncedCount: event.syncedCount,
       message: event.message,
@@ -182,16 +185,16 @@ export function useCharacterSync({
     openSubscriptionRef.current = openSubscription;
   }, [openSubscription]);
 
-  const startFullSyncJob = useCallback((): Promise<void> => {
+  const startFullSyncJob = useCallback((mode: 'DETAIL' | 'DEEP' = 'DETAIL'): Promise<void> => {
     if (fullSyncStartPromiseRef.current) return fullSyncStartPromiseRef.current;
 
     const syncGeneration = syncGenerationRef.current;
     closeSubscription();
     setCharacterSyncError(null);
-    setCharacterSyncLabel('전체 상세 동기화 준비 중');
+    setCharacterSyncLabel(`${characterSyncTitle(mode)} 준비 중`);
     const startPromise = (async () => {
       try {
-        const job = await api.startCharacterSyncJob();
+        const job = mode === 'DEEP' ? await api.startCharacterSyncJob(mode) : await api.startCharacterSyncJob();
         if (syncGeneration !== syncGenerationRef.current) return;
         currentJobIdRef.current = job.jobId;
         setCharacterSyncJob(job);
@@ -213,6 +216,8 @@ export function useCharacterSync({
     });
     return startPromise;
   }, [api, closeSubscription, describeError, openSubscription]);
+
+  const startDeepSyncJob = useCallback(() => startFullSyncJob('DEEP'), [startFullSyncJob]);
 
   const loadSavedCharacters = useCallback(async () => {
     const acceptRoster = observations.beginRosterObservation();
@@ -283,11 +288,16 @@ export function useCharacterSync({
   }, [startFullSyncJob]);
 
   const checkCharacterSync = useCallback(async () => {
-    if (!characterSyncJob) return;
+    const subscriptionGeneration = subscriptionGenerationRef.current;
     const generation = syncGenerationRef.current;
     const acceptRoster = observations.beginRosterObservation();
     try {
-      const snapshot = await api.fetchCharacterSyncJob(characterSyncJob.jobId);
+      const snapshot = characterSyncJob
+        ? await api.fetchCharacterSyncJob(characterSyncJob.jobId)
+        : await api.fetchLatestCharacterSyncJob();
+      if (!snapshot || generation !== syncGenerationRef.current
+        || subscriptionGeneration !== subscriptionGenerationRef.current) return;
+      currentJobIdRef.current = snapshot.jobId;
       if (!applySnapshot(snapshot, acceptRoster, generation)) return;
       if (snapshot.status === 'running' || snapshot.status === 'pending') {
         if (!subscriptionRef.current && !reconnectTimerRef.current) openSubscription(snapshot.jobId, generation);
@@ -352,6 +362,7 @@ export function useCharacterSync({
     checkCharacterSync,
     syncCharacterRoster,
     startCharacterFullSync: startFullSyncJob,
+    startCharacterDeepSync: startDeepSyncJob,
     stopCharacterSync,
     resumeCharacterSync,
     loadSavedCharacters,

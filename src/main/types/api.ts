@@ -543,20 +543,21 @@ export type ExchangeTradeRequest = { candidateId: string; categoryCandidateId: s
 export type LegacyGradeExchangeRequest = { gradeActionId: string };
 export type AnnActionRequest = { action: AnnAction; candidateId: string | null; quantity: number };
 
-export type ColosseumFighterResponse = { id: string; label: string; detail: string | null; imageUrl: string | null; selected: boolean };
-export type ColosseumOpponentResponse = { id: string; label: string; detail: string | null };
-export type ColosseumTurnLineResponse = { turn: number | null; text: string };
+export type ColosseumFighterResponse = { id: string; characterId: string | null; label: string; detail: string | null; imageUrl: string | null; selected: boolean };
+export type ColosseumRankingResponse = { rank: string; teams: string[] };
+export type ColosseumBattleTeamResultResponse = { label: string | null; hp: string | null; survivors: string | null; totalDamage: number | null };
 export type ColosseumBattleResultResponse = {
-  turns: number | null; winner: string | null; summary: string; playerHp: string | null; opponentHp: string | null;
-  playerStatus: string | null; opponentStatus: string | null; totalDamage: number | null; reward: string | null;
-  detail: ColosseumTurnLineResponse[];
+  turns: number | null; winner: string | null; summary: string; teams: ColosseumBattleTeamResultResponse[];
+  reward: string | null; detailUrl: string | null;
 };
 export type ColosseumBattleResponse = {
   fighters: ColosseumFighterResponse[]; selectedTeam: string[]; minTeamSize: number; maxTeamSize: number;
-  opponents: ColosseumOpponentResponse[]; battleResult: ColosseumBattleResultResponse | null; result: TownActionResultResponse | null;
+  topRankings: ColosseumRankingResponse[]; nearRankings: ColosseumRankingResponse[];
+  teamSaveAvailable: boolean; challengeAvailable: boolean; challengeNotice: string | null;
+  battleResult: ColosseumBattleResultResponse | null; result: TownActionResultResponse | null;
 };
 export type SaveColosseumTeamRequest = { fighterCandidateIds: string[] };
-export type ChallengeColosseumRequest = { opponentCandidateId: string };
+export type ChallengeColosseumRequest = Record<string, never>;
 export type ColosseumShopResponse = {
   categories: Array<{ id: string; label: string; current: boolean }>; currentCategoryId: string | null;
   items: Array<{ id: string; label: string; selectable: boolean; detail: string | null; cost: number | null; owned: number | null }>;
@@ -1198,6 +1199,7 @@ export type CharacterSyncEventType =
   | 'heartbeat';
 
 export type CharacterSyncJobResponse = {
+  syncMode?: 'DETAIL' | 'DEEP';
   jobId: number;
   accountId: number;
   status: CharacterSyncJobStatus;
@@ -1269,6 +1271,7 @@ export type CharacterPatternOperationResult = {
 };
 
 export type CharacterSyncEventResponse = {
+  syncMode?: 'DETAIL' | 'DEEP';
   eventId: number;
   eventType: CharacterSyncEventType;
   jobId: number;

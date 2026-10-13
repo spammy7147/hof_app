@@ -651,3 +651,40 @@ it('종료 event의 늦은 마지막 snapshot은 같은 job의 재개 연결을 
   });
   assert.equal(harness.sync.characterSyncJob?.syncedCount, 7);
 });
+
+it('전체 깊은 동기화는 DEEP 요청을 보내고 SSE에서도 설정 동기화로 표시한다', async () => {
+  const modes: unknown[] = [];
+  let handlers!: CharacterSyncEventHandlers;
+  let sync!: ReturnType<typeof useCharacterSync>;
+  const api = {
+    subscribeHofStatus: () => () => undefined,
+    startCharacterSyncJob: async (mode: unknown) => { modes.push(mode); return { ...syncJob(), syncMode: 'DEEP' }; },
+    subscribeCharacterSyncJob: (_id: number, incoming: CharacterSyncEventHandlers) => { handlers = incoming; return { close() {} }; },
+  } as unknown as BackendApiClient;
+  const Harness = () => { sync = useCharacterSync({ api, observations: noOpObservations, describeError: String }); return null; };
+  let renderer!: ReactTestRenderer;
+  await act(async () => { renderer = create(React.createElement(Harness)); });
+  await act(async () => { await sync.startCharacterDeepSync(); });
+  assert.deepEqual(modes, ['DEEP']);
+  await act(async () => { handlers.onEvent({ ...syncEvent(makeHofCharacter(1)), syncMode: 'DEEP' }); });
+  assert.equal(sync.characterSyncLabel, '전체 캐릭터 설정 동기화 1/1');
+  assert.equal(sync.characterSyncJob?.status, 'running');
+  await act(async () => renderer.unmount());
+});
+
+it('앱을 다시 열어도 서버의 전체 동기화를 찾아 구독한다', async () => {
+  const subscribed: number[] = [];
+  let sync!: ReturnType<typeof useCharacterSync>;
+  const api = {
+    subscribeHofStatus: () => () => undefined,
+    fetchLatestCharacterSyncJob: async () => ({ ...syncJob(), syncMode: 'DEEP', status: 'running', rosterCount: 48, syncedCount: 7 }),
+    subscribeCharacterSyncJob: (id: number) => { subscribed.push(id); return { close() {} }; },
+  } as unknown as BackendApiClient;
+  const Harness = () => { sync = useCharacterSync({ api, observations: noOpObservations, describeError: String }); return null; };
+  let renderer!: ReactTestRenderer;
+  await act(async () => { renderer = create(React.createElement(Harness)); });
+  await act(async () => { await sync.checkCharacterSync(); });
+  assert.deepEqual(subscribed, [17]);
+  assert.equal(sync.characterSyncLabel, '전체 캐릭터 설정 동기화 7/48');
+  await act(async () => renderer.unmount());
+});

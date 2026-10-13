@@ -13,3 +13,7 @@ export function shouldCloseCharacterSyncSubscription(event: CharacterSyncEventRe
 export function formatCharacterSyncProgress(event: CharacterSyncEventResponse): string {
   return `${event.syncedCount.toLocaleString('en-US')}/${event.rosterCount.toLocaleString('en-US')}`;
 }
+
+export function characterSyncTitle(mode?: 'DETAIL' | 'DEEP'): string {
+  return mode === 'DEEP' ? '전체 캐릭터 설정 동기화' : '전체 상세 동기화';
+}

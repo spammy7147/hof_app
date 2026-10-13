@@ -51,7 +51,7 @@ const completed: CharacterOperationJob = {
 };
 
 describe('캐릭터 동기화 화면', () => {
-  it('완료 카드는 동기화 화면에서만 보이고 닫으면 목록 검색을 유지한다', async () => {
+  it('완료 상태는 간단히 표시하고 닫으면 목록 검색을 유지한다', async () => {
     let starts = 0;
     let checks = 0;
     const props = {
@@ -73,7 +73,8 @@ describe('캐릭터 동기화 화면', () => {
     assert.ok(rntl.screen.queryByText('전체 설정 동기화 #5 · 소셜') === null);
     await rntl.fireEvent.changeText(rntl.screen.getByLabelText('캐릭터 검색'), '소셜');
     await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: '동기화' }));
-    assert.ok(rntl.screen.getByText('전체 설정 동기화 #5 · 소셜'));
+    assert.ok(rntl.screen.getByText('최근 캐릭터 설정 동기화 완료 · 소셜 · 원래 설정 복원됨'));
+    assert.equal(rntl.screen.queryByRole('button', { name: '작업 상태 다시 확인' }), null);
     assert.equal(starts, 0);
     assert.equal(checks, 1);
     await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: '동기화 화면 닫기' }));
@@ -84,7 +85,8 @@ describe('캐릭터 동기화 화면', () => {
     await rntl.fireEvent.press(rntl.screen.getByRole('tab', { name: '캐릭' }));
     assert.ok(rntl.screen.getByDisplayValue('소셜'));
     await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: '동기화' }));
-    assert.ok(rntl.screen.getByText('전체 설정 동기화 #5 · 소셜'));
+    assert.ok(rntl.screen.getByText('최근 캐릭터 설정 동기화 완료 · 소셜 · 원래 설정 복원됨'));
+    assert.equal(rntl.screen.queryByRole('button', { name: '작업 상태 다시 확인' }), null);
     assert.equal(starts, 0);
     await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: '동기화 화면 닫기' }));
     await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: '프리셋' }));
@@ -130,4 +132,43 @@ it('대상 캐릭터의 동기화는 실행 버튼을 누를 때만 시작하고
   await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: '동기화' }));
   assert.equal(starts, 1);
   await rntl.act(async () => { finish(); await pending; });
+});
+
+it('전체 목록에서 깊은 동기화를 명시적으로 시작하고 완료 상태는 한 줄로 표시한다', async () => {
+  let starts = 0;
+  await rntl.render(React.createElement(CharacterSyncControl, {
+    characterHub: makeCharacterManagementHubResource(),
+    onStartCharacterDeepSync: async () => { starts += 1; },
+    characterSyncJob: {
+      jobId: 46, accountId: 1, syncMode: 'DEEP', status: 'completed', rosterCount: 48, syncedCount: 48,
+      failedCharacterIds: [], characters: [], message: null, startedAt: '2026-10-13T00:00:00Z',
+      finishedAt: '2026-10-13T01:00:00Z', stopRequested: false, lastCompletedRosterIndex: 47, currentHofCharacterId: null,
+    },
+  }));
+  await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: '동기화' }));
+  assert.equal(starts, 0);
+  assert.ok(rntl.screen.getByText('전체 캐릭터 설정 동기화 완료 · 48/48'));
+  assert.equal(rntl.screen.queryByText('동기화 진행 상황'), null);
+  assert.equal(rntl.screen.queryByRole('button', { name: '동기화 상태 다시 확인' }), null);
+  await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: '전체 캐릭터 설정 동기화' }));
+  assert.equal(starts, 1);
+});
+
+it('복구가 필요하면 상세 카드와 복구 동작을 유지하고 새 전체 수집을 막는다', async () => {
+  let retries = 0;
+  let starts = 0;
+  await rntl.render(React.createElement(CharacterSyncControl, {
+    characterHub: makeCharacterManagementHubResource({
+      deepSync: { status: 'error', progress: null, errorMessage: '원본 복구 필요',
+        job: { ...completed, status: 'FAILED', recoveryStatus: 'REQUIRED', canRetryRecovery: true } },
+      actions: { retryRecovery: async () => { retries += 1; } },
+    }),
+    onStartCharacterDeepSync: async () => { starts += 1; },
+  }));
+  await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: '동기화 · 복구 필요' }));
+  assert.ok(rntl.screen.getByText('원본 복구: 복구 필요'));
+  await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: '전체 캐릭터 설정 동기화' }));
+  assert.equal(starts, 0);
+  await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: '보존된 원본으로 복구 재시도' }));
+  assert.equal(retries, 1);
 });

@@ -78,6 +78,7 @@ export function MainScreen({
   onCheckCharacterSync,
   onSyncCharacterRoster,
   onStartCharacterFullSync,
+  onStartCharacterDeepSync,
   onStopCharacterSync,
   onResumeCharacterSync,
   notice,
@@ -131,6 +132,7 @@ export function MainScreen({
     onCheckCharacterSync,
     onSyncCharacterRoster,
     onStartCharacterFullSync,
+    onStartCharacterDeepSync,
     onStopCharacterSync,
     onResumeCharacterSync,
     onLoadPresetPatterns,
@@ -255,6 +257,7 @@ function renderActiveTab({
   onCheckCharacterSync,
   onSyncCharacterRoster,
   onStartCharacterFullSync,
+  onStartCharacterDeepSync,
   onStopCharacterSync,
   onResumeCharacterSync,
   onLoadPresetPatterns,
@@ -331,6 +334,7 @@ function renderActiveTab({
                       onCheckCharacterSync={onCheckCharacterSync}
                       onSyncCharacterRoster={onSyncCharacterRoster}
                       onStartCharacterFullSync={onStartCharacterFullSync}
+                      onStartCharacterDeepSync={onStartCharacterDeepSync}
                       onStopCharacterSync={onStopCharacterSync}
                       onResumeCharacterSync={onResumeCharacterSync}
                     />

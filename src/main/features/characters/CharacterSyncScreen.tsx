@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { CharacterManagementHubResource } from '../../domain/characterManagementHubModule';
@@ -6,6 +6,7 @@ import { operationNeedsAttention } from '../../domain/characterManagementHubModu
 import type { CharacterSyncJobResponse } from '../../types/api';
 import { theme } from '../../styles/theme';
 import { toUserFacingErrorMessage } from '../../domain/userFacingErrors';
+import { characterSyncTitle } from '../../domain/characterSyncJobs';
 import { CharacterRecoveryPanel } from './management/CharacterRecoveryPanel';
 
 export type CharacterSyncControls = {
@@ -16,6 +17,7 @@ export type CharacterSyncControls = {
   characterRosterError?: string | null;
   onSyncCharacterRoster?: () => Promise<void>;
   onStartCharacterFullSync?: () => Promise<void>;
+  onStartCharacterDeepSync?: () => Promise<void>;
   onStopCharacterSync?: () => Promise<void>;
   onResumeCharacterSync?: () => Promise<void>;
   onCheckCharacterSync?: () => Promise<void>;
@@ -31,7 +33,7 @@ export function CharacterSyncControl({ characterHub, ...sync }: CharacterSyncCon
   const fullJob = sync.characterSyncJob;
   const executing = job?.status === 'RUNNING' || job?.status === 'PENDING';
   const recoveryRequired = !executing && operationNeedsAttention(job);
-  const failed = sync.characterRosterError || sync.characterSyncError || state.errorMessage || fullJob?.status === 'failed'
+  const failed = Boolean(fullJob?.failedCharacterIds.length) || sync.characterRosterError || sync.characterSyncError || state.errorMessage || fullJob?.status === 'failed'
     || (!executing && job?.recoveryStatus !== 'ACCEPTED'
       && (job?.status === 'FAILED' || job?.collectionStatus === 'INCOMPLETE' || job?.collectionStatus === 'FAILED'));
   const running = executing || state.status === 'running' || state.recoveryBusy
@@ -42,6 +44,16 @@ export function CharacterSyncControl({ characterHub, ...sync }: CharacterSyncCon
   const target = characterHub.selectedCharacter;
   const busy = Boolean(sync.characterSyncLabel) || fullJob?.status === 'running' || fullJob?.status === 'pending';
   const deepBusy = state.status === 'running' || state.recoveryBusy || operationNeedsAttention(job);
+  const completedCharacterName = characterHub.characters.find((item) => item.id === job?.targetCharacterId)?.name;
+  const fullNeedsDetail = Boolean(fullJob && (fullJob.status !== 'completed' || fullJob.failedCharacterIds.length > 0))
+    || Boolean(sync.characterSyncLabel || sync.characterSyncError);
+  const deepNeedsDetail = Boolean(executing || recoveryRequired || state.errorMessage || state.recoveryBusy
+    || state.status === 'running' || (job && job.status !== 'COMPLETED' && job.recoveryStatus !== 'ACCEPTED'));
+  // 전체 작업의 자식이 바뀌는 동안에도 복구가 필요한 현재 작업을 놓치지 않는다.
+  useEffect(() => {
+    if (!open || fullJob?.syncMode !== 'DEEP') return;
+    void characterHub.actions.checkRecovery?.();
+  }, [open, fullJob?.jobId, fullJob?.syncedCount, fullJob?.status, fullJob?.syncMode]);
   const close = () => {
     characterHub.actions.dismissRecoveryPreview?.();
     setOpen(false);
@@ -73,21 +85,24 @@ export function CharacterSyncControl({ characterHub, ...sync }: CharacterSyncCon
           {target ? <View style={styles.card}>
             <Text style={styles.title}>{target.name}</Text>
             <Text style={styles.text}>현재 설정과 저장 패턴·장비 저장 1·2를 수집하고 시작 전 설정으로 복원합니다.</Text>
-            <SyncAction label="전체 설정 동기화" disabled={Boolean(deepBusy)} action={characterHub.actions.deepSync} />
+            <SyncAction label="전체 설정 동기화" disabled={Boolean(deepBusy || busy)} action={characterHub.actions.deepSync} />
           </View> : <View style={styles.card}>
             <Text style={styles.title}>전체 캐릭터</Text>
             <Text style={styles.text}>목록 동기화는 캐릭터 목록을, 전체 상세 동기화는 각 캐릭터의 상세 정보를 갱신합니다.</Text>
-            <SyncAction label="목록 동기화" disabled={busy || fullJob?.status === 'stopped'} action={sync.onSyncCharacterRoster} />
-            <SyncAction label="전체 상세 동기화" disabled={busy || fullJob?.status === 'stopped'} action={sync.onStartCharacterFullSync} />
+            <SyncAction label="목록 동기화" disabled={Boolean(busy || deepBusy || fullJob?.status === 'stopped')} action={sync.onSyncCharacterRoster} />
+            <SyncAction label="전체 상세 동기화" disabled={Boolean(busy || deepBusy || fullJob?.status === 'stopped')} action={sync.onStartCharacterFullSync} />
+            <Text style={styles.text}>전체 설정 동기화는 모든 캐릭터의 저장 패턴과 장비 저장까지 수집한 뒤 각 캐릭터의 시작 전 설정을 복원합니다.</Text>
+            <SyncAction label="전체 캐릭터 설정 동기화" disabled={Boolean(busy || deepBusy || fullJob?.status === 'stopped')} action={sync.onStartCharacterDeepSync} />
             {sync.characterRosterResult && <Text style={styles.text}>{sync.characterRosterResult}</Text>}
             {sync.characterRosterError && <Text accessibilityRole="alert" style={styles.warning}>{sync.characterRosterError}</Text>}
           </View>}
-          {(fullJob || sync.characterSyncLabel || sync.characterSyncError) && <View style={styles.card}>
-            <Text style={styles.title}>전체 상세·목록 동기화 상태</Text>
+          {fullNeedsDetail && <View style={styles.card}>
+            <Text style={styles.title}>동기화 진행 상황</Text>
             {sync.characterSyncLabel && <Text style={styles.text}>{sync.characterSyncLabel}</Text>}
             {fullJob && <>
-              <Text style={styles.text}>{`전체 상세 동기화 #${fullJob.jobId} · ${fullSyncLabels[fullJob.status]}`}</Text>
+              <Text style={styles.text}>{`${characterSyncTitle(fullJob.syncMode)} · ${fullSyncLabels[fullJob.status]}`}</Text>
               <Text style={styles.text}>{`${fullJob.syncedCount}/${fullJob.rosterCount}`}</Text>
+              {fullJob.failedCharacterIds.length > 0 && <Text style={styles.warning}>{`수집 실패 ${fullJob.failedCharacterIds.length}명`}</Text>}
               {fullJob.message && <Text style={styles.text}>{fullJob.message}</Text>}
               {busy && <SyncAction label="현재 캐릭터 후 중지" action={sync.onStopCharacterSync} />}
               {fullJob.status === 'stopped' && <SyncAction label="이어하기" action={sync.onResumeCharacterSync} />}
@@ -95,12 +110,14 @@ export function CharacterSyncControl({ characterHub, ...sync }: CharacterSyncCon
             {sync.characterSyncError && <Text accessibilityRole="alert" style={styles.warning}>{sync.characterSyncError}</Text>}
             <SyncAction label="동기화 상태 다시 확인" action={sync.onCheckCharacterSync} />
           </View>}
-          <CharacterRecoveryPanel characterHub={characterHub} />
-          {!job && !state.errorMessage && <View style={styles.card}>
-            <Text style={styles.text}>{state.status === 'running' ? '전체 설정 동기화를 시작하고 있습니다.' : '확인된 전체 설정 동기화 작업이 없습니다.'}</Text>
-            <SyncAction label="작업 상태 다시 확인" disabled={state.recoveryBusy} action={characterHub.actions.checkRecovery} />
-          </View>}
-          {job && <Text style={styles.note}>작업 상태 갱신 · {new Date(job.updatedAt).toLocaleString()}</Text>}
+          {fullJob?.status === 'completed' && !fullNeedsDetail && <Text style={styles.note}>
+            {`${characterSyncTitle(fullJob.syncMode)} 완료 · ${fullJob.syncedCount}/${fullJob.rosterCount}`}
+          </Text>}
+          {!job && state.status === 'running' && <Text style={styles.text}>전체 설정 동기화를 시작하고 있습니다.</Text>}
+          {deepNeedsDetail && <CharacterRecoveryPanel characterHub={characterHub} />}
+          {!deepNeedsDetail && job?.status === 'COMPLETED' && !busy && <Text style={styles.note}>
+            {`최근 캐릭터 설정 동기화 완료${completedCharacterName ? ` · ${completedCharacterName}` : ''} · 원래 설정 복원됨`}
+          </Text>}
           <Text style={styles.note}>화면을 닫아도 진행 중인 동기화와 원본 복구는 계속됩니다.</Text>
         </ScrollView>
       </SafeAreaView>
@@ -119,6 +136,7 @@ function SyncAction({ label, action, disabled = false }: {
   return <><Pressable accessible accessibilityRole="button" accessibilityLabel={label}
     accessibilityState={{ disabled: disabled || submitting }} disabled={disabled || submitting}
     onPress={() => {
+      if (disabled || submitting) return;
       setSubmitting(true);
       setError(null);
       void action().catch((cause: unknown) => setError(toUserFacingErrorMessage(cause))).finally(() => setSubmitting(false));

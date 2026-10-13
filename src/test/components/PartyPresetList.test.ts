@@ -9,6 +9,7 @@ import { buildPartyPresetFolderEditorRows } from '../../main/domain/partyPresetF
 import type { PartyPresetCatalogActions } from '../../main/domain/partyPresetCatalogModule';
 import type { PartyPresetCatalogResponse, PartyPresetResponse } from '../../main/types/api';
 import { makePartyPresetCatalogResource } from '../fixtures/partyPresetCatalog';
+import { makeHofCharacter } from '../fixtures/api';
 
 type SwipeableMockMethods = { close: () => void; closeCalls: number };
 
@@ -129,6 +130,29 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('PartyPresetList', () => {
+  it('편집 중 ID가 대체되면 이름과 패턴 초안을 유지하고 새 ID로 저장한다', async () => {
+    const before = makeHofCharacter(7, { hofCharacterId: 'old-id' });
+    const selected = { ...PRESETS[0]!, members: [{ slotIndex: 0, characterId: 'old-id', patternSlot: 0 }] };
+    const updates: unknown[] = [];
+    const resource = makePartyPresetCatalogResource({ folders: [], presets: [selected, PRESETS[1]!] }, {
+      actions: { updatePreset: async (id, request) => { updates.push({ id, request }); return { ...selected, ...request }; } },
+    });
+    const props = { authenticated: true, characters: [before], partyPresetCatalog: resource };
+    const renderer = await renderListProps(props);
+    await openUnassignedPreset(renderer, '서관, 대표 프리셋');
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '프리셋 이름 입력' }).props.onChangeText('편집한 이름'));
+    const edited = [...findHost(renderer.root, 'BattlePartySelector').props.party];
+    edited[0] = { ...edited[0], patternSlot: 2 };
+    await act(async () => findHost(renderer.root, 'BattlePartySelector').props.onPartyChange(edited));
+    await act(async () => renderer.update(React.createElement(PartyPresetList, {
+      ...props, characters: [{ ...before, hofCharacterId: 'new-id' }],
+    })));
+    assert.equal(findHost(renderer.root, 'BattlePartySelector').props.party[0].characterId, 'new-id');
+    await act(async () => findButtonByText(renderer.root, '저장').props.onPress());
+    assert.deepEqual(updates, [{ id: selected.id, request: {
+      name: '편집한 이름', folderId: null, members: [{ ...edited[0], characterId: 'new-id' }, ...edited.slice(1)],
+    } }]);
+  });
   it('저장된 프리셋의 패턴을 한 번만 불러오고 완료 결과를 표시한다', async () => {
     const pending = deferred<string>();
     const selected = { ...PRESETS[0]!, members: [{ slotIndex: 0, characterId: 'char-1', patternSlot: 0 }] };

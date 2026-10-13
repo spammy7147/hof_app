@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Linking, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { BattlePartyPresetPicker, type PartySelectionMode } from '../../battle/components/BattlePartyPresetPicker';
 import type { PartyPresetCatalogResource } from '../../../domain/partyPresetCatalogModule';
@@ -37,9 +37,7 @@ function ColosseumBattlePanel({ api, characters = [], partyPresetCatalog, resolv
   const [partySelectionMode, setPartySelectionMode] = useState<PartySelectionMode>(null);
   const [selectedPresetId, setSelectedPresetId] = useState<number | null>(null);
   const [openTeamSlot, setOpenTeamSlot] = useState<number | null>(null);
-  const [selectedOpponent, setSelectedOpponent] = useState<string | null>(null);
   const [response, setResponse] = useState<ColosseumBattleResponse | null>(null);
-  const [detailsOpen, setDetailsOpen] = useState(false);
   const staged = useRef<ColosseumBattleResponse | null>(null);
   const latestData = useRef<ColosseumBattleResponse | null>(null);
   const activeApi = useRef(api); activeApi.current = api;
@@ -49,27 +47,29 @@ function ColosseumBattlePanel({ api, characters = [], partyPresetCatalog, resolv
       ? await api.submit<SaveColosseumTeamRequest, ColosseumBattleResponse>('/api/town/pvp/colosseum/team', mutation.request)
       : await api.submit<ChallengeColosseumRequest, ColosseumBattleResponse>('/api/town/pvp/colosseum/challenge', mutation.request);
     if (activeApi.current !== api) return next.result ?? info('이전 계정의 완료 응답을 폐기했습니다.');
-    staged.current = mutation.kind === 'challenge' && latestData.current
-      ? { ...(next.fighters.length || next.opponents.length ? next : latestData.current), battleResult: next.battleResult, result: next.result }
-      : next;
+    let current = next;
+    if (mutation.kind === 'challenge') {
+      // 결과 화면에는 팀 설정이 없으므로 GET만 보충하고 직접 전투 결과를 유지한다.
+      try { current = { ...await load(), battleResult: next.battleResult, result: next.result }; }
+      catch { current = { ...(latestData.current ?? next), challengeAvailable: false, battleResult: next.battleResult, result: next.result }; }
+    }
+    if (activeApi.current === api) staged.current = current;
     return next.result ?? info(mutation.kind === 'team' ? '팀을 저장했습니다.' : '전투가 끝났습니다.');
-  }, [api]);
+  }, [api, load]);
   const town = useTownFeature<ColosseumBattleResponse, BattleMutation>({ load, submitAction, resolveCaptcha, featureKey: `colosseum-battle-${apiKey}`, describeError: toUserFacingErrorMessage });
   const data = response ?? town.data;
   latestData.current = data;
   useEffect(() => { if (!data) return; setSelectedTeam((current) => current.some((id) => id != null) ? current.map((id) => id != null && data.fighters.some((f) => f.id === id) ? id : null) : toTeamSlots(data.selectedTeam)); }, [data]);
-  useEffect(() => { setResponse(null); setSelectedOpponent(null); setOpenTeamSlot(null); setPartySelectionMode(null); setSelectedPresetId(null); }, [api]);
+  useEffect(() => { setResponse(null); setSelectedTeam(emptyTeamSlots()); setOpenTeamSlot(null); setPartySelectionMode(null); setSelectedPresetId(null); }, [api]);
   if (!data) return <LoadState label="콜로세움" loading={town.status === 'loading'} error={town.error} reload={town.reload} />;
   const busy = town.status === 'loading' || town.status === 'submitting';
-  const rows: TownRowResponse[] = data.opponents.map((opponent) => ({ id: opponent.id, label: opponent.label, accessibilityLabel: `${opponent.label}${busy ? ' 선택 불가' : ' 선택'}`, detail: opponent.detail, imageUrl: null, price: null, quantity: null, selectable: !busy }));
-  const selectedIds = selectedOpponent ? [selectedOpponent] : [];
-  const onSelection = (ids: string[]) => {
-    setSelectedOpponent(ids[0] ?? null);
-  };
+  const rows: TownRowResponse[] = [
+    ...data.topRankings.map((ranking, index) => ({ id: `top-${index}`, label: `TOP 5 · ${ranking.rank}`, detail: ranking.teams.join('\n') })),
+    ...data.nearRankings.map((ranking, index) => ({ id: `near-${index}`, label: `NEAR 5 · ${ranking.rank}`, detail: ranking.teams.join('\n') })),
+  ].map((row) => ({ ...row, imageUrl: null, price: null, quantity: null, selectable: false }));
   const selectDirectParty = () => {
     setPartySelectionMode('direct');
     setSelectedPresetId(null);
-    setSelectedTeam(emptyTeamSlots());
     setOpenTeamSlot(null);
   };
   const selectPresetParty = (preset: PartyPresetResponse) => {
@@ -81,26 +81,37 @@ function ColosseumBattlePanel({ api, characters = [], partyPresetCatalog, resolv
   const finish = (_result: TownActionResultResponse) => { if (staged.current) { setResponse(staged.current); setSelectedTeam(toTeamSlots(staged.current.selectedTeam)); } staged.current = null; };
   const submit = (mutation: BattleMutation) => { const submissionApi = api; staged.current = null; setResponse({ ...data, battleResult: mutation.kind === 'challenge' ? null : data.battleResult, result: null }); void town.submit(mutation).then((result) => { if (activeApi.current === submissionApi) finish(result); }).catch(() => undefined); };
   const battle = data.battleResult;
-  const opponent = data.opponents.find((item) => item.id === selectedOpponent) ?? null;
-  const teamReady = selectedFighterIds(selectedTeam).length >= Math.max(data.minTeamSize, 1);
-  const fixedAction = selectedOpponent ? <View style={styles.fixedActions}>
-    <ActionButton label="Challenge" disabled={busy} onPress={() => opponent && submit({ kind: 'challenge', request: { opponentCandidateId: opponent.id } })} />
-    {partySelectionMode ? <ActionButton label="팀 저장" disabled={busy || !teamReady} onPress={() => submit({ kind: 'team', request: { fighterCandidateIds: selectedFighterIds(selectedTeam) } })} /> : null}
-  </View> : null;
-  return <View style={styles.container}><TownItemList rows={rows} selectionMode="single" selectedIds={selectedIds} onSelectionChange={onSelection}
-    fixedAction={fixedAction}
-    header={<View style={styles.section}><Text style={styles.title}>콜로세움 전투</Text><Text style={styles.hint}>도전할 상대를 선택하세요.</Text></View>}
-    footer={<View style={styles.section}>
-      {battle ? <View accessibilityLabel="콜로세움 전투 결과" accessibilityLiveRegion="polite" style={styles.resultBox}><Text style={styles.resultTitle}>{battle.summary}</Text>
-        <Text style={styles.hint}>{battle.turns == null ? '턴 확인 불가' : `${battle.turns}턴`} · 승자 {battle.winner ?? '확인 불가'}</Text>
-        <Text style={styles.hint}>내 HP {battle.playerHp ?? '-'} · 상대 HP {battle.opponentHp ?? '-'}</Text>
-        <Text style={styles.hint}>내 상태 {battle.playerStatus ?? '-'} · 상대 상태 {battle.opponentStatus ?? '-'}</Text>
-        {battle.totalDamage != null ? <Text style={styles.hint}>총 데미지 {battle.totalDamage.toLocaleString()}</Text> : null}
-        {battle.reward ? <Text style={styles.reward}>보상 {battle.reward}</Text> : null}
-        {battle.detail.length ? <><Pressable accessibilityRole="button" accessibilityState={{ expanded: detailsOpen }} accessibilityLabel={`전투 상세 ${detailsOpen ? '접기' : '펼치기'}`} onPress={() => setDetailsOpen((v) => !v)}><Text style={styles.link}>전투 상세 {detailsOpen ? '접기' : '펼치기'}</Text></Pressable>{detailsOpen ? battle.detail.map((line, index) => <Text key={`${line.turn ?? 'line'}-${index}`} style={styles.detail}>{line.turn == null ? '' : `${line.turn}턴 · `}{line.text}</Text>) : null}</> : null}
+  const ids = selectedFighterIds(selectedTeam);
+  const teamReady = ids.length === 5 && new Set(ids).size === 5;
+  const teamDirty = ids.length !== data.selectedTeam.length || ids.some((id) => !data.selectedTeam.includes(id));
+  const refresh = () => { void town.reload().then((next) => {
+    if (activeApi.current === api) setResponse({ ...next, battleResult: data.battleResult });
+  }).catch(() => undefined); };
+  const fixedAction = <View style={styles.fixedActions}>
+    <ActionButton label="팀 저장" disabled={busy || !teamReady || !data.teamSaveAvailable} onPress={() => submit({ kind: 'team', request: { fighterCandidateIds: ids } })} />
+    <ActionButton label="Challenge" disabled={busy || !data.challengeAvailable || data.selectedTeam.length !== 5 || teamDirty} onPress={() => submit({ kind: 'challenge', request: {} })} />
+  </View>;
+  return <View style={styles.container}><TownItemList rows={rows} selectionMode="none" fixedAction={fixedAction}
+    header={<View style={styles.section}>
+      <Text style={styles.title}>콜로세움 전투</Text>
+      <Text style={styles.hint}>출전할 5명을 저장한 뒤 랭킹에 도전하세요. 상대는 HOF에서 결정합니다.</Text>
+      <Text style={styles.hint}>저장 시점의 캐릭터 정보로 전투합니다. 캐릭터 정보를 변경했다면 팀을 다시 저장하세요.</Text>
+      {data.challengeNotice ? <Text style={styles.hint}>{data.challengeNotice}</Text> : null}
+      {!data.challengeAvailable && !data.challengeNotice ? <Text style={styles.hint}>현재 도전할 수 없습니다. 새로고침하여 다시 확인하세요.</Text> : null}
+      <ActionButton label="새로고침" disabled={busy} onPress={refresh} />
+      {battle ? <View accessibilityLabel="콜로세움 전투 결과" accessibilityLiveRegion="polite" style={styles.resultBox}>
+        <Text style={styles.resultTitle}>{battle.summary}</Text>
+        <Text style={styles.hint}>{battle.turns == null ? '턴 확인 불가' : `${battle.turns}턴`}</Text>
+        {battle.teams.map((team, index) => <View key={index} style={styles.section}>
+          <Text style={styles.teamTitle}>{team.label ?? `${index === 0 ? '왼쪽' : '오른쪽'} 팀`}</Text>
+          <Text style={styles.hint}>남은 HP {team.hp ?? '-'} · 생존자 {team.survivors ?? '-'}</Text>
+          {team.totalDamage != null ? <Text style={styles.hint}>총 데미지 {team.totalDamage.toLocaleString()}</Text> : null}
+        </View>)}
+        {battle.reward ? <Text style={styles.reward}>{battle.reward}</Text> : null}
+        {battle.detailUrl ? <Pressable accessibilityRole="link" accessibilityLabel="세부 전투 로그 보기" onPress={() => void Linking.openURL(battle.detailUrl!).catch(() => undefined)}><Text style={styles.link}>세부 전투 로그 보기</Text></Pressable> : null}
       </View> : null}
-      {selectedOpponent ? <View style={styles.teamEditor}>
-        <Text style={styles.stepLabel}>STEP 1 · 파티 선택</Text>
+      <View style={styles.teamEditor}>
+        <Text style={styles.stepLabel}>팀 설정</Text>
         <BattlePartyPresetPicker
           characters={characters}
           catalog={partyPresetCatalog?.catalog ?? EMPTY_PRESET_CATALOG}
@@ -112,14 +123,13 @@ function ColosseumBattlePanel({ api, characters = [], partyPresetCatalog, resolv
           onSelectDirect={selectDirectParty}
           onSelectPreset={selectPresetParty}
         />
-        {partySelectionMode ? <>
-          <Text style={styles.teamTitle}>콜로세움 팀</Text>
-          <Text style={styles.hint}>팀원 {selectedFighterIds(selectedTeam).length}/5명 · 각 슬롯에서 캐릭터를 검색해 선택하세요.</Text>
-          <ColosseumTeamSlots busy={busy} fighters={data.fighters} openSlot={openTeamSlot} selectedTeam={selectedTeam} onOpenSlot={setOpenTeamSlot} onTeamChange={setSelectedTeam} />
-        </> : null}
-      </View> : null}
+        <Text style={styles.hint}>팀원 {ids.length}/5명 · 저장된 팀 {data.selectedTeam.length}/5명</Text>
+        {teamDirty ? <Text style={styles.hint}>변경한 팀을 저장한 뒤 도전할 수 있습니다.</Text> : null}
+        <ColosseumTeamSlots busy={busy} fighters={data.fighters} openSlot={openTeamSlot} selectedTeam={selectedTeam} onOpenSlot={setOpenTeamSlot} onTeamChange={setSelectedTeam} />
+      </View>
       {data.result ? <TownActionResult result={data.result} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}
-    </View>} emptyMessage="현재 도전 가능한 상대가 없습니다." />
+    </View>}
+    emptyMessage="현재 랭킹 정보를 표시할 수 없습니다." />
   </View>;
 }
 
@@ -194,11 +204,11 @@ function doNothing() {}
 function emptyTeamSlots(): Array<string | null> { return Array.from({ length: 5 }, () => null); }
 function toTeamSlots(ids: readonly string[]): Array<string | null> { return Array.from({ length: 5 }, (_, index) => ids[index] ?? null); }
 function teamSlotsFromPreset(preset: PartyPresetResponse, fighters: readonly ColosseumFighterResponse[]): Array<string | null> {
-  const fighterIds = new Set(fighters.map((fighter) => fighter.id));
+  const fighterIds = new Map(fighters.map((fighter) => [fighter.characterId, fighter.id]));
   const slots = emptyTeamSlots();
   preset.members.forEach((member) => {
     if (member.slotIndex < 0 || member.slotIndex >= slots.length || member.characterId == null) return;
-    slots[member.slotIndex] = fighterIds.has(member.characterId) ? member.characterId : null;
+    slots[member.slotIndex] = fighterIds.get(member.characterId) ?? null;
   });
   return slots;
 }

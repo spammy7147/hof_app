@@ -38,6 +38,28 @@ moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('BattleRunPanel party preset catalog', () => {
+  for (const mode of ['preset', 'direct'] as const) {
+    it(`${mode} 파티를 편집한 뒤 ID가 바뀌면 캐릭터와 선택 패턴을 유지한다`, async () => {
+      const before = makeHofCharacter(7, { hofCharacterId: 'old-id' });
+      const after = { ...before, hofCharacterId: 'new-id' };
+      const preset = { id: 7, accountId: 1, name: '검증', folderId: null, displayOrder: 0,
+        isPrimary: false, members: [{ slotIndex: 0, characterId: 'old-id', patternSlot: 0 }], createdAt: '', updatedAt: '' };
+      const props = { characters: [before], partyPresetCatalog: makePartyPresetCatalogResource({ folders: [], presets: [preset] }),
+        isRunning: false, result: null, errorMessage: null, onRunBattle: () => undefined };
+      let renderer!: ReturnType<typeof create>;
+      await act(async () => { renderer = create(React.createElement(BattleRunPanel, props)); });
+      await act(async () => renderer.root.findByProps({ accessibilityLabel: '전투 파티 프리셋 선택' }).props.onPress());
+      await act(async () => renderer.root.findByProps({ accessibilityLabel: mode === 'preset' ? '검증 프리셋 선택' : '캐릭터 직접 선택 선택' }).props.onPress());
+      const selector = () => renderer.root.find((node) => String(node.type) === 'BattlePartySelector');
+      await act(async () => selector().props.onPartyChange([
+        { slotIndex: 0, characterId: 'old-id', patternSlot: 2 },
+        ...[1, 2, 3, 4].map((slotIndex) => ({ slotIndex, characterId: null, patternSlot: null })),
+      ]));
+      await act(async () => renderer.update(React.createElement(BattleRunPanel, { ...props, characters: [after] })));
+      assert.deepEqual(selector().props.party[0], { slotIndex: 0, characterId: 'new-id', patternSlot: 2 });
+      await act(async () => renderer.unmount());
+    });
+  }
   it('allowedBattleCounts가 1이면 낚시용 1회 전투만 표시한다', async () => {
     const characters = Array.from({ length: 5 }, (_, index) => makeHofCharacter(index + 1));
     let renderer!: ReturnType<typeof create>;
