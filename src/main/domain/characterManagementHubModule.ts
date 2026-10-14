@@ -1086,12 +1086,31 @@ export class CharacterManagementHubModule {
         this.replace({ ...this.resource, deepSync: { ...this.resource.deepSync, job } });
       });
       if (!isCurrentAccount()) return;
+      const acceptRoster = this.createObservationSink(this.accountKey).beginRosterObservation();
+      const roster = await this.backend.loadRoster?.();
+      if (!isCurrentAccount()) return;
+      const selectionWasCurrent = this.isCurrentTarget(selected.id, expectedGeneration, expectedSelectionGeneration);
+      const completedJob = this.resource.deepSync.job;
+      if (roster) acceptRoster(roster);
+      const rosterSelectionGeneration = this.selectionGeneration;
+      await this.relatedPresetRefresh;
+      if (!isCurrentAccount()) return;
+      let completedCharacterId = selected.id;
+      let completedSelectionGeneration = expectedSelectionGeneration;
+      if (selectionWasCurrent && this.selectionGeneration === rosterSelectionGeneration && result && result.characterId !== selected.id) {
+        const replacement = this.roster.get(result.characterId);
+        if (replacement && replacement.hofCharacterId === selected.hofCharacterId && isActive(replacement)) {
+          completedCharacterId = replacement.id;
+          completedSelectionGeneration = rosterSelectionGeneration + 1;
+          await this.select(replacement, expectedGeneration, rosterSelectionGeneration);
+        }
+      }
       if (this.isCurrentTarget(selected.id, expectedGeneration, expectedSelectionGeneration)) {
         await this.reloadStored(expectedGeneration, expectedSelectionGeneration);
       }
       if (!isCurrentAccount()) return;
-      this.replace({ ...this.resource, deepSync: { ...this.resource.deepSync, status: 'completed', progress: result, errorMessage: null } });
-      return this.isCurrentTarget(selected.id, expectedGeneration, expectedSelectionGeneration) ? result : undefined;
+      this.replace({ ...this.resource, deepSync: { ...this.resource.deepSync, job: completedJob, status: 'completed', progress: result, errorMessage: null } });
+      return this.isCurrentTarget(completedCharacterId, expectedGeneration, completedSelectionGeneration) ? result : undefined;
     } catch (error: unknown) {
       if (!isCurrentAccount()) return;
       this.replace({ ...this.resource, deepSync: {

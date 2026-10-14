@@ -22,6 +22,75 @@ import type {
 } from '../../main/types/api';
 
 describe('character management hub module', () => {
+  it('깊은 동기화가 새 기록을 기존 기록에 자동 연결하면 선택 상세와 프리셋 카탈로그도 갱신한다', async () => {
+    const previous = makeHofCharacter(1, { hofCharacterId: 'old-id', lifecycle: 'MISSING' });
+    const provisional = makeHofCharacter(2, { hofCharacterId: 'new-id' });
+    const linked: HofCharacter = { ...previous, hofCharacterId: 'new-id', lifecycle: 'ACTIVE' };
+    let presetRefreshes = 0;
+    const loads: number[] = [];
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async (id) => {
+        loads.push(id);
+        return { ...freshDetail(id), hofCharacterId: 'new-id' };
+      },
+      loadRoster: async () => [linked],
+      reloadRelatedPresets: async () => { presetRefreshes += 1; },
+      deepSync: async () => ({ characterId: previous.id, progress: [] }),
+    }));
+    hub.activate('account-1');
+    hub.observeRoster([previous, provisional]);
+    await hub.getSnapshot().actions.select(provisional);
+    const result = await hub.getSnapshot().actions.deepSync?.();
+    assert.equal(result?.characterId, previous.id);
+    assert.equal(hub.getSnapshot().selectedCharacter?.id, previous.id);
+    assert.equal(hub.getSnapshot().detail?.id, previous.id);
+    assert.equal(hub.getSnapshot().detail?.hofCharacterId, 'new-id');
+    assert.deepEqual(hub.getSnapshot().characters.map((c) => c.id), [previous.id]);
+    assert.deepEqual(loads, [provisional.id, previous.id]);
+    assert.equal(presetRefreshes, 1);
+    assert.equal(hub.getSnapshot().deepSync.status, 'completed');
+  });
+
+  for (const changeAt of ['during-sync', 'during-roster', 'during-presets']) {
+    it(`자동 연결 ${changeAt}에 다른 캐릭터를 선택하면 그 선택을 유지하며 프리셋은 갱신한다`, async () => {
+      const previous = makeHofCharacter(1, { hofCharacterId: 'old-id', lifecycle: 'MISSING' });
+      const provisional = makeHofCharacter(2, { hofCharacterId: 'new-id' });
+      const peer = makeHofCharacter(3);
+      const completed = deferred<CharacterDeepSyncResponse>();
+      const roster = deferred<HofCharacter[]>();
+      const presets = deferred<void>();
+      let presetRefreshes = 0;
+      const hub = new CharacterManagementHubModule(backend({
+        loadStoredDetail: async (id) => ({ ...freshDetail(id), hofCharacterId: id === provisional.id ? 'new-id' : peer.hofCharacterId }),
+        loadRoster: () => roster.promise,
+        reloadRelatedPresets: async () => {
+          presetRefreshes += 1;
+          if (changeAt === 'during-presets') await presets.promise;
+        },
+        deepSync: () => completed.promise,
+      }));
+      hub.activate('account-1');
+      hub.observeRoster([previous, provisional, peer]);
+      await hub.getSnapshot().actions.select(provisional);
+      const pending = hub.getSnapshot().actions.deepSync?.();
+      if (changeAt === 'during-sync') await hub.getSnapshot().actions.select(peer);
+      completed.resolve({ characterId: previous.id, progress: [] });
+      await settle();
+      if (changeAt === 'during-roster') await hub.getSnapshot().actions.select(peer);
+      roster.resolve([{ ...previous, hofCharacterId: 'new-id', lifecycle: 'ACTIVE' }, peer]);
+      if (changeAt === 'during-presets') {
+        await settle();
+        await hub.getSnapshot().actions.select(peer);
+        presets.resolve();
+      }
+      assert.equal(await pending, undefined);
+      assert.equal(hub.getSnapshot().selectedCharacter?.id, peer.id);
+      assert.equal(hub.getSnapshot().detail?.id, peer.id);
+      assert.equal(presetRefreshes, 1);
+      assert.equal(hub.getSnapshot().deepSync.status, 'completed');
+    });
+  }
+
   it('reopens the unresolved job and retries its recovery without starting a new sync', async () => {
     const job = recoveryJob('REQUIRED');
     let starts = 0;
