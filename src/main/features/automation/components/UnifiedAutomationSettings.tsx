@@ -376,6 +376,7 @@ function AutomationEntryRow({
 
 function getEntrySummary(entry: TypedAutomationEntryResponse): string {
   if (entry.type === 'QUEST') return `선택 ${entry.quests.length}개`;
+  if (entry.type === 'COLOSSEUM') return '저장된 5인 팀 · 쿨다운마다 랭킹 도전';
   if (entry.type === 'HOME_QUEST') return `자택 퀘스트 ${entry.homeQuests?.length ?? 0}개`;
   if (entry.type === 'BATTLE_MAP') return `전투 맵 ${entry.battleMaps.length}개`;
   if (entry.type === 'ADVENTURE_MAP') return `모험 맵 ${entry.adventureMaps.length}개`;
@@ -388,7 +389,7 @@ function AutomationTypeIcon({ type }: { type: AutomationType }) {
   const iconProps = { color: theme.colors.accentGreen, size: 18 };
   if (type === 'QUEST') return <ScrollText {...iconProps} />;
   if (type === 'HOME_QUEST') return <House {...iconProps} />;
-  if (type === 'BATTLE_MAP') return <Swords {...iconProps} />;
+  if (type === 'BATTLE_MAP' || type === 'COLOSSEUM') return <Swords {...iconProps} />;
   if (type === 'ADVENTURE_MAP') return <Map {...iconProps} />;
   if (type === 'RAID') return <Shield {...iconProps} />;
   if (type === 'UNION') return <Users {...iconProps} />;

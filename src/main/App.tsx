@@ -176,6 +176,7 @@ function AuthenticatedApp({
         reorder: (entryIds) => api.reorderAutomationEntries(entryIds),
         moveMap: (targetEntryId, request) => api.moveMapBetweenGroups(targetEntryId, request),
         updateQuest: (request) => api.updateQuestAutomation(request),
+        updateColosseum: (request) => api.updateColosseumAutomation(request),
         updateHomeQuest: (request) => api.updateHomeQuestAutomation(request),
         updateBattle: (request) => api.updateBattleMapAutomation(request),
         updateAdventure: (request) => api.updateAdventureMapAutomation(request),

@@ -26,6 +26,7 @@ export const AUTOMATION_TYPE_ORDER: readonly AutomationType[] = [
   'RAID',
   'UNION',
   'FISHING',
+  'COLOSSEUM',
 ];
 
 export const AUTOMATION_TYPE_METADATA: Readonly<Record<AutomationType, {
@@ -39,6 +40,7 @@ export const AUTOMATION_TYPE_METADATA: Readonly<Record<AutomationType, {
   RAID: { label: '레이드', icon: 'raid' },
   UNION: { label: '유니온', icon: 'union' },
   FISHING: { label: '낚시', icon: 'fishing' },
+  COLOSSEUM: { label: '콜로세움 전투', icon: 'swords' },
 };
 
 export function getAddableAutomationTypes(

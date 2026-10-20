@@ -13,6 +13,22 @@ import type {
 } from '../../main/types/api';
 
 describe('typed unified automation controller', () => {
+  it('saves colosseum activation without changing other automation settings', async () => {
+    const calls: unknown[] = [];
+    const quest = entry(1, 'QUEST', 0);
+    const controller = new UnifiedAutomationController(apiStub({
+      fetch: async () => aggregate([quest, entry(2, 'COLOSSEUM', 1)]),
+      updateColosseum: async (request) => {
+        calls.push(request);
+        return aggregate([quest, entry(2, 'COLOSSEUM', 1, { enabled: request.enabled })]);
+      },
+    }));
+    await controller.load();
+    assert.equal(await controller.saveColosseumSettings({ enabled: false }), true);
+    assert.deepEqual(calls, [{ enabled: false }]);
+    assert.deepEqual(controller.getSnapshot().aggregate?.entries, [quest, entry(2, 'COLOSSEUM', 1, { enabled: false })]);
+    assert.equal(controller.isEntryBusy(2), false);
+  });
   it('preserves the latest observed HOF status from aggregate responses', async () => {
     const newer = observedStatus(5700, '2026-07-24T10:00:02Z');
     const older = observedStatus(5900, '2026-07-24T10:00:01Z');
@@ -1236,6 +1252,7 @@ function apiStub(overrides: Overrides): UnifiedAutomationControllerApi {
     updateQuest: overrides.updateQuest ?? (async () => aggregate([])),
     updateBattle: overrides.updateBattle ?? (async () => aggregate([])),
     updateAdventure: overrides.updateAdventure ?? (async () => aggregate([])),
+    updateColosseum: overrides.updateColosseum,
     updateBattleGroup: overrides.updateBattleGroup,
     updateAdventureGroup: overrides.updateAdventureGroup,
     moveMap: overrides.moveMap,

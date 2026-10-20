@@ -35,6 +35,7 @@ type Props = {
 
 const TYPE_DESCRIPTIONS: Readonly<Record<AutomationType, string>> = {
   QUEST: '수락·완료와 전투 퀘스트를 자동으로 진행해요.',
+  COLOSSEUM: '마을에서 저장한 5인 팀으로 쿨다운마다 랭킹에 도전해요.',
   HOME_QUEST: '자택 퀘스트의 수락과 완료 보상 수령을 자동으로 처리해요.',
   BATTLE_MAP: '일일 목표 횟수에 맞춰 전투 맵을 실행해요.',
   ADVENTURE_MAP: '쿨다운과 횟수 제한에 맞춰 모험 맵을 진행해요.',

@@ -23,7 +23,7 @@ const dashboardMock = (props: Record<string, unknown>) => React.createElement(
   'Pressable',
   { accessibilityLabel: '설정 열기', onPress: props.onOpenSettings },
 );
-const settingsMock = () => React.createElement('UnifiedAutomationSettings');
+const settingsMock = (props: Record<string, unknown>) => React.createElement('UnifiedAutomationSettings', props);
 type Loader = (request: string, parent: NodeModule | undefined, isMain: boolean) => unknown;
 const moduleWithLoader = Module as unknown as { _load: Loader };
 const originalLoad = moduleWithLoader._load;
@@ -38,6 +38,7 @@ moduleWithLoader._load = (request, parent, isMain) => {
   if (request.endsWith('/BattleMapAutomationEditor')) return { BattleMapAutomationEditor: host('BattleMapAutomationEditor') };
   if (request.endsWith('/AdventureMapAutomationEditor')) return { AdventureMapAutomationEditor: host('AdventureMapAutomationEditor') };
   if (request.endsWith('/NewAutomationEditor')) return { NewAutomationEditor: host('NewAutomationEditor') };
+  if (request.endsWith('/ColosseumAutomationEditor')) return { ColosseumAutomationEditor: host('ColosseumAutomationEditor') };
   return originalLoad(request, parent, isMain);
 };
 const { HomeTabScreen } = require('../../main/screens/HomeTabScreen') as typeof import('../../main/screens/HomeTabScreen');
@@ -54,6 +55,30 @@ afterEach(() => {
 });
 
 describe('HomeTabScreen dashboard polling', () => {
+  it('opens the colosseum editor and saves its activation through the controller', async () => {
+    fakeTimeouts();
+    const base = controllerStub(async () => undefined) as unknown as {
+      getSnapshot: () => { aggregate: TypedAutomationAggregateResponse };
+    };
+    const colosseum = { id: 8, type: 'COLOSSEUM' as const, priority: 0, enabled: true, ready: true,
+      warnings: [], quests: [], battleMaps: [], battleMapProgress: [], adventureMaps: [] };
+    base.getSnapshot().aggregate.entries.push(colosseum);
+    const saved: unknown[] = [];
+    const controller = { ...base, saveColosseumSettings: async (request: unknown) => { saved.push(request); return true; } };
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(HomeTabScreen, props(controller as never))); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '설정 열기' }).props.onPress(); });
+    const settings = renderer.root.findByType('UnifiedAutomationSettings' as never);
+    await act(async () => { settings.props.onToggle(colosseum); });
+    assert.deepEqual(saved, [{ enabled: false }]);
+    await act(async () => { settings.props.onDetail(colosseum); });
+    const editor = renderer.root.findByType('ColosseumAutomationEditor' as never);
+    assert.equal(editor.props.entry.id, 8);
+    await act(async () => { await editor.props.onSave({ enabled: true }); });
+    assert.deepEqual(saved, [{ enabled: false }, { enabled: true }]);
+    assert.equal(renderer.root.findAllByType('ColosseumAutomationEditor' as never).length, 0);
+    await act(async () => { renderer.unmount(); });
+  });
   it('publishes the latest status observation from an automation aggregate', async () => {
     fakeTimeouts();
     const observed = {

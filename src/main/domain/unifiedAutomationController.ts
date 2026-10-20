@@ -17,6 +17,7 @@ import type {
   UpdateRaidAutomationRequest,
   UpdateUnionAutomationRequest,
   UpdateHomeQuestAutomationRequest,
+  UpdateColosseumAutomationRequest,
   AutomationHistoryPage,
   AutomationConvergenceStatus,
 } from '../types/api';
@@ -28,6 +29,7 @@ export type UnifiedAutomationControllerApi = {
   reorder: (entryIds: number[]) => Promise<TypedAutomationAggregateResponse>;
   moveMap?: (targetEntryId: number, request: MoveMapBetweenGroupsRequest) => Promise<TypedAutomationAggregateResponse>;
   updateQuest: (request: UpdateQuestAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
+  updateColosseum?: (request: UpdateColosseumAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
   updateHomeQuest?: (request: UpdateHomeQuestAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
   updateBattle: (request: UpdateBattleMapAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
   updateAdventure: (request: UpdateAdventureMapAutomationRequest) => Promise<TypedAutomationAggregateResponse>;
@@ -206,6 +208,10 @@ export class UnifiedAutomationController {
 
   saveQuestSettings(request: UpdateQuestAutomationRequest): Promise<boolean> {
     return this.saveSettings('QUEST', request, (body) => this.api.updateQuest(body));
+  }
+
+  saveColosseumSettings(request: UpdateColosseumAutomationRequest): Promise<boolean> {
+    return this.saveSettings('COLOSSEUM', request, (body) => this.requireApi(this.api.updateColosseum, '콜로세움 전투')(body));
   }
 
   saveHomeQuestSettings(request: UpdateHomeQuestAutomationRequest): Promise<boolean> {

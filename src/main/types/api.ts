@@ -584,7 +584,7 @@ export type RaidPubResponse = {
 export type RaidPubActionRequest = { action: RaidAction; raidId: string | null };
 
 /** 맵 유형은 복수 묶음을, 나머지 유형은 계정별 singleton을 사용한다. */
-export type AutomationType = 'QUEST' | 'HOME_QUEST' | 'BATTLE_MAP' | 'ADVENTURE_MAP' | 'RAID' | 'UNION' | 'FISHING';
+export type AutomationType = 'QUEST' | 'HOME_QUEST' | 'BATTLE_MAP' | 'ADVENTURE_MAP' | 'RAID' | 'UNION' | 'FISHING' | 'COLOSSEUM';
 
 /** PRIMARY는 ID를 보내지 않고 EXPLICIT은 유효한 preset ID를 반드시 보낸다. */
 export type PresetSelection =
@@ -631,6 +631,7 @@ export type HomeQuestSelectionRequest = {
   sourceOrder: number;
 };
 export type HomeQuestSelectionResponse = HomeQuestSelectionRequest;
+export type UpdateColosseumAutomationRequest = { enabled: boolean };
 export type UpdateHomeQuestAutomationRequest = { enabled: boolean; quests: HomeQuestSelectionRequest[] };
 
 export type BattleMapSettingRequest = PresetSelection & {

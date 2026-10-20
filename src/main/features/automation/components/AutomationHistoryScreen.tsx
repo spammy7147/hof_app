@@ -295,7 +295,7 @@ function impactScopeLabel(value: NonNullable<AutomationHistoryEvent['impactScope
 }
 function actionLabel(value: string, type?: AutomationHistoryCycle['events'][number]['type']) {
   if (value === 'START') return type === 'FISHING' ? '낚시 시작' : type === 'RAID' ? '전투 시작' : '시작';
-  return ({ BATTLE: '전투', BATTLE_MAP: '전투 맵 실행', ADVENTURE_MAP: '모험 맵 실행', QUEST_BATTLE: '퀘스트 전투', FISHING_TOWN: '낚시 진행', RAID_TOWN: '레이드 진행', HOME_QUEST: '자택 퀘스트 진행', CATCH: '낚기', REGISTER: '파티 등록', REWARD: '보상 수령', REFRESH: '상태 갱신', RESET: '레이드 리셋', WAIT: '대기', QUEST_ACCEPT: '퀘스트 수락', QUEST_CLAIM: '퀘스트 보상', HOME_ACCEPT: '자택 퀘스트 수락', HOME_CLAIM: '자택 퀘스트 완료', CYCLE_ABORT: '사이클 중단', RAID_CYCLE_ABORT: '레이드 사이클 중단' } as Record<string, string>)[value] ?? '자동화 작업';
+  return ({ COLOSSEUM: '콜로세움 도전', COLOSSEUM_CHALLENGE: '콜로세움 도전', BATTLE: '전투', BATTLE_MAP: '전투 맵 실행', ADVENTURE_MAP: '모험 맵 실행', QUEST_BATTLE: '퀘스트 전투', FISHING_TOWN: '낚시 진행', RAID_TOWN: '레이드 진행', HOME_QUEST: '자택 퀘스트 진행', CATCH: '낚기', REGISTER: '파티 등록', REWARD: '보상 수령', REFRESH: '상태 갱신', RESET: '레이드 리셋', WAIT: '대기', QUEST_ACCEPT: '퀘스트 수락', QUEST_CLAIM: '퀘스트 보상', HOME_ACCEPT: '자택 퀘스트 수락', HOME_CLAIM: '자택 퀘스트 완료', CYCLE_ABORT: '사이클 중단', RAID_CYCLE_ABORT: '레이드 사이클 중단' } as Record<string, string>)[value] ?? '자동화 작업';
 }
 function displayMessage(event: AutomationHistoryCycle['events'][number]) {
   const action = event.actionKind ? actionLabel(event.actionKind, event.type) : '자동화 작업';

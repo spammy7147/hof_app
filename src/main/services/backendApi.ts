@@ -59,6 +59,7 @@ import type {
   UpdateRaidAutomationRequest,
   UpdateUnionAutomationRequest,
   UpdateHomeQuestAutomationRequest,
+  UpdateColosseumAutomationRequest,
   AutomationHistoryPage,
   AutomationConvergenceStatus,
 } from '../types/api';
@@ -535,6 +536,10 @@ export class BackendApiClient {
     return this.request('/api/automation/unified/quest', {
       method: 'PUT', body: JSON.stringify(request),
     });
+  }
+
+  updateColosseumAutomation(request: UpdateColosseumAutomationRequest): Promise<TypedAutomationAggregateResponse> {
+    return this.request('/api/automation/unified/colosseum', { method: 'PUT', body: JSON.stringify(request) });
   }
 
   updateHomeQuestAutomation(request: UpdateHomeQuestAutomationRequest): Promise<TypedAutomationAggregateResponse> {

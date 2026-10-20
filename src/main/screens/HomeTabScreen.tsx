@@ -12,6 +12,7 @@ import { BattleMapAutomationEditor } from '../features/automation/components/Bat
 import { QuestAutomationEditor } from '../features/automation/components/QuestAutomationEditor';
 import { UnifiedAutomationSettings } from '../features/automation/components/UnifiedAutomationSettings';
 import { NewAutomationEditor } from '../features/automation/components/NewAutomationEditor';
+import { ColosseumAutomationEditor } from '../features/automation/components/ColosseumAutomationEditor';
 import { HomeQuestAutomationEditor } from '../features/automation/components/HomeQuestAutomationEditor';
 import { AutomationHistoryScreen } from '../features/automation/components/AutomationHistoryScreen';
 import { theme } from '../styles/theme';
@@ -24,6 +25,7 @@ import type {
   HofStatusResponse,
   RaidPubResponse,
   HomeResponse,
+  ColosseumBattleResponse,
   TypedAutomationEntryResponse,
   UpdateFishingAutomationRequest,
   UpdateRaidAutomationRequest,
@@ -78,6 +80,9 @@ export function HomeTabScreen({
   const loadHomeQuests = useCallback((): Promise<HomeResponse> => townApi == null
     ? Promise.reject(new Error('자택 관리 API를 사용할 수 없습니다.'))
     : townApi.load<HomeResponse>('/api/town/home'), [townApi]);
+  const loadColosseum = useCallback((): Promise<ColosseumBattleResponse> => townApi == null
+    ? Promise.reject(new Error('콜로세움 API를 사용할 수 없습니다.'))
+    : townApi.load<ColosseumBattleResponse>('/api/town/pvp/colosseum'), [townApi]);
   const [route, setRoute] = useState<HomeRoute>('dashboard');
   const [typedEditorEntry, setTypedEditorEntry] = useState<TypedAutomationEntryResponse | null>(null);
   const [rulesOpen, setRulesOpen] = useState(false);
@@ -135,7 +140,7 @@ export function HomeTabScreen({
   }
 
   function openEntryDetail(entry: TypedAutomationEntryResponse) {
-    if (entry.type === 'QUEST' || entry.type === 'HOME_QUEST' || entry.type === 'BATTLE_MAP' || entry.type === 'ADVENTURE_MAP' || entry.type === 'RAID' || entry.type === 'UNION' || entry.type === 'FISHING') {
+    if (entry.type === 'QUEST' || entry.type === 'HOME_QUEST' || entry.type === 'BATTLE_MAP' || entry.type === 'ADVENTURE_MAP' || entry.type === 'RAID' || entry.type === 'UNION' || entry.type === 'FISHING' || entry.type === 'COLOSSEUM') {
       if (savingEntryIds.includes(entry.id) || savingTypes.includes(entry.type)) {
         automationController.showMessage('이 자동화를 저장하고 있어요. 완료된 뒤 다시 열어 주세요.');
         return;
@@ -149,6 +154,7 @@ export function HomeTabScreen({
   }
 
   function toggleEntry(entry: TypedAutomationEntryResponse) {
+    if (entry.type === 'COLOSSEUM') return automationController.saveColosseumSettings({ enabled: !entry.enabled });
     if (entry.type === 'QUEST') {
       return automationController.saveQuestSettings({ enabled: !entry.enabled, quests: entry.quests });
     }
@@ -226,6 +232,15 @@ export function HomeTabScreen({
         }}
       />
     );
+  }
+
+  if (aggregate && route === 'editor' && typedEditorEntry?.type === 'COLOSSEUM') {
+    const entry = aggregate.entries.find(({ id }) => id === typedEditorEntry.id) ?? typedEditorEntry;
+    return <ColosseumAutomationEditor entry={entry} loadColosseum={loadColosseum}
+      saving={savingEntryIds.includes(entry.id) || savingTypes.includes('COLOSSEUM')}
+      mutationMessage={message ?? error} onBack={closeEditor}
+      onDelete={() => automationController.deleteEntry(entry.id)}
+      onSave={async (request) => { const saved = await automationController.saveColosseumSettings(request); if (saved) closeEditor(); return saved; }} />;
   }
 
   if (aggregate && route === 'editor' && typedEditorEntry?.type === 'HOME_QUEST') {
