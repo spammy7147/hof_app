@@ -477,7 +477,7 @@ describe('TownTabScreen', () => {
     });
     await act(async () => { await Promise.resolve(); });
 
-    assert.deepEqual(paths, ['/api/town/pantheon']);
+    assert.deepEqual(paths, ['/api/town/pantheon?view=catalog']);
     assert.equal(allText(renderer.root).includes('신전 거리'), true);
     assert.equal(allText(renderer.root).includes('기능 연결을 준비하고 있습니다.'), false);
     assert.equal(findHosts(renderer.root, 'FlatList').length, 1);

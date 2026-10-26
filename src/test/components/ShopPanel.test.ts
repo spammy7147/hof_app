@@ -5,7 +5,10 @@ import React from 'react';
 import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'react-test-renderer';
 
 const host = (name: string) => (props: Record<string, unknown>) => React.createElement(name, props, props.children as React.ReactNode);
+const appStateListeners = new Set<(state: string) => void>();
 const reactNativeMock = {
+  AppState: { currentState: 'active', addEventListener: (_event: string, listener: (state: string) => void) => { appStateListeners.add(listener); return { remove: () => appStateListeners.delete(listener) }; } },
+  Platform: { OS: 'ios' },
   ActivityIndicator: host('ActivityIndicator'),
   FlatList: (props: Record<string, unknown>) => React.createElement('FlatList', props, props.ListHeaderComponent as React.ReactNode, (props.data as Array<{ id: string }>).map((item) => React.createElement(React.Fragment, { key: item.id }, (props.renderItem as Function)({ item }))), props.ListFooterComponent as React.ReactNode),
   Modal: host('Modal'), Pressable: host('Pressable'), ScrollView: host('ScrollView'), StyleSheet: { create: <T,>(styles: T) => styles }, Text: host('Text'), TextInput: host('TextInput'), View: host('View'),
@@ -20,13 +23,59 @@ moduleWithLoader._load = (request, parent, isMain) => {
   return originalLoad(request, parent, isMain);
 };
 const { ShopPanel } = require('../../main/features/town/panels/ShopPanel') as typeof import('../../main/features/town/panels/ShopPanel');
-const { BackendApiError } = require('../../main/services/backendApi') as typeof import('../../main/services/backendApi');
+const { BackendApiError, BackendApiClient } = require('../../main/services/backendApi') as typeof import('../../main/services/backendApi');
+const { createTownApi } = require('../../main/features/town/api/townApi') as typeof import('../../main/features/town/api/townApi');
 moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+const originalFetch = globalThis.fetch;
 let mounted: ReactTestRenderer | null = null;
-afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; });
+afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; globalThis.fetch = originalFetch; });
 
 describe('ShopPanel', () => {
+  it('앱 복귀 갱신이 실패해도 기존 목록과 확인 시각을 남기고 구매를 막는다', async () => {
+    let calls = 0;
+    const pending = deferred<Response>();
+    globalThis.fetch = async () => (++calls === 1 ? new Response(JSON.stringify(shop('general')), { status: 200 }) : pending.promise);
+    const resource = createTownApi(new BackendApiClient('http://backend.test'));
+    await render(React.createElement(ShopPanel, { api: resource, mode: 'general' }));
+    await press('Potion 선택');
+    assert.equal(button('장바구니 구매').props.disabled, false);
+    await act(async () => { for (const listener of appStateListeners) { listener('background'); listener('active'); } });
+    assert.equal(calls, 2);
+    assert.equal(button('장바구니 구매').props.disabled, true);
+    pending.resolve(new Response(JSON.stringify({ message: '일시적 오류' }), { status: 503 }));
+    await act(async () => { await pending.promise; });
+    assert.ok(button('Potion 선택'));
+    assert.equal(text().includes('마지막 확인'), true);
+    assert.equal(button('장바구니 구매').props.disabled, true);
+  });
+
+  it('결과만 있는 구매 응답의 재확인이 실패해도 결과와 이전 목록을 보존하고 POST를 반복하지 않는다', async () => {
+    let loads = 0; let posts = 0;
+    await render(React.createElement(ShopPanel, { api: api(async () => { if (++loads > 1) throw new Error('조회 실패'); return shop('general'); }, async () => { posts += 1; return { ...shop('general'), items: [], stale: true, result: result('SUCCESS') }; }), mode: 'general' }));
+    await press('Potion 선택');
+    await press('장바구니 구매');
+    assert.equal(posts, 1); assert.equal(loads, 2);
+    assert.ok(button('Potion 선택'));
+    assert.equal(button('장바구니 구매').props.disabled, true);
+    assert.ok(button('다시 확인'));
+  });
+
+  it('같은 로그인 자원의 재진입은 마지막 목록을 먼저 보여주고 진행 중 조회를 공유한다', async () => {
+    let calls = 0;
+    const pending = deferred<Response>();
+    globalThis.fetch = async () => (++calls === 1 ? new Response(JSON.stringify(shop('general')), { status: 200 }) : pending.promise);
+    const resource = createTownApi(new BackendApiClient('http://backend.test'));
+    await render(React.createElement(ShopPanel, { api: resource, mode: 'general' }));
+    await act(async () => mounted!.unmount());
+    await render(React.createElement(ShopPanel, { api: resource, mode: 'general' }));
+    assert.ok(button('Potion 선택'));
+    await act(async () => mounted!.unmount());
+    await render(React.createElement(ShopPanel, { api: resource, mode: 'general' }));
+    assert.equal(calls, 2);
+    pending.resolve(new Response(JSON.stringify(shop('general')), { status: 200 }));
+    await act(async () => { await pending.promise; });
+  });
   for (const mode of ['general', 'sundries', 'dark'] as const) {
     it(`${mode} 독립 endpoint를 공용 장바구니 panel로 연다`, async () => {
       const paths: string[] = [];
@@ -208,3 +257,5 @@ function button(label: string): ReactTestInstance { return mounted!.root.find((n
 async function press(label: string) { await act(async () => button(label).props.onPress()); await act(async () => { await Promise.resolve(); }); }
 async function change(label: string, value: string) { await act(async () => button(label).props.onChangeText(value)); }
 function text() { return mounted!.root.findAll((node) => String(node.type) === 'Text').map((node) => node.children.join('')).join(' '); }
+
+function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>((done) => { resolve = done; }); return { promise, resolve }; }

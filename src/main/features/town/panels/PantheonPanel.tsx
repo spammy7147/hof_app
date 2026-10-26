@@ -1,6 +1,7 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { useVisibleRefresh } from '../../../hooks/useVisibleRefresh';
 import { toUserFacingErrorMessage } from '../../../domain/userFacingErrors';
 import { theme } from '../../../styles/theme';
 import type { PantheonActionRequest, PantheonActionResponse, PantheonDetailResponse, PantheonStreetResponse, TownActionResultResponse, TownRowResponse } from '../../../types/api';
@@ -10,20 +11,19 @@ import { TownItemList } from '../components/TownItemList';
 import { useTownFeature } from '../hooks/useTownFeature';
 
 type Props = { api: TownApi; resolveCaptcha?: () => Promise<void> };
-type CardActionRequest = { shrineId: string; actionId: string };
 const apiKeys = new WeakMap<object, number>(); let nextApiKey = 1;
 
 export function PantheonPanel({ api, resolveCaptcha }: Props) {
   const apiKey = identifyApi(api);
-  const load = useCallback(() => api.load<PantheonStreetResponse>('/api/town/pantheon'), [api]);
-  const submitAction = useCallback(async ({ shrineId, actionId }: CardActionRequest) => {
-    const next = await api.submit<PantheonActionRequest, PantheonDetailResponse>(`/api/town/pantheon/${encodeURIComponent(shrineId)}/actions`, { actionId });
-    return next.result ?? info('신전 상태를 갱신했습니다.');
-  }, [api]);
-  const town = useTownFeature<PantheonStreetResponse, CardActionRequest>({ load, submitAction, resolveCaptcha, featureKey: `pantheon-street-${apiKey}`, describeError: toUserFacingErrorMessage });
+  const load = useCallback(() => api.load<PantheonStreetResponse>('/api/town/pantheon?view=catalog'), [api]);
+  const mutationBusy = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const onActionState = useCallback((pending: boolean) => { mutationBusy.current = pending; setBusy(pending); }, []);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const town = useTownFeature<PantheonStreetResponse>({ load, resolveCaptcha, featureKey: `pantheon-street-${apiKey}`, describeError: toUserFacingErrorMessage });
 
+  if (town.status === 'awaiting-captcha') return <Text style={styles.hint}>HOF 인증을 기다리는 중...</Text>;
   if (!town.data) return <LoadState loading={town.status === 'loading'} error={town.error} reload={town.reload} label="신전 거리를" />;
-  const busy = town.status === 'loading' || town.status === 'submitting';
   const rows = town.data.shrines.map((shrine): TownRowResponse => ({
     id: shrine.id,
     label: shrine.name,
@@ -36,14 +36,59 @@ export function PantheonPanel({ api, resolveCaptcha }: Props) {
   }));
   return <View style={styles.container}>
     <TownItemList rows={rows} selectionMode="none"
-      header={<View style={styles.section}><Text style={styles.title}>신전 거리</Text><Text style={styles.hint}>각 신전에서 현재 가능한 동작을 바로 선택할 수 있습니다.</Text></View>}
+      header={<View style={styles.section}><Text style={styles.title}>신전 거리</Text><Text style={styles.hint}>신전을 펼쳐 현재 가능한 동작을 확인하세요.</Text></View>}
       renderItemFooter={(row) => {
         const shrine = town.data!.shrines.find((item) => item.id === row.id);
-        if (!shrine || shrine.actions.length === 0) return <Text style={styles.hint}>현재 HOF가 제공하는 동작이 없습니다.</Text>;
-        return <View style={styles.actions}>{shrine.actions.map((action) => <ActionButton key={action.id} label={actionButtonLabel(action)} accessibilityLabel={`${shrine.name} ${actionButtonLabel(action)}`} disabled={busy} onPress={() => void town.submit({ shrineId: shrine.id, actionId: action.id }).catch(() => undefined)} />)}</View>;
+        if (!shrine) return null;
+        return <View style={styles.section}>
+          <ActionButton label={expanded === shrine.id ? '접기' : '상세 보기'} accessibilityLabel={`${shrine.name} 상세`} disabled={busy} onPress={() => { if (!mutationBusy.current) setExpanded((current) => current === shrine.id ? null : shrine.id); }} />
+          {expanded === shrine.id ? <ShrineDetail key={`${apiKey}:${shrine.id}`} api={api} shrineId={shrine.id} name={shrine.name} resolveCaptcha={resolveCaptcha} onActionState={onActionState} /> : null}
+        </View>;
       }}
       footer={<View style={styles.section}>{town.result ? <TownActionResult result={town.result} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}</View>}
       emptyMessage="현재 확인할 수 있는 신전이 없습니다." />
+  </View>;
+}
+
+function ShrineDetail({ api, shrineId, name, resolveCaptcha, onActionState }: Props & { shrineId: string; name: string; onActionState: (pending: boolean) => void }) {
+  const path = `/api/town/pantheon/${encodeURIComponent(shrineId)}` as const;
+  const load = useCallback(async () => {
+    const detail = await api.load<PantheonDetailResponse>(path);
+    if (detail.complete === false) throw new Error('신전 상세를 확인하지 못했습니다. 다시 확인해 주세요.');
+    return detail;
+  }, [api, path]);
+  const actionPending = useRef(false);
+  const submitAction = async (request: PantheonActionRequest): Promise<PantheonDetailResponse> => {
+    actionPending.current = true;
+    onActionState(true);
+    try {
+      const next = await api.submit<PantheonActionRequest, PantheonDetailResponse>(`${path}/actions`, request);
+      if (next.complete !== false) return next;
+      try { return { ...await load(), result: next.result }; }
+      catch { return { ...(town.data ?? next), complete: false, result: next.result ?? info('신전 상세를 다시 확인해 주세요.') }; }
+    } finally { actionPending.current = false; onActionState(false); }
+  };
+  const town = useTownFeature<PantheonDetailResponse, PantheonActionRequest>({
+    load, submitAction, resolveCaptcha, featureKey: path, describeError: toUserFacingErrorMessage,
+    projectAction: (raw) => {
+      const next = raw as PantheonDetailResponse;
+      return { data: next, result: next.result ?? info('신전 상태를 갱신했습니다.') };
+    },
+  });
+  useEffect(() => api.subscribeMutations?.(() => {
+    if (!actionPending.current) void town.reload().catch(() => undefined);
+  }), [api, town.reload]);
+  useVisibleRefresh(() => { if (town.status === 'ready') void town.reload().catch(() => undefined); });
+  if (town.status === 'awaiting-captcha') return <Text style={styles.hint}>HOF 인증을 기다리는 중...</Text>;
+  if (!town.data) return <LoadState loading={town.status === 'loading'} error={town.error} reload={town.reload} label="신전 상세를" />;
+  return <View style={styles.section}>
+    {town.data.description ? <Text style={styles.hint}>{town.data.description}</Text> : null}
+    {town.data.actions.length === 0 ? <Text style={styles.hint}>현재 HOF가 제공하는 동작이 없습니다.</Text> : null}
+    <View style={styles.actions}>{town.data.actions.map((action) => <ActionButton key={action.id} label={actionButtonLabel(action)} accessibilityLabel={`${name} ${actionButtonLabel(action)}`} disabled={town.status !== 'ready' || town.data!.complete === false} onPress={() => void town.submit({ actionId: action.id }).catch(() => undefined)} />)}</View>
+    {town.status === 'loading' ? <Text style={styles.hint}>최신 상세 확인 중...</Text> : null}
+    {town.result ? <TownActionResult result={town.result} /> : null}
+    {town.data.complete === false ? <ActionButton label="상세 다시 확인" disabled={false} onPress={() => void town.reload().catch(() => undefined)} /> : null}
+    {town.error ? <><Text accessibilityRole="alert" style={styles.error}>{town.error}</Text><ActionButton label="상세 다시 확인" disabled={false} onPress={() => void town.reload().catch(() => undefined)} /></> : null}
   </View>;
 }
 

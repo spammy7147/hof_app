@@ -305,6 +305,7 @@ export type PantheonActionResponse = {
 };
 
 export type PantheonDetailResponse = {
+  complete?: boolean;
   shrineId: string;
   name: string;
   alias: string | null;
@@ -451,6 +452,7 @@ export type CardItemResponse = {
 export type CardIdentifyResponse = { selectionSlots: 1; cards: CardItemResponse[]; result: TownActionResultResponse | null };
 export type CardIdentifyRequest = { candidateId: string };
 export type CardPairResponse = {
+  optionsRequired?: boolean;
   selectionSlots: Array<{ id: 'base' | 'material'; label: string }>;
   baseCards: CardItemResponse[]; materialCards: CardItemResponse[]; minQuantity: number; maxQuantity: number;
   selectedBaseCandidateId: string | null; history: string[]; result: TownActionResultResponse | null;

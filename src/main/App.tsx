@@ -167,6 +167,7 @@ function AuthenticatedApp({
     if (!activeGeneration.current) throw new Error("로그인 계정이 변경되었습니다.");
   }, []);
   const townApi = useMemo(() => createTownApi(api), [api]);
+  useLayoutEffect(() => { townApi.activate(); return () => townApi.dispose(); }, [townApi]);
   const automationController = useMemo(
     () =>
       new UnifiedAutomationController({

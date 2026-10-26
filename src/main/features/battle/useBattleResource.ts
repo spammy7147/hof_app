@@ -1,4 +1,5 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { mergeBattleMapAvailability } from '../../domain/battleMaps';
 import type { BackendApiClient } from "../../services/backendApi";
 import { isCaptchaRequiredError } from "../../domain/captchaGate";
 import type {
@@ -19,6 +20,44 @@ export type BattleResource = ReturnType<typeof useBattleResource>;
 export function useBattleResource({
   api, describeError, assertActiveGeneration, waitForCaptchaResolution,
 }: Options) {
+  const retryAt = useRef(new Map<string, number>());
+  const catalog = useRef(new Map<string, BattleMapResponse[]>());
+  const flights = useRef(new Map<string, { controller: AbortController; promise: Promise<BattleMapResponse[]> }>());
+  const invalidateAvailability = useCallback(() => {
+    for (const [key, flight] of flights.current) if (key.startsWith('availability:')) {
+      flight.controller.abort(); flights.current.delete(key);
+    }
+  }, []);
+  useEffect(() => () => {
+    for (const flight of flights.current.values()) flight.controller.abort();
+    flights.current.clear(); catalog.current.clear(); retryAt.current.clear();
+  }, []);
+  const readMaps = useCallback((categoryId: string, kind: 'catalog' | 'availability') => {
+    assertActiveGeneration();
+    const key = `${kind}:${categoryId}`;
+    if (Date.now() < (retryAt.current.get(key) ?? 0)) return Promise.reject(new Error('잠시 후 맵을 다시 확인해 주세요.'));
+    const existing = flights.current.get(key);
+    if (existing) return existing.promise;
+    if (kind === 'catalog' && catalog.current.has(categoryId)) return Promise.resolve(catalog.current.get(categoryId)!);
+    const controller = new AbortController();
+    const flight = { controller, promise: Promise.resolve([]) as Promise<BattleMapResponse[]> };
+    const request = kind === 'catalog' ? api.fetchBattleMapCatalog(categoryId, controller.signal) : api.fetchBattleMapAvailability(categoryId, controller.signal);
+    flight.promise = request.then((maps) => {
+      assertActiveGeneration();
+      if (flights.current.get(key) !== flight) throw new Error('이전 맵 조회를 폐기했습니다.');
+      retryAt.current.delete(key);
+      const known = catalog.current.get(categoryId) ?? [];
+      const combined = kind === 'catalog' ? mergeBattleMapAvailability(maps, known) : mergeBattleMapAvailability(known, maps);
+      catalog.current.set(categoryId, combined.map((map) => ({ ...map, enabled: false })));
+      return kind === 'catalog' ? catalog.current.get(categoryId)! : maps;
+    }).catch((error: unknown) => {
+      const seconds = (error as { retryAfterSeconds?: number } | null)?.retryAfterSeconds;
+      if (flights.current.get(key) === flight && typeof seconds === 'number' && seconds > 0) retryAt.current.set(key, Date.now() + seconds * 1_000);
+      throw error;
+    }).finally(() => { if (flights.current.get(key) === flight) flights.current.delete(key); });
+    flights.current.set(key, flight);
+    return flight.promise;
+  }, [api, assertActiveGeneration]);
   const [battleCategories, setBattleCategories] = useState<
     BattleCategoryResponse[]
   >([]);
@@ -52,14 +91,14 @@ export function useBattleResource({
    */
   const loadBattleMaps = useCallback(
     (categoryId: string): Promise<BattleMapResponse[]> => {
-      return api.fetchBattleMapAvailability(categoryId);
+      return readMaps(categoryId, 'availability');
     },
-    [api],
+    [readMaps],
   );
 
   const loadBattleMapCatalog = useCallback(
-    (categoryId: string): Promise<BattleMapResponse[]> => api.fetchBattleMapCatalog(categoryId),
-    [api],
+    (categoryId: string): Promise<BattleMapResponse[]> => readMaps(categoryId, 'catalog'),
+    [readMaps],
   );
 
   /**
@@ -68,6 +107,7 @@ export function useBattleResource({
   const runBattle = useCallback(
     async (request: RunBattleRequest): Promise<BattleResultResponse> => {
       assertActiveGeneration();
+      invalidateAvailability();
       try {
         const result = await api.runBattle(request);
         assertActiveGeneration();
@@ -89,9 +129,9 @@ export function useBattleResource({
         const result = await api.runBattle(request);
         assertActiveGeneration();
         return result;
-      }
+      } finally { invalidateAvailability(); }
     },
-    [api, assertActiveGeneration, waitForCaptchaResolution],
+    [api, assertActiveGeneration, waitForCaptchaResolution, invalidateAvailability],
   );
 
   const loadBattleLogs = useCallback(

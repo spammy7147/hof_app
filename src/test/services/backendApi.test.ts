@@ -41,6 +41,56 @@ after(() => {
 });
 
 describe('BackendApiClient', () => {
+  it('표시 조회는 응답 헤더 뒤 본문이 멈춰도 같은 15초 예산으로 끝난다', async (context) => {
+    const { BackendApiClient } = await loadBackendApi();
+    context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
+    const client = new BackendApiClient('http://backend.test');
+    let body!: (value: string) => void;
+    globalThis.fetch = async () => ({ ok: true, status: 200, headers: new Headers(), text: () => new Promise<string>((resolve) => { body = resolve; }) }) as Response;
+    const read = client.fetchTownResource('/api/town/pantheon?view=catalog');
+    const expired = assert.rejects(read);
+    for (let n = 0; n < 5; n += 1) await Promise.resolve();
+    assert.ok(body);
+    context.mock.timers.tick(15_000);
+    await expired;
+    body(JSON.stringify({ shrines: [] }));
+  });
+  it('표시 조회가 만료된 뒤 refresh가 끝나도 해당 조회를 다시 전송하지 않는다', async (context) => {
+    const { BackendApiClient } = await loadBackendApi();
+    context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
+    const client = new BackendApiClient('http://backend.test', { load: async () => 'refresh', save: async () => undefined, remove: async () => undefined });
+    let finishRefresh!: (value: Response) => void;
+    const urls: string[] = [];
+    globalThis.fetch = async (url) => {
+      urls.push(String(url));
+      if (String(url).endsWith('/api/auth/refresh')) return new Promise<Response>((resolve) => { finishRefresh = resolve; });
+      return mockResponse({ code: 'AUTH_TOKEN_EXPIRED' }, 401);
+    };
+    const read = client.fetchBattleMapAvailability('battle_map');
+    const expired = assert.rejects(read);
+    for (let n = 0; n < 10; n += 1) await Promise.resolve();
+    assert.ok(finishRefresh);
+    context.mock.timers.tick(15_000);
+    await expired;
+    finishRefresh(mockResponse({ accessToken: 'new-token', refreshToken: 'new-refresh' }));
+    for (let n = 0; n < 20; n += 1) await Promise.resolve();
+    assert.equal(urls.filter((url) => url.includes('/maps/availability')).length, 1);
+    client.dispose();
+  });
+  it('표시 조회는 15초 후 transport를 취소하고 늦은 성공을 반영하지 않는다', async (context) => {
+    const { BackendApiClient } = await loadBackendApi();
+    context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
+    const client = new BackendApiClient('http://backend.test');
+    let signal: AbortSignal | null | undefined;
+    let complete!: (value: Response) => void;
+    globalThis.fetch = async (_url, init) => { signal = init?.signal; return new Promise<Response>((resolve) => { complete = resolve; }); };
+    const pending = client.fetchTownResource('/api/town/shops/general');
+    const outcome = pending.then(() => 'success', () => 'expired');
+    context.mock.timers.tick(15_000);
+    complete(mockResponse({ items: [] }));
+    assert.equal(await outcome, 'expired');
+    assert.equal(signal?.aborted, true);
+  });
   it('맵 통계의 선택 날짜를 API로 보내고 기본 조회는 날짜 없이 유지한다', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const client = new BackendApiClient('http://backend.test');

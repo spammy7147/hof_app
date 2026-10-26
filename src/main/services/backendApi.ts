@@ -145,6 +145,7 @@ export class BackendApiClient {
   readonly baseUrl: string;
   private accessToken: string | null = null;
   private refreshPromise: Promise<void> | null = null;
+  private readonly displayDeadlines = new WeakMap<AbortSignal, number>();
   private readonly sessionChannel: BroadcastChannel | null;
   private tokenMutationPromise: Promise<void> = Promise.resolve();
   private authEpoch = 0;
@@ -360,8 +361,10 @@ export class BackendApiClient {
   }
 
   /** 기능별 town client가 인증·401 복구를 공유하며 typed 조회 DTO를 받는다. */
-  fetchTownResource<TResponse>(path: TownApiPath): Promise<TResponse> {
-    return this.request(path);
+  fetchTownResource<TResponse>(path: TownApiPath, signal?: AbortSignal): Promise<TResponse> {
+    return /^\/api\/town\/(shops\/|pantheon)/.test(path)
+      ? this.requestDisplay(path, signal)
+      : this.request(path, { signal });
   }
 
   /** 기능별 request DTO를 town namespace에 제출한다. 임의 HOF URL/form은 받지 않는다. */
@@ -389,12 +392,12 @@ export class BackendApiClient {
     return this.request(`/api/battle/categories/${encodeURIComponent(categoryId)}/maps`);
   }
 
-  fetchBattleMapCatalog(categoryId: string): Promise<BattleMapResponse[]> {
-    return this.request(`/api/battle/categories/${encodeURIComponent(categoryId)}/maps/catalog`);
+  fetchBattleMapCatalog(categoryId: string, signal?: AbortSignal): Promise<BattleMapResponse[]> {
+    return this.requestDisplay(`/api/battle/categories/${encodeURIComponent(categoryId)}/maps/catalog`, signal);
   }
 
-  fetchBattleMapAvailability(categoryId: string): Promise<BattleMapResponse[]> {
-    return this.request(`/api/battle/categories/${encodeURIComponent(categoryId)}/maps/availability`);
+  fetchBattleMapAvailability(categoryId: string, signal?: AbortSignal): Promise<BattleMapResponse[]> {
+    return this.requestDisplay(`/api/battle/categories/${encodeURIComponent(categoryId)}/maps/availability`, signal);
   }
 
   /**
@@ -993,8 +996,33 @@ export class BackendApiClient {
     }
   }
 
+  private async requestDisplay<T>(path: string, signal?: AbortSignal): Promise<T> {
+    const controller = new AbortController();
+    this.displayDeadlines.set(controller.signal, Date.now() + 15_000);
+    const abort = () => controller.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        this.request<T>(path, { signal: controller.signal }),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            controller.abort();
+            reject(new Error('조회 시간이 지났습니다. 다시 확인해 주세요.'));
+          }, 15_000);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
+    }
+  }
+
   private assertRequestNotAborted(signal?: AbortSignal | null): void {
-    if (signal?.aborted) throw new Error('요청 확인 시간이 지났습니다. 작업 상태를 다시 확인해 주세요.');
+    if (signal && (signal.aborted || Date.now() >= (this.displayDeadlines.get(signal) ?? Infinity))) {
+      throw new Error('요청 확인 시간이 지났습니다. 작업 상태를 다시 확인해 주세요.');
+    }
   }
 
   /** 기능이 여러 요청을 끝까지 await하는 동안 앱 전체 수동 잠금과 인증 세대를 유지한다. */

@@ -18,6 +18,24 @@ const { CardPanel } = require('../../main/features/town/panels/CardPanel') as ty
 let mounted: ReactTestRenderer | null = null; afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; });
 
 describe('CardPanel', () => {
+  it('서버가 전체 후보임을 명시하면 빈 재료도 로컬 선택으로 끝난다', async () => {
+    let requests = 0;
+    const data = { optionsRequired: false, selectionSlots: [], baseCards: [card('a', 'A')], materialCards: [], selectedBaseCandidateId: null, minQuantity: 1, maxQuantity: 10, history: [], result: null };
+    await render(React.createElement(CardPanel, { api: api(async () => data, async () => { requests += 1; throw new Error('unexpected'); }), mode: 'change' }));
+    await press('베이스 카드 A 선택');
+    assert.equal(requests, 0);
+    assert.equal(text().includes('합성 재료 후보가 없습니다.'), true);
+  });
+  it('전체 후보를 받은 양식은 베이스 선택에 options 요청을 추가하지 않는다', async () => {
+    let optionRequests = 0;
+    const data = { selectionSlots: [{ id: 'base', label: '베이스 카드' }, { id: 'material', label: '추가 카드' }], baseCards: [card('a', 'A'), card('b', 'B')], materialCards: [card('material', '재료')], selectedBaseCandidateId: null, minQuantity: 1, maxQuantity: 10, history: [], result: null };
+    await render(React.createElement(CardPanel, { api: api(async () => data, async () => { optionRequests += 1; return { ...data, selectedBaseCandidateId: 'a' }; }), mode: 'upgrade' }));
+    await press('베이스 카드 A 선택');
+    await press('베이스 카드 B 선택');
+    assert.equal(optionRequests, 0);
+    await press('추가 카드 선택');
+    assert.ok(button('추가 카드 재료 선택'));
+  });
   for (const [mode, searchLabel] of [['identify', '감정 카드 검색'], ['upgrade', '강화 카드 검색'], ['change', '변화 카드 검색'], ['sell', '판매 카드 검색']] as const) {
     it(`${mode} 상단에서 카드명·등급·설명을 검색하고 선택을 유지한다`, async () => {
       const cards = [card('bat', "Bat's Card"), { ...card('soul', "Soul Taker's Card"), rarity: 'Rare', detail: '보스 보상', blankCardValue: 1 }];

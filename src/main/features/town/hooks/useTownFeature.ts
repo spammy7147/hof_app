@@ -4,7 +4,7 @@ import { isCaptchaRequiredError } from '../../../domain/captchaGate';
 import type { TownActionResultResponse } from '../../../types/api';
 import { normalizeTownResult } from '../api/townApi';
 
-export type TownFeatureStatus = 'idle' | 'loading' | 'ready' | 'submitting' | 'error';
+export type TownFeatureStatus = 'idle' | 'loading' | 'awaiting-captcha' | 'ready' | 'submitting' | 'error';
 
 type UseTownFeatureOptions<TData, TRequest> = {
   load: () => Promise<TData>;
@@ -12,6 +12,8 @@ type UseTownFeatureOptions<TData, TRequest> = {
   resolveCaptcha?: () => Promise<void>;
   describeError?: (error: unknown) => string;
   autoLoad?: boolean;
+  initialData?: () => TData | null;
+  projectAction?: (raw: unknown) => { data: TData; result: TownActionResultResponse };
   /** 같은 panel instance가 다른 기능을 표시할 때 이전 요청과 CAPTCHA 재개를 폐기한다. */
   featureKey?: string;
 };
@@ -41,9 +43,11 @@ export function useTownFeature<TData, TRequest = never>({
   describeError = defaultDescribeError,
   autoLoad = true,
   featureKey,
+  initialData,
+  projectAction,
 }: UseTownFeatureOptions<TData, TRequest>) {
   const [status, setStatus] = useState<TownFeatureStatus>('idle');
-  const [data, setData] = useState<TData | null>(null);
+  const [data, setData] = useState<TData | null>(() => initialData?.() ?? null);
   const [result, setResult] = useState<TownActionResultResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const renderedFeatureKeyRef = useRef(featureKey);
@@ -63,6 +67,8 @@ export function useTownFeature<TData, TRequest = never>({
   const mutationBusyRef = useRef(false);
   const featureKeyRef = useRef(featureKey);
   const loadRef = useRef(load);
+  const projectActionRef = useRef(projectAction);
+  projectActionRef.current = projectAction;
   const submitActionRef = useRef(submitAction);
   const resolveCaptchaRef = useRef(resolveCaptcha);
   const describeErrorRef = useRef(describeError);
@@ -92,7 +98,7 @@ export function useTownFeature<TData, TRequest = never>({
     return executeWithCaptchaRetry(
       () => loadRef.current(),
       resolveCaptchaRef.current,
-      { isCancelled },
+      { isCancelled, onCaptchaWaiting: () => { if (!isCancelled()) setStatus('awaiting-captcha'); } },
     ).then((nextData) => {
       if (isCancelled()) throw new TownRequestCancelledError();
       latestLoadPendingRef.current = false;
@@ -121,6 +127,7 @@ export function useTownFeature<TData, TRequest = never>({
     const lifecycle = lifecycleRef.current;
     const mutationSequence = ++mutationSequenceRef.current;
     mutationBusyRef.current = true;
+    if (projectActionRef.current) { loadSequenceRef.current += 1; latestLoadPendingRef.current = false; }
     setStatus('submitting');
     errorOwnerRef.current = featureGeneration;
     setError(null);
@@ -140,7 +147,9 @@ export function useTownFeature<TData, TRequest = never>({
     return executeWithCaptchaRetry(operation, resolveCaptchaRef.current, { isCancelled })
       .then((rawResult) => {
         if (isCancelled()) throw new TownRequestCancelledError();
-        const nextResult = normalizeTownResult(rawResult);
+        const projected = projectActionRef.current?.(rawResult);
+        if (projected) { dataOwnerRef.current = featureGeneration; setData(projected.data); }
+        const nextResult = normalizeTownResult(projected?.result ?? rawResult);
         mutationSucceeded = true;
         resultOwnerRef.current = featureGeneration;
         setResult(nextResult);
@@ -197,7 +206,7 @@ export function useTownFeature<TData, TRequest = never>({
   };
 }
 
-type CaptchaRetryOptions = { isCancelled?: () => boolean };
+type CaptchaRetryOptions = { isCancelled?: () => boolean; onCaptchaWaiting?: () => void };
 
 /** CAPTCHA 해결 전후에 cancellation을 검사해 떠난 화면의 destructive action을 재실행하지 않는다. */
 export async function executeWithCaptchaRetry<T>(
@@ -214,6 +223,7 @@ export async function executeWithCaptchaRetry<T>(
     if (error instanceof TownRequestCancelledError) throw error;
     assertActive(options);
     if (!resolveCaptcha || !isCaptchaRequiredError(error)) throw error;
+    options.onCaptchaWaiting?.();
     await resolveCaptcha();
     assertActive(options);
     const response = await operation();

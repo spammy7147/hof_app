@@ -14,6 +14,7 @@ import {
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { useVisibleRefresh } from '../hooks/useVisibleRefresh';
 import type { BattleResource } from '../features/battle/useBattleResource';
 import {
   type BattlePartyMember,
@@ -180,6 +181,12 @@ export function BattleTabScreen({
       }
     }
   }, [authenticated, onLoadMaps]);
+
+  useVisibleRefresh(() => {
+    if (!expandedCategoryId || mapErrorsByCategory[expandedCategoryId] || runningMapKey) return;
+    const category = categories.find((item) => item.id === expandedCategoryId);
+    if (category) void loadMaps(category);
+  });
 
   useEffect(() => {
     if (!initialTarget || !authenticated) return;

@@ -53,3 +53,38 @@ describe('town api', () => {
     ]);
   });
 });
+
+it('상점 미리보기는 확인 시각과 5분 기한을 보존하고 실패는 재시도를 막지 않는다', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'], now: 1000 });
+  let fail = false;
+  const backend = { fetchTownResource: async <T,>() => { if (fail) throw new Error('503'); return { shopId: 'general', items: [], stale: false, lastVerifiedAt: null, result: { messages: ['이전 결과'] } } as T; }, submitTownAction: async <R>() => ({} as R) };
+  const api = createTownApi(backend);
+  const fresh = await api.load<{ lastVerifiedAt: string }>('/api/town/shops/general');
+  assert.equal(fresh.lastVerifiedAt, new Date(1000).toISOString());
+  assert.equal(api.peekShop('/api/town/shops/general')?.result, null);
+  fail = true;
+  await assert.rejects(api.load('/api/town/shops/general'));
+  assert.equal(api.peekShop('/api/town/shops/general')?.lastVerifiedAt, fresh.lastVerifiedAt);
+  context.mock.timers.setTime(301001);
+  assert.equal(api.peekShop('/api/town/shops/general'), null);
+  fail = false;
+  await api.load('/api/town/shops/general');
+});
+
+it('구매 중 시작한 조회도 완료 후 폐기하고 dispose 뒤 새 세대 자료와 섞지 않는다', async () => {
+  let finishRead!: (value: unknown) => void; let finishAction!: (value: unknown) => void;
+  const api = createTownApi({ fetchTownResource: async () => new Promise((resolve) => { finishRead = resolve; }), submitTownAction: async () => new Promise((resolve) => { finishAction = resolve; }) } as never);
+  const action = api.submit('/api/town/shops/general/purchase', {});
+  const read = api.load('/api/town/shops/general');
+  const rejected = assert.rejects(read, /이전 조회/);
+  finishAction({}); await action;
+  finishRead({ shopId: 'general', items: [], stale: false }); await rejected;
+  assert.equal(api.peekShop('/api/town/shops/general'), null);
+  api.dispose();
+  await assert.rejects(api.load('/api/town/shops/general'), /로그인 계정/);
+  api.activate();
+  const next = api.load('/api/town/shops/general');
+  finishRead({ shopId: 'general', items: [], stale: false });
+  await next;
+  assert.ok(api.peekShop('/api/town/shops/general'));
+});

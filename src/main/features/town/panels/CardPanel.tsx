@@ -57,6 +57,11 @@ function PairPanel({ api, mode, resolveCaptcha }: Props & { mode: 'upgrade' | 'c
   const loadOptions = (candidateId: string) => {
     const sequence = ++optionsSequence.current;
     setOptions(null); setOptionsError(null); setOptionsLoading(true);
+    if (data.optionsRequired === false || (data.optionsRequired == null && data.materialCards.length > 0)) {
+      setOptions({ ...data, selectedBaseCandidateId: candidateId });
+      setOptionsLoading(false);
+      return;
+    }
     void executeWithCaptchaRetry(() => api.submit<CardPairOptionsRequest, CardPairResponse>(`${path}/options`, { baseCandidateId: candidateId }), resolveCaptcha, { isCancelled: () => !mounted.current || sequence !== optionsSequence.current })
       .then((next) => {
         if (!mounted.current || sequence !== optionsSequence.current) return;

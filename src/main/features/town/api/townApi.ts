@@ -1,5 +1,6 @@
 import type { BackendApiClient } from '../../../services/backendApi';
 import type {
+  ShopResponse,
   TownActionResultResponse,
   TownApiPath,
   TownResultItemResponse,
@@ -14,12 +15,64 @@ export type TownApi = ReturnType<typeof createTownApi>;
 
 /** 기능별 API가 같은 인증 transport를 사용하되 endpoint와 DTO 타입은 각 기능에 남긴다. */
 export function createTownApi(backend: TownBackendTransport) {
+  const flights = new Map<string, { controller: AbortController; promise: Promise<unknown> }>();
+  const shops = new Map<string, { data: ShopResponse; at: number }>();
+  const retryAt = new Map<string, number>();
+  let active = true;
+  const mutationListeners = new Set<() => void>();
+  const invalidate = () => {
+    for (const flight of flights.values()) flight.controller.abort();
+    flights.clear();
+  };
+  const rememberShop = (path: string, data: ShopResponse) => {
+    if (active && !data.stale && Array.isArray(data.items)) shops.set(path, { data: { shopId: data.shopId, items: data.items, stale: false, lastVerifiedAt: data.lastVerifiedAt, result: null }, at: Date.now() });
+  };
   return {
+    peekShop(path: string): ShopResponse | null {
+      const saved = shops.get(path);
+      return active && saved && Date.now() - saved.at <= 5 * 60_000
+        ? { ...saved.data, stale: true, lastVerifiedAt: new Date(saved.at).toISOString() } : null;
+    },
+    rememberShop,
+    activate() { active = true; },
+    subscribeMutations(listener: () => void) { mutationListeners.add(listener); return () => { mutationListeners.delete(listener); }; },
+    dispose() { active = false; invalidate(); shops.clear(); retryAt.clear(); mutationListeners.clear(); },
     load<TResponse>(path: TownApiPath): Promise<TResponse> {
-      return backend.fetchTownResource<TResponse>(path);
+      if (!/^\/api\/town\/(shops\/|pantheon)/.test(path)) return backend.fetchTownResource<TResponse>(path);
+      if (!active) return Promise.reject(new Error('로그인 계정이 변경되었습니다.'));
+      const previous = flights.get(path);
+      if (previous) return previous.promise as Promise<TResponse>;
+      if (Date.now() < (retryAt.get(path) ?? 0)) return Promise.reject(new Error('잠시 후 다시 확인해 주세요.'));
+      const controller = new AbortController();
+      const flight = { controller, promise: Promise.resolve() as Promise<unknown> };
+      flight.promise = backend.fetchTownResource<TResponse>(path, controller.signal).then((data) => {
+        if (!active || flights.get(path) !== flight) throw new Error('이전 조회를 폐기했습니다.');
+        retryAt.delete(path);
+        if (path.startsWith('/api/town/shops/')) {
+          const shop = data as ShopResponse;
+          if (shop.stale || !Array.isArray(shop.items)) throw new Error('상점 목록을 확인하지 못했습니다. 다시 확인해 주세요.');
+          const verified = { ...shop, lastVerifiedAt: new Date().toISOString() };
+          rememberShop(path, verified);
+          return verified;
+        }
+        return data;
+      }).catch((error: unknown) => {
+        const seconds = (error as { retryAfterSeconds?: number } | null)?.retryAfterSeconds;
+        if (active && flights.get(path) === flight && typeof seconds === 'number' && seconds > 0) retryAt.set(path, Date.now() + seconds * 1_000);
+        throw error;
+      }).finally(() => { if (flights.get(path) === flight) flights.delete(path); });
+      flights.set(path, flight);
+      return flight.promise as Promise<TResponse>;
     },
     submit<TRequest, TResponse>(path: TownApiPath, request: TRequest): Promise<TResponse> {
-      return backend.submitTownAction<TRequest, TResponse>(path, request);
+      if (!active) return Promise.reject(new Error('로그인 계정이 변경되었습니다.'));
+      invalidate();
+      return backend.submitTownAction<TRequest, TResponse>(path, request).finally(() => {
+        invalidate();
+        for (const listener of mutationListeners) {
+          try { listener(); } catch { /* 표시 갱신 실패가 이미 제출한 행동의 결과를 바꾸지 않는다. */ }
+        }
+      });
     },
     loadQuests() {
       if (!backend.fetchQuests) return Promise.reject(new Error('퀘스트 API가 연결되지 않았습니다.'));

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { theme } from '../../../styles/theme';
+import { useVisibleRefresh } from '../../../hooks/useVisibleRefresh';
 import type {
   CombineRequest,
   CombineOptionResponse,
@@ -33,17 +34,40 @@ function PurchasePanel({ api, mode }: Props & { mode: ShopMode }) {
   const [query, setQuery] = useState('');
   const [cart, setCart] = useState<Record<string, number>>({});
   const [invalidQuantities, setInvalidQuantities] = useState<Record<string, boolean>>({});
-  const [response, setResponse] = useState<ShopResponse | null>(null);
-  const load = useCallback(() => api.load<ShopResponse>(`/api/town/shops/${mode}`), [api, mode]);
-  const submitAction = useCallback(async (request: PurchaseRequest) => {
-    const next = await api.submit<PurchaseRequest, ShopResponse>(`/api/town/shops/${mode}/purchase`, request);
-    setResponse(next);
-    if (next.result?.status === 'SUCCESS') setCart({});
-    return next.result ?? info('구매 결과를 갱신했습니다.');
-  }, [api, mode]);
-  // 공용 상점 목록 조회/구매는 화면을 CAPTCHA 대기 상태로 묶지 않는다.
-  const town = useTownFeature({ load, submitAction, featureKey: `shop-${mode}` });
-  const data = response ?? town.data;
+  const path = `/api/town/shops/${mode}` as const;
+  const actionPending = useRef(false);
+  const load = useCallback(() => api.load<ShopResponse>(path), [api, path]);
+  const submitAction = async (request: PurchaseRequest): Promise<ShopResponse> => {
+    actionPending.current = true;
+    try {
+      const next = await api.submit<PurchaseRequest, ShopResponse>(`${path}/purchase`, request);
+      if (!next.stale && Array.isArray(next.items)) return { ...next, lastVerifiedAt: new Date().toISOString() };
+      // 직접 행동 결과와 목록 재확인 실패를 분리한다. POST는 재전송하지 않는다.
+      try { return { ...await api.load<ShopResponse>(path), result: next.result }; }
+      catch { return { ...(town.data ?? next), stale: true, result: next.result ?? info('구매 후 목록을 다시 확인해 주세요.') }; }
+    } finally { actionPending.current = false; }
+  };
+  // 공용 상점은 기존대로 CAPTCHA 입력 대기를 시작하지 않는다.
+  const town = useTownFeature<ShopResponse, PurchaseRequest>({
+    load, submitAction, featureKey: `shop-${mode}`,
+    initialData: () => api.peekShop?.(path) ?? null,
+    projectAction: (raw) => {
+      const next = raw as ShopResponse;
+      api.rememberShop?.(path, next);
+      if (next.result?.status === 'SUCCESS') setCart({});
+      return { data: next, result: next.result ?? info('구매 결과를 갱신했습니다.') };
+    },
+  });
+  useEffect(() => api.subscribeMutations?.(() => {
+    if (!actionPending.current) void town.reload().catch(() => undefined);
+  }), [api, town.reload]);
+  const data = town.data;
+  useEffect(() => {
+    if (!data) return;
+    const ids = new Set(data.items.filter((item) => item.selectable).map((item) => item.id));
+    setCart((current) => Object.fromEntries(Object.entries(current).filter(([id]) => ids.has(id))));
+  }, [data]);
+  useVisibleRefresh(() => { if (town.status === 'ready') void town.reload().catch(() => undefined); });
   const rows = useMemo(() => data?.items
     .filter((item) => `${item.label} ${item.type ?? ''} ${item.detail ?? ''} ${item.price}`.toLowerCase().includes(query.trim().toLowerCase()))
     .map(presentShopItem) ?? [], [data, query]);
@@ -52,22 +76,23 @@ function PurchasePanel({ api, mode }: Props & { mode: ShopMode }) {
   if (!data) return <LoadState loading={town.status === 'loading'} error={town.error} retry={town.reload} />;
   const quantityInvalid = selected.some((id) => {
     const item = data.items.find((entry) => entry.id === id);
-    return invalidQuantities[id] || !isValidQuantity(cart[id], maxForPrice(item?.price ?? 0));
+    return !item || !item.selectable || invalidQuantities[id] || !isValidQuantity(cart[id], maxForPrice(item?.price ?? 0));
   });
   const totalInvalid = !Number.isSafeInteger(total);
   return <View style={styles.container}>
     <View style={styles.listArea}>
       <TownItemList rows={rows} selectedIds={selected} selectionMode="multiple" onSelectionChange={(ids) => { setCart(Object.fromEntries(ids.map((id) => [id, cart[id] ?? 1]))); setInvalidQuantities((current) => Object.fromEntries(ids.map((id) => [id, current[id] ?? false]))); }}
         stickyHeader
-        header={<View style={styles.searchHeader}>{data.stale ? <Text style={styles.warning}>상점 검증이 지연되어 마지막 확인 목록을 표시합니다.</Text> : null}<TextInput accessibilityLabel="상점 품목 검색" onChangeText={setQuery} placeholder="이름·유형·설명·가격 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} value={query} /></View>}
+        header={<View style={styles.searchHeader}>{data.stale ? <Text style={styles.warning}>상점 검증이 지연되어 마지막 확인 목록을 표시합니다.</Text> : null}{town.status === 'loading' ? <Text style={styles.warning}>최신 목록 확인 중...</Text> : null}{data.lastVerifiedAt ? <Text>마지막 확인 {data.lastVerifiedAt}</Text> : null}<TextInput accessibilityLabel="상점 품목 검색" onChangeText={setQuery} placeholder="이름·유형·설명·가격 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} value={query} /></View>}
         renderSelectedFooter={(row) => { const item = data.items.find((entry) => entry.id === row.id); return item ? <QuantityInput inputAccessibilityLabel={`${item.label} 구매 수량`} label="수량" value={cart[item.id]} max={maxForPrice(item.price ?? 0)} onChange={(quantity) => setCart((current) => ({ ...current, [item.id]: quantity }))} onValidityChange={(valid) => setInvalidQuantities((current) => ({ ...current, [item.id]: !valid }))} /> : null; }}
         footer={data.result || town.error ? <View style={styles.section}>{data.result ? <TownActionResult result={data.result} /> : null}{town.error ? <Text style={styles.error}>{town.error}</Text> : null}</View> : null} />
     </View>
     <View style={styles.purchaseActionBar} testID="purchase-action-bar">
+      {town.status === 'error' || (data.stale && town.status === 'ready') ? <ActionButton label="다시 확인" disabled={false} onPress={() => void town.reload().catch(() => undefined)} /> : null}
       <Text style={styles.total}>예상 총액 ${total.toLocaleString()}</Text>
       {quantityInvalid ? <Text style={styles.error}>선택한 품목의 수량을 확인하세요.</Text> : null}
       {totalInvalid ? <Text style={styles.error}>총액이 안전하게 계산할 수 있는 범위를 넘었습니다.</Text> : null}
-      <ActionButton disabled={selected.length === 0 || quantityInvalid || totalInvalid || town.status === 'submitting'} label="장바구니 구매" onPress={() => void town.submit({ items: selected.map((id) => ({ itemId: id, quantity: cart[id] })) }).catch(() => undefined)} />
+      <ActionButton disabled={selected.length === 0 || quantityInvalid || totalInvalid || (town.status !== 'ready' || data.stale)} label="장바구니 구매" onPress={() => void town.submit({ items: selected.map((id) => ({ itemId: id, quantity: cart[id] })) }).catch(() => undefined)} />
     </View>
   </View>;
 }

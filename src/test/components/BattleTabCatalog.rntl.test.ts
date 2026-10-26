@@ -11,7 +11,7 @@ const host = (name: string) => (props: Record<string, any>) => React.createEleme
 }, props.children);
 const View = host('View');
 const rn = {
-  View, Text: host('Text'), Pressable: host('Pressable'), ActivityIndicator: host('ActivityIndicator'),
+  Platform: { OS: 'ios' }, View, Text: host('Text'), Pressable: host('Pressable'), ActivityIndicator: host('ActivityIndicator'),
   FlatList: ({ data, renderItem, ListHeaderComponent, ...props }: Record<string, any>) => React.createElement('View', props,
     ListHeaderComponent, data.map((item: any, index: number) => React.createElement(React.Fragment, { key: item.key }, renderItem({ item, index })))),
   StyleSheet: { create: <T,>(styles: T) => styles, flatten: (styles: any) => Array.isArray(styles) ? Object.assign({}, ...styles.filter(Boolean)) : styles },
@@ -27,8 +27,11 @@ loader._load = (request, parent, isMain) => {
 };
 const rntl = require('@testing-library/react-native/pure') as typeof import('@testing-library/react-native/pure');
 const { BattleTabScreen } = require('../../main/screens/BattleTabScreen') as typeof import('../../main/screens/BattleTabScreen');
+const { BackendApiClient } = require('../../main/services/backendApi') as typeof import('../../main/services/backendApi');
+const { useBattleResource } = require('../../main/features/battle/useBattleResource') as typeof import('../../main/features/battle/useBattleResource');
 loader._load = original;
-afterEach(async () => rntl.cleanup());
+const originalFetch = globalThis.fetch;
+afterEach(async () => { await rntl.cleanup(); globalThis.fetch = originalFetch; });
 
 const first: BattleMapResponse = {
   categoryId: 'battle_map', mapCode: 'first', name: '첫 맵', groupName: '원본 지역', groupOrder: 1, mapOrder: 0,
@@ -111,4 +114,52 @@ it('이전 상태 조회가 늦게 끝나도 최신 조회에서 사라진 맵�
   assert.ok(mapButton('둘째 맵', true));
   await rntl.act(() => completions[0]([second]));
   assert.ok(mapButton('둘째 맵', true));
+});
+
+it('로그인 resource가 panel 재생성 뒤 카탈로그를 보존하고 같은 availability를 공유한다', async () => {
+  let catalogs = 0; let reads = 0;
+  let complete!: (response: Response) => void;
+  const pending = new Promise<Response>((resolve) => { complete = resolve; });
+  let resource!: ReturnType<typeof useBattleResource>;
+  const backend = new BackendApiClient('http://backend.test');
+  globalThis.fetch = async (url) => {
+    if (String(url).endsWith('/maps/catalog')) { catalogs += 1; return new Response(JSON.stringify([first])); }
+    if (String(url).endsWith('/maps/availability')) { reads += 1; return pending; }
+    return new Response(JSON.stringify([{ id: 'battle_map', label: '전투맵', description: '', order: 1, enabled: true }]));
+  };
+  const describeError = (error: unknown) => String(error);
+  const assertActiveGeneration = () => undefined;
+  const waitForCaptchaResolution = async () => undefined;
+  function Harness({ show }: { show: boolean }) {
+    resource = useBattleResource({ api: backend as never, describeError, assertActiveGeneration, waitForCaptchaResolution });
+    return show ? React.createElement(BattleTabScreen, { ...props(async () => []), battle: resource }) : null;
+  }
+  await rntl.render(React.createElement(Harness, { show: true }));
+  await rntl.screen.rerender(React.createElement(Harness, { show: false }));
+  await rntl.screen.rerender(React.createElement(Harness, { show: true }));
+  assert.equal(catalogs, 1);
+  const a = resource.loadMaps('battle_map'); const b = resource.loadMaps('battle_map');
+  assert.equal(reads, 1);
+  complete(new Response(JSON.stringify([first])));
+  await rntl.act(async () => { await Promise.all([a, b]); });
+});
+
+
+it('맵 Retry-After 기한 전에는 재시도해도 transport를 다시 호출하지 않는다', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'], now: 0 });
+  let calls = 0;
+  const backend = new BackendApiClient('http://backend.test');
+  globalThis.fetch = async () => { calls += 1; return new Response(JSON.stringify({ message: '원본 제한' }), { status: 503, headers: { 'Retry-After': '30' } }); };
+  let resource!: ReturnType<typeof useBattleResource>;
+  const assertActiveGeneration = () => undefined;
+  const describeError = (error: unknown) => String(error);
+  const waitForCaptchaResolution = async () => undefined;
+  function Harness() { resource = useBattleResource({ api: backend, assertActiveGeneration, describeError, waitForCaptchaResolution }); return null; }
+  await rntl.render(React.createElement(Harness));
+  await assert.rejects(resource.loadMaps('battle_map'));
+  await assert.rejects(resource.loadMaps('battle_map'));
+  assert.equal(calls, 1);
+  context.mock.timers.setTime(30_001);
+  await assert.rejects(resource.loadMaps('battle_map'));
+  assert.equal(calls, 2);
 });
