@@ -6,6 +6,7 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'rea
 
 const host = (name: string) => (props: Record<string, unknown>) => React.createElement(name, props, props.children as React.ReactNode);
 const reactNativeMock = {
+  Platform: { OS: 'ios' },
   ActivityIndicator: host('ActivityIndicator'),
   FlatList: (props: Record<string, unknown>) => React.createElement('FlatList', props, props.ListHeaderComponent as React.ReactNode, (props.data as Array<{ id: string }>).map((item) => React.createElement(React.Fragment, { key: item.id }, (props.renderItem as Function)({ item }))), props.ListFooterComponent as React.ReactNode),
   Modal: host('Modal'), Pressable: host('Pressable'), ScrollView: host('ScrollView'), StyleSheet: { create: <T,>(styles: T) => styles }, Text: host('Text'), TextInput: host('TextInput'), View: host('View'),
@@ -13,11 +14,46 @@ const reactNativeMock = {
 type Loader = (request: string, parent: NodeModule | undefined, isMain: boolean) => unknown;
 const moduleWithLoader = Module as unknown as { _load: Loader }; const originalLoad = moduleWithLoader._load;
 moduleWithLoader._load = (request, parent, isMain) => { if (request === 'react-native') return reactNativeMock; if (request === 'react-native-safe-area-context') return { useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) }; if (request === 'expo-image') return { Image: host('Image') }; return originalLoad(request, parent, isMain); };
-const { CardPanel } = require('../../main/features/town/panels/CardPanel') as typeof import('../../main/features/town/panels/CardPanel'); moduleWithLoader._load = originalLoad;
+const { CardPanel } = require('../../main/features/town/panels/CardPanel') as typeof import('../../main/features/town/panels/CardPanel');
+const { createTownApi } = require('../../main/features/town/api/townApi') as typeof import('../../main/features/town/api/townApi');
+const { authenticatedHttp, jsonResponse } = require('../fixtures/authenticatedHttp') as typeof import('../fixtures/authenticatedHttp');
+moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-let mounted: ReactTestRenderer | null = null; afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; });
+const originalFetch = globalThis.fetch;
+let mounted: ReactTestRenderer | null = null; afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; globalThis.fetch = originalFetch; });
 
 describe('CardPanel', () => {
+  for (const mode of ['upgrade', 'change'] as const) for (const hasMaterials of [true, false]) {
+    it(`실제 HTTP ${mode} 전체 후보 ${hasMaterials ? '있음' : '없음'}은 선택에 추가 전송이 없다`, async () => {
+      const data = { optionsRequired: false, selectionSlots: [], baseCards: [card('a', 'A'), card('b', 'B')], materialCards: hasMaterials ? [card('material', '재료')] : [], selectedBaseCandidateId: null, minQuantity: 1, maxQuantity: 10, history: [], result: null };
+      const path = `/api/town/cards/${mode}`;
+      const http = await authenticatedHttp(async (request) => {
+        assert.equal(request.path, path, 'options endpoint를 호출하지 않는다');
+        return jsonResponse({ ...data, result: request.method === 'POST' ? result('SUCCESS') : null });
+      });
+      const resource = createTownApi(http.client);
+      try {
+        await render(React.createElement(CardPanel, { api: resource, mode }));
+        await press('베이스 카드 A 선택');
+        await press('베이스 카드 B 선택');
+        assert.deepEqual(http.requests, [{ path, method: 'GET', body: null }]);
+        const materialLabel = mode === 'upgrade' ? '추가 카드' : '합성 재료';
+        const action = mode === 'upgrade' ? '카드 강화' : '카드 변화';
+        if (hasMaterials) {
+          await press(`${materialLabel} 선택`);
+          await press(`${materialLabel} 재료 선택`);
+          await press(action);
+          assert.deepEqual(http.requests[1], { path, method: 'POST', body: { baseCandidateId: 'b', materialCandidateId: 'material', quantity: 1 } });
+          assert.equal(http.requests.length, 2);
+          assert.ok(text().includes('SUCCESS'));
+        } else {
+          assert.ok(text().includes(`${materialLabel} 후보가 없습니다.`));
+          assert.equal(button(action).props.disabled, true);
+        }
+      } finally { resource.dispose(); http.client.dispose(); }
+    });
+  }
+
   it('서버가 전체 후보임을 명시하면 빈 재료도 로컬 선택으로 끝난다', async () => {
     let requests = 0;
     const data = { optionsRequired: false, selectionSlots: [], baseCards: [card('a', 'A')], materialCards: [], selectedBaseCandidateId: null, minQuantity: 1, maxQuantity: 10, history: [], result: null };

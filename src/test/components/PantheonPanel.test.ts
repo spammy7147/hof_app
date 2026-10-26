@@ -6,6 +6,7 @@ import { act, create, type ReactTestInstance, type ReactTestRenderer } from 'rea
 
 const host = (name: string) => (props: Record<string, unknown>) => React.createElement(name, props, props.children as React.ReactNode);
 const reactNativeMock = {
+  Platform: { OS: 'ios' },
   ActivityIndicator: host('ActivityIndicator'),
   FlatList: (props: Record<string, unknown>) => React.createElement('FlatList', props, props.ListHeaderComponent as React.ReactNode, (props.data as Array<{ id: string }>).map((item) => React.createElement(React.Fragment, { key: item.id }, (props.renderItem as Function)({ item }))), props.ListFooterComponent as React.ReactNode),
   Modal: host('Modal'), Pressable: host('Pressable'), ScrollView: host('ScrollView'), StyleSheet: { absoluteFill: {}, create: <T,>(styles: T) => styles }, Text: host('Text'), View: host('View'),
@@ -15,11 +16,114 @@ const moduleWithLoader = Module as unknown as { _load: Loader }; const originalL
 moduleWithLoader._load = (request, parent, isMain) => { if (request === 'react-native') return reactNativeMock; if (request === 'react-native-safe-area-context') return { useSafeAreaInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }) }; if (request === 'expo-image') return { Image: host('Image') }; return originalLoad(request, parent, isMain); };
 const { createTownApi } = require('../../main/features/town/api/townApi') as typeof import('../../main/features/town/api/townApi');
 const { PantheonPanel } = require('../../main/features/town/panels/PantheonPanel') as typeof import('../../main/features/town/panels/PantheonPanel');
+const { authenticatedHttp, jsonResponse } = require('../fixtures/authenticatedHttp') as typeof import('../fixtures/authenticatedHttp');
 const { BackendApiError } = require('../../main/services/backendApi') as typeof import('../../main/services/backendApi'); moduleWithLoader._load = originalLoad;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-let mounted: ReactTestRenderer | null = null; afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; });
+const originalFetch = globalThis.fetch;
+let mounted: ReactTestRenderer | null = null; afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; globalThis.fetch = originalFetch; });
 
 describe('PantheonPanel', () => {
+  for (const complete of [true, false]) {
+    it(`실제 HTTP 목록·선택 상세·기부는 ${complete ? '완전 직접 응답' : '불완전 응답의 한 번 재확인'}을 반영한다`, async () => {
+      let detailReads = 0;
+      const refreshed = deferred<Response>();
+      const changed = { ...detail(), complete: true, actions: [{ ...detail().actions[0], costFunds: 60_000 }] };
+      const http = await authenticatedHttp(async (request) => {
+        if (request.path === '/api/town/pantheon?view=catalog') return jsonResponse(complete ? street() : { shrines: street().shrines.map((shrine) => ({ ...shrine, actions: [] })) });
+        if (request.path === '/api/town/pantheon/shrine-1' && request.method === 'GET') return ++detailReads === 1 ? jsonResponse(detail()) : refreshed.promise;
+        assert.equal(request.path, '/api/town/pantheon/shrine-1/actions');
+        assert.equal(request.method, 'POST');
+        return jsonResponse(complete ? { ...changed, result: result() } : { ...changed, complete: false, actions: [], result: result() });
+      });
+      const resource = createTownApi(http.client);
+      try {
+        await render(React.createElement(PantheonPanel, { api: resource }));
+        assert.deepEqual(http.requests, [{ path: '/api/town/pantheon?view=catalog', method: 'GET', body: null }]);
+        assert.equal(button('군신 마르두크 정액 기부 · 50,000 Funds').length, 0);
+        await press('군신 마르두크 상세');
+        assert.equal(button('군신 마르두크 정액 기부 · 50,000 Funds').at(-1)!.props.disabled, false);
+        await press('군신 마르두크 정액 기부 · 50,000 Funds');
+        assert.deepEqual(http.requests[2], { path: '/api/town/pantheon/shrine-1/actions', method: 'POST', body: { actionId: 'fixed-id' } });
+        if (!complete) {
+          assert.equal(button('군신 마르두크 정액 기부 · 50,000 Funds').at(-1)!.props.disabled, true);
+          refreshed.resolve(jsonResponse(changed));
+          await act(async () => { await refreshed.promise; });
+        }
+        assert.equal(detailReads, complete ? 1 : 2);
+        assert.equal(http.requests.length, complete ? 3 : 4);
+        assert.equal(button('군신 마르두크 정액 기부 · 60,000 Funds').at(-1)!.props.disabled, false);
+        assert.ok(text().includes('기부 완료'));
+      } finally { resource.dispose(); http.client.dispose(); }
+    });
+  }
+
+  it('실제 HTTP에서 다른 신전 선택 뒤 도착한 이전 상세는 현재 비용을 덮지 않는다', async () => {
+    const late = deferred<Response>();
+    const both = { shrines: [...street().shrines, { ...street().shrines[0], id: 'shrine-2', name: '재주꾼 카즘' }] };
+    const http = await authenticatedHttp(async (request) => request.path.includes('?view=catalog') ? jsonResponse(both)
+      : request.path.endsWith('shrine-1') ? late.promise : jsonResponse({ ...detail(), shrineId: 'shrine-2', actions: [{ ...detail().actions[0], costFunds: 12_000 }] }));
+    const resource = createTownApi(http.client);
+    try {
+      await render(React.createElement(PantheonPanel, { api: resource }));
+      await press('군신 마르두크 상세');
+      await press('재주꾼 카즘 상세');
+      assert.equal(button('재주꾼 카즘 정액 기부 · 12,000 Funds').at(-1)!.props.disabled, false);
+      late.resolve(jsonResponse({ ...detail(), actions: [{ ...detail().actions[0], costFunds: 999_999 }] }));
+      await act(async () => { await late.promise; });
+      assert.equal(button('재주꾼 카즘 정액 기부 · 12,000 Funds').at(-1)!.props.disabled, false);
+      assert.equal(text().includes('999,999'), false);
+      assert.equal(http.requests.length, 3);
+    } finally { resource.dispose(); http.client.dispose(); }
+  });
+
+  it('실제 HTTP에서 계정 종료 뒤 늦은 상세가 새 계정 목록·비용에 반영되지 않는다', async () => {
+    const late = deferred<Response>();
+    const old = await authenticatedHttp(async (request) => request.path.includes('?view=catalog') ? jsonResponse(street('이전 신전')) : late.promise, 'account-a');
+    const oldApi = createTownApi(old.client);
+    await render(React.createElement(PantheonPanel, { api: oldApi }));
+    await press('이전 신전 상세');
+    const next = await authenticatedHttp(async (request) => request.path.includes('?view=catalog')
+      ? jsonResponse({ shrines: [{ ...street().shrines[0], id: 'new-shrine', name: '새 신전' }] })
+      : jsonResponse({ ...detail(), shrineId: 'new-shrine', actions: [{ ...detail().actions[0], costFunds: 12_000 }] }), 'account-b');
+    const nextApi = createTownApi(next.client);
+    try {
+      await act(async () => { oldApi.dispose(); old.client.dispose(); mounted!.update(React.createElement(PantheonPanel, { api: nextApi })); });
+      await press('새 신전 상세');
+      late.resolve(jsonResponse({ ...detail(), actions: [{ ...detail().actions[0], costFunds: 999_999 }] }));
+      await act(async () => { await late.promise; });
+      assert.equal(text().includes('이전 신전'), false);
+      assert.equal(text().includes('999,999'), false);
+      assert.equal(button('새 신전 정액 기부 · 12,000 Funds').at(-1)!.props.disabled, false);
+      assert.deepEqual(next.requests.map((request) => request.path), ['/api/town/pantheon?view=catalog', '/api/town/pantheon/new-shrine']);
+    } finally { nextApi.dispose(); next.client.dispose(); }
+  });
+
+  for (const leave of [false, true]) {
+    it(`실제 HTTP 15초 예산 뒤 캡차 40초 대기는 ${leave ? '떠난 상세를 재개하지 않는다' : '현재 상세만 한 번 재개한다'}`, async (context) => {
+      context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
+      const human = deferred<void>();
+      let reads = 0;
+      const http = await authenticatedHttp(async (request) => {
+        if (request.path.includes('?view=catalog')) return jsonResponse(street());
+        return ++reads === 1 ? jsonResponse({ code: 'CAPTCHA_REQUIRED', message: '인증 필요' }, 409) : jsonResponse(detail());
+      });
+      const resource = createTownApi(http.client);
+      try {
+        await render(React.createElement(PantheonPanel, { api: resource, resolveCaptcha: () => human.promise }));
+        await press('군신 마르두크 상세');
+        await act(async () => { context.mock.timers.tick(40_000); });
+        assert.ok(text().includes('HOF 인증을 기다리는 중'));
+        assert.equal(reads, 1);
+        if (leave) await press('군신 마르두크 상세');
+        human.resolve();
+        await act(async () => { await human.promise; });
+        assert.equal(reads, leave ? 1 : 2);
+        if (!leave) assert.equal(button('군신 마르두크 정액 기부 · 50,000 Funds').at(-1)!.props.disabled, false);
+        assert.equal(http.requests.some((request) => request.method === 'POST'), false);
+      } finally { resource.dispose(); http.client.dispose(); }
+    });
+  }
+
   it('캡차 입력이 15초를 넘어도 별도 대기를 유지하고 떠난 상세는 다시 읽지 않는다', async (context) => {
     context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
     const human = deferred<void>(); let reads = 0;

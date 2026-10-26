@@ -29,6 +29,7 @@ const rntl = require('@testing-library/react-native/pure') as typeof import('@te
 const { BattleTabScreen } = require('../../main/screens/BattleTabScreen') as typeof import('../../main/screens/BattleTabScreen');
 const { BackendApiClient } = require('../../main/services/backendApi') as typeof import('../../main/services/backendApi');
 const { useBattleResource } = require('../../main/features/battle/useBattleResource') as typeof import('../../main/features/battle/useBattleResource');
+const { authenticatedHttp, jsonResponse } = require('../fixtures/authenticatedHttp') as typeof import('../fixtures/authenticatedHttp');
 loader._load = original;
 const originalFetch = globalThis.fetch;
 afterEach(async () => { await rntl.cleanup(); globalThis.fetch = originalFetch; });
@@ -116,34 +117,131 @@ it('이전 상태 조회가 늦게 끝나도 최신 조회에서 사라진 맵�
   assert.ok(mapButton('둘째 맵', true));
 });
 
-it('로그인 resource가 panel 재생성 뒤 카탈로그를 보존하고 같은 availability를 공유한다', async () => {
-  let catalogs = 0; let reads = 0;
-  let complete!: (response: Response) => void;
-  const pending = new Promise<Response>((resolve) => { complete = resolve; });
+const categories = [{ id: 'battle_map', label: '전투맵', description: '', order: 1, enabled: true }];
+const catalogPath = '/api/battle/categories/battle_map/maps/catalog';
+const availabilityPath = '/api/battle/categories/battle_map/maps/availability';
+function realResourceHarness(client: import('../../main/services/backendApi').BackendApiClient, assertActiveGeneration = () => undefined) {
   let resource!: ReturnType<typeof useBattleResource>;
-  const backend = new BackendApiClient('http://backend.test');
-  globalThis.fetch = async (url) => {
-    if (String(url).endsWith('/maps/catalog')) { catalogs += 1; return new Response(JSON.stringify([first])); }
-    if (String(url).endsWith('/maps/availability')) { reads += 1; return pending; }
-    return new Response(JSON.stringify([{ id: 'battle_map', label: '전투맵', description: '', order: 1, enabled: true }]));
-  };
-  const describeError = (error: unknown) => String(error);
-  const assertActiveGeneration = () => undefined;
-  const waitForCaptchaResolution = async () => undefined;
-  function Harness({ show }: { show: boolean }) {
-    resource = useBattleResource({ api: backend as never, describeError, assertActiveGeneration, waitForCaptchaResolution });
+  const options = { api: client, assertActiveGeneration, describeError: (error: unknown) => String(error), waitForCaptchaResolution: async () => undefined };
+  function Harness({ show = true }: { show?: boolean }) {
+    resource = useBattleResource(options);
     return show ? React.createElement(BattleTabScreen, { ...props(async () => []), battle: resource }) : null;
   }
-  await rntl.render(React.createElement(Harness, { show: true }));
-  await rntl.screen.rerender(React.createElement(Harness, { show: false }));
-  await rntl.screen.rerender(React.createElement(Harness, { show: true }));
-  assert.equal(catalogs, 1);
-  const a = resource.loadMaps('battle_map'); const b = resource.loadMaps('battle_map');
-  assert.equal(reads, 1);
-  complete(new Response(JSON.stringify([first])));
-  await rntl.act(async () => { await Promise.all([a, b]); });
+  return { Harness, resource: () => resource };
+}
+
+it('실제 HTTP 재진입은 카탈로그를 보존하고 공유 중인 확인이 끝나야 맵을 선택한다', async () => {
+  let complete!: (response: Response) => void;
+  const pending = new Promise<Response>((resolve) => { complete = resolve; });
+  const { client, requests } = await authenticatedHttp(async ({ path }) => {
+    if (path === catalogPath) return jsonResponse([first]);
+    if (path === availabilityPath) return pending;
+    assert.equal(path, '/api/battle/categories'); return jsonResponse(categories);
+  });
+  const { Harness, resource } = realResourceHarness(client);
+  try {
+    await rntl.render(React.createElement(Harness));
+    await openMaps();
+    assert.ok(mapButton('첫 맵', true));
+    await rntl.fireEvent.press(mapButton('첫 맵', true));
+    assert.equal(rntl.screen.queryByText('전투 설정'), null);
+    await rntl.screen.rerender(React.createElement(Harness, { show: false }));
+    await rntl.screen.rerender(React.createElement(Harness));
+    await openMaps();
+    assert.ok(mapButton('첫 맵', true));
+    const a = resource().loadMaps('battle_map'); const b = resource().loadMaps('battle_map');
+    assert.equal(requests.filter(({ path }) => path === catalogPath).length, 1);
+    assert.equal(requests.filter(({ path }) => path === availabilityPath).length, 1);
+    await rntl.act(async () => { complete(jsonResponse([first])); await Promise.all([a, b]); });
+    assert.ok(mapButton('첫 맵', false));
+    await rntl.fireEvent.press(mapButton('첫 맵', false));
+    assert.ok(rntl.screen.getByText('전투 설정'));
+  } finally { client.dispose(); }
 });
 
+it('실제 HTTP availability 뒤 도착한 카탈로그도 최신 가능 상태를 덮어쓰지 않는다', async () => {
+  let completeCatalog!: (response: Response) => void;
+  const pending = new Promise<Response>((resolve) => { completeCatalog = resolve; });
+  const { client, requests } = await authenticatedHttp(async ({ path }) => {
+    if (path === catalogPath) return pending;
+    if (path === availabilityPath) return jsonResponse([second]);
+    assert.equal(path, '/api/battle/categories'); return jsonResponse(categories);
+  });
+  const { Harness } = realResourceHarness(client);
+  try {
+    await rntl.render(React.createElement(Harness));
+    await openMaps();
+    assert.ok(mapButton('둘째 맵', false));
+    await rntl.act(() => completeCatalog(jsonResponse([first, { ...second, enabled: false }])));
+    assert.ok(mapButton('첫 맵', true)); assert.ok(mapButton('둘째 맵', false));
+    assert.equal(requests.filter(({ path }) => path === catalogPath).length, 1);
+    assert.equal(requests.filter(({ path }) => path === availabilityPath).length, 1);
+  } finally { client.dispose(); }
+});
+
+it('실제 HTTP 빈 카탈로그에서 발견한 맵은 재진입 때 표시하고 최신 부재에는 선택을 막는다', async () => {
+  const completions: Array<(response: Response) => void> = [];
+  const { client, requests } = await authenticatedHttp(async ({ path }) => {
+    if (path === catalogPath) return jsonResponse([]);
+    if (path === availabilityPath) return new Promise((resolve) => completions.push(resolve));
+    assert.equal(path, '/api/battle/categories'); return jsonResponse(categories);
+  });
+  const { Harness } = realResourceHarness(client);
+  try {
+    await rntl.render(React.createElement(Harness));
+    await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: /전투맵/ }));
+    assert.equal(rntl.screen.queryByRole('button', { name: /첫 맵/ }), null);
+    await rntl.act(() => completions[0](jsonResponse([first])));
+    await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: /원본 지역/ }));
+    assert.ok(mapButton('첫 맵', false));
+    await rntl.screen.rerender(React.createElement(Harness, { show: false }));
+    await rntl.screen.rerender(React.createElement(Harness));
+    await openMaps();
+    assert.ok(mapButton('첫 맵', true));
+    await rntl.act(() => completions[1](jsonResponse([])));
+    assert.ok(mapButton('첫 맵', true));
+    await rntl.fireEvent.press(mapButton('첫 맵', true));
+    assert.equal(rntl.screen.queryByText('전투 설정'), null);
+    assert.equal(requests.filter(({ path }) => path === catalogPath).length, 1);
+    assert.equal(requests.filter(({ path }) => path === availabilityPath).length, 2);
+  } finally { client.dispose(); }
+});
+
+it('실제 HTTP 이전 계정의 늦은 맵 응답은 새 계정의 표시·선택 상태에 섞이지 않는다', async () => {
+  let activeA = true;
+  let completeA!: (response: Response) => void;
+  let completeB!: (response: Response) => void;
+  const pendingA = new Promise<Response>((resolve) => { completeA = resolve; });
+  const pendingB = new Promise<Response>((resolve) => { completeB = resolve; });
+  const a = await authenticatedHttp(async ({ path }) => {
+    if (path === catalogPath) return jsonResponse([first]);
+    if (path === availabilityPath) return pendingA;
+    assert.equal(path, '/api/battle/categories'); return jsonResponse(categories);
+  }, 'account-a');
+  const A = realResourceHarness(a.client, () => { if (!activeA) throw new Error('종료한 로그인'); });
+  let b: Awaited<ReturnType<typeof authenticatedHttp>> | undefined;
+  try {
+    await rntl.render(React.createElement(A.Harness, { key: 'a' }));
+    await openMaps(); assert.ok(mapButton('첫 맵', true));
+    activeA = false; a.client.dispose();
+    b = await authenticatedHttp(async ({ path }) => {
+      if (path === catalogPath) return jsonResponse([second]);
+      if (path === availabilityPath) return pendingB;
+      assert.equal(path, '/api/battle/categories'); return jsonResponse(categories);
+    }, 'account-b');
+    const B = realResourceHarness(b.client);
+    await rntl.screen.rerender(React.createElement(B.Harness, { key: 'b' }));
+    await openMaps();
+    await rntl.act(() => completeA(jsonResponse([first])));
+    assert.equal(rntl.screen.queryByRole('button', { name: /첫 맵/ }), null);
+    assert.ok(mapButton('둘째 맵', true));
+    await rntl.act(() => completeB(jsonResponse([second])));
+    assert.ok(mapButton('둘째 맵', false));
+    await rntl.fireEvent.press(mapButton('둘째 맵', false));
+    assert.ok(rntl.screen.getByText('전투 설정'));
+    assert.deepEqual(b.requests.map(({ path }) => path), ['/api/battle/categories', catalogPath, availabilityPath]);
+  } finally { a.client.dispose(); b?.client.dispose(); }
+});
 
 it('맵 Retry-After 기한 전에는 재시도해도 transport를 다시 호출하지 않는다', async (context) => {
   context.mock.timers.enable({ apis: ['Date'], now: 0 });
