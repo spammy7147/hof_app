@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import Module from 'node:module';
 import { afterEach, describe, it } from 'node:test';
 import React from 'react';
+import { AutomationPresetEditor } from '../../main/domain/automationPresetEditor';
+import type { SaveAutomationPresetRequest } from '../../main/types/api';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import type { TypedAutomationAggregateResponse } from '../../main/types/api';
@@ -34,6 +36,7 @@ moduleWithLoader._load = (request, parent, isMain) => {
   if (request.endsWith('/HomeStatusSummary')) return { HomeStatusSummary: host('HomeStatusSummary') };
   if (request.endsWith('/UnifiedAutomationDashboard')) return { UnifiedAutomationDashboard: dashboardMock };
   if (request.endsWith('/UnifiedAutomationSettings')) return { UnifiedAutomationSettings: settingsMock };
+  if (request.endsWith('/AutomationPresets')) return { AutomationPresets: host('AutomationPresets') };
   if (request.endsWith('/QuestAutomationEditor')) return { QuestAutomationEditor: host('QuestAutomationEditor') };
   if (request.endsWith('/BattleMapAutomationEditor')) return { BattleMapAutomationEditor: host('BattleMapAutomationEditor') };
   if (request.endsWith('/AdventureMapAutomationEditor')) return { AdventureMapAutomationEditor: host('AdventureMapAutomationEditor') };
@@ -55,6 +58,31 @@ afterEach(() => {
 });
 
 describe('HomeTabScreen dashboard polling', () => {
+  it('프리셋 안의 항목 편집을 초안에 모으고 전체 저장까지 실행 설정을 바꾸지 않는다', async () => {
+    fakeTimeouts();
+    const base = controllerStub(async () => undefined) as unknown as { getSnapshot: () => { aggregate: TypedAutomationAggregateResponse } };
+    const current = base.getSnapshot().aggregate;
+    const writes: SaveAutomationPresetRequest[] = [];
+    const editor = new AutomationPresetEditor({
+      fetchCurrent: async () => current, list: async () => [], get: async () => { throw new Error('없음'); },
+      getApplied: async () => null, fetchQuests: async () => [], remove: async () => [],
+      save: async request => { writes.push(request); return { id: 1, ...request, revision: '0' }; },
+      apply: async () => { throw new Error('적용하지 않아야 합니다.'); },
+    });
+    const controller = { ...base, presetEditor: editor };
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(HomeTabScreen, props(controller as never))); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '설정 열기' }).props.onPress(); });
+    const settings = renderer.root.findByType('UnifiedAutomationSettings' as never);
+    await act(async () => { await settings.props.onAdd('FISHING'); });
+    const entry = editor.draft.getSnapshot().aggregate!.entries[0]!;
+    await act(async () => { await renderer.root.findByType('UnifiedAutomationSettings' as never).props.onToggle(entry); });
+    await act(async () => { editor.setName('전체 구성'); await editor.save(); });
+    assert.deepEqual(writes[0]?.settings.entries.map(({ type, enabled }) => [type, enabled]), [['FISHING', true]]);
+    assert.deepEqual(current.entries, []);
+    assert.equal(renderer.root.findByType('AutomationPresets' as never).props.editor, editor);
+    await act(async () => { renderer.unmount(); });
+  });
   it('opens the colosseum editor and saves its activation through the controller', async () => {
     fakeTimeouts();
     const base = controllerStub(async () => undefined) as unknown as {
@@ -185,6 +213,9 @@ function controllerStub(
   };
   const snapshot = {
     aggregate,
+    presets: [],
+    presetBusy: false,
+    presetsLoading: false,
     loading: false,
     actionSaving: false,
     savingEntryIds: [],
@@ -197,6 +228,7 @@ function controllerStub(
     subscribe: () => () => undefined,
     getSnapshot: () => snapshot,
     load,
+    loadPresets: async () => undefined,
     reset,
     clearMessage: () => undefined,
     showMessage: () => undefined,

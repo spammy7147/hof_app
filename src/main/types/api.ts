@@ -860,6 +860,24 @@ export type TypedAutomationAggregateResponse = {
   hofStatus?: HofObservedStatusResponse | null;
 };
 
+export type AutomationPresetResponse = {
+  id: number;
+  name: string;
+  entryCount: number;
+  updatedAt: string;
+};
+
+export type AutomationPresetEntry = Pick<TypedAutomationEntryResponse,
+  'type' | 'enabled' | 'displayName' | 'minimumRemainingTime' | 'quests' | 'homeQuests' | 'battleMaps'
+  | 'adventureMaps' | 'fishingMaps' | 'unionMaps' | 'raidTargets'> & { sourceEntryId: number };
+export type AutomationPresetSettings = { entries: AutomationPresetEntry[] };
+export type SaveAutomationPresetRequest = { name: string; settings: AutomationPresetSettings; revision?: string };
+export type AutomationPresetDetailResponse = {
+  id: number; name: string; revision: string; settings: AutomationPresetSettings; updatedAt?: string;
+};
+export type AppliedAutomationPresetResponse = { id: number; name: string; revision: string; matchesCurrent: boolean };
+export type AutomationPresetApplyResponse = { automation: TypedAutomationAggregateResponse; preset: AutomationPresetDetailResponse };
+
 export type QuestState = 'AVAILABLE' | 'ACTIVE' | 'CLAIMABLE' | 'COMPLETED' | 'UNAVAILABLE';
 export type QuestSection = 'ACTIVE' | 'AVAILABLE' | 'WAITING' | 'COMPLETED';
 export type QuestMissionType = 'IMMEDIATE' | 'ITEM_TURN_IN' | 'MONSTER_KILL' | 'MAP_CLEAR' | 'OTHER';

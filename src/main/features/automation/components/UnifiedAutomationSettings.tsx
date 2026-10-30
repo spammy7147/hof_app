@@ -27,6 +27,7 @@ import type { AutomationType, TypedAutomationEntryResponse } from '../../../type
 import { AutomationAddSheet } from './AutomationAddSheet';
 
 type Props = {
+  draftMode?: boolean;
   entries: TypedAutomationEntryResponse[];
   error: string | null;
   reordering: boolean;
@@ -42,6 +43,7 @@ type Props = {
 const DRAG_HANDLE_GESTURE_WIDTH = 48;
 
 export function UnifiedAutomationSettings({
+  draftMode = false,
   entries,
   error,
   reordering,
@@ -108,7 +110,7 @@ export function UnifiedAutomationSettings({
     closeOpenSwipeable();
     Alert.alert(
       `${displayName} 자동화를 삭제할까요?`,
-      '저장한 세부 설정도 함께 삭제됩니다.',
+      draftMode ? '프리셋 초안에서 이 항목을 제거합니다. 전체 저장하면 저장본에 반영됩니다.' : '저장한 세부 설정도 함께 삭제됩니다.',
       [
         { text: '취소', style: 'cancel' },
         {
@@ -127,11 +129,12 @@ export function UnifiedAutomationSettings({
         },
       ],
     );
-  }, [captureFocus, closeOpenSwipeable, entries, onDelete, restoreFocus]);
+  }, [captureFocus, closeOpenSwipeable, draftMode, entries, onDelete, restoreFocus]);
 
   const renderItem = useCallback((params: RenderItemParams<TypedAutomationEntryResponse>) => (
     <AutomationEntryRow
       {...params}
+      draftMode={draftMode}
       entries={entries}
       reorderBusy={reordering}
       saving={savingEntryIds.includes(params.item.id)}
@@ -143,6 +146,7 @@ export function UnifiedAutomationSettings({
     />
   ), [
     confirmDelete,
+    draftMode,
     entries,
     onDetail,
     onReorder,
@@ -155,8 +159,8 @@ export function UnifiedAutomationSettings({
   return (
     <View style={styles.stack}>
       <View style={styles.listHeader}>
-        <Text style={styles.sectionTitle}>실행 우선순위</Text>
-        <Text style={styles.helper}>위에서부터 실행하며 변경은 다음 작업부터 적용돼요.</Text>
+        <Text style={styles.sectionTitle}>{draftMode ? '프리셋의 전체 자동화 구성' : '실행 우선순위'}</Text>
+        <Text style={styles.helper}>{draftMode ? '위에서부터 판단해요. 편집 후 아래에서 전체 저장·적용해 주세요.' : '위에서부터 실행하며 변경은 다음 작업부터 적용돼요.'}</Text>
         <Text style={styles.helper}>상위 항목이 계속 실행 가능하면 아래 항목은 기다릴 수 있어요.</Text>
         <Text style={styles.helper}>자동화 항목은 계정당 100개, 맵은 유형별 전체 묶음 합계 100개까지 저장할 수 있어요.</Text>
       </View>
@@ -232,6 +236,7 @@ export function UnifiedAutomationSettings({
 }
 
 type AutomationEntryRowProps = RenderItemParams<TypedAutomationEntryResponse> & {
+  draftMode: boolean;
   entries: readonly TypedAutomationEntryResponse[];
   reorderBusy: boolean;
   saving: boolean;
@@ -247,6 +252,7 @@ function AutomationEntryRow({
   drag,
   getIndex,
   isActive,
+  draftMode,
   entries,
   reorderBusy,
   saving,
@@ -344,8 +350,8 @@ function AutomationEntryRow({
           <View style={styles.rowCopy}>
             <View style={styles.rowTitleLine}>
               <Text numberOfLines={1} style={styles.rowTitle}>{displayName}</Text>
-              <Text style={[styles.statusChip, !item.ready && styles.warningChip]}>
-                {item.ready ? '준비됨' : '확인 필요'}
+              <Text style={[styles.statusChip, !draftMode && !item.ready && styles.warningChip]}>
+                {draftMode ? '초안' : item.ready ? '준비됨' : '확인 필요'}
               </Text>
               {warning ? <Text style={[styles.statusChip, styles.warningChip]}>경고</Text> : null}
             </View>

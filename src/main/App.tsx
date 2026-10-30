@@ -16,6 +16,7 @@ import { useAndroidPushRegistration } from "./features/push/useAndroidPushRegist
 import { RequiredUpdateGate } from "./features/update/RequiredUpdateGate";
 import { mergeObservedHofStatus } from "./domain/hofStatus";
 import { UnifiedAutomationController } from "./domain/unifiedAutomationController";
+import { AutomationPresetEditor } from "./domain/automationPresetEditor";
 import { toUserFacingErrorMessage } from "./domain/userFacingErrors";
 import type {
   HofStatusResponse,
@@ -169,8 +170,8 @@ function AuthenticatedApp({
   const townApi = useMemo(() => createTownApi(api), [api]);
   useLayoutEffect(() => { townApi.activate(); return () => townApi.dispose(); }, [townApi]);
   const automationController = useMemo(
-    () =>
-      new UnifiedAutomationController({
+    () => {
+      const controller = new UnifiedAutomationController({
         fetch: () => api.fetchUnifiedAutomation(),
         create: (request) => api.createAutomationEntry(request),
         delete: (entryId, settingsRevision) => api.deleteAutomationEntry(entryId, settingsRevision),
@@ -192,7 +193,17 @@ function AuthenticatedApp({
         allowLocalFreshDecision: (actionId) => api.allowFreshLocalAutomationDecision(actionId),
         fetchQuests: () => api.fetchQuests(),
         changeState: (action) => api.changeUnifiedAutomationState(action),
-      }),
+      });
+
+      controller.presetEditor = new AutomationPresetEditor({
+        fetchCurrent: () => api.fetchUnifiedAutomation(), list: () => api.fetchAutomationPresets(),
+        get: (id) => api.fetchAutomationPreset(id), getApplied: () => api.fetchAppliedAutomationPreset(),
+        save: (request, id) => api.saveAutomationPreset(request, id), remove: (id) => api.deleteAutomationPreset(id),
+        apply: (id, revision) => api.applyAutomationPreset(id, revision), fetchQuests: () => api.fetchQuests(),
+        onApplied: () => controller.load(),
+      });
+      return controller;
+    },
     [api],
   );
   const session = useMemo<AppSession | null>(

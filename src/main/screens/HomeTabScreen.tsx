@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ElementRef } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ElementRef, type ReactNode } from 'react';
+import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, View } from 'react-native';
 import { ArrowLeft, Info } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
 
 import type { BattleResource } from '../features/battle/useBattleResource';
+import type { AutomationPresetEditor } from '../domain/automationPresetEditor';
+import { confirmPresetNavigation } from '../features/automation/confirmPresetNavigation';
 import type { UnifiedAutomationController } from '../domain/unifiedAutomationController';
 import type { PartyPresetCatalogResource } from '../domain/partyPresetCatalogModule';
 import { UnifiedAutomationDashboard } from '../features/automation/components/UnifiedAutomationDashboard';
@@ -11,6 +13,7 @@ import { AdventureMapAutomationEditor } from '../features/automation/components/
 import { BattleMapAutomationEditor } from '../features/automation/components/BattleMapAutomationEditor';
 import { QuestAutomationEditor } from '../features/automation/components/QuestAutomationEditor';
 import { UnifiedAutomationSettings } from '../features/automation/components/UnifiedAutomationSettings';
+import { AutomationPresets } from '../features/automation/components/AutomationPresets';
 import { NewAutomationEditor } from '../features/automation/components/NewAutomationEditor';
 import { ColosseumAutomationEditor } from '../features/automation/components/ColosseumAutomationEditor';
 import { HomeQuestAutomationEditor } from '../features/automation/components/HomeQuestAutomationEditor';
@@ -44,6 +47,9 @@ type HomeTabScreenProps = {
   onDetailModeChange?: (active: boolean) => void;
   townApi?: TownApi;
 };
+
+const subscribeToNothing = () => () => undefined;
+const noPresetSnapshot = () => null;
 
 type HomeRoute = 'dashboard' | 'settings' | 'editor' | 'history';
 
@@ -87,24 +93,41 @@ export function HomeTabScreen({
   const [typedEditorEntry, setTypedEditorEntry] = useState<TypedAutomationEntryResponse | null>(null);
   const [rulesOpen, setRulesOpen] = useState(false);
   const scrollRef = useRef<ElementRef<typeof NestableScrollContainer>>(null);
-  const {
-    aggregate,
-    loading,
-    actionSaving,
-    savingEntryIds,
-    savingTypes,
-    reordering,
-    error,
-    message,
-  } = useSyncExternalStore(
-    automationController.subscribe,
-    automationController.getSnapshot,
-    automationController.getSnapshot,
-  );
+  const presetEditor = automationController.presetEditor;
+  const settingsController = presetEditor?.draft ?? automationController;
+  const presetState = useSyncExternalStore<ReturnType<AutomationPresetEditor['getSnapshot']> | null>(
+    presetEditor?.subscribe ?? subscribeToNothing, presetEditor?.getSnapshot ?? noPresetSnapshot, noPresetSnapshot);
+  const live = useSyncExternalStore(automationController.subscribe, automationController.getSnapshot, automationController.getSnapshot);
+  const settings = useSyncExternalStore(settingsController.subscribe, settingsController.getSnapshot, settingsController.getSnapshot);
+  const editing = route === 'settings' || route === 'editor';
+  const aggregate = editing ? settings.aggregate : live.aggregate;
+  const { loading, actionSaving } = live;
+  const { savingEntryIds, savingTypes, reordering } = settings;
+  const { error, message } = editing ? settings : live;
 
   useEffect(() => {
     if (!authenticated) automationController.reset();
   }, [authenticated, automationController]);
+
+  useEffect(() => {
+    if (authenticated && route === 'settings' && presetEditor) void presetEditor.initialize();
+  }, [authenticated, presetEditor, route]);
+
+  useEffect(() => {
+    if (route !== 'settings') return undefined;
+    const subscription = BackHandler?.addEventListener('hardwareBackPress', () => {
+      confirmPresetNavigation(presetEditor, () => setRoute('dashboard'));
+      return true;
+    });
+    return () => subscription?.remove();
+  }, [presetEditor, route]);
+
+  useEffect(() => {
+    if (!presetState?.dirty || typeof window === 'undefined' || typeof window.addEventListener !== 'function') return undefined;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [presetState?.dirty]);
 
   useEffect(() => {
     if (aggregate?.hofStatus) onStatusObserved?.(aggregate.hofStatus);
@@ -135,18 +158,26 @@ export function HomeTabScreen({
   }, [authenticated, automationController, route]);
 
   function openModule(entryId: number) {
+    if (presetEditor) {
+      confirmPresetNavigation(presetEditor, () => { void (async () => {
+        if (!await presetEditor.initialize() || !await presetEditor.select(null)) return;
+        const entry = presetEditor.draft.getSnapshot().aggregate?.entries.find(item => item.id === entryId);
+        if (entry) openEntryDetail(entry); else setRoute('settings');
+      })(); });
+      return;
+    }
     const entry = aggregate?.entries.find(({ id }) => id === entryId);
     if (entry) openEntryDetail(entry);
   }
 
   function openEntryDetail(entry: TypedAutomationEntryResponse) {
     if (entry.type === 'QUEST' || entry.type === 'HOME_QUEST' || entry.type === 'BATTLE_MAP' || entry.type === 'ADVENTURE_MAP' || entry.type === 'RAID' || entry.type === 'UNION' || entry.type === 'FISHING' || entry.type === 'COLOSSEUM') {
-      if (savingEntryIds.includes(entry.id) || savingTypes.includes(entry.type)) {
-        automationController.showMessage('이 자동화를 저장하고 있어요. 완료된 뒤 다시 열어 주세요.');
+      if (presetState?.busy || savingEntryIds.includes(entry.id) || savingTypes.includes(entry.type)) {
+        settingsController.showMessage('이 자동화를 저장하고 있어요. 완료된 뒤 다시 열어 주세요.');
         return;
       }
       setTypedEditorEntry(entry);
-      automationController.clearMessage();
+      settingsController.clearMessage();
       onDetailModeChange?.(true);
       setRoute('editor');
       return;
@@ -154,19 +185,19 @@ export function HomeTabScreen({
   }
 
   function toggleEntry(entry: TypedAutomationEntryResponse) {
-    if (entry.type === 'COLOSSEUM') return automationController.saveColosseumSettings({ enabled: !entry.enabled });
+    if (entry.type === 'COLOSSEUM') return settingsController.saveColosseumSettings({ enabled: !entry.enabled });
     if (entry.type === 'QUEST') {
-      return automationController.saveQuestSettings({ enabled: !entry.enabled, quests: entry.quests });
+      return settingsController.saveQuestSettings({ enabled: !entry.enabled, quests: entry.quests });
     }
     if (entry.type === 'HOME_QUEST') {
-      return automationController.saveHomeQuestSettings({ enabled: !entry.enabled, quests: entry.homeQuests ?? [] });
+      return settingsController.saveHomeQuestSettings({ enabled: !entry.enabled, quests: entry.homeQuests ?? [] });
     }
     if (entry.type === 'BATTLE_MAP') {
       if (!entry.enabled && entry.battleMaps.length === 0) {
-        automationController.showMessage('맵이 없는 묶음은 활성화할 수 없어요. 먼저 맵을 추가해 주세요.');
+        settingsController.showMessage('맵이 없는 묶음은 활성화할 수 없어요. 먼저 맵을 추가해 주세요.');
         return Promise.resolve(false);
       }
-      return automationController.saveBattleMapGroup(entry.id, {
+      return settingsController.saveBattleMapGroup(entry.id, {
         settingsRevision: entry.settingsRevision ?? '0',
         displayName: entry.displayName ?? null,
         enabled: !entry.enabled,
@@ -176,40 +207,48 @@ export function HomeTabScreen({
     }
     if (entry.type === 'ADVENTURE_MAP') {
       if (!entry.enabled && entry.adventureMaps.length === 0) {
-        automationController.showMessage('맵이 없는 묶음은 활성화할 수 없어요. 먼저 맵을 추가해 주세요.');
+        settingsController.showMessage('맵이 없는 묶음은 활성화할 수 없어요. 먼저 맵을 추가해 주세요.');
         return Promise.resolve(false);
       }
-      return automationController.saveAdventureMapGroup(entry.id, {
+      return settingsController.saveAdventureMapGroup(entry.id, {
         settingsRevision: entry.settingsRevision ?? '0',
         displayName: entry.displayName ?? null,
         enabled: !entry.enabled,
         maps: entry.adventureMaps,
       });
     }
-    if (entry.type === 'FISHING') return automationController.saveFishingSettings({
+    if (entry.type === 'FISHING') return settingsController.saveFishingSettings({
       enabled: !entry.enabled,
       maps: entry.fishingMaps ?? [],
     });
-    if (entry.type === 'UNION') return automationController.saveUnionSettings({ enabled: !entry.enabled, maps: entry.unionMaps ?? [] });
-    return automationController.saveRaidSettings({ enabled: !entry.enabled, targets: entry.raidTargets ?? [] });
+    if (entry.type === 'UNION') return settingsController.saveUnionSettings({ enabled: !entry.enabled, maps: entry.unionMaps ?? [] });
+    return settingsController.saveRaidSettings({ enabled: !entry.enabled, targets: entry.raidTargets ?? [] });
   }
 
   const closeEditor = useCallback(() => {
     setTypedEditorEntry(null);
-    automationController.clearMessage();
+    settingsController.clearMessage();
     onDetailModeChange?.(false);
     setRoute('settings');
-  }, [automationController, onDetailModeChange]);
+  }, [settingsController, onDetailModeChange]);
 
   const fetchQuestSnapshots = useCallback(
-    () => automationController.fetchQuests(),
-    [automationController],
+    () => settingsController.fetchQuests(),
+    [settingsController],
   );
 
+  function withPresetContext(content: ReactNode) {
+    return presetEditor ? <View style={styles.scroller}>
+      <Text style={styles.draftBanner}>{presetState?.name || '새 프리셋'} · 변경은 이 구성의 초안에 반영돼요.</Text>
+      {content}
+    </View> : content;
+  }
+
+  let editorContent: ReactNode = null;
   if (aggregate && route === 'editor' && typedEditorEntry?.type === 'QUEST') {
     const currentEntry = aggregate.entries.find(({ id }) => id === typedEditorEntry.id);
     const entry = currentEntry?.type === 'QUEST' ? currentEntry : typedEditorEntry;
-    return (
+    editorContent = (
       <QuestAutomationEditor
         battleCategories={battleCategories}
         areBattleCategoriesLoaded={areBattleCategoriesLoaded}
@@ -220,13 +259,13 @@ export function HomeTabScreen({
         mutationMessage={message ?? error}
         saving={savingEntryIds.includes(entry.id) || savingTypes.includes('QUEST')}
         onBack={closeEditor}
-        onDelete={() => automationController.deleteEntry(entry.id)}
+        onDelete={() => settingsController.deleteEntry(entry.id)}
         partyPresetCatalog={partyPresetCatalog}
-        onClearMutationMessage={() => automationController.clearMessage()}
+        onClearMutationMessage={() => settingsController.clearMessage()}
         onLoadBattleCategories={onLoadBattleCategories}
         onLoadBattleMaps={onLoadBattleMaps}
         onSave={async (request) => {
-          const saved = await automationController.saveQuestSettings(request);
+          const saved = await settingsController.saveQuestSettings(request);
           if (saved) closeEditor();
           return saved;
         }}
@@ -236,24 +275,24 @@ export function HomeTabScreen({
 
   if (aggregate && route === 'editor' && typedEditorEntry?.type === 'COLOSSEUM') {
     const entry = aggregate.entries.find(({ id }) => id === typedEditorEntry.id) ?? typedEditorEntry;
-    return <ColosseumAutomationEditor entry={entry} loadColosseum={loadColosseum}
+    editorContent = <ColosseumAutomationEditor entry={entry} loadColosseum={loadColosseum}
       saving={savingEntryIds.includes(entry.id) || savingTypes.includes('COLOSSEUM')}
       mutationMessage={message ?? error} onBack={closeEditor}
-      onDelete={() => automationController.deleteEntry(entry.id)}
-      onSave={async (request) => { const saved = await automationController.saveColosseumSettings(request); if (saved) closeEditor(); return saved; }} />;
+      onDelete={() => settingsController.deleteEntry(entry.id)}
+      onSave={async (request) => { const saved = await settingsController.saveColosseumSettings(request); if (saved) closeEditor(); return saved; }} />;
   }
 
   if (aggregate && route === 'editor' && typedEditorEntry?.type === 'HOME_QUEST') {
     const currentEntry = aggregate.entries.find(({ id }) => id === typedEditorEntry.id);
     const entry = currentEntry?.type === 'HOME_QUEST' ? currentEntry : typedEditorEntry;
-    return <HomeQuestAutomationEditor
+    editorContent = <HomeQuestAutomationEditor
       entry={entry}
       loadHome={loadHomeQuests}
       mutationMessage={message ?? error}
       onBack={closeEditor}
-      onDelete={() => automationController.deleteEntry(entry.id)}
+      onDelete={() => settingsController.deleteEntry(entry.id)}
       onSave={async (request) => {
-        const saved = await automationController.saveHomeQuestSettings(request);
+        const saved = await settingsController.saveHomeQuestSettings(request);
         if (saved) closeEditor();
         return saved;
       }}
@@ -264,7 +303,7 @@ export function HomeTabScreen({
   if (aggregate && route === 'editor' && typedEditorEntry?.type === 'BATTLE_MAP') {
     const currentEntry = aggregate.entries.find(({ id }) => id === typedEditorEntry.id);
     const entry = currentEntry?.type === 'BATTLE_MAP' ? currentEntry : typedEditorEntry;
-    return (
+    editorContent = (
       <BattleMapAutomationEditor
         battleCategories={battleCategories}
         areBattleCategoriesLoaded={areBattleCategoriesLoaded}
@@ -276,17 +315,17 @@ export function HomeTabScreen({
         saving={savingEntryIds.includes(entry.id) || savingTypes.includes('BATTLE_MAP')}
         onBack={closeEditor}
         partyPresetCatalog={partyPresetCatalog}
-        onClearMutationMessage={() => automationController.clearMessage()}
+        onClearMutationMessage={() => settingsController.clearMessage()}
         onLoadBattleCategories={onLoadBattleCategories}
         onLoadBattleMaps={onLoadBattleMaps}
         otherMapGroups={aggregate.entries.filter((candidate) => candidate.type === 'BATTLE_MAP' && candidate.id !== entry.id)}
         onMoveMap={(sourceEntryId, categoryId, mapCode, targetExecutionOrder) => {
           const source = aggregate.entries.find((candidate) => candidate.id === sourceEntryId && candidate.type === 'BATTLE_MAP');
           if (!source) {
-            automationController.showMessage('원본 전투 맵 묶음을 다시 확인해 주세요.');
+            settingsController.showMessage('원본 전투 맵 묶음을 다시 확인해 주세요.');
             return Promise.resolve(false);
           }
-          return automationController.moveMapBetweenGroups(entry.id, {
+          return settingsController.moveMapBetweenGroups(entry.id, {
             sourceEntryId,
             sourceSettingsRevision: source.settingsRevision ?? '0',
             targetSettingsRevision: entry.settingsRevision ?? '0',
@@ -296,7 +335,7 @@ export function HomeTabScreen({
           });
         }}
         onSave={async (request) => {
-          const saved = await automationController.saveBattleMapGroup(entry.id, {
+          const saved = await settingsController.saveBattleMapGroup(entry.id, {
             settingsRevision: entry.settingsRevision ?? '0',
             displayName: request.displayName ?? entry.displayName ?? null,
             enabled: request.enabled,
@@ -313,7 +352,7 @@ export function HomeTabScreen({
   if (aggregate && route === 'editor' && typedEditorEntry?.type === 'ADVENTURE_MAP') {
     const currentEntry = aggregate.entries.find(({ id }) => id === typedEditorEntry.id);
     const entry = currentEntry?.type === 'ADVENTURE_MAP' ? currentEntry : typedEditorEntry;
-    return (
+    editorContent = (
       <AdventureMapAutomationEditor
         battleCategories={battleCategories}
         areBattleCategoriesLoaded={areBattleCategoriesLoaded}
@@ -325,17 +364,17 @@ export function HomeTabScreen({
         saving={savingEntryIds.includes(entry.id) || savingTypes.includes('ADVENTURE_MAP')}
         onBack={closeEditor}
         partyPresetCatalog={partyPresetCatalog}
-        onClearMutationMessage={() => automationController.clearMessage()}
+        onClearMutationMessage={() => settingsController.clearMessage()}
         onLoadBattleCategories={onLoadBattleCategories}
         onLoadBattleMaps={onLoadBattleMaps}
         otherMapGroups={aggregate.entries.filter((candidate) => candidate.type === 'ADVENTURE_MAP' && candidate.id !== entry.id)}
         onMoveMap={(sourceEntryId, categoryId, mapCode, targetExecutionOrder) => {
           const source = aggregate.entries.find((candidate) => candidate.id === sourceEntryId && candidate.type === 'ADVENTURE_MAP');
           if (!source) {
-            automationController.showMessage('원본 모험맵 묶음을 다시 확인해 주세요.');
+            settingsController.showMessage('원본 모험맵 묶음을 다시 확인해 주세요.');
             return Promise.resolve(false);
           }
-          return automationController.moveMapBetweenGroups(entry.id, {
+          return settingsController.moveMapBetweenGroups(entry.id, {
             sourceEntryId,
             sourceSettingsRevision: source.settingsRevision ?? '0',
             targetSettingsRevision: entry.settingsRevision ?? '0',
@@ -345,7 +384,7 @@ export function HomeTabScreen({
           });
         }}
         onSave={async (request) => {
-          const saved = await automationController.saveAdventureMapGroup(entry.id, {
+          const saved = await settingsController.saveAdventureMapGroup(entry.id, {
             settingsRevision: entry.settingsRevision ?? '0',
             displayName: request.displayName ?? entry.displayName ?? null,
             enabled: request.enabled,
@@ -360,19 +399,21 @@ export function HomeTabScreen({
 
   if (aggregate && route === 'editor' && typedEditorEntry && typedEditorEntry.type in { RAID: 1, UNION: 1, FISHING: 1 }) {
     const currentEntry = aggregate.entries.find(({ id }) => id === typedEditorEntry.id) ?? typedEditorEntry;
-    return <NewAutomationEditor
+    editorContent = (<NewAutomationEditor
       entry={currentEntry} saving={savingEntryIds.includes(currentEntry.id) || savingTypes.includes(currentEntry.type)}
       mutationMessage={message ?? error} onBack={closeEditor} onLoadBattleMaps={onLoadBattleMaps}
       onLoadRaidTargets={loadRaidTargets}
       partyPresetCatalog={partyPresetCatalog} onSave={async (request) => {
         let saved = false;
-        if (currentEntry.type === 'FISHING') saved = await automationController.saveFishingSettings(request as UpdateFishingAutomationRequest);
-        else if (currentEntry.type === 'UNION') saved = await automationController.saveUnionSettings(request as UpdateUnionAutomationRequest);
-        else saved = await automationController.saveRaidSettings(request as UpdateRaidAutomationRequest);
+        if (currentEntry.type === 'FISHING') saved = await settingsController.saveFishingSettings(request as UpdateFishingAutomationRequest);
+        else if (currentEntry.type === 'UNION') saved = await settingsController.saveUnionSettings(request as UpdateUnionAutomationRequest);
+        else saved = await settingsController.saveRaidSettings(request as UpdateRaidAutomationRequest);
         if (saved) closeEditor(); return saved;
       }}
-    />;
+    />);
   }
+
+  if (editorContent) return withPresetContext(editorContent);
 
   if (route === 'history') return <AutomationHistoryScreen
     onBack={() => { onDetailModeChange?.(false); setRoute('dashboard'); }}
@@ -385,13 +426,13 @@ export function HomeTabScreen({
   const showPageHeader = route !== 'editor';
   const pageHeader = showPageHeader ? (<View style={[styles.header, route === 'settings' && styles.fixedHeader]}>
           {route === 'settings' ? (
-            <Pressable accessibilityLabel="통합 자동화로" accessibilityRole="button" onPress={() => setRoute('dashboard')} style={styles.iconButton}>
+            <Pressable accessibilityLabel="통합 자동화로" accessibilityRole="button" onPress={() => confirmPresetNavigation(presetEditor, () => setRoute('dashboard'))} style={styles.iconButton}>
               <ArrowLeft color={theme.colors.text} size={20} />
             </Pressable>
           ) : null}
           <View style={styles.headerCopy}>
             <Text style={styles.title}>{route === 'dashboard' ? '통합 자동화' : '자동화 설정'}</Text>
-            <Text style={styles.subtitle}>{route === 'dashboard' ? '앱을 닫아도 서버에서 계속 진행돼요' : '필요한 항목만 추가하고 드래그로 우선순위를 정하세요'}</Text>
+            <Text style={styles.subtitle}>{route === 'dashboard' ? '앱을 닫아도 서버에서 계속 진행돼요' : '프리셋 하나에 전체 자동화 구성을 편집해요'}</Text>
           </View>
           <Pressable
             accessibilityLabel="자동화 실행 규칙 보기"
@@ -427,7 +468,7 @@ export function HomeTabScreen({
         <View style={styles.ruleBand}>
           <Text style={styles.ruleTitle}>실행 규칙</Text>
           <Text style={styles.ruleText}>사용 중인 모듈을 위에서부터 우선순위대로 확인해요.</Text>
-          <Text style={styles.ruleText}>현재 전투 중 설정을 바꾸면 다음 작업을 고를 때부터 적용돼요.</Text>
+          <Text style={styles.ruleText}>{editing && presetEditor ? '편집·전체 저장은 현재 실행에 영향을 주지 않아요. 전체 적용은 일시정지 후 진행해요.' : '현재 전투 중 설정을 바꾸면 다음 작업을 고를 때부터 적용돼요.'}</Text>
           <Text style={styles.ruleText}>캡차 인증이 필요해요 상태에서는 인증 후 자동화를 이어가요.</Text>
           <Text style={styles.ruleText}>전투에 사용할 파티를 선택해 주세요 상태에서는 해당 설정만 보완하면 돼요.</Text>
         </View>
@@ -454,19 +495,36 @@ export function HomeTabScreen({
         />
       ) : null}
 
-      {aggregate && route === 'settings' ? (
-        <UnifiedAutomationSettings
-          entries={aggregate.entries}
-          error={message}
-          reordering={reordering}
-          savingEntryIds={savingEntryIds}
-          savingTypes={savingTypes}
-          onAdd={(type: AutomationType) => automationController.createEntry(type)}
-          onDelete={(entryId) => automationController.deleteEntry(entryId)}
-          onDetail={openEntryDetail}
-          onReorder={(entries) => automationController.reorderEntries(entries)}
-          onToggle={(entry) => { void toggleEntry(entry); }}
-        />
+      {route === 'settings' ? presetEditor ? (
+        <AutomationPresets editor={presetEditor} lifecycle={live.aggregate?.runtime.lifecycle ?? 'STOPPED'}
+          onRefresh={() => { void automationController.load(); void (presetState?.loaded ? presetEditor.refresh() : presetEditor.initialize()); }}
+          onPause={() => { void automationController.changeState('pause'); }}>
+          <View pointerEvents={presetState?.busy ? 'none' : 'auto'} accessibilityElementsHidden={presetState?.busy}
+              importantForAccessibility={presetState?.busy ? 'no-hide-descendants' : 'auto'}>
+              {aggregate ? <UnifiedAutomationSettings
+                draftMode={presetEditor != null}
+                entries={aggregate.entries} error={message} reordering={reordering}
+                savingEntryIds={savingEntryIds} savingTypes={savingTypes}
+                onAdd={(type: AutomationType) => settingsController.createEntry(type)}
+                onDelete={(entryId) => settingsController.deleteEntry(entryId)} onDetail={openEntryDetail}
+                onReorder={(entries) => settingsController.reorderEntries(entries)}
+                onToggle={(entry) => { void toggleEntry(entry); }}
+              /> : <Text style={styles.muted}>프리셋 구성을 불러오는 중</Text>}
+            </View>
+        </AutomationPresets>
+      ) : (
+        <View pointerEvents={presetState?.busy ? 'none' : 'auto'} accessibilityElementsHidden={presetState?.busy}
+              importantForAccessibility={presetState?.busy ? 'no-hide-descendants' : 'auto'}>
+              {aggregate ? <UnifiedAutomationSettings
+                draftMode={presetEditor != null}
+                entries={aggregate.entries} error={message} reordering={reordering}
+                savingEntryIds={savingEntryIds} savingTypes={savingTypes}
+                onAdd={(type: AutomationType) => settingsController.createEntry(type)}
+                onDelete={(entryId) => settingsController.deleteEntry(entryId)} onDetail={openEntryDetail}
+                onReorder={(entries) => settingsController.reorderEntries(entries)}
+                onToggle={(entry) => { void toggleEntry(entry); }}
+              /> : <Text style={styles.muted}>프리셋 구성을 불러오는 중</Text>}
+            </View>
       ) : null}
 
     </NestableScrollContainer>
@@ -477,6 +535,7 @@ export function HomeTabScreen({
 
 const styles = StyleSheet.create({
   scroller: { flex: 1 },
+  draftBanner: { color: theme.colors.accentGreen, backgroundColor: theme.colors.surface, padding: theme.spacing.md, fontSize: 13 },
   container: { gap: theme.spacing.md, padding: theme.spacing.lg, paddingBottom: theme.spacing.xl },
   header: { alignItems: 'center', flexDirection: 'row', gap: 9 },
   fixedHeader: { paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.sm },

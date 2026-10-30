@@ -41,6 +41,34 @@ after(() => {
 });
 
 describe('BackendApiClient', () => {
+  it('자동화 프리셋의 계정별 조회·저장·덮어쓰기·삭제·불러오기 API를 사용한다', async () => {
+    const { BackendApiClient } = await loadBackendApi();
+    const client = new BackendApiClient('http://backend.test');
+    const requests: Array<{ url: string; init: RequestInit }> = [];
+    mockFetchWithCapture([], requests);
+    await client.fetchAutomationPresets();
+    mockFetchWithCapture([], requests);
+    await client.saveAutomationPreset({ name: '일상', settings: { entries: [] } });
+    mockFetchWithCapture([], requests);
+    await client.saveAutomationPreset({ name: '사냥', settings: { entries: [] }, revision: '6' }, 3);
+    mockFetchWithCapture([], requests);
+    await client.deleteAutomationPreset(3);
+    mockFetchWithCapture({ entries: [], runtime: { lifecycle: 'PAUSED' } }, requests);
+    await client.applyAutomationPreset(4, '7');
+    mockFetchWithCapture({}, requests);
+    await client.fetchAutomationPreset(4);
+    mockFetchWithCapture(null, requests);
+    await client.fetchAppliedAutomationPreset();
+    assert.deepEqual(requests.map(({ url, init }) => [url, init.method ?? 'GET', init.body]), [
+      ['http://backend.test/api/automation/unified/presets', 'GET', undefined],
+      ['http://backend.test/api/automation/unified/presets', 'POST', '{"name":"일상","settings":{"entries":[]}}'],
+      ['http://backend.test/api/automation/unified/presets/3', 'PUT', '{"name":"사냥","settings":{"entries":[]},"revision":"6"}'],
+      ['http://backend.test/api/automation/unified/presets/3', 'DELETE', undefined],
+      ['http://backend.test/api/automation/unified/presets/4/apply', 'POST', '{"revision":"7"}'],
+      ['http://backend.test/api/automation/unified/presets/4', 'GET', undefined],
+      ['http://backend.test/api/automation/unified/presets/applied', 'GET', undefined],
+    ]);
+  });
   it('표시 조회는 응답 헤더 뒤 본문이 멈춰도 같은 15초 예산으로 끝난다', async (context) => {
     const { BackendApiClient } = await loadBackendApi();
     context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });

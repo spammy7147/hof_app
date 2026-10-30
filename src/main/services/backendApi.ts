@@ -48,6 +48,11 @@ import type {
   TownApiPath,
   DevicePushTargetResponse,
   UnifiedAutomationAction,
+  AutomationPresetResponse,
+  AutomationPresetDetailResponse,
+  AutomationPresetApplyResponse,
+  AppliedAutomationPresetResponse,
+  SaveAutomationPresetRequest,
   TypedAutomationAggregateResponse,
   UpdateAdventureMapAutomationRequest,
   UpdateAdventureMapGroupRequest,
@@ -498,6 +503,32 @@ export class BackendApiClient {
   /** 계정별 통합 자동화의 현재 상태와 저장 설정을 조회한다. */
   fetchUnifiedAutomation(): Promise<TypedAutomationAggregateResponse> {
     return this.request('/api/automation/unified');
+  }
+
+  fetchAutomationPresets(): Promise<AutomationPresetResponse[]> {
+    return this.request('/api/automation/unified/presets');
+  }
+
+  fetchAutomationPreset(presetId: number): Promise<AutomationPresetDetailResponse> {
+    return this.request(`/api/automation/unified/presets/${presetId}`);
+  }
+
+  fetchAppliedAutomationPreset(): Promise<AppliedAutomationPresetResponse | null> {
+    return this.request('/api/automation/unified/presets/applied');
+  }
+
+  saveAutomationPreset(request: SaveAutomationPresetRequest, presetId?: number): Promise<AutomationPresetDetailResponse> {
+    return this.request(`/api/automation/unified/presets${presetId == null ? '' : `/${presetId}`}`, {
+      method: presetId == null ? 'POST' : 'PUT', body: JSON.stringify(request),
+    });
+  }
+
+  deleteAutomationPreset(presetId: number): Promise<AutomationPresetResponse[]> {
+    return this.request(`/api/automation/unified/presets/${presetId}`, { method: 'DELETE' });
+  }
+
+  applyAutomationPreset(presetId: number, revision: string): Promise<AutomationPresetApplyResponse> {
+    return this.request(`/api/automation/unified/presets/${presetId}/apply`, { method: 'POST', body: JSON.stringify({ revision }) });
   }
 
   /** singleton 자동화 유형 중 아직 없는 항목을 마지막에 추가한다. */

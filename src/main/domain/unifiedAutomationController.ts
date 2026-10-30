@@ -1,5 +1,6 @@
 import { UnifiedAutomationReorderQueue } from './unifiedAutomationReorder';
 import { toUserFacingErrorMessage } from './userFacingErrors';
+import type { AutomationPresetEditor } from './automationPresetEditor';
 import type {
   AutomationType,
   CreateAutomationEntryRequest,
@@ -74,6 +75,7 @@ function initialSnapshot(): UnifiedAutomationControllerSnapshot {
 
 /** App-owned typed automation store. Async completions are fenced by account generation and revision. */
 export class UnifiedAutomationController {
+  presetEditor?: AutomationPresetEditor;
   private snapshot = initialSnapshot();
   private readonly listeners = new Set<() => void>();
   private generation = 0;
@@ -111,6 +113,7 @@ export class UnifiedAutomationController {
   };
 
   reset(): void {
+    this.presetEditor?.reset();
     this.reorderQueue.dispose();
     this.generation += 1;
     this.loadSequence = 0;

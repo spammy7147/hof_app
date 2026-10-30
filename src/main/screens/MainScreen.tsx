@@ -32,6 +32,7 @@ import type {
 import { BattleTabScreen } from "./BattleTabScreen";
 import { DataTabScreen } from "./DataTabScreen";
 import { HomeTabScreen } from "./HomeTabScreen";
+import { confirmPresetNavigation } from "../features/automation/confirmPresetNavigation";
 import { SettingsTabScreen } from "./SettingsTabScreen";
 import { TownTabScrollContainer } from "./TownTabScrollContainer";
 import type { TownApi } from "../features/town/api/townApi";
@@ -202,8 +203,12 @@ export function MainScreen({
 
       {showBottomTabs ? (
         <BottomTabBar activeTabId={activeTabId} onChangeTab={(tab) => {
-          if (tab === "characters") setCharacterTabVisited(true);
-          setActiveTabId(tab);
+          const navigate = () => {
+            if (tab === "characters") setCharacterTabVisited(true);
+            setActiveTabId(tab);
+          };
+          if (activeTabId === "home" && tab !== "home") confirmPresetNavigation(automationController.presetEditor, navigate);
+          else navigate();
         }} />
       ) : null}
     </SafeAreaView>
