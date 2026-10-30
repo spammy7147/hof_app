@@ -1,3 +1,4 @@
+import { useAutomationEditorBack } from '../useAutomationEditorBack';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { ArrowLeft, Check, Save, Trash2 } from 'lucide-react-native';
@@ -30,6 +31,7 @@ const TABS: readonly { state: HomeQuestResponse['state']; label: string; empty: 
 ];
 
 export function HomeQuestAutomationEditor({ entry, saving, mutationMessage, loadHome, onBack, onDelete, onSave }: Props) {
+  useAutomationEditorBack(onBack, saving);
   const [enabled, setEnabled] = useState(entry.enabled);
   const [quests, setQuests] = useState<HomeQuestResponse[]>([]);
   const [selected, setSelected] = useState(() => new Set((entry.homeQuests ?? []).filter((quest) => quest.enabled).map((quest) => quest.questId)));

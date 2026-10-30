@@ -1,3 +1,4 @@
+import { useAutomationEditorBack } from '../useAutomationEditorBack';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { toUserFacingErrorMessage } from '../../../domain/userFacingErrors';
@@ -16,6 +17,7 @@ type Props = {
 };
 
 export function ColosseumAutomationEditor({ entry, saving, mutationMessage, loadColosseum, onBack, onDelete, onSave }: Props) {
+  useAutomationEditorBack(onBack, saving);
   const [enabled, setEnabled] = useState(entry.enabled);
   const [team, setTeam] = useState<ColosseumBattleResponse | null>(null);
   const [error, setError] = useState<string | null>(null);

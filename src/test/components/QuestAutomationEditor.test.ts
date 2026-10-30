@@ -34,6 +34,7 @@ afterEach(async () => {
 });
 
 let alertArguments: unknown[] | null = null;
+const hardwareBackListeners = new Set<() => boolean>();
 const accessibilityFocusCalls: unknown[] = [];
 const dragCalls: unknown[] = [];
 const focusPlatform = process.env.HOF_TEST_FOCUS_PLATFORM === 'web' ? 'web'
@@ -112,6 +113,10 @@ const modal = (props: Record<string, unknown>) => React.createElement(
   props.visible ? props.children as React.ReactNode : null,
 );
 const reactNativeMock = {
+  BackHandler: { addEventListener: (_event: string, listener: () => boolean) => {
+    hardwareBackListeners.add(listener);
+    return { remove: () => hardwareBackListeners.delete(listener) };
+  } },
   AccessibilityInfo: { setAccessibilityFocus: (node: unknown) => { accessibilityFocusCalls.push(node); } },
   ActivityIndicator: host('ActivityIndicator'),
   Alert: { alert: (...args: unknown[]) => { alertArguments = args; } },
@@ -579,12 +584,17 @@ describe('QuestAutomationEditor mounted behavior', () => {
     }
   });
 
-  it('confirms dirty back and returns after typed deletion', async () => {
+  it('confirms dirty screen and hardware back and returns after typed deletion', async () => {
     let backs = 0;
     let deletes = 0;
     alertArguments = null;
     const renderer = await renderEditor({ quests: [snapshot('q', 'Quest', 'ACTIVE', [mission('now', 'IMMEDIATE', null)])], onBack: () => { backs += 1; }, onDelete: async () => { deletes += 1; return true; } });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Quest 선택' }).props.onPress(); });
+    const hardwareConsumed = [...hardwareBackListeners].reverse().some(listener => listener());
+    assert.equal(hardwareConsumed, true);
+    assert.ok(alertArguments);
+    assert.equal(backs, 0);
+    alertArguments = null;
     renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 뒤로' }).props.onPress();
     assert.equal(backs, 0);
     assert.ok(alertArguments);

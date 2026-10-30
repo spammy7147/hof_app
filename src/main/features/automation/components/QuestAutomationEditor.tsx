@@ -1,3 +1,4 @@
+import { useAutomationEditorBack } from '../useAutomationEditorBack';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -459,6 +460,8 @@ export function QuestAutomationEditor({
       { text: '나가기', style: 'destructive', onPress: onBack },
     ]);
   }
+
+  useAutomationEditorBack(requestBack, busy);
 
   function confirmDelete() {
     Alert.alert('퀘스트 자동화를 삭제할까요?', '저장한 퀘스트와 맵 설정도 함께 삭제됩니다.', [

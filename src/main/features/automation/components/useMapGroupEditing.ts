@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppAlert as Alert } from '../../../platform/AppAlert';
+import { useAutomationEditorBack } from '../useAutomationEditorBack';
 
 import {
   buildBattleMapAutomationDraft, buildBattleMapAutomationRequest, validateBattleMapAutomationDraft,
@@ -194,6 +195,8 @@ function useMapGroupEditing<D extends MapDraft, R extends object>(props: Editing
       } },
     ]);
   }, [format, isBusy, isDirty]);
+
+  useAutomationEditorBack(requestBack, busy);
 
   return { draft: state.draft, groupName: state.groupName, serverRefreshWarning: state.serverRefreshWarning,
     busy, controlsDisabled, saveDisabled, validationErrors, nameInvalid,

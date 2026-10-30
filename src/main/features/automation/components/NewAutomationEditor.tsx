@@ -1,3 +1,4 @@
+import { useAutomationEditorBack } from '../useAutomationEditorBack';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { ArrowLeft, ChevronRight, Save } from 'lucide-react-native';
@@ -28,6 +29,7 @@ type SelectedTarget = { key: string; name: string; preset: PresetSelection };
 type AvailableTarget = { key: string; name: string; map?: BattleMapResponse };
 
 export function NewAutomationEditor({ entry, saving, mutationMessage, onBack, onLoadBattleMaps, onLoadRaidTargets, partyPresetCatalog, onSave }: Props) {
+  useAutomationEditorBack(onBack, saving);
   const [enabled, setEnabled] = useState(entry.enabled);
   const [catalog, setCatalog] = useState<AvailableTarget[]>([]);
   const [loading, setLoading] = useState(true);
