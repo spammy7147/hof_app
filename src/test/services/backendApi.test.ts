@@ -6,6 +6,7 @@ import { CharacterManagementHubModule } from '../../main/domain/characterManagem
 import { createCharacterManagementHubBackend } from '../../main/features/characters/useCharacterManagementHub';
 import { CharacterOperationError, deepSyncCharacter, restoreCharacter, executeCharacterTransfer, retryCharacterRecovery } from '../../main/features/characters/characterOperations';
 import { loadPartyPresetPatterns } from '../../main/features/partyPresets/loadPartyPresetPatterns';
+import { createTownApi } from '../../main/features/town/api/townApi';
 
 import type { CharacterDeepSyncResponse, PartyPresetResponse } from '../../main/types/api';
 import { makeCaptchaChallenge, makeHofCharacter, makeHofCharacterDetail } from '../fixtures/api';
@@ -41,6 +42,70 @@ after(() => {
 });
 
 describe('BackendApiClient', () => {
+  it('퀘스트 수락은 이전 조회를 무효화하며 종료한 계정의 수락과 완료를 전송하지 않는다', async () => {
+    await loadBackendApi();
+    const { authenticatedHttp, jsonResponse } = await import('../fixtures/authenticatedHttp');
+    let finish!: (response: Response) => void;
+    const { client, requests } = await authenticatedHttp(async ({ method }) => method === 'GET'
+      ? new Promise<Response>((resolve) => { finish = resolve; }) : jsonResponse([]));
+    const api = createTownApi(client);
+    const old = api.loadQuests();
+    const rejected = assert.rejects(old);
+    await api.acceptQuest('1'); finish(jsonResponse([]));
+    await rejected;
+    api.dispose();
+    await assert.rejects(api.acceptQuest('2'), /로그인 계정/);
+    await assert.rejects(api.claimQuest('2'), /로그인 계정/);
+    assert.deepEqual(requests.map(({ method, path }) => [method, path]), [
+      ['GET', '/api/quests'], ['POST', '/api/quests/1/accept'],
+    ]);
+    client.dispose();
+  });
+  it('알선소 퀘스트도 진행 중 읽기를 공유하고 계정 종료의 늦은 응답을 버린다', async () => {
+    await loadBackendApi();
+    const { authenticatedHttp, jsonResponse } = await import('../fixtures/authenticatedHttp');
+    let finish!: (response: Response) => void;
+    const { client, requests } = await authenticatedHttp(async () => new Promise<Response>((resolve) => { finish = resolve; }));
+    const api = createTownApi(client);
+    const first = api.loadQuests(); const second = api.loadQuests();
+    assert.equal(requests.length, 1);
+    const stale = Promise.all([assert.rejects(first), assert.rejects(second)]);
+    api.dispose(); finish(jsonResponse([]));
+    await stale;
+    await assert.rejects(api.loadQuests(), /로그인 계정/);
+    client.dispose();
+  });
+  it('제작 목록도 15초 후 무응답 조회를 끝내고 늦은 성공을 폐기한다', async (context) => {
+    const { BackendApiClient } = await loadBackendApi();
+    context.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
+    const client = new BackendApiClient('http://backend.test');
+    let finish!: (response: Response) => void;
+    let signal: AbortSignal | null | undefined;
+    globalThis.fetch = async (_url, init) => { signal = init?.signal; return new Promise<Response>((resolve) => { finish = resolve; }); };
+    const request = client.fetchTownResource('/api/town/crafting/refine');
+    let outcome = 'pending';
+    void request.then(() => { outcome = 'success'; }, () => { outcome = 'expired'; });
+    context.mock.timers.tick(15_000);
+    for (let n = 0; n < 20; n += 1) await Promise.resolve();
+    assert.equal(outcome, 'expired');
+    assert.equal(signal?.aborted, true);
+    finish(mockResponse({ rows: [] }));
+    await assert.rejects(request);
+    client.dispose();
+  });
+  it('마을의 같은 카드 조회는 인증된 HTTP 한 번을 공유한다', async () => {
+    await loadBackendApi();
+    const { authenticatedHttp, jsonResponse } = await import('../fixtures/authenticatedHttp');
+    let finish!: (response: Response) => void;
+    const { client, requests } = await authenticatedHttp(async () => new Promise<Response>((resolve) => { finish = resolve; }));
+    const api = createTownApi(client);
+    const first = api.load('/api/town/cards/identify');
+    const second = api.load('/api/town/cards/identify');
+    assert.equal(requests.length, 1);
+    finish(jsonResponse({ cards: [], selectionSlots: 1, result: null }));
+    assert.deepEqual(await first, await second);
+    api.dispose(); client.dispose();
+  });
   it('자동화 프리셋의 계정별 조회·저장·덮어쓰기·삭제·불러오기 API를 사용한다', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const client = new BackendApiClient('http://backend.test');
@@ -295,6 +360,16 @@ describe('BackendApiClient', () => {
     assert.equal(requests[0]?.url, 'https://backend.test/api/app-releases/android/latest?currentVersionCode=46');
     assert.equal(readHeader(requests[0]?.init.headers, 'Authorization'), null);
     assert.equal(release.release.downloadUrl, 'https://backend.test/api/app-releases/android/47/download');
+  });
+
+  it('Android 필수 버전의 공개 조회도 무응답이면 15초 후 실패한다', async (context) => {
+    const { BackendApiClient } = await loadBackendApi();
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    globalThis.fetch = (() => new Promise(() => undefined)) as typeof fetch;
+    const request = new BackendApiClient('https://backend.test').fetchLatestAndroidRelease(88);
+    const rejection = assert.rejects(request, /시간|다시|응답/);
+    context.mock.timers.tick(15_000);
+    await rejection;
   });
 
   it('stores only the native refresh token and sends the access token as Bearer authorization', async () => {

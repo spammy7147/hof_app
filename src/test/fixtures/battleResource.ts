@@ -2,10 +2,12 @@ import type { BattleResource } from '../../main/features/battle/useBattleResourc
 
 export function makeBattleResource(overrides: Partial<BattleResource> = {}): BattleResource {
   return {
+    invalidateDisplays: () => undefined,
     categories: [], loaded: true, loading: false, errorMessage: null,
     loadCategories: async () => undefined,
     loadMaps: async () => [],
     loadMapCatalog: async () => [],
+    peekLogs: () => null, peekStats: () => null,
     loadLogs: async () => [],
     loadLogHtml: async () => { throw new Error('예상하지 않은 HTML 조회'); },
     run: async () => { throw new Error('예상하지 않은 전투 실행'); },

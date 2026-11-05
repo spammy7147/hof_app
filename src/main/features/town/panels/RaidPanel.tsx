@@ -117,12 +117,12 @@ export function RaidPanel({ api, resolveCaptcha, onOpenBattle }: Props) {
         {data.myStatus ? <Text accessibilityLiveRegion="polite" style={styles.status}>{data.myStatus}</Text> : null}
         {applyWaitMessage ? <Text accessibilityLiveRegion="polite" style={styles.wait}>{applyWaitMessage}</Text> : null}
         <View testID="raid-global-actions" style={styles.actions}>{GLOBAL_ACTIONS.map((action) => <ActionButton key={action} label={ACTION_LABEL[action]} grouped
-          disabled={busy || !canUseGlobalAction(data, action)} onPress={action === 'REFRESH' ? refresh : () => perform(action, null)} />)}</View>
+          disabled={busy || (action !== 'REFRESH' && !town.canSubmit) || !canUseGlobalAction(data, action)} onPress={action === 'REFRESH' ? refresh : () => perform(action, null)} />)}</View>
       </View>}
       footer={<View style={styles.section}>
         {selected ? <><Text style={styles.selectedTitle}>{selected.name}</Text><View testID="raid-selected-actions" style={styles.actions}>
           {RAID_ACTIONS.map((action) => <ActionButton key={action} label={ACTION_LABEL[action]} grouped
-            disabled={busy || !canUseRaidAction(selected, action, registerBlocked, data.applyWait)}
+            disabled={!town.canSubmit || busy || !canUseRaidAction(selected, action, registerBlocked, data.applyWait)}
             onPress={() => perform(action, selected.id)} />)}
         </View>{battleTarget && onOpenBattle ? <ActionButton label="RAID 전투 화면 열기" disabled={busy} onPress={() => onOpenBattle(battleTarget)} /> : null}</> : null}
         {data.result ? <TownActionResult result={data.result} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}

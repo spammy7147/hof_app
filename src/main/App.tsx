@@ -294,6 +294,7 @@ function AuthenticatedApp({
   const battle = useBattleResource({
     api, describeError, assertActiveGeneration, waitForCaptchaResolution,
   });
+  useEffect(() => townApi.subscribeMutations(battle.invalidateDisplays), [townApi, battle.invalidateDisplays]);
   const captchaImageSource = currentCaptcha?.imageUrl
     ? api.getAuthenticatedImageSource(currentCaptcha.imageUrl)
     : null;

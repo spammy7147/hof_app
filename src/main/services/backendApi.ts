@@ -641,8 +641,8 @@ export class BackendApiClient {
     return this.request(`/api/automation/unified/convergence/local-results/${actionId}/allow-fresh-decision`, { method: 'POST' });
   }
 
-  async fetchQuests(): Promise<QuestSnapshot[]> {
-    const snapshots = await this.request<Array<Omit<QuestSnapshot, 'rewards'> & { rewards?: unknown }>>('/api/quests');
+  async fetchQuests(signal?: AbortSignal): Promise<QuestSnapshot[]> {
+    const snapshots = await this.request<Array<Omit<QuestSnapshot, 'rewards'> & { rewards?: unknown }>>('/api/quests', { signal });
     return snapshots.map(normalizeQuestSnapshot);
   }
 
@@ -993,6 +993,12 @@ export class BackendApiClient {
   ): Promise<T> {
     this.assertCurrentAuthEpoch(epoch);
     this.assertRequestNotAborted(init.signal);
+    if ((init.method ?? 'GET').toUpperCase() === 'GET' && (!init.signal || !this.displayDeadlines.has(init.signal))) {
+      return this.withDisplayDeadline(
+        (signal) => this.request<T>(path, { ...init, signal }, retry, epoch, allowLateResponseForLogout),
+        init.signal ?? undefined,
+      );
+    }
     if (this.sessionMutationsBlocked && isMutationRequest(init)) {
       throw new SessionRecoveryMutationBlockedError();
     }
@@ -1011,6 +1017,8 @@ export class BackendApiClient {
   /** 캐릭터 작업 확인은 통신·인증 갱신 대기도 유한하게 끝내고 늦은 관측을 폐기한다. */
   private async requestCharacterOperation<T>(path: string, init: RequestInit = {}, epoch = this.authEpoch): Promise<T> {
     const controller = new AbortController();
+    // 작업 확인은 기존 30초 예산을 유지하며 표시 GET의 15초 예산과 중첩하지 않는다.
+    this.displayDeadlines.set(controller.signal, Date.now() + 30_000);
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
@@ -1028,6 +1036,10 @@ export class BackendApiClient {
   }
 
   private async requestDisplay<T>(path: string, signal?: AbortSignal): Promise<T> {
+    return this.withDisplayDeadline((ownedSignal) => this.request<T>(path, { signal: ownedSignal }), signal);
+  }
+
+  private async withDisplayDeadline<T>(read: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<T> {
     const controller = new AbortController();
     this.displayDeadlines.set(controller.signal, Date.now() + 15_000);
     const abort = () => controller.abort();
@@ -1036,7 +1048,7 @@ export class BackendApiClient {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
-        this.request<T>(path, { signal: controller.signal }),
+        read(controller.signal),
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
             controller.abort();
@@ -1119,7 +1131,12 @@ export class BackendApiClient {
   /** 로그인·갱신·로그아웃처럼 401 자동 갱신 대상이 아닌 공개 인증 요청을 실행한다. */
   private async requestWithoutRefresh<T>(path: string, init: RequestInit = {}): Promise<T> {
     const epoch = this.authEpoch;
-    return this.readResponse<T>(await this.fetchResponse(path, init, null), epoch);
+    const read = async (signal = init.signal) => this.readResponse<T>(
+      await this.fetchResponse(path, { ...init, signal }, null), epoch, signal,
+    );
+    return (init.method ?? 'GET').toUpperCase() === 'GET'
+      ? this.withDisplayDeadline((signal) => read(signal), init.signal ?? undefined)
+      : read();
   }
 
   /** 동시에 들어온 401 요청들이 하나의 refresh 요청을 공유하도록 single-flight를 적용한다. */

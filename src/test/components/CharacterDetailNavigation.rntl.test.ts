@@ -344,3 +344,19 @@ it(`상세 중 순서가 바뀐 캐릭터를 다시 표시한 뒤 초점을 복�
   assert.equal(restoredIndex, 36);
 });
 }
+
+it('캐릭터 재진입의 이전 정보는 새 조회 실패에도 남고 변경 화면은 열리지 않는다', async () => {
+  let fail!: (error: Error) => void;
+  const pending = new Promise<ReturnType<typeof detail>>((_resolve, reject) => { fail = reject; });
+  let loads = 0;
+  await openList({ loadStoredDetail: async id => ++loads === 1 ? { ...detail(id), statusLines: ['이전 STR: 123'] } : pending });
+  await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: /소셜/ }));
+  await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: '캐릭터 목록으로' }));
+  await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: /소셜/ }));
+  assert.ok(rntl.screen.getByText('이전 STR: 123'));
+  assert.equal(rntl.screen.queryByRole('tab', { name: '관리' }), null);
+  await rntl.act(async () => { fail(new Error('저장 정보 조회 실패')); await pending.catch(() => undefined); });
+  assert.ok(rntl.screen.getByText('이전 STR: 123'));
+  assert.ok(rntl.screen.getByText('저장 정보 조회 실패'));
+  assert.equal(rntl.screen.queryByRole('tab', { name: '관리' }), null);
+});

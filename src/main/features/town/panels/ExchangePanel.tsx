@@ -107,12 +107,12 @@ export function ExchangePanel({ api, mode, resolveCaptcha }: Props) {
   };
   const footer = <View style={styles.section}>
     {quantityRow ? <QuantityInput value={quantityText} onChange={setQuantityText} valid={quantityValid} min={min} max={quantityRow.maxQuantity} disabled={interactionBusy} /> : null}
-    {data.gradeActions.length ? <View style={styles.section}><Text style={styles.sectionTitle}>등급 즉시 교환</Text>{data.warning ? <Text accessibilityRole="alert" style={styles.warning}>{data.warning}</Text> : null}{data.gradeActions.map((action) => <ActionButton key={action.id} label={action.label} disabled={interactionBusy} onPress={() => submit({ kind: 'grade', request: { gradeActionId: action.id } })} />)}</View> : null}
+    {data.gradeActions.length ? <View style={styles.section}><Text style={styles.sectionTitle}>등급 즉시 교환</Text>{data.warning ? <Text accessibilityRole="alert" style={styles.warning}>{data.warning}</Text> : null}{data.gradeActions.map((action) => <ActionButton key={action.id} label={action.label} disabled={!town.canSubmit || interactionBusy} onPress={() => submit({ kind: 'grade', request: { gradeActionId: action.id } })} />)}</View> : null}
     {data.annActions.map((action) => {
       const selected = selectedAnn(action.type);
       const requiresTarget = action.rows.some((row) => row.selectable);
       const valid = !requiresTarget || Boolean(selected && validQuantity(quantityText, selected));
-      return <ActionButton key={action.type} label={action.label} disabled={interactionBusy || !valid} onPress={() => submit({ kind: 'ann', request: { action: action.type, candidateId: selected?.id ?? null, quantity: selected ? quantity : 1 } })} />;
+      return <ActionButton key={action.type} label={action.label} disabled={!town.canSubmit || interactionBusy || !valid} onPress={() => submit({ kind: 'ann', request: { action: action.type, candidateId: selected?.id ?? null, quantity: selected ? quantity : 1 } })} />;
     })}
     {data.history.length ? <Pressable accessibilityRole="button" accessibilityState={{ expanded: historyOpen }} accessibilityLabel={`교환 기록 ${historyOpen ? '접기' : '펼치기'}`} onPress={() => setHistoryOpen((value) => !value)}><Text style={styles.history}>기록 {data.history.length.toLocaleString()}건 {historyOpen ? '접기' : '펼치기'}</Text></Pressable> : null}
     {displayedResult ? <TownActionResult result={displayedResult} onRefresh={interactionBusy ? undefined : () => {
@@ -125,7 +125,7 @@ export function ExchangePanel({ api, mode, resolveCaptcha }: Props) {
 
   return <View style={styles.container}>
     <TownItemList rows={rows} selectionMode="grouped-single" selectedIds={selectedIds}
-      fixedAction={mode !== 'ann' ? <ActionButton label={mode === 'legacy' ? '선택 품목 교환' : '교환'} disabled={!selectedTrade || !quantityValid || interactionBusy} onPress={() => { if (selectedTrade) submit({ kind: 'trade', request: { candidateId: selectedTrade.id, categoryCandidateId: data.currentCategoryId, quantity } }); }} /> : null}
+      fixedAction={mode !== 'ann' ? <ActionButton label={mode === 'legacy' ? '선택 품목 교환' : '교환'} disabled={!town.canSubmit || !selectedTrade || !quantityValid || interactionBusy} onPress={() => { if (selectedTrade) submit({ kind: 'trade', request: { candidateId: selectedTrade.id, categoryCandidateId: data.currentCategoryId, quantity } }); }} /> : null}
       selectionDisabled={interactionBusy}
       showSelectionAvailability
       selectionGroup={(row) => row.id.startsWith('ann:') ? row.id.split(':').slice(0, 2).join(':') : row.id.startsWith('trade:') ? 'trade' : 'display'}

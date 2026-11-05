@@ -200,21 +200,21 @@ describe('RaidPanel', () => {
     await act(async () => { await pending.promise; });
   });
 
-  it('action과 겹친 이전 갱신 응답이 같은 패널의 최신 결과를 덮어쓰지 않는다', async () => {
-    const staleReload = deferred<unknown>(); let loads = 0;
+  it('갱신 중에는 이전 후보로 등록하지 않고 최신 조회 뒤 등록한다', async () => {
+    const freshReload = deferred<unknown>(); let loads = 0; let mutations = 0;
     await render(React.createElement(RaidPanel, { api: api(
-      async () => ++loads === 1 ? raidData() : staleReload.promise,
-      async () => ({ ...raidData(), result: result('최신 action 결과') }),
+      async () => ++loads === 1 ? raidData() : freshReload.promise,
+      async () => { mutations++; return { ...raidData(), result: result('최신 action 결과') }; },
     ) }));
     await press('갱신');
     await press('등록');
-    assert.equal(text().includes('최신 action 결과'), true);
-
-    staleReload.resolve(raidData());
-    await act(async () => { await staleReload.promise; await Promise.resolve(); });
+    assert.equal(mutations, 0);
+    freshReload.resolve(raidData());
+    await act(async () => { await freshReload.promise; await Promise.resolve(); });
+    await press('등록');
+    assert.equal(mutations, 1);
     assert.equal(text().includes('최신 action 결과'), true);
   });
-
   it('계정 API 변경 뒤 이전 계정의 확인과 늦은 action 완료를 폐기한다', async () => {
     const oldAction = deferred<unknown>(); let oldCalls = 0;
     const oldData = raidData(); oldData.raids[0]!.name = '이전 계정 레이드';

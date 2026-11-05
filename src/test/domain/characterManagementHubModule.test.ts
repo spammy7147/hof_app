@@ -22,6 +22,26 @@ import type {
 } from '../../main/types/api';
 
 describe('character management hub module', () => {
+  it('같은 캐릭터를 다시 열 때 표시 자료를 유지하되 최신 상세 전 변경 권한은 만들지 않는다', async () => {
+    const pending = deferred<HofCharacterDetail>(); let reads = 0; let commands = 0;
+    const hub = new CharacterManagementHubModule(backend({
+      loadStoredDetail: async () => ++reads === 1 ? { ...freshDetail(1), statusLines: ['STR: 100'] } : pending.promise,
+      executeCommand: async () => { commands++; throw new Error('실행하면 안 됨'); },
+    }));
+    const character = makeHofCharacter(1);
+    hub.activate('account'); hub.observeRoster([character]);
+    await hub.getSnapshot().actions.select(character);
+    hub.getSnapshot().actions.close();
+    const read = hub.getSnapshot().actions.select(character);
+    assert.ok(hub.getSnapshot().readPreview?.lines.length);
+    assert.equal(hub.getSnapshot().detail, null);
+    await hub.getSnapshot().actions.rename?.('변경');
+    assert.equal(commands, 0);
+    pending.resolve(freshDetail(1)); await read;
+    hub.deactivate();
+    assert.equal(hub.getSnapshot().readPreview, undefined);
+  });
+
   it('깊은 동기화가 새 기록을 기존 기록에 자동 연결하면 선택 상세와 프리셋 카탈로그도 갱신한다', async () => {
     const previous = makeHofCharacter(1, { hofCharacterId: 'old-id', lifecycle: 'MISSING' });
     const provisional = makeHofCharacter(2, { hofCharacterId: 'new-id' });

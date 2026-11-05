@@ -82,7 +82,7 @@ function FishingLoopPanel({ api, resolveCaptcha, characters, partyPresetCatalog,
         <Pressable
           accessibilityLabel={primary === 'START' ? '낚시를 시작한다' : '낚는다'}
           accessibilityRole="button"
-          disabled={town.status === 'submitting'}
+          disabled={!town.canSubmit}
           onPress={() => { void town.submit(primary).catch(() => undefined); }}
           style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
         ><Text style={styles.primaryText}>{primary === 'START' ? '낚시를 시작한다' : '낚는다'}</Text></Pressable>

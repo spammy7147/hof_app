@@ -281,3 +281,67 @@ it('맵 Retry-After 기한 전에는 재시도해도 transport를 다시 호출�
   await assert.rejects(resource.loadMaps('battle_map'));
   assert.equal(calls, 2);
 });
+
+it('통계와 로그의 표시 자료는 조건별로 구분하고 전투 변경에 무효화한다', async () => {
+  const http = await authenticatedHttp(async (request) => {
+    if (request.path.startsWith('/api/battle/stats')) return jsonResponse({ dailyFunds: 123, adventureMapOutcomes: [] });
+    if (request.path.startsWith('/api/battle/logs')) return jsonResponse([{ id: 7 }]);
+    return jsonResponse({ message: '원본 변경 실패' }, 500);
+  });
+  const api = http.client;
+  let resource!: ReturnType<typeof useBattleResource>;
+  function Harness() {
+    resource = useBattleResource({ api, assertActiveGeneration: () => undefined,
+      describeError: String, waitForCaptchaResolution: async () => undefined });
+    return null;
+  }
+  await rntl.render(React.createElement(Harness));
+  await resource.loadStats('DAY', '2026-11-05');
+  await resource.loadLogs({ outcome: 'VICTORY', offset: 0, limit: 40 });
+  assert.equal(resource.peekStats('DAY', '2026-11-05')?.dailyFunds, 123);
+  assert.equal(resource.peekStats('DAY', '2026-11-04'), null);
+  assert.equal(resource.peekLogs({ outcome: 'DEFEAT', offset: 0, limit: 40 }), null);
+  assert.equal(resource.peekLogs({ limit: 40, offset: 0, outcome: 'VICTORY' })?.length, 1);
+  await resource.run({ categoryId: 'battle_map', mapCode: 'first' } as Parameters<typeof resource.run>[0]).catch(() => undefined);
+  assert.equal(resource.peekStats('DAY', '2026-11-05'), null);
+  assert.equal(resource.peekLogs({ outcome: 'VICTORY', offset: 0, limit: 40 }), null);
+});
+
+it('같은 통계의 진행 중 읽기를 공유하고 무효화 뒤 늦은 응답은 새 표시 자료를 덮지 않는다', async () => {
+  const pending: Array<(response: Response) => void> = [];
+  const { client, requests } = await authenticatedHttp(async () => new Promise<Response>((resolve) => pending.push(resolve)));
+  const { Harness, resource } = realResourceHarness(client);
+  await rntl.render(React.createElement(Harness, { show: false }));
+  const firstRead = resource().loadStats();
+  const secondRead = resource().loadStats();
+  assert.equal(requests.length, 1);
+  pending.shift()!(jsonResponse({ dailyFunds: 10 }));
+  await Promise.all([firstRead, secondRead]);
+  resource().invalidateDisplays();
+  const old = resource().loadStats();
+  const discard = assert.rejects(old, /이전 조회/);
+  resource().invalidateDisplays();
+  const latest = resource().loadStats();
+  pending[1](jsonResponse({ dailyFunds: 30 })); await latest;
+  pending[0](jsonResponse({ dailyFunds: 20 })); await discard;
+  assert.equal(resource().peekStats()?.dailyFunds, 30);
+  client.dispose();
+});
+
+it('통계 표시 읽기도 서버 Retry-After 동안 같은 조건의 원본 호출을 반복하지 않는다', async (context) => {
+  context.mock.timers.enable({ apis: ['Date'], now: 0 });
+  const { client, requests } = await authenticatedHttp(async () => new Response('{}', {
+    status: 503, headers: { 'Content-Type': 'application/json', 'Retry-After': '30' },
+  }));
+  const { Harness, resource } = realResourceHarness(client);
+  await rntl.render(React.createElement(Harness, { show: false }));
+  await assert.rejects(resource().loadStats());
+  await assert.rejects(resource().loadStats());
+  assert.equal(requests.length, 1);
+  await assert.rejects(resource().loadStats('DAY', '2026-11-04'));
+  assert.equal(requests.length, 2, '다른 조건은 독립된 읽기');
+  context.mock.timers.setTime(30_001);
+  await assert.rejects(resource().loadStats());
+  assert.equal(requests.length, 3);
+  client.dispose();
+});

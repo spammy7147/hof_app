@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, BackHandler, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { ArrowLeft, RefreshCw } from "lucide-react-native";
 
 import { CharacterSettingsNavigator } from "../features/characters/CharacterSettingsNavigator";
@@ -53,6 +53,13 @@ export function CharacterDetail({ characterHub, active = true }: CharacterDetail
           <RefreshCw color={theme.colors.text} size={19} />
         </Pressable>
       </View>
+      {(isLoading || errorMessage) && characterHub.readPreview ? (
+        <ScrollView accessibilityLabel="이전 캐릭터 상세" style={styles.preview}>
+          <Text style={styles.muted}>이전 정보 · 최신 확인 전에는 변경할 수 없습니다.</Text>
+          <Text style={styles.title}>{characterHub.readPreview.name}</Text>
+          {characterHub.readPreview.lines.map((line, index) => <Text key={index} style={styles.muted}>{line}</Text>)}
+        </ScrollView>
+      ) : null}
       {isLoading ? (
         <View style={styles.loading}>
           <ActivityIndicator color={theme.colors.accentGreen} />
@@ -113,6 +120,7 @@ export function extractPrimaryStatValues(
 }
 
 const styles = StyleSheet.create({
+  preview: { maxHeight: "65%", padding: theme.spacing.md },
   screen: { flex: 1, minHeight: 0 },
   top: {
     minHeight: 56,

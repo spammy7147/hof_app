@@ -21,6 +21,42 @@ export function useBattleResource({
   api, describeError, assertActiveGeneration, waitForCaptchaResolution,
 }: Options) {
   const retryAt = useRef(new Map<string, number>());
+  const displays = useRef(new Map<string, { value: unknown; at: number }>());
+  const displayEpoch = useRef(0);
+  const displayFlights = useRef(new Map<string, Promise<unknown>>());
+  const invalidateDisplays = useCallback(() => { displayEpoch.current++; displays.current.clear(); displayFlights.current.clear(); }, []);
+  const peekDisplay = useCallback(<T,>(key: string): T | null => {
+    assertActiveGeneration();
+    const saved = displays.current.get(key);
+    const age = saved ? Date.now() - saved.at : Infinity;
+    return saved && age >= 0 && age <= 5 * 60_000 ? saved.value as T : null;
+  }, [assertActiveGeneration]);
+  const readDisplay = useCallback(<T,>(key: string, operation: () => Promise<T>): Promise<T> => {
+    assertActiveGeneration();
+    if (Date.now() < (retryAt.current.get(key) ?? 0)) return Promise.reject(new Error('잠시 후 다시 확인해 주세요.'));
+    const existing = displayFlights.current.get(key);
+    if (existing) return existing as Promise<T>;
+    const epoch = displayEpoch.current;
+    const flight = operation().then(value => {
+      assertActiveGeneration();
+      if (epoch !== displayEpoch.current || displayFlights.current.get(key) !== flight) {
+        throw new Error('변경된 이전 조회를 폐기했습니다. 다시 확인해 주세요.');
+      }
+      retryAt.current.delete(key);
+      displays.current.delete(key);
+      displays.current.set(key, { value, at: Date.now() });
+      if (displays.current.size > 24) displays.current.delete(displays.current.keys().next().value!);
+      return value;
+    }).catch((error: unknown) => {
+      const seconds = (error as { retryAfterSeconds?: number } | null)?.retryAfterSeconds;
+      if (epoch === displayEpoch.current && displayFlights.current.get(key) === flight && typeof seconds === 'number' && seconds > 0) {
+        retryAt.current.set(key, Date.now() + seconds * 1_000);
+      }
+      throw error;
+    }).finally(() => { if (displayFlights.current.get(key) === flight) displayFlights.current.delete(key); });
+    displayFlights.current.set(key, flight);
+    return flight;
+  }, [assertActiveGeneration]);
   const catalog = useRef(new Map<string, BattleMapResponse[]>());
   const loadedCatalogs = useRef(new Set<string>());
   const flights = useRef(new Map<string, { controller: AbortController; promise: Promise<BattleMapResponse[]> }>());
@@ -32,6 +68,7 @@ export function useBattleResource({
   useEffect(() => () => {
     for (const flight of flights.current.values()) flight.controller.abort();
     flights.current.clear(); catalog.current.clear(); loadedCatalogs.current.clear(); retryAt.current.clear();
+    displayEpoch.current++; displays.current.clear(); displayFlights.current.clear();
   }, []);
   const readMaps = useCallback((categoryId: string, kind: 'catalog' | 'availability') => {
     assertActiveGeneration();
@@ -109,7 +146,7 @@ export function useBattleResource({
   const runBattle = useCallback(
     async (request: RunBattleRequest): Promise<BattleResultResponse> => {
       assertActiveGeneration();
-      invalidateAvailability();
+      invalidateAvailability(); invalidateDisplays();
       try {
         const result = await api.runBattle(request);
         assertActiveGeneration();
@@ -131,24 +168,25 @@ export function useBattleResource({
         const result = await api.runBattle(request);
         assertActiveGeneration();
         return result;
-      } finally { invalidateAvailability(); }
+      } finally { invalidateAvailability(); invalidateDisplays(); }
     },
-    [api, assertActiveGeneration, waitForCaptchaResolution, invalidateAvailability],
+    [api, assertActiveGeneration, waitForCaptchaResolution, invalidateAvailability, invalidateDisplays],
   );
 
   const loadBattleLogs = useCallback(
     (query?: BattleLogQuery): Promise<BattleLogResponse[]> =>
-      api.fetchBattleLogs(query),
-    [api],
+      readDisplay(logDisplayKey(query), () => api.fetchBattleLogs(query)),
+    [api, readDisplay],
   );
 
   const loadBattleStats = useCallback(
     (period?: AdventureMapStatsPeriod, date?: string): Promise<BattleStatsResponse> =>
-      api.fetchBattleStats(period, date),
-    [api],
+      readDisplay(statsDisplayKey(period, date), () => api.fetchBattleStats(period, date)),
+    [api, readDisplay],
   );
 
   return {
+    invalidateDisplays,
     categories: battleCategories,
     loaded: areBattleCategoriesLoaded,
     loading: isBattleCategoriesLoading,
@@ -157,8 +195,17 @@ export function useBattleResource({
     loadMaps: loadBattleMaps,
     loadMapCatalog: loadBattleMapCatalog,
     run: runBattle,
+    peekLogs: (query?: BattleLogQuery) => peekDisplay<BattleLogResponse[]>(logDisplayKey(query)),
+    peekStats: (period?: AdventureMapStatsPeriod, date?: string) => peekDisplay<BattleStatsResponse>(statsDisplayKey(period, date)),
     loadLogs: loadBattleLogs,
     loadLogHtml: (logId: number) => api.fetchBattleLogHtml(logId),
     loadStats: loadBattleStats,
   };
+}
+
+function logDisplayKey(query?: BattleLogQuery): string {
+  return `logs:${JSON.stringify([query?.outcome ?? null, query?.offset ?? 0, query?.limit ?? 40])}`;
+}
+function statsDisplayKey(period?: AdventureMapStatsPeriod, date?: string): string {
+  return `stats:${period ?? 'default'}:${period === 'DAY' ? date ?? '' : ''}`;
 }

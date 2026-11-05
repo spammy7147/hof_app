@@ -25,6 +25,7 @@ const flatList = (props: Record<string, unknown>) => {
   );
 };
 const reactNativeMock = {
+  Platform: { OS: 'android' },
   ActivityIndicator: host('ActivityIndicator'),
   FlatList: flatList,
   Pressable: host('Pressable'),
@@ -47,6 +48,8 @@ moduleWithLoader._load = (request, parent, isMain) => {
 const { DataTabScreen } = require(
   '../../main/screens/DataTabScreen',
 ) as typeof import('../../main/screens/DataTabScreen');
+const { useBattleResource } = require('../../main/features/battle/useBattleResource') as typeof import('../../main/features/battle/useBattleResource');
+const { authenticatedHttp, jsonResponse } = require('../fixtures/authenticatedHttp') as typeof import('../fixtures/authenticatedHttp');
 moduleWithLoader._load = originalLoad;
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -392,3 +395,32 @@ const emptyStats: BattleStatsResponse = {
   monthlyBattles: 0,
   adventureMapOutcomes: [],
 };
+
+it('실제 데이터 화면 재진입은 느린 새 조회 전 이전 통계를 표시하고 실패 뒤에도 유지한다', async () => {
+  const originalFetch = globalThis.fetch;
+  let release!: (response: Response) => void;
+  let reads = 0;
+  const { client } = await authenticatedHttp(async ({ path }) => {
+    assert.ok(path.startsWith('/api/battle/stats'));
+    if (++reads === 1) return jsonResponse({ ...emptyStats, dailyFunds: 1234 });
+    return new Promise<Response>((resolve) => { release = resolve; });
+  });
+  const assertActiveGeneration = () => undefined;
+  const describeError = String;
+  const waitForCaptchaResolution = async () => undefined;
+  function Harness({ screenKey }: { screenKey: number }) {
+    const battle = useBattleResource({ api: client, assertActiveGeneration, describeError, waitForCaptchaResolution });
+    return React.createElement(DataTabScreen, { key: screenKey, authenticated: true, battle });
+  }
+  let renderer!: ReactTestRenderer;
+  try {
+    await act(async () => { renderer = create(React.createElement(Harness, { screenKey: 1 })); });
+    mountedRenderer = renderer;
+    await act(async () => { renderer.update(React.createElement(Harness, { screenKey: 2 })); });
+    assert.ok(flattenText(renderer.root).join(' ').includes('1,234'));
+    assert.ok(flattenText(renderer.root).join(' ').includes('이전 통계'));
+    await act(async () => { release(jsonResponse({ message: '조회 실패' }, 500)); });
+    assert.ok(flattenText(renderer.root).join(' ').includes('1,234'));
+    assert.equal(reads, 2);
+  } finally { release?.(jsonResponse(emptyStats)); client.dispose(); globalThis.fetch = originalFetch; }
+});

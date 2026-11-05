@@ -266,11 +266,9 @@ export function QuestAutomationEditor({
     const categorySettled = !isBattleCategoriesLoading && (
       areBattleCategoriesLoaded || battleCategories.length > 0 || battleCategoriesError != null
     );
-    const mapsSettled = eligibleCategories.every(({ id }) => {
-      const resource = mapResourceRef.current[id];
-      return resource != null && !resource.loading;
-    });
-    if (!questLoaded || !categorySettled || !mapsSettled) return;
+    // 초안 표시와 수동 구성을 편집하는 데 무관한 분류의 완료를 기다리지 않는다.
+    // AUTO 추론과 누락 맵의 저장은 아래 supportingResourcesBlockSave가 전체 카탈로그를 검증한다.
+    if (!questLoaded || !categorySettled) return;
     const source = serializeDraftSource(entry, snapshots);
     const nextDraft = buildQuestAutomationDraft(entry, snapshots, catalog);
     const current = draftRef.current;
