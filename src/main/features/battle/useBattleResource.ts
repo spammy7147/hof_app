@@ -20,27 +20,43 @@ export type BattleResource = ReturnType<typeof useBattleResource>;
 export function useBattleResource({
   api, describeError, assertActiveGeneration, waitForCaptchaResolution,
 }: Options) {
+  const retryAt = useRef(new Map<string, number>());
   const displays = useRef(new Map<string, { value: unknown; at: number }>());
   const displayEpoch = useRef(0);
-  const invalidateDisplays = useCallback(() => { displayEpoch.current++; displays.current.clear(); }, []);
+  const displayFlights = useRef(new Map<string, Promise<unknown>>());
+  const invalidateDisplays = useCallback(() => { displayEpoch.current++; displays.current.clear(); displayFlights.current.clear(); }, []);
   const peekDisplay = useCallback(<T,>(key: string): T | null => {
     assertActiveGeneration();
     const saved = displays.current.get(key);
     const age = saved ? Date.now() - saved.at : Infinity;
     return saved && age >= 0 && age <= 5 * 60_000 ? saved.value as T : null;
   }, [assertActiveGeneration]);
-  const readDisplay = useCallback(async <T,>(key: string, operation: () => Promise<T>): Promise<T> => {
+  const readDisplay = useCallback(<T,>(key: string, operation: () => Promise<T>): Promise<T> => {
     assertActiveGeneration();
+    if (Date.now() < (retryAt.current.get(key) ?? 0)) return Promise.reject(new Error('잠시 후 다시 확인해 주세요.'));
+    const existing = displayFlights.current.get(key);
+    if (existing) return existing as Promise<T>;
     const epoch = displayEpoch.current;
-    const value = await operation();
-    assertActiveGeneration();
-    if (epoch !== displayEpoch.current) throw new Error('전투로 변경된 이전 조회를 폐기했습니다. 다시 확인해 주세요.');
-    displays.current.delete(key);
-    displays.current.set(key, { value, at: Date.now() });
-    if (displays.current.size > 24) displays.current.delete(displays.current.keys().next().value!);
-    return value;
+    const flight = operation().then(value => {
+      assertActiveGeneration();
+      if (epoch !== displayEpoch.current || displayFlights.current.get(key) !== flight) {
+        throw new Error('변경된 이전 조회를 폐기했습니다. 다시 확인해 주세요.');
+      }
+      retryAt.current.delete(key);
+      displays.current.delete(key);
+      displays.current.set(key, { value, at: Date.now() });
+      if (displays.current.size > 24) displays.current.delete(displays.current.keys().next().value!);
+      return value;
+    }).catch((error: unknown) => {
+      const seconds = (error as { retryAfterSeconds?: number } | null)?.retryAfterSeconds;
+      if (epoch === displayEpoch.current && displayFlights.current.get(key) === flight && typeof seconds === 'number' && seconds > 0) {
+        retryAt.current.set(key, Date.now() + seconds * 1_000);
+      }
+      throw error;
+    }).finally(() => { if (displayFlights.current.get(key) === flight) displayFlights.current.delete(key); });
+    displayFlights.current.set(key, flight);
+    return flight;
   }, [assertActiveGeneration]);
-  const retryAt = useRef(new Map<string, number>());
   const catalog = useRef(new Map<string, BattleMapResponse[]>());
   const flights = useRef(new Map<string, { controller: AbortController; promise: Promise<BattleMapResponse[]> }>());
   const invalidateAvailability = useCallback(() => {
@@ -51,7 +67,7 @@ export function useBattleResource({
   useEffect(() => () => {
     for (const flight of flights.current.values()) flight.controller.abort();
     flights.current.clear(); catalog.current.clear(); retryAt.current.clear();
-    displayEpoch.current++; displays.current.clear();
+    displayEpoch.current++; displays.current.clear(); displayFlights.current.clear();
   }, []);
   const readMaps = useCallback((categoryId: string, kind: 'catalog' | 'availability') => {
     assertActiveGeneration();
