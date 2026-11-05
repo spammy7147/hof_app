@@ -218,7 +218,7 @@ export class CharacterManagementHubModule {
   private recoveryRequestGeneration = 0;
   private recoveryActionKind: 'check' | 'retry' | 'preview' | 'accept' | null = null;
   private roster = new Map<number, HofCharacter>();
-  private readonly displayDetails = new Map<number, { identity: string; revision: string; name: string; lines: string[]; verifiedAt: number }>();
+  private readonly displayDetails = new Map<number, { identity: string; revision: string; lines: string[]; verifiedAt: number }>();
   private resource: CharacterManagementHubResource;
 
   constructor(
@@ -1596,7 +1596,7 @@ export class CharacterManagementHubModule {
     if (this.resource === next) return;
     if (next.detail && !next.isLoading && next.detail !== this.resource.detail) {
       this.displayDetails.delete(next.detail.id);
-      this.displayDetails.set(next.detail.id, { identity: next.detail.hofCharacterId, revision: next.detail.revision, name: next.detail.name,
+      this.displayDetails.set(next.detail.id, { identity: next.detail.hofCharacterId, revision: next.detail.revision,
         lines: next.detail.statusLines.slice(0, 40).map(line => line.slice(0, 500)), verifiedAt: this.now() });
       if (this.displayDetails.size > 8) this.displayDetails.delete(this.displayDetails.keys().next().value!);
     }
