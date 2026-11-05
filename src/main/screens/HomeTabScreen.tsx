@@ -263,7 +263,7 @@ export function HomeTabScreen({
         partyPresetCatalog={partyPresetCatalog}
         onClearMutationMessage={() => settingsController.clearMessage()}
         onLoadBattleCategories={onLoadBattleCategories}
-        onLoadBattleMaps={onLoadBattleMaps}
+        onLoadBattleMaps={battle.loadMapCatalog}
         onSave={async (request) => {
           const saved = await settingsController.saveQuestSettings(request);
           if (saved) closeEditor();
@@ -432,7 +432,7 @@ export function HomeTabScreen({
           ) : null}
           <View style={styles.headerCopy}>
             <Text style={styles.title}>{route === 'dashboard' ? '통합 자동화' : '자동화 설정'}</Text>
-            <Text style={styles.subtitle}>{route === 'dashboard' ? '앱을 닫아도 서버에서 계속 진행돼요' : '프리셋 하나에 전체 자동화 구성을 편집해요'}</Text>
+            <Text style={styles.subtitle}>{route === 'dashboard' ? '앱을 닫아도 서버에서 계속 진행돼요' : '구성을 저장하고 필요할 때 바꿔 써요'}</Text>
           </View>
           <Pressable
             accessibilityLabel="자동화 실행 규칙 보기"
@@ -467,7 +467,7 @@ export function HomeTabScreen({
       {showPageHeader && rulesOpen ? (
         <View style={styles.ruleBand}>
           <Text style={styles.ruleTitle}>실행 규칙</Text>
-          <Text style={styles.ruleText}>사용 중인 모듈을 위에서부터 우선순위대로 확인해요.</Text>
+          <Text style={styles.ruleText}>사용 중인 자동화 항목을 위에서부터 판단 순서대로 확인해요.</Text>
           <Text style={styles.ruleText}>{editing && presetEditor ? '편집·전체 저장은 현재 실행에 영향을 주지 않아요. 전체 적용은 일시정지 후 진행해요.' : '현재 전투 중 설정을 바꾸면 다음 작업을 고를 때부터 적용돼요.'}</Text>
           <Text style={styles.ruleText}>캡차 인증이 필요해요 상태에서는 인증 후 자동화를 이어가요.</Text>
           <Text style={styles.ruleText}>전투에 사용할 파티를 선택해 주세요 상태에서는 해당 설정만 보완하면 돼요.</Text>

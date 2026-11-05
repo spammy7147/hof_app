@@ -130,6 +130,26 @@ function realResourceHarness(client: import('../../main/services/backendApi').Ba
   return { Harness, resource: () => resource };
 }
 
+for (const available of [[], [second]]) {
+  it(`현재 출현 맵 ${available.length}개를 먼저 조회해도 전체 설정 카탈로그를 읽고 보존한다`, async () => {
+    const { client, requests } = await authenticatedHttp(async ({ path }) => {
+      if (path === availabilityPath) return jsonResponse(available);
+      assert.equal(path, catalogPath);
+      return jsonResponse([first, second]);
+    });
+    const { Harness, resource } = realResourceHarness(client);
+    try {
+      await rntl.render(React.createElement(Harness, { show: false }));
+      await resource().loadMaps('battle_map');
+      const maps = await resource().loadMapCatalog('battle_map');
+      assert.deepEqual(maps.map(({ name }) => name), ['첫 맵', '둘째 맵']);
+      assert.ok(maps.every(({ enabled }) => !enabled));
+      assert.deepEqual(await resource().loadMapCatalog('battle_map'), maps);
+      assert.deepEqual(requests.map(({ path }) => path), [availabilityPath, catalogPath]);
+    } finally { client.dispose(); }
+  });
+}
+
 it('실제 HTTP 재진입은 카탈로그를 보존하고 공유 중인 확인이 끝나야 맵을 선택한다', async () => {
   let complete!: (response: Response) => void;
   const pending = new Promise<Response>((resolve) => { complete = resolve; });

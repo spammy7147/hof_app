@@ -1434,13 +1434,26 @@ describe('QuestAutomationEditor mounted behavior', () => {
 });
 
 describe('HomeTabScreen mounted typed editor routing', () => {
-  it('opens the actual shared preset tree and search from the home quest entry', async () => {
+  it('현재 출현하지 않은 퀘스트 맵도 이름과 저장 프리셋을 표시하고 다시 저장한다', async () => {
+    const automaticMap = {
+      ...mapSetting('clear', 'Rsion03', 0), categoryId: 'adventure_map',
+      manuallyOverridden: false, presetMode: 'EXPLICIT' as const, partyPresetId: 7,
+    };
     const entry = questEntry([{
       questKey: 'combat',
       enabled: true,
       sourceOrder: 0,
-      maps: [mapSetting('kill', 'a', 0)],
+      maps: [{ ...mapSetting('kill', 'Noble1022', 0), presetMode: 'EXPLICIT', partyPresetId: 7 }],
+    }, {
+      questKey: 'tower', enabled: true, sourceOrder: 1, maps: [automaticMap],
     }]);
+    const mapNames = ["Noble's Mansion- 저택 동관(하인켈의 방)", 'Castle In The Sky- 천공성(제 1탑) (EASY)'];
+    const catalog = [
+      { ...catalogMap('battle_map', 'Noble1022', mapNames[0]!), enabled: false },
+      { ...catalogMap('adventure_map', 'Rsion03', mapNames[1]!), enabled: false },
+    ];
+    const requests: string[] = [];
+    const saves: UpdateQuestAutomationRequest[] = [];
     const aggregate = {
       entries: [entry],
       runtime: {
@@ -1471,8 +1484,11 @@ describe('HomeTabScreen mounted typed editor routing', () => {
       clearMessage: () => undefined,
       showMessage: () => undefined,
       isEntryBusy: () => false,
-      fetchQuests: async () => [snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'A')])],
-      saveQuestSettings: async () => true,
+      fetchQuests: async () => [
+        snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Key Keeper')]),
+        snapshot('tower', 'Tower', 'ACTIVE', [mission('clear', 'MAP_CLEAR', mapNames[1]!)], 1),
+      ],
+      saveQuestSettings: async (request: UpdateQuestAutomationRequest) => { saves.push(request); return true; },
       saveBattleMapSettings: async () => true,
       saveAdventureMapSettings: async () => true,
       deleteEntry: async () => true,
@@ -1487,8 +1503,15 @@ describe('HomeTabScreen mounted typed editor routing', () => {
         status: null,
         automationController: controller as never,
         battle: makeBattleResource({
-          categories: [{ id: 'battle_map', label: '전투맵', description: '', order: 0, enabled: true }],
-          loadMaps: async () => [catalogMap('battle_map', 'a', 'Alpha')],
+          categories: [
+            { id: 'battle_map', label: '전투맵', description: '', order: 0, enabled: true },
+            { id: 'adventure_map', label: '모험맵', description: '', order: 1, enabled: true },
+          ],
+          loadMaps: async (categoryId) => { requests.push(`availability:${categoryId}`); return []; },
+          loadMapCatalog: async (categoryId) => {
+            requests.push(`catalog:${categoryId}`);
+            return catalog.filter((map) => map.categoryId === categoryId);
+          },
         }),
         partyPresetCatalog: presetCatalog([{ ...preset(7, 'Safe'), folderId: 90 }]),
         onOpenCaptcha: () => undefined,
@@ -1498,6 +1521,13 @@ describe('HomeTabScreen mounted typed editor routing', () => {
 
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '홈 퀘스트 열기' }).props.onPress(); });
     await act(async () => undefined);
+    for (const name of mapNames) assert.equal(hasText(renderer.root, name), true, `맵 이름 표시: ${name}`);
+    for (const name of ['Combat', 'Tower']) {
+      assert.deepEqual(renderer.root.findByProps({ accessibilityLabel: `${name} 1번째 맵 프리셋 선택` }).props.accessibilityValue, { text: 'Safe' });
+    }
+    assert.equal(hasText(renderer.root, '전투맵을 추가해 주세요.'), false);
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.disabled, false);
+    assert.deepEqual(requests.sort(), ['catalog:adventure_map', 'catalog:battle_map']);
     await act(async () => {
       renderer.root.findByProps({ accessibilityLabel: 'Combat 1번째 맵 프리셋 선택' }).props.onPress();
     });
@@ -1505,6 +1535,9 @@ describe('HomeTabScreen mounted typed editor routing', () => {
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '프리셋 검색' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '공유 폴더 폴더, 프리셋 1개, 열기' }));
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '대표 프리셋 선택' }));
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '프리셋 선택기 닫기' }).props.onPress(); });
+    await act(async () => { await renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.onPress(); });
+    assert.deepEqual(saves[0]?.quests.map(({ maps }) => maps), entry.quests.map(({ maps }) => maps));
   });
 
   it('routes QUEST, BATTLE_MAP, and ADVENTURE_MAP to their typed saves', async () => {

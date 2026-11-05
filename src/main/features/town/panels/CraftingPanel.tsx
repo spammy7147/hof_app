@@ -60,10 +60,6 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
     setResponse(null); setActionResult(null); setSelectedIds([]); setAdditionalIds([]); setQuantityText('1'); setSearchQuery(''); setMaterialPickerOpen(false); setRefineCount(null); setRequestedCategoryId(null); setHistoryScreenOpen(false);
   }, [apiKey, mode]);
   useEffect(() => {
-    stagedResponse.current = null;
-    setResponse(null); setActionResult(null); setSelectedIds([]); setAdditionalIds([]); setMaterialPickerOpen(false);
-  }, [requestedCategoryId]);
-  useEffect(() => {
     if (!data) return;
     const live = new Set(data.rows.filter((row) => row.selectable).map((row) => row.id));
     const addLive = new Set(data.additionalMaterials.filter((row) => row.selectable).map((row) => row.id));
@@ -102,7 +98,18 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
   const title = titleFor(mode);
   const request = buildRequest(mode, selected?.id, categoryId, quantity, refineCount, material?.id);
   const displayedResult = data.result ?? (actionResult?.key === featureKey ? actionResult.value : null);
+  const completionLabel = remaining === 0 ? '제작 결과 확인' : '제작 상태 확인';
+  // 이전 서버가 시간 미확인 상태에 붙인 기본 문구도 완료 안내로 표시하지 않는다.
+  const activeJobLabel = remaining == null && data.activeJob?.label === '제작 결과 확인 가능'
+    ? '제작 상태 확인이 필요합니다.' : data.activeJob?.label;
 
+  const selectCategory = (id: string) => {
+    stagedResponse.current = null;
+    setResponse(null); setActionResult(null); setSelectedIds([]); setAdditionalIds([]); setMaterialPickerOpen(false);
+    // 완료 응답이 기본 분류로 돌아오면 직전에 요청했던 분류도 다시 조회한다.
+    if (id === requestedCategoryId) void town.reload().catch(() => undefined);
+    else setRequestedCategoryId(id);
+  };
   const finish = (result: TownActionResultResponse) => {
     if (stagedResponse.current) setResponse(stagedResponse.current);
     setActionResult({ key: featureKey, value: result });
@@ -147,16 +154,16 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
       <ScrollView contentContainerStyle={styles.activeJobScreen}>
         <Text style={styles.title}>{title}</Text>
         <View accessibilityLabel="현재 작업장 작업" accessibilityLiveRegion="polite" style={styles.job}>
-          <Text style={styles.jobTitle}>진행 중인 작업</Text>
-          <Text style={styles.label}>{data.activeJob.label}</Text>
+          <Text style={styles.jobTitle}>현재 작업</Text>
+          <Text style={styles.label}>{activeJobLabel}</Text>
           <Text style={styles.warning}>{remainingTimeLabel(remaining)}</Text>
           {data.activeJob.completionAvailable
-            ? <ActionButton label={remaining != null && remaining > 0 ? '제작 상태 확인' : '제작 결과 확인'} disabled={town.status === 'submitting'} onPress={() => submit({ kind: 'complete' })} />
-            : remaining === 0
+            ? <ActionButton label={completionLabel} disabled={town.status === 'submitting'} onPress={() => submit({ kind: 'complete' })} />
+            : remaining == null || remaining === 0
               ? <ActionButton label="제작 상태 확인" disabled={town.status === 'loading' || town.status === 'submitting'} onPress={() => { setResponse(null); void town.reload().catch(() => undefined); }} />
               : null}
         </View>
-        <Text style={styles.hint}>현재 작업이 끝난 뒤 새 작업을 선택할 수 있습니다.</Text>
+        <Text style={styles.hint}>제작 결과를 확인한 뒤 새 작업을 선택할 수 있습니다.</Text>
         {resultFooter}
       </ScrollView>
     </View>;
@@ -172,7 +179,7 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
       onSelectionChange={(ids) => {
         setSelectedIds(ids.filter((id) => id.startsWith('recipe:')).map((id) => id.slice('recipe:'.length)).slice(0, 1));
       }}
-      header={<View style={styles.section}><Text style={styles.title}>{title}</Text><CategoryDropdown triggerLabel="제작 종류 선택" data={data} disabled={town.status === 'submitting'} onSelect={setRequestedCategoryId} />{mode === 'create' || mode === 'refine' || mode === 'veteran' ? <CraftingSearch value={searchQuery} onChange={setSearchQuery} resultCount={visibleItems.length} subject={mode === 'create' ? '제작물품' : '제련 아이템'} /> : null}{town.status === 'loading' ? <Text accessibilityLiveRegion="polite" style={styles.hint}>선택한 종류의 제작품을 불러오는 중...</Text> : null}{data.activeJob ? <View accessibilityLiveRegion="polite" style={styles.job}><Text style={styles.label}>{data.activeJob.label}</Text><Text style={styles.warning}>{remainingTimeLabel(remaining)}</Text>{data.activeJob.completionAvailable ? <ActionButton label={remaining != null && remaining > 0 ? '제작 상태 확인' : '제작 결과 확인'} disabled={town.status === 'submitting'} onPress={() => submit({ kind: 'complete' })} /> : remaining === 0 ? <ActionButton label="제작 상태 확인" disabled={town.status === 'loading' || town.status === 'submitting'} onPress={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}</View> : null}</View>}
+      header={<View style={styles.section}><Text style={styles.title}>{title}</Text><CategoryDropdown triggerLabel="제작 종류 선택" data={data} disabled={town.status === 'submitting'} onSelect={selectCategory} />{mode === 'create' || mode === 'refine' || mode === 'veteran' ? <CraftingSearch value={searchQuery} onChange={setSearchQuery} resultCount={visibleItems.length} subject={mode === 'create' ? '제작물품' : '제련 아이템'} /> : null}{town.status === 'loading' ? <Text accessibilityLiveRegion="polite" style={styles.hint}>선택한 종류의 제작품을 불러오는 중...</Text> : null}{data.activeJob ? <View accessibilityLiveRegion="polite" style={styles.job}><Text style={styles.label}>{activeJobLabel}</Text><Text style={styles.warning}>{remainingTimeLabel(remaining)}</Text>{data.activeJob.completionAvailable ? <ActionButton label={completionLabel} disabled={town.status === 'submitting'} onPress={() => submit({ kind: 'complete' })} /> : remaining == null || remaining === 0 ? <ActionButton label="제작 상태 확인" disabled={town.status === 'loading' || town.status === 'submitting'} onPress={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}</View> : null}</View>}
       footer={mode === 'create' || mode === 'refine' || mode === 'veteran' ? resultFooter : footer} emptyMessage={town.status === 'loading' ? null : normalizedQuery ? '검색 결과가 없습니다.' : '현재 분류에 표시할 품목이 없습니다.'} /></View>
     {createControls}
     {refineControls}

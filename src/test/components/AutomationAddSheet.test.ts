@@ -280,6 +280,21 @@ describe('AutomationAddSheet mounted interactions', () => {
 });
 
 describe('UnifiedAutomationSettings mounted interactions', () => {
+  it('프리셋의 순서를 번호로 전달하고 상세 안내는 펼쳤을 때 표시한다', async () => {
+    const renderer = await renderSettings({ draftMode: true, entries: [entry(1, 'QUEST'), entry(2, 'BATTLE_MAP')] });
+    const questOrder = renderer.root.findByProps({ accessibilityLabel: '퀘스트 우선순위 이동' });
+    const battleOrder = renderer.root.findByProps({ accessibilityLabel: '전투 맵 1 우선순위 이동' });
+    assert.deepEqual(questOrder.props.accessibilityValue, { min: 1, max: 2, now: 1 });
+    assert.deepEqual(battleOrder.props.accessibilityValue, { min: 1, max: 2, now: 2 });
+    assert.equal(hasText(renderer.root, '초안'), false);
+    const help = () => renderer.root.findByProps({ accessibilityLabel: '자동화 구성 도움말' });
+    const explanation = '전투맵·모험맵은 여러 맵 묶음을, 다른 유형은 하나씩 추가할 수 있어요.';
+    assert.equal(hasText(renderer.root, explanation), false);
+    await act(async () => { help().props.onPress(); });
+    assert.equal(help().props.accessibilityState.expanded, true);
+    assert.equal(hasText(renderer.root, explanation), true);
+  });
+
   it('lets the outer settings scroller own vertical gestures started on automation cards', async () => {
     const renderer = await renderSettings({
       entries: [entry(1, 'QUEST'), entry(2, 'BATTLE_MAP')],

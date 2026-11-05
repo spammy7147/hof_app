@@ -22,6 +22,7 @@ export function useBattleResource({
 }: Options) {
   const retryAt = useRef(new Map<string, number>());
   const catalog = useRef(new Map<string, BattleMapResponse[]>());
+  const loadedCatalogs = useRef(new Set<string>());
   const flights = useRef(new Map<string, { controller: AbortController; promise: Promise<BattleMapResponse[]> }>());
   const invalidateAvailability = useCallback(() => {
     for (const [key, flight] of flights.current) if (key.startsWith('availability:')) {
@@ -30,7 +31,7 @@ export function useBattleResource({
   }, []);
   useEffect(() => () => {
     for (const flight of flights.current.values()) flight.controller.abort();
-    flights.current.clear(); catalog.current.clear(); retryAt.current.clear();
+    flights.current.clear(); catalog.current.clear(); loadedCatalogs.current.clear(); retryAt.current.clear();
   }, []);
   const readMaps = useCallback((categoryId: string, kind: 'catalog' | 'availability') => {
     assertActiveGeneration();
@@ -38,7 +39,7 @@ export function useBattleResource({
     if (Date.now() < (retryAt.current.get(key) ?? 0)) return Promise.reject(new Error('잠시 후 맵을 다시 확인해 주세요.'));
     const existing = flights.current.get(key);
     if (existing) return existing.promise;
-    if (kind === 'catalog' && catalog.current.has(categoryId)) return Promise.resolve(catalog.current.get(categoryId)!);
+    if (kind === 'catalog' && loadedCatalogs.current.has(categoryId)) return Promise.resolve(catalog.current.get(categoryId)!);
     const controller = new AbortController();
     const flight = { controller, promise: Promise.resolve([]) as Promise<BattleMapResponse[]> };
     const request = kind === 'catalog' ? api.fetchBattleMapCatalog(categoryId, controller.signal) : api.fetchBattleMapAvailability(categoryId, controller.signal);
@@ -49,6 +50,7 @@ export function useBattleResource({
       const known = catalog.current.get(categoryId) ?? [];
       const combined = kind === 'catalog' ? mergeBattleMapAvailability(maps, known) : mergeBattleMapAvailability(known, maps);
       catalog.current.set(categoryId, combined.map((map) => ({ ...map, enabled: false })));
+      if (kind === 'catalog') loadedCatalogs.current.add(categoryId);
       return kind === 'catalog' ? catalog.current.get(categoryId)! : maps;
     }).catch((error: unknown) => {
       const seconds = (error as { retryAfterSeconds?: number } | null)?.retryAfterSeconds;

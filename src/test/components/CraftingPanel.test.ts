@@ -129,8 +129,47 @@ describe('CraftingPanel', () => {
     assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === '제작 종류 선택').length, 0);
     assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === '제작품 선택').length, 0);
     assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === '작업 시작').length, 0);
+    assert.equal(button('제작 상태 확인').props.disabled, false);
+    assert.equal(text().includes('제작 결과를 확인한 뒤 새 작업을 선택할 수 있습니다.'), true);
+  });
+
+  it('남은 시간이 없으면 제작 결과 확인 가능으로 단정하지 않고 상태 확인을 제공한다', async () => {
+    const calls: Array<{ path: string; request: unknown }> = [];
+    const work = data('WORKBASE', {
+      categories: [],
+      currentCategoryId: null,
+      rows: [],
+      activeJob: { label: '제작 결과 확인 가능', remainingSeconds: null, completionAvailable: true },
+    });
+    await render(React.createElement(CraftingPanel, { api: api(async () => work, async (path, request) => { calls.push({ path, request }); return data('WORKBASE', { result: result() }); }), mode: 'workbase' }));
+
+    assert.equal(text().includes('제작 결과 확인 가능'), false, '시간을 알 수 없는 작업을 결과 확인 가능으로 표시하면 안 된다');
+    assert.equal(text().includes('진행 중인 작업'), false);
+    assert.equal(text().includes('제작 상태 확인이 필요합니다.'), true);
+    assert.equal(button('제작 상태 확인').props.disabled, false);
+    await press('제작 상태 확인');
+    assert.deepEqual(calls, [{ path: '/api/town/crafting/workbase/complete', request: {} }]);
+    assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === '현재 작업장 작업').length, 0);
+    assert.ok(button('작업 시작'));
+  });
+
+  it('남은 시간과 완료 form이 모두 없어도 상태를 재조회할 수 있다', async () => {
+    const paths: string[] = [];
+    const unknown = data('WORKBASE', { activeJob: { label: '현재 장비를 제작 중입니다.', remainingSeconds: null, completionAvailable: false } });
+    const running = data('WORKBASE', { activeJob: { label: '현재 장비를 제작 중입니다.', remainingSeconds: 120, completionAvailable: true } });
+    await render(React.createElement(CraftingPanel, { api: api(async (path) => { paths.push(path); return paths.length === 1 ? unknown : running; }), mode: 'workbase' }));
+
+    await press('제작 상태 확인');
+    assert.deepEqual(paths, ['/api/town/crafting/workbase', '/api/town/crafting/workbase']);
+    assert.equal(text().includes('약 2분 후 제작 결과 확인 가능'), true);
+  });
+
+  it('남은 시간이 0초이고 완료 form이 있으면 결과 확인을 제공한다', async () => {
+    const work = data('WORKBASE', { activeJob: { label: '제작 결과 확인 가능', remainingSeconds: 0, completionAvailable: true } });
+    await render(React.createElement(CraftingPanel, { api: api(async () => work), mode: 'workbase' }));
+
     assert.equal(button('제작 결과 확인').props.disabled, false);
-    assert.equal(text().includes('현재 작업이 끝난 뒤 새 작업을 선택할 수 있습니다.'), true);
+    assert.equal(text().includes('남은 시간 확인 불가'), false);
   });
 
   it('제작공방은 추가 소재가 없어도 막지 않고 null로 제출한다', async () => {
@@ -190,6 +229,47 @@ describe('CraftingPanel', () => {
     assert.equal(text().includes('늦은 방어구'), false);
     await act(async () => third.resolve(data('CREATE', { rows: [{ ...first.rows[0], label: '외투 제작품' }], currentCategoryId: 'type:cloak' })));
     assert.equal(text().includes('외투 제작품'), true);
+  });
+
+  it('작업장은 빈 무기 분류와 전부 목록을 전환하고 결과 확인 후 같은 분류를 다시 선택할 수 있다', async () => {
+    const paths: string[] = [];
+    const categories = [
+      { id: 'catalog_type_create:weapon', label: '무기(weapon)', current: true },
+      { id: 'catalog_type_create:all', label: '전부(all)', current: false },
+    ];
+    const idle = data('WORKBASE', { categories, currentCategoryId: categories[0].id, rows: [] });
+    const all = data('WORKBASE', {
+      categories: categories.map((category) => ({ ...category, current: category.id.endsWith(':all') })),
+      currentCategoryId: categories[1].id,
+    });
+    const running = { ...all, activeJob: { label: '현재 장비를 제작 중입니다.', remainingSeconds: 0, completionAvailable: true } };
+    const submissions: string[] = [];
+    await render(React.createElement(CraftingPanel, { api: api(async (path) => {
+      paths.push(path);
+      return path.includes('categoryCandidateId=catalog_type_create%3Aall') ? all : idle;
+    }, async (path) => {
+      submissions.push(path);
+      return path.endsWith('/complete') ? { ...idle, result: result() } : running;
+    }), mode: 'workbase' }));
+
+    assert.equal(mounted!.root.find((node) => String(node.type) === 'FlatList').props.data.length, 0);
+    await press('제작 종류 선택');
+    await press('전부(all) 분류');
+    assert.ok(button('제작품 선택'));
+    await press('제작품 선택');
+    await press('작업 시작');
+    await press('제작 결과 확인');
+    assert.equal(mounted!.root.find((node) => String(node.type) === 'FlatList').props.data.length, 0);
+    await press('제작 종류 선택');
+    await press('전부(all) 분류');
+
+    assert.deepEqual(paths, [
+      '/api/town/crafting/workbase',
+      '/api/town/crafting/workbase?categoryCandidateId=catalog_type_create%3Aall',
+      '/api/town/crafting/workbase?categoryCandidateId=catalog_type_create%3Aall',
+    ]);
+    assert.ok(button('제작품 선택'));
+    assert.deepEqual(submissions, ['/api/town/crafting/workbase', '/api/town/crafting/workbase/complete']);
   });
 
   it('Hall of Pain 버튼은 제작 목록을 펼치지 않고 별도 기록 화면을 연다', async () => {

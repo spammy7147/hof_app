@@ -7,7 +7,7 @@ import {
   View,
 } from 'react-native';
 import { AppAlert as Alert } from '../../../platform/AppAlert';
-import { Fish, GripVertical, House, Map, Plus, ScrollText, Shield, Swords, Trash2, Users } from 'lucide-react-native';
+import { ChevronDown, ChevronRight, Fish, GripVertical, House, Map, Plus, ScrollText, Shield, Swords, Trash2, Users } from 'lucide-react-native';
 import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from 'react-native-gesture-handler/ReanimatedSwipeable';
@@ -56,6 +56,7 @@ export function UnifiedAutomationSettings({
   onToggle,
 }: Props) {
   const [addSheetOpen, setAddSheetOpen] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [listWidth, setListWidth] = useState(0);
   const mountedRef = useRef(false);
   const addTriggerRef = useRef<ElementRef<typeof Pressable>>(null);
@@ -159,10 +160,11 @@ export function UnifiedAutomationSettings({
   return (
     <View style={styles.stack}>
       <View style={styles.listHeader}>
-        <Text style={styles.sectionTitle}>{draftMode ? '프리셋의 전체 자동화 구성' : '실행 우선순위'}</Text>
-        <Text style={styles.helper}>{draftMode ? '위에서부터 판단해요. 편집 후 아래에서 전체 저장·적용해 주세요.' : '위에서부터 실행하며 변경은 다음 작업부터 적용돼요.'}</Text>
-        <Text style={styles.helper}>상위 항목이 계속 실행 가능하면 아래 항목은 기다릴 수 있어요.</Text>
-        <Text style={styles.helper}>자동화 항목은 계정당 100개, 맵은 유형별 전체 묶음 합계 100개까지 저장할 수 있어요.</Text>
+        <View style={styles.headingRow}>
+          <Text accessibilityRole="header" style={styles.sectionTitle}>{draftMode ? '자동화 항목' : '판단 순서'}</Text>
+          <Text style={styles.helper}>{entries.length}개 · {entries.filter(entry => entry.enabled).length}개 켜짐</Text>
+        </View>
+        <Text style={styles.helper}>위에서부터 판단 · 왼쪽을 길게 눌러 순서 변경</Text>
       </View>
 
       {entries.length === 0 ? (
@@ -216,11 +218,17 @@ export function UnifiedAutomationSettings({
           {allTypesAdded ? '모든 자동화가 추가되었습니다' : '자동화 추가'}
         </Text>
       </Pressable>
-      <Text style={styles.helper}>
-        {allTypesAdded
-          ? '다른 유형을 추가하려면 기존 자동화를 삭제해 주세요.'
-          : '자동화 유형별로 하나씩 추가할 수 있습니다.'}
-      </Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="자동화 구성 도움말"
+        accessibilityState={{ expanded: showHelp }} onPress={() => setShowHelp(value => !value)} style={styles.helpToggle}>
+        <Text style={styles.helper}>판단 순서와 저장 한도 안내</Text>
+        <ChevronDown color={theme.colors.textMuted} size={16} style={showHelp ? styles.chevronOpen : undefined} />
+      </Pressable>
+      {showHelp ? <View style={styles.helpContent}>
+        <Text style={styles.helper}>상위 항목이 계속 실행 가능하면 아래 항목은 기다릴 수 있어요.</Text>
+        <Text style={styles.helper}>전투맵·모험맵은 여러 맵 묶음을, 다른 유형은 하나씩 추가할 수 있어요.</Text>
+        <Text style={styles.helper}>자동화 항목은 100개, 맵은 유형별 전체 묶음 합계 100개까지 저장할 수 있어요.</Text>
+        <Text style={styles.helper}>항목을 왼쪽으로 밀면 삭제할 수 있어요.</Text>
+      </View> : null}
       {reordering ? <Text style={styles.savingText}>우선순위 저장 중</Text> : null}
 
       <AutomationAddSheet
@@ -315,6 +323,7 @@ function AutomationEntryRow({
           accessibilityHint="길게 누르거나 접근성 동작으로 위아래로 이동하세요"
           accessibilityLabel={`${displayName} 우선순위 이동`}
           accessibilityRole="adjustable"
+          accessibilityValue={index >= 0 ? { min: 1, max: entries.length, now: index + 1 } : undefined}
           accessibilityState={{ disabled: reorderDisabled }}
           delayLongPress={120}
           disabled={reorderDisabled}
@@ -325,7 +334,8 @@ function AutomationEntryRow({
           onLongPress={drag}
           style={({ pressed }) => [styles.dragHandle, pressed && styles.pressed]}
         >
-          <GripVertical color={theme.colors.textMuted} size={20} />
+          {draftMode && index >= 0 ? <Text style={styles.orderNumber}>{index + 1}</Text> : null}
+          <GripVertical color={theme.colors.textMuted} size={draftMode ? 14 : 20} />
         </Pressable>
         <Pressable
           accessibilityActions={[{ name: 'delete', label: '삭제' }]}
@@ -350,9 +360,9 @@ function AutomationEntryRow({
           <View style={styles.rowCopy}>
             <View style={styles.rowTitleLine}>
               <Text numberOfLines={1} style={styles.rowTitle}>{displayName}</Text>
-              <Text style={[styles.statusChip, !draftMode && !item.ready && styles.warningChip]}>
-                {draftMode ? '초안' : item.ready ? '준비됨' : '확인 필요'}
-              </Text>
+              {!draftMode ? <Text style={[styles.statusChip, !item.ready && styles.warningChip]}>
+                {item.ready ? '준비됨' : '확인 필요'}
+              </Text> : null}
               {warning ? <Text style={[styles.statusChip, styles.warningChip]}>경고</Text> : null}
             </View>
             <Text numberOfLines={1} style={styles.rowMeta}>{summary}</Text>
@@ -366,6 +376,7 @@ function AutomationEntryRow({
               </Text>
             ) : null}
           </View>
+          <ChevronRight color={theme.colors.textMuted} size={14} />
         </Pressable>
         <Switch
           accessibilityLabel={`${displayName} ${item.enabled ? '끄기' : '켜기'}`}
@@ -404,7 +415,8 @@ function AutomationTypeIcon({ type }: { type: AutomationType }) {
 
 const styles = StyleSheet.create({
   stack: { gap: theme.spacing.md },
-  listHeader: { gap: 2 },
+  listHeader: { gap: 4 },
+  headingRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 4 },
   sectionTitle: { color: theme.colors.text, fontSize: 16, fontWeight: '900' },
   helper: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 17 },
   emptyState: { alignItems: 'center', borderColor: theme.colors.border, borderRadius: theme.radius.md, borderStyle: 'dashed', borderWidth: 1, flexDirection: 'row', gap: theme.spacing.md, minHeight: 84, padding: theme.spacing.md },
@@ -413,7 +425,8 @@ const styles = StyleSheet.create({
   swipeContainer: { borderRadius: theme.radius.md + 4, marginBottom: theme.spacing.sm, overflow: 'hidden' },
   row: { alignItems: 'center', backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md + 4, borderWidth: 1, flexDirection: 'row', gap: 5, minHeight: 70, paddingHorizontal: 5 },
   rowActive: { borderColor: theme.colors.accentGreen, opacity: 0.96 },
-  dragHandle: { alignItems: 'center', height: 44, justifyContent: 'center', width: 32 },
+  dragHandle: { alignItems: 'center', minHeight: 52, justifyContent: 'center', gap: 2, width: 44 },
+  orderNumber: { color: theme.colors.textMuted, fontSize: 12, fontWeight: '700', fontVariant: ['tabular-nums'] },
   detailButton: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: 5, minWidth: 0 },
   typeIcon: { alignItems: 'center', backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md, height: 36, justifyContent: 'center', width: 36 },
   rowCopy: { flex: 1, minWidth: 0, paddingVertical: theme.spacing.sm },
@@ -429,6 +442,9 @@ const styles = StyleSheet.create({
   addButtonText: { color: theme.colors.accentGreen, fontSize: 14, fontWeight: '900' },
   addButtonTextDisabled: { color: theme.colors.textMuted },
   savingText: { color: theme.colors.textMuted, fontSize: 11, textAlign: 'right' },
+  helpToggle: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, minHeight: 44 },
+  helpContent: { gap: theme.spacing.sm, backgroundColor: theme.colors.header, padding: theme.spacing.md, borderRadius: theme.radius.md },
+  chevronOpen: { transform: [{ rotate: '180deg' }] },
   pressed: { opacity: 0.72 },
   disabled: { opacity: 0.48 },
 });
