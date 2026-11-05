@@ -51,7 +51,7 @@ function AdventureAgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolveCa
     <View accessibilityRole="tablist" style={styles.tabs}>{(['ACTIVE', 'CLAIMABLE', 'AVAILABLE', 'WAITING'] as const).map((value) => <Pressable key={value} accessibilityRole="tab" accessibilityState={{ selected: tab === value }} onPress={() => setTab(value)} style={[styles.tab, tab === value && styles.tabSelected]}><Text style={styles.tabText}>{tabLabel(value)} {data.filter((quest) => tabMatches(quest, value)).length}</Text></Pressable>)}</View>
     <TextInput accessibilityLabel="퀘스트명 또는 미션 검색" value={query} onChangeText={setQuery} placeholder="퀘스트명 또는 미션 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} />
     <TownItemList rows={rows} selectionMode="none" emptyMessage="해당 상태의 퀘스트가 없습니다."
-      renderItemFooter={(row) => { const quest = questsByRowId.get(row.id); const mutation = questMutation(quest); return mutation ? <ActionButton label={`${quest!.name} ${mutation.action === 'accept' ? '수락' : '완료'}`} visibleLabel={mutation.action === 'accept' ? '수락' : '완료'} disabled={town.status === 'submitting'} onPress={() => submit(mutation)} compact /> : null; }}
+      renderItemFooter={(row) => { const quest = questsByRowId.get(row.id); const mutation = questMutation(quest); return mutation ? <ActionButton label={`${quest!.name} ${mutation.action === 'accept' ? '수락' : '완료'}`} visibleLabel={mutation.action === 'accept' ? '수락' : '완료'} disabled={!town.canSubmit} onPress={() => submit(mutation)} compact /> : null; }}
       footer={<View style={styles.footer}>{town.result ? <TownActionResult result={town.result} onRefresh={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}</View>} />
   </View>;
 }
@@ -106,7 +106,7 @@ function RecruitmentAgencyPanel({ api, resolveCaptcha }: { api: TownApi; resolve
   const nameWidth = recruitmentNameWidth(normalizedName);
   const full = data.currentCharacters != null && data.capacity != null && data.currentCharacters >= data.capacity;
   const validName = nameWidth != null && nameWidth >= data.nameMinLength && nameWidth <= data.nameMaxLength;
-  const canRecruit = data.recruitmentAvailable && !full && selectedJob != null && selectedGender != null && validName && town.status !== 'submitting';
+  const canRecruit = data.recruitmentAvailable && !full && selectedJob != null && selectedGender != null && validName && town.canSubmit;
   const rows: TownRowResponse[] = data.jobs.map((job) => ({
     id: job.id,
     label: job.name,

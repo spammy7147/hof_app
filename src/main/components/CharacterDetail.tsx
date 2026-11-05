@@ -57,6 +57,11 @@ export function CharacterDetail({ characterHub, active = true }: CharacterDetail
         <View style={styles.loading}>
           <ActivityIndicator color={theme.colors.accentGreen} />
           <Text style={styles.muted}>캐릭터 정보를 불러오는 중입니다.</Text>
+          {characterHub.readPreview ? <View accessibilityLabel="이전 캐릭터 상세">
+            <Text style={styles.muted}>이전 정보 · 최신 확인 전에는 변경할 수 없습니다.</Text>
+            <Text style={styles.title}>{characterHub.readPreview.name}</Text>
+            {characterHub.readPreview.lines.map((line, index) => <Text key={index} style={styles.muted}>{line}</Text>)}
+          </View> : null}
         </View>
       ) : errorMessage ? (
         <Text accessibilityRole="alert" style={styles.error}>{errorMessage}</Text>

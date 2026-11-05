@@ -77,7 +77,7 @@ export function HomeTabScreen({
     loading: isBattleCategoriesLoading,
     errorMessage: battleCategoriesError,
     loadCategories: onLoadBattleCategories,
-    loadMaps: onLoadBattleMaps,
+    loadMapCatalog: onLoadBattleMaps,
   } = battle;
 
   const loadRaidTargets = useCallback((): Promise<RaidPubResponse> => townApi == null
@@ -160,7 +160,7 @@ export function HomeTabScreen({
   function openModule(entryId: number) {
     if (presetEditor) {
       confirmPresetNavigation(presetEditor, () => { void (async () => {
-        if (!await presetEditor.initialize() || !await presetEditor.select(null)) return;
+        if (!await presetEditor.beginCurrentEdit()) return;
         const entry = presetEditor.draft.getSnapshot().aggregate?.entries.find(item => item.id === entryId);
         if (entry) openEntryDetail(entry); else setRoute('settings');
       })(); });

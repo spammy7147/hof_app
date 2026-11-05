@@ -113,3 +113,18 @@ it('계정 전환 뒤 도착한 이전 프리셋 응답이 새 초안을 만들�
   assert.equal(editor.getSnapshot().selectedId, null);
   assert.equal(editor.draft.getSnapshot().aggregate, null);
 });
+
+it('같은 최초 편집 진입은 현재 구성을 한 번만 읽고 다음 편집은 다시 확인한다', async () => {
+  let reads = 0;
+  const current: TypedAutomationAggregateResponse = { entries: [], runtime: { lifecycle: 'STOPPED', stopReason: null,
+    nextAttemptAt: null, warnings: [], lastError: null, currentAction: null,
+    dailyRefresh: { status: 'PENDING', refreshDate: null, refreshedAt: null } } };
+  const editor = new AutomationPresetEditor({ fetchCurrent: async () => { reads++; return current; },
+    list: async () => [], getApplied: async () => null, fetchQuests: async () => [], remove: async () => [],
+    get: async () => { throw new Error('unused'); }, save: async () => { throw new Error('unused'); },
+    apply: async () => { throw new Error('unused'); } });
+  assert.equal(await editor.beginCurrentEdit(), true);
+  assert.equal(reads, 1);
+  assert.equal(await editor.beginCurrentEdit(), true);
+  assert.equal(reads, 2);
+});

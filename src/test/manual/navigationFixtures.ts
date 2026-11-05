@@ -89,6 +89,9 @@ for (const mode of ['upgrade', 'change']) navigationTownData[`/api/town/cards/${
 for (const mode of ['workbase', 'claris', 'refine', 'create', 'veteran'] as const) navigationTownData[`/api/town/crafting/${mode}`] = { mode: ({workbase:'WORKBASE',claris:'CLARIS',refine:'REFINE',create:'CREATE',veteran:'VETERAN'} as const)[mode], categories, currentCategoryId: 'category', rows, minQuantity: 1, maxQuantity: 100, activeJob: null, allowedRefineCounts: [1], additionalMaterials: rows, additionalMaterialsOptional: true, warningCode: null, history: many(i => `검증 제련 기록 ${i}`), result } satisfies Api.CraftingResponse;
 for (const mode of ['emblem', 'event', 'legacy', 'ann'] as const) navigationTownData[`/api/town/exchanges/${mode}`] = { mode: ({emblem:'EMBLEM',event:'EVENT',legacy:'LEGACY',ann:'ANN'} as const)[mode], categories, currentCategoryId: 'category', rows, ownedCurrencies: [], gradeActions: [], annActions: [{ type: 'GIVE_GIFT', label: '검증', rows }], warning: null, history: [], result } satisfies Api.ExchangeResponse;
 export const navigationTown: TownApi = {
+  peekPreview: () => null,
+  getReadState: () => null,
+  subscribeReads: () => () => undefined,
   peekShop: () => null,
   rememberShop: () => undefined,
   dispose: () => undefined,

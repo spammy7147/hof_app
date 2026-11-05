@@ -14,16 +14,39 @@ type TownBackendTransport = Pick<BackendApiClient, 'fetchTownResource' | 'submit
 
 export type TownApi = ReturnType<typeof createTownApi>;
 
+export type TownReadPreviewSnapshot = {
+  verifiedAt: string;
+  rows: TownRowResponse[];
+  notices: string[];
+  totalRows: number;
+};
+export type TownReadState = {
+  revision: number;
+  status: 'loading' | 'ready' | 'error';
+  error: string | null;
+  awaitingCaptcha?: boolean;
+};
+
 /** 기능별 API가 같은 인증 transport를 사용하되 endpoint와 DTO 타입은 각 기능에 남긴다. */
 export function createTownApi(backend: TownBackendTransport) {
   const flights = new Map<string, { controller: AbortController; promise: Promise<unknown> }>();
   const shops = new Map<string, { data: ShopResponse; at: number }>();
+  const previews = new Map<string, { snapshot: TownReadPreviewSnapshot; at: number }>();
+  const readStates = new Map<string, TownReadState>();
+  const readListeners = new Set<() => void>();
+  let readRevision = 0;
+  const notifyReads = () => { for (const listener of readListeners) { try { listener(); } catch { /* 표시 구독자의 실패는 읽기 결과를 바꾸지 않는다. */ } } };
   const retryAt = new Map<string, number>();
   let active = true;
   const mutationListeners = new Set<() => void>();
   const invalidate = () => {
-    for (const flight of flights.values()) flight.controller.abort();
+    for (const [path, flight] of flights) {
+      flight.controller.abort();
+      const previous = readStates.get(path);
+      if (previous) readStates.set(path, { ...previous, status: 'error', error: '정보가 변경되었습니다. 다시 확인해 주세요.' });
+    }
     flights.clear();
+    notifyReads();
   };
   const rememberShop = (path: string, data: ShopResponse) => {
     if (active && !data.stale && Array.isArray(data.items)) shops.set(path, { data: { shopId: data.shopId, items: data.items, stale: false, lastVerifiedAt: data.lastVerifiedAt, result: null }, at: Date.now() });
@@ -35,6 +58,7 @@ export function createTownApi(backend: TownBackendTransport) {
     if (previous) return previous.promise as Promise<TResponse>;
     if (Date.now() < (retryAt.get(path) ?? 0)) return Promise.reject(new Error('잠시 후 다시 확인해 주세요.'));
     const controller = new AbortController();
+    const revision = ++readRevision;
     const flight = { controller, promise: Promise.resolve() as Promise<unknown> };
     const request: Promise<unknown> = path === '/api/quests'
       ? backend.fetchQuests!(controller.signal)
@@ -42,20 +66,43 @@ export function createTownApi(backend: TownBackendTransport) {
     flight.promise = request.then((data) => {
       if (!active || flights.get(path) !== flight) throw new Error('이전 조회를 폐기했습니다.');
       retryAt.delete(path);
+      if (isRecord(data) && (data.complete === false || data.stale === true)) throw new Error('최신 정보를 완전히 확인하지 못했습니다. 다시 확인해 주세요.');
+      let verified: unknown = data;
       if (path.startsWith('/api/town/shops/')) {
         const shop = data as ShopResponse;
         if (shop.stale || !Array.isArray(shop.items)) throw new Error('상점 목록을 확인하지 못했습니다. 다시 확인해 주세요.');
-        const verified = { ...shop, lastVerifiedAt: new Date().toISOString() };
-        rememberShop(path, verified);
-        return verified;
+        const shopData = { ...shop, lastVerifiedAt: new Date().toISOString() };
+        rememberShop(path, shopData);
+        verified = shopData;
       }
-      return data;
+      const snapshot = displaySnapshot(verified);
+      if (snapshot) {
+        previews.delete(path);
+        previews.set(path, { snapshot, at: Date.now() });
+        if (previews.size > 48) previews.delete(previews.keys().next().value!);
+      }
+      readStates.set(path, { revision, status: 'ready', error: null });
+      notifyReads();
+      return verified;
     }).catch((error: unknown) => {
       const seconds = (error as { retryAfterSeconds?: number } | null)?.retryAfterSeconds;
+      if (active && flights.get(path) === flight) {
+        readStates.set(path, {
+          revision, status: 'error', error: '최신 정보를 확인하지 못했습니다. 다시 확인해 주세요.',
+          awaitingCaptcha: (error as { code?: string } | null)?.code === 'CAPTCHA_REQUIRED',
+        });
+        notifyReads();
+      }
       if (active && flights.get(path) === flight && typeof seconds === 'number' && seconds > 0) retryAt.set(path, Date.now() + seconds * 1_000);
       throw error;
     }).finally(() => { if (flights.get(path) === flight) flights.delete(path); });
     flights.set(path, flight);
+    readStates.set(path, { revision, status: 'loading', error: null });
+    for (const key of readStates.keys()) {
+      if (readStates.size <= 64) break;
+      if (!flights.has(key)) readStates.delete(key);
+    }
+    notifyReads();
     return flight.promise as Promise<TResponse>;
   };
   const mutate = async <TResponse,>(operation: () => Promise<TResponse>): Promise<TResponse> => {
@@ -71,6 +118,13 @@ export function createTownApi(backend: TownBackendTransport) {
     }
   };
   return {
+    peekPreview(path: string): TownReadPreviewSnapshot | null {
+      const saved = previews.get(path);
+      const age = saved ? Date.now() - saved.at : Infinity;
+      return active && saved && age >= 0 && age <= 5 * 60_000 ? saved.snapshot : null;
+    },
+    getReadState(path: string): TownReadState | null { return readStates.get(path) ?? null; },
+    subscribeReads(listener: () => void) { readListeners.add(listener); return () => { readListeners.delete(listener); }; },
     peekShop(path: string): ShopResponse | null {
       const saved = shops.get(path);
       return active && saved && Date.now() - saved.at <= 5 * 60_000
@@ -79,7 +133,7 @@ export function createTownApi(backend: TownBackendTransport) {
     rememberShop,
     activate() { active = true; },
     subscribeMutations(listener: () => void) { mutationListeners.add(listener); return () => { mutationListeners.delete(listener); }; },
-    dispose() { active = false; invalidate(); shops.clear(); retryAt.clear(); mutationListeners.clear(); },
+    dispose() { active = false; invalidate(); shops.clear(); previews.clear(); readStates.clear(); retryAt.clear(); mutationListeners.clear(); readListeners.clear(); },
     load<TResponse>(path: TownApiPath): Promise<TResponse> { return read<TResponse>(path); },
     submit<TRequest, TResponse>(path: TownApiPath, request: TRequest): Promise<TResponse> {
       return mutate(() => backend.submitTownAction<TRequest, TResponse>(path, request));
@@ -96,6 +150,32 @@ export function createTownApi(backend: TownBackendTransport) {
       return mutate(() => backend.claimQuest!(actionNo));
     },
   };
+}
+
+/** 표시용 문자·수치만 복사하며 후보 ID·action·이전 행동 결과는 보존하지 않는다. */
+function displaySnapshot(data: unknown): TownReadPreviewSnapshot | null {
+  if (!data || typeof data !== 'object') return null;
+  const value = data as Record<string, unknown>;
+  if (value.complete === false || value.stale === true) return null;
+  const lists = ['items', 'cards', 'baseCards', 'rows', 'primary', 'recipes', 'listings', 'shrines', 'boxes', 'rewards', 'quests', 'raids', 'jobs', 'fighters', 'catches'];
+  let source: unknown[] = Array.isArray(data) ? data : lists.map((key) => value[key]).find(Array.isArray) ?? [];
+  const rest = isRecord(value.restStatus) ? value.restStatus : null;
+  if (source.length === 0 && rest && Array.isArray(rest.facilities)) source = rest.facilities;
+  const rows = source.slice(0, 200).flatMap((item, index): TownRowResponse[] => {
+    const row = isRecord(item) ? item : {};
+    const label = normalizeDisplayText(typeof item === 'string' ? item : row.label ?? row.name);
+    if (!label) return [];
+    const price = row.price ?? row.cost ?? row.totalPrice ?? row.latestUnitPrice;
+    return [{ id: `preview:${index}`, label: label.slice(0, 300), selectable: false,
+      detail: normalizeDisplayText(row.detail ?? row.statusText ?? row.mission)?.slice(0, 500) ?? null,
+      imageUrl: null, price: typeof price === 'number' ? price : null,
+      quantity: typeof row.quantity === 'number' ? row.quantity : null }];
+  });
+  const notices = ['notice', 'locationName', 'waterStatus', 'challengeNotice', 'warning']
+    .map((key) => normalizeDisplayText(value[key])).filter((text): text is string => text != null).map((text) => text.slice(0, 500));
+  if (rest && typeof rest.currentTime === 'number') notices.push(`휴식처 이전 상태 · Time ${rest.currentTime} / ${rest.maxTime ?? '?'}`);
+  if (isRecord(value.activeJob) && typeof value.activeJob.label === 'string') notices.push(value.activeJob.label);
+  return { verifiedAt: new Date().toISOString(), rows, notices, totalRows: source.length };
 }
 
 /** 누락된 selectable은 선택 불가로 처리해 HOF에 없던 radio/checkbox를 앱이 만들지 않는다. */

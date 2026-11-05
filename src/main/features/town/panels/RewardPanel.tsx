@@ -70,7 +70,7 @@ function StashPanel({ api, resolveCaptcha }: Props) {
         <Text style={styles.label}>개봉 방식</Text>
         <View style={[styles.actionGrid, styles.stashActionGrid]}>
           {data.actions.map((action) => (
-            <ActionButton compact key={action.action} label={action.label} disabled={!selected || town.status === 'submitting'} onPress={() => {
+            <ActionButton compact key={action.action} label={action.label} disabled={!selected || !town.canSubmit} onPress={() => {
               if (!selected) return;
               void town.submit({ boxCandidateId: selected.id, action: action.action }).then(() => {
                 if (stagedResponse.current) setResponse(stagedResponse.current);
@@ -132,7 +132,7 @@ function OrbPanel({ api, resolveCaptcha }: Props) {
       </View>
       <View accessibilityLabel="오브 교환 작업" style={styles.orbActionBar}>
         <View style={[styles.actionGrid, styles.orbActionGrid]}>
-          {data.actions.map((action) => <ActionButton compact key={action.action} label={action.label} disabled={town.status === 'submitting'} onPress={() => {
+          {data.actions.map((action) => <ActionButton compact key={action.action} label={action.label} disabled={!town.canSubmit} onPress={() => {
             void town.submit({ action: action.action }).then(() => {
               if (stagedResponse.current) setResponse(stagedResponse.current);
               stagedResponse.current = null;

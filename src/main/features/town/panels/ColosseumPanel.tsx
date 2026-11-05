@@ -88,8 +88,8 @@ function ColosseumBattlePanel({ api, characters = [], partyPresetCatalog, resolv
     if (activeApi.current === api) setResponse({ ...next, battleResult: data.battleResult });
   }).catch(() => undefined); };
   const fixedAction = <View style={styles.fixedActions}>
-    <ActionButton label="팀 저장" disabled={busy || !teamReady || !data.teamSaveAvailable} onPress={() => submit({ kind: 'team', request: { fighterCandidateIds: ids } })} />
-    <ActionButton label="Challenge" disabled={busy || !data.challengeAvailable || data.selectedTeam.length !== 5 || teamDirty} onPress={() => submit({ kind: 'challenge', request: {} })} />
+    <ActionButton label="팀 저장" disabled={!town.canSubmit || busy || !teamReady || !data.teamSaveAvailable} onPress={() => submit({ kind: 'team', request: { fighterCandidateIds: ids } })} />
+    <ActionButton label="Challenge" disabled={!town.canSubmit || busy || !data.challengeAvailable || data.selectedTeam.length !== 5 || teamDirty} onPress={() => submit({ kind: 'challenge', request: {} })} />
   </View>;
   return <View style={styles.container}><TownItemList rows={rows} selectionMode="none" fixedAction={fixedAction}
     header={<View style={styles.section}>
@@ -190,7 +190,7 @@ function ColosseumShopPanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
   const rows = data.items.map((row): TownRowResponse => ({ id: row.id, label: row.label, detail: row.detail, imageUrl: null, price: row.cost, quantity: row.owned, selectable: row.selectable }));
   return <View style={styles.container}><TownItemList rows={rows} selectionMode="single" selectedIds={selected} onSelectionChange={setSelected}
     selectionDisabled={busy} showSelectionAvailability
-    fixedAction={<ActionButton label="교환" disabled={busy || !item || !valid} onPress={() => { if (!item || !valid) return; const request = { candidateId: item.id, categoryCandidateId: data.currentCategoryId, quantity }; const submissionApi = api; staged.current = null; setResponse({ ...data, result: null }); void town.submit({ request }).then(() => { if (activeApi.current !== submissionApi) return; if (staged.current) setResponse(staged.current); staged.current = null; }).catch(() => undefined); }} />}
+    fixedAction={<ActionButton label="교환" disabled={!town.canSubmit || busy || !item || !valid} onPress={() => { if (!item || !valid) return; const request = { candidateId: item.id, categoryCandidateId: data.currentCategoryId, quantity }; const submissionApi = api; staged.current = null; setResponse({ ...data, result: null }); void town.submit({ request }).then(() => { if (activeApi.current !== submissionApi) return; if (staged.current) setResponse(staged.current); staged.current = null; }).catch(() => undefined); }} />}
     header={<View style={styles.section}><Text style={styles.title}>콜로세움 교환소</Text><View accessibilityRole="radiogroup" style={styles.chips}>{data.categories.map((category) => <Pressable key={category.id} accessibilityRole="radio" accessibilityState={{ checked: category.current, disabled: busy }} accessibilityLabel={`${category.label} 분류`} disabled={busy} onPress={() => !category.current && setCategoryId(category.id)} style={[styles.chip, category.current && styles.chipSelected]}><Text style={styles.chipText}>{category.label}</Text></Pressable>)}</View>{data.currencies.map((currency) => <Text key={currency.label} style={styles.hint}>{currency.label}: {currency.quantity?.toLocaleString() ?? '수량 확인 불가'}</Text>)}</View>}
     footer={<View style={styles.section}><TextInput accessibilityLabel="교환 수량" keyboardType="number-pad" editable={!busy} value={quantityText} onChangeText={setQuantityText} style={styles.input} />{!valid ? <Text accessibilityRole="alert" style={styles.error}>1~2,147,483,647 사이의 정수를 입력하세요.</Text> : null}{data.result ? <TownActionResult result={data.result} /> : null}{town.error ? <Text accessibilityRole="alert" style={styles.error}>{town.error}</Text> : null}</View>} emptyMessage="현재 표시할 교환 품목이 없습니다." />
   </View>;

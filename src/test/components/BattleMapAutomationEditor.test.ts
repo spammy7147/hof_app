@@ -800,6 +800,21 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(hasText(renderer.root, '새 서버 설정이 있지만 편집 중인 변경은 유지했습니다.'), true);
   });
 
+  it('편집한 맵과 무관한 분류의 조회가 늦어도 기존 목표를 편집한다', async () => {
+    const unrelated = deferred<BattleMapResponse[]>();
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(BattleMapAutomationEditor, editorProps({
+      entry: battleEntry([setting('a', 3, 0)]),
+      battleCategories: [
+        { id: 'battle', label: '전투', description: '', order: 0, enabled: true },
+        { id: 'scenario_ocean', label: '해역', description: '', order: 1, enabled: true },
+      ],
+      onLoadBattleMaps: async (category) => category === 'battle' ? [catalogMap('a', 'Alpha')] : unrelated.promise,
+    }))); });
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Alpha 일일 목표' }).props.editable, true);
+    await act(async () => { unrelated.resolve([]); });
+  });
+
   it('loads categories that arrive asynchronously and disables draft mutations until the initial catalog settles', async () => {
     const maps = deferred<BattleMapResponse[]>();
     let categoryLoads = 0;

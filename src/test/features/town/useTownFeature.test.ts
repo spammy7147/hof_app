@@ -117,6 +117,34 @@ describe('useTownFeature CAPTCHA retry contract', () => {
     await act(async () => { renderer.unmount(); });
   });
 
+  it('rejects actions immediately when a fresh read starts and after that read fails', async () => {
+    let calls = 0;
+    let next = Promise.resolve({ value: '최신' });
+    let feature!: ReturnType<typeof useTownFeature<{ value: string }, string>>;
+    const Harness = () => {
+      feature = useTownFeature({ autoLoad: false, load: () => next,
+        submitAction: async () => { calls += 1; return {}; } });
+      return null;
+    };
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(Harness)); });
+    await act(async () => { await feature.reload(); });
+    const pending = deferred<{ value: string }>();
+    next = pending.promise;
+    let reload!: Promise<unknown>;
+    await act(async () => {
+      reload = feature.reload().catch(() => undefined);
+      await assert.rejects(feature.submit('old-candidate'), /최신 정보/);
+    });
+    await act(async () => { pending.reject(new Error('offline')); await reload; });
+    await assert.rejects(feature.submit('old-candidate'), /최신 정보/);
+    assert.equal(calls, 0);
+    next = Promise.resolve({ value: '복구' });
+    await act(async () => { await feature.reload(); await feature.submit('new-candidate'); });
+    assert.equal(calls, 1);
+    await act(async () => { renderer.unmount(); });
+  });
+
   it('blocks a double submit synchronously and sends only one mutation POST', async () => {
     const request = deferred<unknown>();
     let calls = 0;

@@ -1064,7 +1064,7 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(renderer.root.findByProps({ accessibilityLabel: 'Noncombat 선택' }).props.accessibilityState.checked, true);
   });
 
-  it('defers the first automatic draft until every initially eligible map request settles', async () => {
+  it('자동 초안은 먼저 표시하고 모든 카탈로그가 끝나기 전에는 저장을 막는다', async () => {
     const battle = deferred<BattleMapResponse[]>();
     const adventure = deferred<BattleMapResponse[]>();
     const quest = snapshot('clear', 'Clear Quest', 'ACTIVE', [mission('clear-key', 'MAP_CLEAR', 'Target')]);
@@ -1079,9 +1079,11 @@ describe('QuestAutomationEditor mounted behavior', () => {
       onLoadBattleMaps: async (categoryId) => categoryId === 'battle_map' ? battle.promise : adventure.promise,
     });
     const renderer = await rendererPromise;
-    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '퀘스트 자동화 사용' }).length, 0);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 사용' }));
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.disabled, true);
     await act(async () => { battle.resolve([]); await battle.promise; });
-    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '퀘스트 자동화 사용' }).length, 0);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 사용' }));
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.disabled, true);
     await act(async () => {
       adventure.resolve([catalogMap('adventure_map', 'target', 'Target')]);
       await adventure.promise;
@@ -1362,6 +1364,15 @@ describe('QuestAutomationEditor mounted behavior', () => {
     assert.equal(mapAttempts, 2);
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: 'Noncombat 선택' }).props.onPress(); });
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.disabled, false);
+  });
+
+  it('수동으로 지정한 기존 맵은 무관한 카탈로그를 기다리지 않고 편집할 수 있다', async () => {
+    const pending = deferred<BattleMapResponse[]>();
+    const quest = snapshot('combat', 'Combat', 'ACTIVE', [mission('kill', 'MONSTER_KILL', 'Maid')]);
+    const entry = questEntry([{ questKey: 'combat', enabled: true, sourceOrder: 0, maps: [mapSetting('kill', 'stored', 0)] }]);
+    const renderer = await renderEditor({ entry, quests: [quest], onLoadBattleMaps: () => pending.promise });
+    assert.equal(renderer.root.findByProps({ accessibilityLabel: '퀘스트 자동화 저장' }).props.disabled, false);
+    await act(async () => { pending.resolve([]); });
   });
 
   it('allows an already-valid manual combat config when catalog refresh fails', async () => {

@@ -261,3 +261,28 @@ it('맵 Retry-After 기한 전에는 재시도해도 transport를 다시 호출�
   await assert.rejects(resource.loadMaps('battle_map'));
   assert.equal(calls, 2);
 });
+
+it('통계와 로그의 표시 자료는 조건별로 구분하고 전투 변경에 무효화한다', async () => {
+  const http = await authenticatedHttp(async (request) => {
+    if (request.path.startsWith('/api/battle/stats')) return jsonResponse({ dailyFunds: 123, adventureMapOutcomes: [] });
+    if (request.path.startsWith('/api/battle/logs')) return jsonResponse([{ id: 7 }]);
+    return jsonResponse({ message: '원본 변경 실패' }, 500);
+  });
+  const api = http.client;
+  let resource!: ReturnType<typeof useBattleResource>;
+  function Harness() {
+    resource = useBattleResource({ api, assertActiveGeneration: () => undefined,
+      describeError: String, waitForCaptchaResolution: async () => undefined });
+    return null;
+  }
+  await rntl.render(React.createElement(Harness));
+  await resource.loadStats('DAY', '2026-11-05');
+  await resource.loadLogs({ outcome: 'VICTORY', offset: 0, limit: 40 });
+  assert.equal(resource.peekStats('DAY', '2026-11-05')?.dailyFunds, 123);
+  assert.equal(resource.peekStats('DAY', '2026-11-04'), null);
+  assert.equal(resource.peekLogs({ outcome: 'DEFEAT', offset: 0, limit: 40 }), null);
+  assert.equal(resource.peekLogs({ limit: 40, offset: 0, outcome: 'VICTORY' })?.length, 1);
+  await resource.run({ categoryId: 'battle_map', mapCode: 'first' } as Parameters<typeof resource.run>[0]).catch(() => undefined);
+  assert.equal(resource.peekStats('DAY', '2026-11-05'), null);
+  assert.equal(resource.peekLogs({ outcome: 'VICTORY', offset: 0, limit: 40 }), null);
+});

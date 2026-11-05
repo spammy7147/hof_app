@@ -87,6 +87,11 @@ export class AutomationPresetEditor {
     });
   }
 
+  /** 최초 초기화가 이미 만든 초안을 같은 진입에서 다시 받지 않는다. 이후 진입은 새 구성을 읽는다. */
+  async beginCurrentEdit(): Promise<boolean> {
+    return this.snapshot.loaded ? this.select(null) : this.initialize();
+  }
+
   setName(name: string): void {
     if (this.snapshot.busy) return;
     this.patch({ name, dirty: name !== this.baseline?.name

@@ -362,6 +362,16 @@ describe('BackendApiClient', () => {
     assert.equal(release.release.downloadUrl, 'https://backend.test/api/app-releases/android/47/download');
   });
 
+  it('Android 필수 버전의 공개 조회도 무응답이면 15초 후 실패한다', async (context) => {
+    const { BackendApiClient } = await loadBackendApi();
+    context.mock.timers.enable({ apis: ['setTimeout'] });
+    globalThis.fetch = (() => new Promise(() => undefined)) as typeof fetch;
+    const request = new BackendApiClient('https://backend.test').fetchLatestAndroidRelease(88);
+    const rejection = assert.rejects(request, /시간|다시|응답/);
+    context.mock.timers.tick(15_000);
+    await rejection;
+  });
+
   it('stores only the native refresh token and sends the access token as Bearer authorization', async () => {
     const { BackendApiClient } = await loadBackendApi();
     const storage = memoryTokenStorage();

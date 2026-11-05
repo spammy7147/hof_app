@@ -61,7 +61,7 @@ export function DataTabScreen({
 }: DataTabScreenProps) {
   const { loadLogs: onLoadBattleLogs, loadStats: onLoadBattleStats } = battle;
 
-  const [stats, setStats] = useState<BattleStatsResponse | null>(null);
+  const [stats, setStats] = useState<BattleStatsResponse | null>(() => authenticated ? battle.peekStats?.() ?? null : null);
   const [isStatsLoading, setIsStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
   const [logScreenOpen, setLogScreenOpen] = useState(false);
@@ -90,7 +90,7 @@ export function DataTabScreen({
   }, [adventureStatsOpen, logScreenOpen, onFullScreenChange]);
 
   if (adventureStatsOpen) {
-    return <AdventureMapStatsScreen authenticated={authenticated} onBack={() => setAdventureStatsOpen(false)} onLoad={onLoadBattleStats} />;
+    return <AdventureMapStatsScreen authenticated={authenticated} onBack={() => setAdventureStatsOpen(false)} onLoad={onLoadBattleStats} peek={battle.peekStats} />;
   }
 
   if (logScreenOpen) {
@@ -98,6 +98,7 @@ export function DataTabScreen({
       <BattleLogScreen
         authenticated={authenticated}
         onBack={() => setLogScreenOpen(false)}
+        peek={battle.peekLogs}
         onLoadBattleLogs={onLoadBattleLogs}
         onLoadBattleLogHtml={battle.loadLogHtml}
       />
@@ -121,6 +122,7 @@ export function DataTabScreen({
         />
       </View>
 
+      {(isStatsLoading || statsError) && stats ? <Text style={styles.description}>이전 통계 · 최신 확인 중...</Text> : null}
       {isStatsLoading && !stats ? <LoadingPanel label="통계 확인 중" /> : null}
       {statsError ? <StatePanel message={statsError} error /> : null}
       {stats ? <FundsStatsPanel stats={stats} /> : null}
@@ -181,10 +183,11 @@ function shiftDate(date: string, days: number): string {
   return value.toISOString().slice(0, 10);
 }
 
-function AdventureMapStatsScreen({ authenticated, onBack, onLoad }: {
+function AdventureMapStatsScreen({ authenticated, onBack, onLoad, peek }: {
   authenticated: boolean;
   onBack: () => void;
   onLoad: (period?: AdventureMapStatsPeriod, date?: string) => Promise<BattleStatsResponse>;
+  peek?: (period?: AdventureMapStatsPeriod, date?: string) => BattleStatsResponse | null;
 }) {
   const [period, setPeriod] = useState<AdventureMapStatsPeriod>('DAY');
   const [date, setDate] = useState(koreanToday);
@@ -199,16 +202,16 @@ function AdventureMapStatsScreen({ authenticated, onBack, onLoad }: {
     }
     setDateError(null); setDateInput(value);
     if (value === date) void load();
-    else setDate(value);
+    else { setMaps(peek?.(period, value)?.adventureMapOutcomes ?? []); setDate(value); }
   };
-  const [maps, setMaps] = useState<AdventureMapOutcomeStatsResponse[]>([]);
+  const [maps, setMaps] = useState<AdventureMapOutcomeStatsResponse[]>(() => authenticated ? peek?.(period, date)?.adventureMapOutcomes ?? [] : []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
   const load = useCallback(async () => {
     if (!authenticated) { setError('로그인 계정이 없습니다.'); return; }
     const requestId = ++requestIdRef.current;
-    setLoading(true); setError(null); setMaps([]);
+    setLoading(true); setError(null); setMaps(peek?.(period, date)?.adventureMapOutcomes ?? []);
     try {
       const response = await onLoad(period, period === 'DAY' ? date : undefined);
       if (requestId === requestIdRef.current) setMaps(response.adventureMapOutcomes);
@@ -230,7 +233,7 @@ function AdventureMapStatsScreen({ authenticated, onBack, onLoad }: {
       <View accessibilityRole="tablist" style={styles.filterRow}>
         {ADVENTURE_PERIODS.map((option) => <Pressable
           accessibilityRole="tab" accessibilityState={{ selected: period === option.id }} key={option.id}
-          onPress={() => setPeriod(option.id)} style={[styles.filterButton, period === option.id && styles.filterButtonActive]}
+          onPress={() => { setMaps(peek?.(option.id, date)?.adventureMapOutcomes ?? []); setPeriod(option.id); }} style={[styles.filterButton, period === option.id && styles.filterButtonActive]}
         ><Text style={[styles.filterLabel, period === option.id && styles.filterLabelActive]}>{option.label}</Text></Pressable>)}
       </View>
       {period === 'DAY' ? <View style={styles.adventureHeaderStack}>
@@ -249,6 +252,7 @@ function AdventureMapStatsScreen({ authenticated, onBack, onLoad }: {
       </View> : null}
       <Text style={styles.description}>{period === 'DAY' ? `${date} 00:00부터 ${date === koreanToday() ? '현재까지' : '다음 날 00:00 전까지'} (한국 시간)` : selectedPeriod.description} · 총 횟수는 승리를 포함한 저장된 전투 기준입니다. 패배·무승부가 있는 맵만 표시합니다.</Text>
       {error ? <StatePanel message={error} error /> : null}
+      {(loading || error) && maps.length > 0 ? <Text style={styles.description}>이전 통계 · 최신 확인 중...</Text> : null}
       <View style={styles.mapTableHeader}><Text style={styles.mapName}>맵</Text><Text style={styles.mapMetricHeader}>총 횟수</Text><Text style={styles.mapMetricHeader}>패배</Text><Text style={styles.mapMetricHeader}>무승부</Text></View>
     </View>
   );
@@ -277,10 +281,12 @@ function BattleLogScreen({
   onBack,
   onLoadBattleLogs,
   onLoadBattleLogHtml,
+  peek,
 }: {
   authenticated: boolean;
   onBack: () => void;
   onLoadBattleLogs: (query?: BattleLogQuery) => Promise<BattleLogResponse[]>;
+  peek?: (query?: BattleLogQuery) => BattleLogResponse[] | null;
   onLoadBattleLogHtml?: (logId: number) => Promise<BattleLogHtmlResponse>;
 }) {
   const [filter, setFilter] = useState<LogFilter>('ALL');
@@ -288,7 +294,7 @@ function BattleLogScreen({
   const [detailNotice, setDetailNotice] = useState<string | undefined>();
   const [detailHtml, setDetailHtml] = useState<string | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [logs, setLogs] = useState<BattleLogResponse[]>([]);
+  const [logs, setLogs] = useState<BattleLogResponse[]>(() => authenticated ? peek?.({ limit: LOG_PAGE_SIZE, offset: 0 }) ?? [] : []);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -308,6 +314,7 @@ function BattleLogScreen({
     }
     const requestId = ++requestIdRef.current;
     setIsLoading(true);
+    setLogs(peek?.(queryFor(0)) ?? []);
     setErrorMessage(null);
     try {
       const loaded = await onLoadBattleLogs(queryFor(0));
@@ -363,7 +370,7 @@ function BattleLogScreen({
             accessibilityRole="tab"
             accessibilityState={{ selected: filter === option.id }}
             key={option.id}
-            onPress={() => setFilter(option.id)}
+            onPress={() => { setLogs(peek?.({ limit: LOG_PAGE_SIZE, offset: 0, ...(option.id === 'ALL' ? {} : { outcome: option.id }) }) ?? []); setFilter(option.id); }}
             style={[styles.filterButton, filter === option.id && styles.filterButtonActive]}
           >
             <Text style={[styles.filterLabel, filter === option.id && styles.filterLabelActive]}>{option.label}</Text>
@@ -391,6 +398,7 @@ function BattleLogScreen({
   return (
     <View style={styles.list}>
       <View style={styles.fixedHeader}>{header}</View>
+      {(isLoading || errorMessage) && logs.length > 0 ? <Text style={styles.description}>이전 로그 · 최신 확인 중...</Text> : null}
       {loadingDetail ? <ActivityIndicator color={theme.colors.accentGreen} /> : null}
       <FlatList
         contentContainerStyle={styles.logListContainer}

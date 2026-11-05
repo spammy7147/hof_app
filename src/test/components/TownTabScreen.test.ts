@@ -105,6 +105,31 @@ afterEach(async () => {
 });
 
 describe('TownTabScreen', () => {
+  it('카드 감정 재진입은 이전 목록을 먼저 보이되 최신 확인 전에는 후보를 선택할 수 없다', async () => {
+    const { authenticatedHttp, jsonResponse } = require('../fixtures/authenticatedHttp') as typeof import('../fixtures/authenticatedHttp');
+    const { createTownApi } = require('../../main/features/town/api/townApi') as typeof import('../../main/features/town/api/townApi');
+    const { navigationTownData } = require('../manual/navigationFixtures') as typeof import('../manual/navigationFixtures');
+    const pending: Array<(response: Response) => void> = [];
+    const { client, requests } = await authenticatedHttp(async () => new Promise<Response>((resolve) => pending.push(resolve)));
+    const api = createTownApi(client);
+    const props = { townApi: api, controlledMenuId: 'cardIdentify' as const, controlledDetailOpen: true };
+    try {
+      const renderer = await renderTown(props);
+      await act(async () => { pending.shift()!(jsonResponse(navigationTownData['/api/town/cards/identify'])); await new Promise((resolve) => setImmediate(resolve)); });
+      assert.ok(allText(renderer.root).includes('검증 품목 1'));
+      await act(async () => renderer.update(React.createElement(TownTabScreen, { ...props, controlledDetailOpen: false })));
+      await act(async () => renderer.update(React.createElement(TownTabScreen, props)));
+      assert.ok(allText(renderer.root).includes('검증 품목 1'));
+      assert.ok(allText(renderer.root).some((text) => text.includes('이전 목록')));
+      assert.equal(renderer.root.findAll((node) => String(node.type) === 'Pressable' && ['radio', 'checkbox'].includes(node.props.accessibilityRole)).length, 0);
+      assert.equal(requests.filter(({ method }) => method !== 'GET').length, 0);
+      await act(async () => { pending.shift()!(jsonResponse(navigationTownData['/api/town/cards/identify'])); await new Promise((resolve) => setTimeout(resolve, 5)); });
+      assert.ok(renderer.root.findAll((node) => String(node.type) === 'Pressable' && node.props.accessibilityRole === 'radio').length > 0);
+    } finally {
+      api.dispose(); client.dispose();
+      for (const resolve of pending) resolve(jsonResponse(navigationTownData['/api/town/cards/identify']));
+    }
+  });
   it('renders one town shell with search, category chips, and a two-column menu grid', async () => {
     const renderer = await renderTown();
     const text = allText(renderer.root);

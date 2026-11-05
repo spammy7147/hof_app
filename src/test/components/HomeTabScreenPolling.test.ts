@@ -58,6 +58,27 @@ afterEach(() => {
 });
 
 describe('HomeTabScreen dashboard polling', () => {
+  it('맵 편집에 실시간 가용성 대신 카탈로그 조회를 전달한다', async () => {
+    fakeTimeouts();
+    const base = controllerStub(async () => undefined) as unknown as { getSnapshot: () => { aggregate: TypedAutomationAggregateResponse } };
+    const entry = { id: 8, type: 'BATTLE_MAP' as const, priority: 0, enabled: true, ready: true,
+      warnings: [], quests: [], battleMaps: [], battleMapProgress: [], adventureMaps: [] };
+    base.getSnapshot().aggregate.entries.push(entry);
+    let catalogs = 0; let availability = 0;
+    let renderer!: ReactTestRenderer;
+    await act(async () => { renderer = create(React.createElement(HomeTabScreen, {
+      ...props(base as never), battle: makeBattleResource({
+        loadMapCatalog: async () => { catalogs++; return []; },
+        loadMaps: async () => { availability++; return []; },
+      }),
+    })); });
+    await act(async () => { renderer.root.findByProps({ accessibilityLabel: '설정 열기' }).props.onPress(); });
+    await act(async () => { renderer.root.findByType('UnifiedAutomationSettings' as never).props.onDetail(entry); });
+    await renderer.root.findByType('BattleMapAutomationEditor' as never).props.onLoadBattleMaps('battle_map');
+    assert.equal(catalogs, 1); assert.equal(availability, 0);
+    await act(async () => { renderer.unmount(); });
+  });
+
   it('프리셋 안의 항목 편집을 초안에 모으고 전체 저장까지 실행 설정을 바꾸지 않는다', async () => {
     fakeTimeouts();
     const base = controllerStub(async () => undefined) as unknown as { getSnapshot: () => { aggregate: TypedAutomationAggregateResponse } };

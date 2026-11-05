@@ -137,6 +137,7 @@ export type CharacterManagementHubResource = {
   characters: HofCharacter[];
   selectedCharacter: HofCharacter | null;
   detail: HofCharacterDetail | null;
+  readPreview?: { name: string; lines: string[]; verifiedAt: number };
   isLoading: boolean;
   errorMessage: string | null;
   warningMessage: string | null;
@@ -217,6 +218,7 @@ export class CharacterManagementHubModule {
   private recoveryRequestGeneration = 0;
   private recoveryActionKind: 'check' | 'retry' | 'preview' | 'accept' | null = null;
   private roster = new Map<number, HofCharacter>();
+  private readonly displayDetails = new Map<number, { identity: string; revision: string; name: string; lines: string[]; verifiedAt: number }>();
   private resource: CharacterManagementHubResource;
 
   constructor(
@@ -253,6 +255,7 @@ export class CharacterManagementHubModule {
     this.rosterObservationRequest += 1;
     this.pendingPatternChange = null;
     this.roster = new Map();
+    this.displayDetails.clear();
     this.relatedPresetRefresh = Promise.resolve();
     this.rosterProjectionGenerationById.clear();
     this.replace(emptyResource(
@@ -276,6 +279,7 @@ export class CharacterManagementHubModule {
     this.rosterObservationRequest += 1;
     this.pendingPatternChange = null;
     this.roster = new Map();
+    this.displayDetails.clear();
     this.relatedPresetRefresh = Promise.resolve();
     this.rosterProjectionGenerationById.clear();
     this.replace(emptyResource(
@@ -460,6 +464,7 @@ export class CharacterManagementHubModule {
       ...this.resource,
       selectedCharacter: selected,
       detail: null,
+      readPreview: this.displayPreview(selected),
       isLoading: true,
       errorMessage: null,
       warningMessage: null,
@@ -1580,8 +1585,21 @@ export class CharacterManagementHubModule {
       : detail;
   }
 
+  private displayPreview(character: HofCharacter) {
+    const saved = this.displayDetails.get(character.id);
+    const age = saved ? this.now() - saved.verifiedAt : Infinity;
+    return saved && age >= 0 && age <= 5 * 60_000 && saved.identity === character.hofCharacterId && saved.revision === character.revision
+      ? { name: character.name, lines: saved.lines, verifiedAt: saved.verifiedAt } : undefined;
+  }
+
   private replace(next: CharacterManagementHubResource): void {
     if (this.resource === next) return;
+    if (next.detail && !next.isLoading && next.detail !== this.resource.detail) {
+      this.displayDetails.delete(next.detail.id);
+      this.displayDetails.set(next.detail.id, { identity: next.detail.hofCharacterId, revision: next.detail.revision, name: next.detail.name,
+        lines: next.detail.statusLines.slice(0, 40).map(line => line.slice(0, 500)), verifiedAt: this.now() });
+      if (this.displayDetails.size > 8) this.displayDetails.delete(this.displayDetails.keys().next().value!);
+    }
     this.resource = next;
     for (const listener of this.listeners) listener();
   }

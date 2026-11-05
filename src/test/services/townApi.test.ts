@@ -8,6 +8,20 @@ import {
 } from '../../main/features/town/api/townApi';
 
 describe('town api', () => {
+  it('표시 자료는 실행 식별자와 결과를 제거하고 불완전한 상점 응답으로 덮어쓰지 않는다', async () => {
+    let response: unknown = { shopId: 'general', stale: false, items: [{ id: 'private-candidate', label: '표시 품목', selectable: true, detail: null, imageUrl: null, price: 100, quantity: 2 }], actionId: 'private-action', result: { messages: ['private-result'] } };
+    const api = createTownApi({ fetchTownResource: async <T,>() => response as T, submitTownAction: async <TRequest, TResponse>(_path: string, _request: TRequest) => ({} as TResponse) });
+    await api.load('/api/town/shops/general');
+    const before = api.peekPreview('/api/town/shops/general');
+    assert.equal(before?.rows[0]?.label, '표시 품목');
+    assert.equal(before?.rows[0]?.selectable, false);
+    assert.equal(JSON.stringify(before).includes('private-'), false);
+    response = { shopId: 'general', stale: false };
+    await assert.rejects(api.load('/api/town/shops/general'));
+    assert.deepEqual(api.peekPreview('/api/town/shops/general'), before);
+    api.dispose();
+    assert.equal(api.peekPreview('/api/town/shops/general'), null);
+  });
   it('normalizes rows without making display-only rows selectable', () => {
     assert.equal(normalizeTownRow({ id: 'x', label: 'X', selectable: false }).selectable, false);
     assert.equal(normalizeTownRow({ id: 'y', label: 'Y' }).selectable, false);

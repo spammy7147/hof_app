@@ -69,9 +69,9 @@ function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
     && validWhole(startPrice, 1) && durationAllowed && comment.length <= 300
     ? { kind: 'EXHIBIT', body: { entryActionId: exhibit.entryActionId, actionId: exhibit.actionId, candidateId: exhibitItem.candidateId, amount: Number(amount), exhibitTime: duration, startPrice: Number(startPrice), comment } } as const : null;
   const fixedAction = !exhibit && chosen
-    ? <ActionButton label="입찰" disabled={busy || !bid} onPress={() => bid && void town.submit(bid).catch(() => undefined)} />
+    ? <ActionButton label="입찰" disabled={!town.canSubmit || busy || !bid} onPress={() => bid && void town.submit(bid).catch(() => undefined)} />
     : exhibit && exhibitItem
-      ? <ActionButton label="출품" disabled={busy || !exhibitRequest} onPress={() => exhibitRequest && void town.submit(exhibitRequest).catch(() => undefined)} />
+      ? <ActionButton label="출품" disabled={!town.canSubmit || busy || !exhibitRequest} onPress={() => exhibitRequest && void town.submit(exhibitRequest).catch(() => undefined)} />
       : null;
   return <View style={styles.container}>
         {exhibit ? <ActionButton label="옥션 목록으로" disabled={busy} onPress={() => { setExhibit(null); resetExhibitDraft(); town.resetOutcome(); }} /> : null}
@@ -80,10 +80,10 @@ function AuctionTradePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
       onSelectionChange={(ids) => { if (!busy) (exhibit ? setExhibitSelected : setSelected)(ids); }}
       header={<View style={styles.section}>
         <TextInput accessibilityLabel="옥션 검색어" editable={!busy && !exhibit} value={query} onChangeText={setQuery} placeholder="품목명 검색" placeholderTextColor={theme.colors.textMuted} style={styles.input} />
-        {!exhibit && data.capabilities.exhibitEntryActionId ? <ActionButton label="출품 준비" disabled={busy} onPress={() => { resetExhibitDraft(); town.resetOutcome(); void town.submit({ kind: 'OPEN_EXHIBIT', body: { actionId: data.capabilities.exhibitEntryActionId! } }).then(() => town.resetOutcome()).catch(() => undefined); }} /> : null}
+        {!exhibit && data.capabilities.exhibitEntryActionId ? <ActionButton label="출품 준비" disabled={!town.canSubmit || busy} onPress={() => { resetExhibitDraft(); town.resetOutcome(); void town.submit({ kind: 'OPEN_EXHIBIT', body: { actionId: data.capabilities.exhibitEntryActionId! } }).then(() => town.resetOutcome()).catch(() => undefined); }} /> : null}
         {!exhibit && (data.capabilities.claimItemActionId || data.capabilities.claimFundsActionId) ? <View style={styles.claimActions}>
-          {data.capabilities.claimItemActionId ? <ActionButton grouped label="낙찰 아이템 수령" disabled={busy} onPress={() => void town.submit({ kind: 'CLAIM_ITEM', body: { actionId: data.capabilities.claimItemActionId! } }).catch(() => undefined)} /> : null}
-          {data.capabilities.claimFundsActionId ? <ActionButton grouped label="Funds 수령" disabled={busy} onPress={() => void town.submit({ kind: 'CLAIM_FUNDS', body: { actionId: data.capabilities.claimFundsActionId! } }).catch(() => undefined)} /> : null}
+          {data.capabilities.claimItemActionId ? <ActionButton grouped label="낙찰 아이템 수령" disabled={!town.canSubmit || busy} onPress={() => void town.submit({ kind: 'CLAIM_ITEM', body: { actionId: data.capabilities.claimItemActionId! } }).catch(() => undefined)} /> : null}
+          {data.capabilities.claimFundsActionId ? <ActionButton grouped label="Funds 수령" disabled={!town.canSubmit || busy} onPress={() => void town.submit({ kind: 'CLAIM_FUNDS', body: { actionId: data.capabilities.claimFundsActionId! } }).catch(() => undefined)} /> : null}
         </View> : null}
       </View>}
       footer={<View style={styles.section}>

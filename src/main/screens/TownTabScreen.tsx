@@ -20,6 +20,7 @@ import {
 } from '../domain/townMenus';
 import { TownCategoryChips } from '../features/town/components/TownCategoryChips';
 import { TownDetailShell } from '../features/town/components/TownDetailShell';
+import { TownReadPreview } from '../features/town/components/TownReadPreview';
 import { TownMenuGrid } from '../features/town/components/TownMenuGrid';
 import { FishingPanel } from '../features/town/panels/FishingPanel';
 import { ShopPanel } from '../features/town/panels/ShopPanel';
@@ -167,9 +168,13 @@ export function TownTabScreen({ onCaptureListScroll, onRestoreListScroll, townAp
       assertNever(route)
     );
     const panelKey = `${selectedMenu.id}:${townApiIdentity}`;
+    const previewPath = route.panel === 'pantheon' ? '/api/town/pantheon?view=catalog' : route.apiPath;
+    const content = townApi != null && !(route.panel === 'shop' && ['general', 'sundries', 'dark'].includes(route.mode))
+      ? <TownReadPreview api={townApi} path={previewPath} virtualized={route.virtualized}>{panel}</TownReadPreview>
+      : panel;
     return (
       <TownDetailShell key={panelKey} menu={selectedMenu} onBack={closeDetail}>
-        {renderContent?.(panel, route.virtualized) ?? panel}
+        {renderContent?.(content, route.virtualized) ?? content}
       </TownDetailShell>
     );
   }

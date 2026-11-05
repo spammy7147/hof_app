@@ -25,6 +25,10 @@ export class TownMutationBusyError extends Error {
   }
 }
 
+export class TownReadNotVerifiedError extends Error {
+  constructor() { super('최신 정보를 확인한 뒤 실행해 주세요.'); this.name = 'TownReadNotVerifiedError'; }
+}
+
 export class TownRequestCancelledError extends Error {
   constructor() {
     super('화면을 벗어나 마을 요청이 취소되었습니다.');
@@ -63,6 +67,8 @@ export function useTownFeature<TData, TRequest = never>({
   const lifecycleRef = useRef(0);
   const loadSequenceRef = useRef(0);
   const latestLoadPendingRef = useRef(false);
+  const readVerifiedRef = useRef(false);
+  const readAttemptedRef = useRef(false);
   const mutationSequenceRef = useRef(0);
   const mutationBusyRef = useRef(false);
   const featureKeyRef = useRef(featureKey);
@@ -85,6 +91,8 @@ export function useTownFeature<TData, TRequest = never>({
     const lifecycle = lifecycleRef.current;
     const loadSequence = ++loadSequenceRef.current;
     latestLoadPendingRef.current = true;
+    readAttemptedRef.current = true;
+    readVerifiedRef.current = false;
     if (!mutationBusyRef.current) setStatus('loading');
     errorOwnerRef.current = featureGeneration;
     setError(null);
@@ -102,6 +110,7 @@ export function useTownFeature<TData, TRequest = never>({
     ).then((nextData) => {
       if (isCancelled()) throw new TownRequestCancelledError();
       latestLoadPendingRef.current = false;
+      readVerifiedRef.current = true;
       dataOwnerRef.current = featureGeneration;
       setData(nextData);
       if (!mutationBusyRef.current) setStatus('ready');
@@ -123,6 +132,7 @@ export function useTownFeature<TData, TRequest = never>({
       return Promise.reject(new TownRequestCancelledError());
     }
     if (mutationBusyRef.current) return Promise.reject(new TownMutationBusyError());
+    if (readAttemptedRef.current && !readVerifiedRef.current) return Promise.reject(new TownReadNotVerifiedError());
 
     const lifecycle = lifecycleRef.current;
     const mutationSequence = ++mutationSequenceRef.current;
@@ -182,6 +192,8 @@ export function useTownFeature<TData, TRequest = never>({
 
   useEffect(() => {
     const lifecycle = ++lifecycleRef.current;
+    readVerifiedRef.current = false;
+    readAttemptedRef.current = false;
     latestLoadPendingRef.current = false;
     mutationBusyRef.current = false;
     if (autoLoad) void reload().catch(() => undefined);
@@ -197,6 +209,7 @@ export function useTownFeature<TData, TRequest = never>({
 
   return {
     status,
+    canSubmit: status !== 'submitting' && !latestLoadPendingRef.current && readVerifiedRef.current,
     data: dataOwnerRef.current === featureGeneration ? data : null,
     result: resultOwnerRef.current === featureGeneration ? result : null,
     error: errorOwnerRef.current === featureGeneration ? error : null,

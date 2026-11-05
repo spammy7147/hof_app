@@ -130,7 +130,7 @@ function SellPanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
       <Text style={styles.total}>예상 판매액 ${total.toLocaleString()}</Text>
       {quantityInvalid ? <Text style={styles.error}>선택한 품목의 수량을 확인하세요.</Text> : null}
       {totalInvalid ? <Text style={styles.error}>총액이 안전하게 계산할 수 있는 범위를 넘었습니다.</Text> : null}
-      <ActionButton disabled={!selected.length || quantityInvalid || totalInvalid || town.status === 'submitting'} label="선택 품목 판매" onPress={() => void town.submit({ items: selected.map((id) => ({ candidateId: id, quantity: quantities[id] ?? 1 })) }).catch(() => undefined)} />
+      <ActionButton disabled={!selected.length || quantityInvalid || totalInvalid || !town.canSubmit} label="선택 품목 판매" onPress={() => void town.submit({ items: selected.map((id) => ({ candidateId: id, quantity: quantities[id] ?? 1 })) }).catch(() => undefined)} />
     </View>
   </View>;
 }
@@ -164,7 +164,7 @@ function CombinePanel({ api, resolveCaptcha }: Omit<Props, 'mode'>) {
     </View>
     <View style={styles.section}>
       <QuantityInput label="조합 결과 수량" value={quantity} max={maxQuantity} onChange={setQuantity} onValidityChange={setQuantityValid} />
-      <ActionButton disabled={!ready || !quantityValid || !quantityWithinLimit || town.status === 'submitting'} label="조합" onPress={() => ready && void town.submit({ primaryCandidateId: selectedOptions[0]!.id, secondaryCandidateIds: selectedOptions.slice(1).map((item) => item!.id) as [string, string, string], quantity }).catch(() => undefined)} />
+      <ActionButton disabled={!ready || !quantityValid || !quantityWithinLimit || !town.canSubmit} label="조합" onPress={() => ready && void town.submit({ primaryCandidateId: selectedOptions[0]!.id, secondaryCandidateIds: selectedOptions.slice(1).map((item) => item!.id) as [string, string, string], quantity }).catch(() => undefined)} />
       {data.result ? <TownActionResult result={data.result} /> : null}
     </View>
     {activeSlot ? <SearchableCombineSelect key={activeSlot.id} group={activeSlot} selectedId={selections[activeSlot.id]} onClose={() => setActiveSlotId(null)} onSelect={(candidateId) => { setSelections((current) => ({ ...current, [activeSlot.id]: candidateId })); setActiveSlotId(null); }} /> : null}

@@ -203,12 +203,13 @@ export function BattleMapAutomationEditor({
     const categoriesSettled = battleCategoriesError != null
       || areBattleCategoriesLoaded
       || battleCategories.length > 0;
-    const mapsSettled = eligibleCategories.every(({ id }) => {
+    const requiredCategoryIds = new Set(entry.battleMaps.map(({ categoryId }) => categoryId));
+    const mapsSettled = eligibleCategories.filter(({ id }) => requiredCategoryIds.has(id)).every(({ id }) => {
       const state = mapStates[id];
       return state != null && !state.loading;
     });
     if (categoriesSettled && (battleCategoriesError != null || mapsSettled)) setDraftReady(true);
-  }, [areBattleCategoriesLoaded, battleCategories.length, battleCategoriesError, draftReady, eligibleCategories, mapStates]);
+  }, [areBattleCategoriesLoaded, battleCategories.length, battleCategoriesError, draftReady, eligibleCategories, mapStates, entry.battleMaps]);
 
   useEffect(() => {
     if (catalog.length === 0) return;
