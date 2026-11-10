@@ -42,8 +42,8 @@ export function BattleLogDetailScreen({ title, url, html, notice, archiveOnly, o
 const styles = StyleSheet.create({
   screen: { flex: 1, gap: theme.spacing.md, padding: theme.spacing.lg },
   header: { minHeight: 40, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md },
-  compactButton: { minHeight: 44, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
-  title: { flex: 1, color: theme.colors.text, fontSize: 17, fontWeight: '900' },
+  compactButton: { minHeight: theme.control.touch, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm, minWidth: theme.control.touch, },
+  title: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.section, fontWeight: '900' },
   panel: {
     flex: 1,
     alignItems: 'center',
@@ -55,5 +55,5 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
     padding: theme.spacing.lg,
   },
-  message: { color: theme.colors.textMuted, fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  message: { color: theme.colors.textMuted, fontSize: theme.fontSize.body, fontWeight: '700', textAlign: 'center' },
 });

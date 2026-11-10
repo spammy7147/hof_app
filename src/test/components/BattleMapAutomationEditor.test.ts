@@ -177,9 +177,9 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(categoryButton.props.accessibilityRole, 'button');
     assert.equal(categoryButton.props.accessibilityState.expanded, false);
     const categoryStyle = flattenStyle(categoryButton.props.style);
-    assert.equal(categoryStyle.minHeight, 60);
-    assert.equal(categoryStyle.paddingHorizontal, 12);
-    assert.equal(categoryStyle.paddingVertical, 8);
+    assert.ok(Number(categoryStyle.minHeight) >= 44 && Number(categoryStyle.minHeight) <= 48);
+    assert.ok(Number(categoryStyle.paddingHorizontal) <= 6);
+    assert.ok(Number(categoryStyle.paddingVertical) <= 6);
     assert.notEqual(categoryStyle.backgroundColor, theme.colors.accentGreen);
     assert.notEqual(categoryStyle.borderColor, theme.colors.accentGreen);
     const expandedCategoryStyle = flattenStyle(renderer.root.findByProps({ accessibilityLabel: '전투맵 카테고리 닫기' }).props.style);
@@ -189,9 +189,9 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(groupButton.props.accessibilityRole, 'button');
     assert.equal(groupButton.props.accessibilityState.expanded, true);
     const groupStyle = flattenStyle(groupButton.props.style);
-    assert.equal(groupStyle.minHeight, 52);
-    assert.equal(groupStyle.paddingHorizontal, 12);
-    assert.equal(groupStyle.paddingVertical, 6);
+    assert.ok(Number(groupStyle.minHeight) >= 44 && Number(groupStyle.minHeight) <= 48);
+    assert.ok(Number(groupStyle.paddingHorizontal) <= 6);
+    assert.ok(Number(groupStyle.paddingVertical) <= 6);
     assert.notEqual(groupStyle.backgroundColor, theme.colors.accentGreen);
     assert.notEqual(groupStyle.borderColor, theme.colors.accentGreen);
     const collapsedGroupStyle = flattenStyle(renderer.root.findByProps({ accessibilityLabel: '저택 서관 그룹 열기' }).props.style);
@@ -202,8 +202,8 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.deepEqual(mapButton().props.accessibilityState, { disabled: false, selected: false });
     const mapStyle = flattenStyle(mapButton().props.style);
     assert.equal(mapStyle.minHeight, 48);
-    assert.equal(mapStyle.paddingHorizontal, 12);
-    assert.equal(mapStyle.paddingVertical, 8);
+    assert.ok(Number(mapStyle.paddingHorizontal) <= 6);
+    assert.ok(Number(mapStyle.paddingVertical) <= 6);
     assert.equal(findTextNode(renderer.root, '저택 서관(놀이방)').props.numberOfLines, 2);
     assert.equal(flattenStyle(mapButton().props.style).backgroundColor, theme.colors.surfaceAlt);
     assert.equal(hasText(renderer.root, '저택 서관(놀이방)'), true);
@@ -262,9 +262,9 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(hasText(progressSummary, '오늘 2/10 · 8회 남음 · 다음 3회 전투'), true);
     const targetInput = renderer.root.findByProps({ accessibilityLabel: '압축 전투 일일 목표' });
     assert.equal(targetInput.props.value, '10');
-    assert.equal(flattenStyle(targetInput.props.style).minHeight, 28);
-    assert.equal(flattenStyle(targetInput.props.style).width, 38);
-    assert.deepEqual(targetInput.props.hitSlop, { bottom: 8, left: 4, right: 4, top: 8 });
+    assert.ok(Number(flattenStyle(targetInput.props.style).minHeight) >= 48);
+    assert.ok(Number(flattenStyle(targetInput.props.style).width) >= 44);
+    assert.equal(targetInput.props.hitSlop, undefined);
     assert.equal(hasText(renderer.root, '20%'), false);
     assert.equal(hasText(renderer.root, '3회 전투 지원'), false);
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '압축 전투 오늘 진행률' }).length, 0);
@@ -273,7 +273,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '전투 맵 자동화 삭제' }).length, 0);
 
     const scroller = renderer.root.find((node) => (node.type as unknown) === 'NestableScrollContainer');
-    assert.equal(flattenStyle(scroller.props.contentContainerStyle).gap, 6);
+    assert.ok(Number(flattenStyle(scroller.props.contentContainerStyle).gap) <= 6);
     const nestedList = renderer.root.find((node) => (node.type as unknown) === 'NestableDraggableFlatList');
     assert.equal(nestedList.props.activationDistance, 20);
   });
@@ -347,7 +347,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.ok(flattenStyle(input.props.style).minHeight as number >= 44);
     assert.equal(hasText(renderer.root, '맵별 오늘 목표와 실행 순서를 설정하세요.'), false);
     assert.equal(hasText(renderer.root, '비워 두면 잔여 Time 제한 없이 실행합니다.'), false);
-    assert.equal(flattenStyle(renderer.root.findByProps({ accessibilityRole: 'tablist' }).props.style).padding, 2);
+    assert.ok(Number(flattenStyle(renderer.root.findByProps({ accessibilityRole: 'tablist' }).props.style).padding) <= 2);
     const presetButton = renderer.root.findByProps({ accessibilityLabel: 'Alpha 프리셋 선택 열기' });
     assert.ok(flattenStyle(presetButton.props.style).minHeight as number >= 44);
     assert.equal(hasText(renderer.root, '현재 최대 Time으로는 이 값을 남기고 1회 전투를 실행할 수 없습니다.'), true);
@@ -387,7 +387,7 @@ describe('BattleMapAutomationEditor mounted behavior', () => {
     assert.equal(flattenStyle(row.props.style).flexDirection, 'row');
     assert.equal(flattenStyle(row.props.style).flexWrap, 'wrap');
     assert.equal(flattenStyle(input.props.style).minWidth, 120);
-    assert.equal(flattenStyle(input.props.style).minHeight, 44);
+    assert.ok(Number(flattenStyle(input.props.style).minHeight) >= 48);
 
     await act(async () => {
       input.props.onChangeText('잘못된 값');

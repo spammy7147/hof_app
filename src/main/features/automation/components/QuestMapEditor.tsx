@@ -99,7 +99,7 @@ export function QuestMapEditor({
         accessibilityRole="button"
         accessibilityState={{ disabled }}
         disabled={disabled}
-        hitSlop={3}
+
         onPress={openPicker}
         style={styles.pickerButton}
       >
@@ -124,7 +124,7 @@ export function QuestMapEditor({
 
 const styles = StyleSheet.create({
   editor: { gap: theme.spacing.xs },
-  problem: { color: theme.colors.accentAmber, fontSize: 11, fontWeight: '800' },
-  pickerButton: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderStyle: 'dashed', borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, minHeight: 36, justifyContent: 'center' },
-  pickerButtonText: { color: theme.colors.accentGreen, fontSize: 12, fontWeight: '800' },
+  problem: { color: theme.colors.accentAmber, fontSize: theme.fontSize.caption, fontWeight: '800' },
+  pickerButton: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderStyle: 'dashed', borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, minHeight: theme.control.touch, justifyContent: 'center', minWidth: theme.control.touch, },
+  pickerButtonText: { color: theme.colors.accentGreen, fontSize: theme.fontSize.caption, fontWeight: '800' },
 });

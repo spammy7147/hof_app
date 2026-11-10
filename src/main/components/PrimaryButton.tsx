@@ -49,12 +49,13 @@ export function PrimaryButton({
 
 const styles = StyleSheet.create({
   button: {
-    minHeight: 44,
+    minHeight: theme.control.primary,
     borderRadius: theme.radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: theme.spacing.lg,
-    paddingVertical: theme.spacing.md,
+    paddingVertical: theme.spacing.lg,
+    minWidth: theme.control.touch,
   },
   primary: {
     backgroundColor: theme.colors.accentGreen,
@@ -75,7 +76,7 @@ const styles = StyleSheet.create({
   },
   label: {
     color: theme.colors.buttonText,
-    fontSize: 15,
+    fontSize: theme.fontSize.body,
     fontWeight: '700',
   },
   secondaryLabel: {

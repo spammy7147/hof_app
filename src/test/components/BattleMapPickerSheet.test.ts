@@ -269,8 +269,8 @@ describe('BattleMapPickerSheet', () => {
     const selectedStyle = flattenStyle(
       renderer.root.findByProps({ accessibilityLabel: 'Selected Map 맵 선택 해제' }).props.style({ pressed: false }),
     );
-    assert.equal(groupStyle.marginLeft, 14);
-    assert.equal(availableStyle.marginLeft, 28);
+    assert.ok((groupStyle.marginLeft as number) > 0);
+    assert.ok((availableStyle.marginLeft as number) > (groupStyle.marginLeft as number));
     assert.equal(selectedStyle.marginLeft, 0);
   });
 

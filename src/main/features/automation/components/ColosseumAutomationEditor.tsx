@@ -1,6 +1,7 @@
+import { CompactSwitch as Switch } from '../../../components/CompactSwitch';
 import { useAutomationEditorBack } from '../useAutomationEditorBack';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { toUserFacingErrorMessage } from '../../../domain/userFacingErrors';
 import { FixedBottomAction } from '../../../components/FixedBottomAction';
 import { theme } from '../../../styles/theme';
@@ -59,8 +60,8 @@ export function ColosseumAutomationEditor({ entry, saving, mutationMessage, load
 }
 const styles = StyleSheet.create({
   container: { flex: 1, minHeight: 0 }, header: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, padding: theme.spacing.md },
-  title: { color: theme.colors.text, fontSize: 18, fontWeight: '800', flexShrink: 1 }, content: { gap: theme.spacing.md, padding: theme.spacing.md },
-  text: { color: theme.colors.textMuted, lineHeight: 22 }, link: { color: theme.colors.accentGreen, paddingVertical: 12 }, error: { color: theme.colors.danger, lineHeight: 22 },
-  button: { backgroundColor: theme.colors.accentGreen, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.md },
-  buttonText: { color: theme.colors.background, fontWeight: '800' }, disabled: { opacity: 0.5 },
+  title: { color: theme.colors.text, fontSize: theme.fontSize.section, fontWeight: '800', flexShrink: 1 }, content: { gap: theme.spacing.md, padding: theme.spacing.md },
+  text: { fontSize: theme.fontSize.body, color: theme.colors.textMuted, lineHeight: theme.lineHeight.section }, link: { fontSize: theme.fontSize.body, color: theme.colors.accentGreen, paddingVertical: theme.spacing.md }, error: { fontSize: theme.fontSize.body, color: theme.colors.danger, lineHeight: theme.lineHeight.section },
+  button: { backgroundColor: theme.colors.accentGreen, minHeight: theme.control.input, alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.md, minWidth: theme.control.touch, },
+  buttonText: { fontSize: theme.fontSize.body, color: theme.colors.background, fontWeight: '800' }, disabled: { opacity: 0.5 },
 });

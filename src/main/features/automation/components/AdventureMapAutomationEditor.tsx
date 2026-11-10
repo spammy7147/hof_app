@@ -1,13 +1,6 @@
+import { CompactSwitch as Switch } from '../../../components/CompactSwitch';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppAlert as Alert } from '../../../platform/AppAlert';
 import { ArrowLeft, ChevronRight, Save } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
@@ -512,27 +505,27 @@ function buildAdventureCardSummary(setting: AdventureMapAutomationDraft['maps'][
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, gap: 2, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm },
+  screen: { flex: 1, gap: theme.spacing.hairline, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm },
   scroller: { flex: 1 },
   header: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
   copy: { flex: 1 },
-  title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' },
-  refreshBand: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md, justifyContent: 'center', paddingHorizontal: theme.spacing.md, paddingVertical: 2 },
-  refreshText: { color: theme.colors.accentGreen, fontSize: 12, fontWeight: '900', lineHeight: 18 },
-  content: { gap: 6, paddingBottom: theme.spacing.lg },
-  sectionTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '900', marginTop: theme.spacing.xs },
-  search: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md },
-  mapName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
-  compactSummary: { color: theme.colors.textMuted, fontSize: 10, lineHeight: 14 },
-  muted: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
-  problem: { color: theme.colors.accentAmber, fontSize: 11, lineHeight: 16 },
-  iconButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
-  choice: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: 44, paddingHorizontal: theme.spacing.sm },
-  choiceLabel: { color: theme.colors.textMuted, fontSize: 10, fontWeight: '700' },
-  choiceText: { color: theme.colors.text, flex: 1, fontSize: 12, fontWeight: '800' },
+  title: { color: theme.colors.text, fontSize: theme.fontSize.section, fontWeight: '900' },
+  refreshBand: { backgroundColor: theme.colors.surfaceAlt, borderRadius: theme.radius.md, justifyContent: 'center', paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.hairline },
+  refreshText: { color: theme.colors.accentGreen, fontSize: theme.fontSize.caption, fontWeight: '900', lineHeight: theme.lineHeight.caption },
+  content: { gap: theme.spacing.xs, paddingBottom: theme.spacing.lg },
+  sectionTitle: { color: theme.colors.text, fontSize: theme.fontSize.body, fontWeight: '900', marginTop: theme.spacing.xs },
+  search: { fontSize: theme.fontSize.body, backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: theme.control.input, paddingHorizontal: theme.spacing.md, minWidth: theme.control.touch, },
+  mapName: { color: theme.colors.text, fontSize: theme.fontSize.body, fontWeight: '800' },
+  compactSummary: { color: theme.colors.textMuted, fontSize: theme.fontSize.small, lineHeight: theme.lineHeight.compact },
+  muted: { color: theme.colors.textMuted, fontSize: theme.fontSize.caption, lineHeight: theme.lineHeight.caption },
+  problem: { color: theme.colors.accentAmber, fontSize: theme.fontSize.caption, lineHeight: theme.lineHeight.caption },
+  iconButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44, minHeight: theme.control.touch, minWidth: theme.control.touch, },
+  choice: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: theme.control.touch, paddingHorizontal: theme.spacing.sm, minWidth: theme.control.touch, },
+  choiceLabel: { color: theme.colors.textMuted, fontSize: theme.fontSize.small, fontWeight: '700' },
+  choiceText: { color: theme.colors.text, flex: 1, fontSize: theme.fontSize.caption, fontWeight: '800' },
   warning: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between' },
   footer: { flexDirection: 'row', gap: theme.spacing.sm },
-  saveButton: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, flex: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: 48, justifyContent: 'center' },
-  saveText: { color: theme.colors.buttonText, fontWeight: '900' },
+  saveButton: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, flex: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: theme.control.input, justifyContent: 'center', minWidth: theme.control.touch, },
+  saveText: { fontSize: theme.fontSize.body, color: theme.colors.buttonText, fontWeight: '900' },
   disabled: { opacity: 0.45 },
 });

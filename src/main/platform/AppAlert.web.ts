@@ -14,8 +14,8 @@ export const AppAlert = {
     dialog.setAttribute('aria-labelledby', `${id}-title`);
     Object.assign(dialog.style, {
       background: theme.colors.surface, color: theme.colors.text,
-      border: `1px solid ${theme.colors.border}`, borderRadius: '12px',
-      padding: '24px', width: 'min(360px, calc(100vw - 32px))',
+      border: `1px solid ${theme.colors.border}`, borderRadius: `${theme.radius.md}px`,
+      padding: `${theme.layout.cardPadding}px`, width: 'min(360px, calc(100vw - 12px))',
       boxSizing: 'border-box', maxHeight: 'calc(100dvh - 32px)', overflow: 'auto',
       fontFamily: 'system-ui, sans-serif', boxShadow: '0 16px 48px #0008',
     });
@@ -25,18 +25,18 @@ export const AppAlert = {
     const heading = document.createElement('h2');
     heading.id = `${id}-title`;
     heading.textContent = title;
-    Object.assign(heading.style, { margin: '0', fontSize: '18px', lineHeight: '1.5' });
+    Object.assign(heading.style, { margin: '0', fontSize: `${theme.fontSize.section}px`, lineHeight: '1.5' });
     dialog.append(style, heading);
     if (message) {
       const description = document.createElement('p');
       description.id = `${id}-message`;
       description.textContent = message;
-      Object.assign(description.style, { margin: '12px 0 0', fontSize: '14px', lineHeight: '1.6', whiteSpace: 'pre-wrap' });
+      Object.assign(description.style, { margin: `${theme.spacing.md}px 0 0`, fontSize: `${theme.fontSize.body}px`, lineHeight: '1.6', whiteSpace: 'pre-wrap' });
       dialog.setAttribute('aria-describedby', description.id);
       dialog.append(description);
     }
     const actions = document.createElement('div');
-    Object.assign(actions.style, { display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' });
+    Object.assign(actions.style, { display: 'flex', flexWrap: 'wrap', justifyContent: 'flex-end', gap: `${theme.spacing.md}px`, marginTop: `${theme.spacing.lg}px` });
     let settled = false;
     const finish = (choice?: AlertButton, dismissed = false) => {
       if (settled) return;
@@ -56,8 +56,8 @@ export const AppAlert = {
       button.textContent = choice.text ?? '확인';
       button.autofocus = choice.style === 'cancel' || choice.isPreferred === true;
       Object.assign(button.style, {
-        border: `1px solid ${theme.colors.borderStrong}`, borderRadius: '8px',
-        minHeight: '44px', padding: '10px 16px', font: 'inherit', fontSize: '14px',
+        border: `1px solid ${theme.colors.borderStrong}`, borderRadius: `${theme.radius.md}px`,
+        minHeight: `${theme.control.touch}px`, padding: `${theme.spacing.md}px ${theme.spacing.lg}px`, font: 'inherit', fontSize: `${theme.fontSize.body}px`,
         cursor: 'pointer', background: theme.colors.surfaceAlt,
         color: choice.style === 'destructive' ? theme.colors.danger : theme.colors.text,
       });

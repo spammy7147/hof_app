@@ -750,8 +750,8 @@ describe('QuestAutomationEditor mounted behavior', () => {
     const trigger = renderer.root.findByProps({ accessibilityLabel: 'Combat 1번째 맵 프리셋 선택' });
     assert.equal(trigger.props.accessibilityRole, 'button');
     assert.deepEqual(trigger.props.accessibilityValue, { text: '대표 프리셋 없음' });
-    assert.equal(trigger.props.style.minHeight, 34);
-    assert.equal(trigger.props.hitSlop, 5);
+    assert.ok(trigger.props.style.minHeight >= 44);
+    assert.equal(trigger.props.hitSlop, undefined);
     assert.equal(findHosts(renderer.root, 'DraggableFlatList').length, 0, '한 개뿐인 맵에는 불필요한 순서 드래그 제스처를 설치하지 않는다');
     await act(async () => { trigger.props.onPress(); });
     assert.equal(hasText(renderer.root.findByProps({ accessibilityLabel: '파티 프리셋 선택기' }), 'Alpha'), true);

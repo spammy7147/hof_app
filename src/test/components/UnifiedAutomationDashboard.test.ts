@@ -74,7 +74,7 @@ describe('UnifiedAutomationDashboard', () => {
     for (const control of controls) {
       assert.ok(control);
       assert.equal(styleOf(control).flex, 1);
-      assert.equal(styleOf(control).minWidth, 0);
+      assert.ok((styleOf(control).minWidth as number) >= 44);
     }
   });
 

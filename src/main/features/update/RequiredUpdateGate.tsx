@@ -245,19 +245,20 @@ const styles = StyleSheet.create({
   },
   title: {
     color: theme.colors.text,
-    fontSize: 22,
+    fontSize: theme.fontSize.title,
     fontWeight: '800',
     marginBottom: theme.spacing.md,
     textAlign: 'center',
   },
   description: {
     color: theme.colors.textMuted,
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: theme.fontSize.body,
+    lineHeight: theme.lineHeight.section,
     marginBottom: theme.spacing.xl,
     textAlign: 'center',
   },
   button: {
     marginTop: theme.spacing.sm,
+    minWidth: theme.control.touch,
   },
 });

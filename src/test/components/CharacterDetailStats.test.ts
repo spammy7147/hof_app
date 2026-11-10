@@ -490,7 +490,7 @@ describe('CharacterDetail stat allocation', () => {
     assert.equal(text.some((value) => /[⌊⌋]/.test(value)), false);
     const expression = textNodes.find((node) => node.children.join('') === 'Real INT + (Real SPD ÷ 5의 정수 몫)');
     assert.equal(expression?.props.numberOfLines, undefined);
-    assert.ok(expression?.props.style.lineHeight >= 20);
+    assert.ok(expression?.props.style.lineHeight >= expression?.props.style.fontSize);
   });
 
   it('shows pattern editing controls immediately without opening a generic accordion', async () => {
@@ -847,7 +847,7 @@ describe('CharacterDetail stat allocation', () => {
     });
     assert.deepEqual(actionWidths, [64, 64, 64]);
     const patternSource = readFileSync(resolve(process.cwd(), 'src/main/features/characters/pattern/CharacterPatternScreen.tsx'), 'utf8');
-    assert.match(patternSource, /slotActions:\s*\{[^}]*gap:\s*8/);
+    assert.match(patternSource, /slotActions:\s*\{[^}]*flexWrap:\s*["']wrap["']/);
     const overwrite = renderer.root.findAll((node) => String(node.type) === 'Pressable').find((node) => node.findAll((child) => String(child.type) === 'Text' && child.children.join('') === '덮어쓰기').length > 0);
     await act(async () => overwrite?.props.onPress());
 

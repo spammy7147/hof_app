@@ -153,16 +153,16 @@ const FolderChoiceRow = memo(function FolderChoiceRow({
 
 const styles = StyleSheet.create({
   root: { flex: 1, gap: theme.spacing.sm, backgroundColor: theme.colors.surface, padding: theme.spacing.md },
-  title: { color: theme.colors.text, fontSize: 18, fontWeight: '900' },
+  title: { color: theme.colors.text, fontSize: theme.fontSize.section, fontWeight: '900' },
   list: { flex: 1 },
-  choice: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, borderRadius: theme.radius.sm, borderCurve: 'continuous', paddingHorizontal: theme.spacing.sm },
+  choice: { minHeight: theme.control.touch, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, borderRadius: theme.radius.sm, borderCurve: 'continuous', paddingHorizontal: theme.spacing.sm, minWidth: theme.control.touch, },
   selectedChoice: { backgroundColor: theme.colors.surfaceAlt },
-  choiceText: { flex: 1, color: theme.colors.text, fontSize: 14, fontWeight: '800' },
+  choiceText: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.body, fontWeight: '800' },
   disabled: { opacity: 0.4 },
   disabledText: { color: theme.colors.textMuted },
   actions: { flexDirection: 'row', gap: theme.spacing.sm },
-  actionButton: { minHeight: 44, flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.spacing.xs, borderRadius: theme.radius.md, borderCurve: 'continuous', borderWidth: 1, borderColor: theme.colors.border },
+  actionButton: { minHeight: theme.control.touch, flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.spacing.xs, borderRadius: theme.radius.md, borderCurve: 'continuous', borderWidth: 1, borderColor: theme.colors.border, minWidth: theme.control.touch, },
   confirmButton: { borderColor: theme.colors.accentGreen, backgroundColor: theme.colors.accentGreen },
-  cancelText: { color: theme.colors.textMuted, fontWeight: '900' },
-  confirmText: { color: theme.colors.background, fontWeight: '900' },
+  cancelText: { fontSize: theme.fontSize.body, color: theme.colors.textMuted, fontWeight: '900' },
+  confirmText: { fontSize: theme.fontSize.body, color: theme.colors.background, fontWeight: '900' },
 });

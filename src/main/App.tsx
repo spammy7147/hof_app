@@ -491,7 +491,7 @@ const styles = StyleSheet.create({
   },
   bootText: {
     color: theme.colors.textMuted,
-    fontSize: 15,
+    fontSize: theme.fontSize.body,
   },
   manualActionOverlay: {
     ...StyleSheet.absoluteFill,
@@ -512,7 +512,7 @@ const styles = StyleSheet.create({
   },
   manualActionText: {
     color: theme.colors.text,
-    fontSize: 15,
+    fontSize: theme.fontSize.body,
     fontWeight: "700",
   },
   bootstrapRecovery: {
@@ -530,7 +530,7 @@ const styles = StyleSheet.create({
   },
   bootstrapRecoveryTitle: {
     color: theme.colors.text,
-    fontSize: 13,
+    fontSize: theme.fontSize.body,
     fontWeight: "800",
   },
   bootstrapRecoveryRow: {
@@ -542,11 +542,11 @@ const styles = StyleSheet.create({
   bootstrapRecoveryMessage: {
     color: theme.colors.textMuted,
     flex: 1,
-    fontSize: 12,
+    fontSize: theme.fontSize.caption,
   },
   bootstrapRecoveryAction: {
     color: theme.colors.accentGreen,
-    fontSize: 12,
+    fontSize: theme.fontSize.caption,
     fontWeight: "800",
   },
   sessionRecoveryOverlay: {
@@ -569,13 +569,13 @@ const styles = StyleSheet.create({
   },
   sessionRecoveryTitle: {
     color: theme.colors.text,
-    fontSize: 17,
+    fontSize: theme.fontSize.section,
     fontWeight: "800",
   },
   sessionRecoveryMessage: {
     color: theme.colors.textMuted,
-    fontSize: 14,
-    lineHeight: 21,
+    fontSize: theme.fontSize.body,
+    lineHeight: theme.lineHeight.body,
     textAlign: "center",
   },
   sessionRecoveryButton: {
@@ -585,10 +585,12 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.sm,
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: theme.spacing.sm,
+    minHeight: theme.control.touch,
+    minWidth: theme.control.touch,
   },
   sessionRecoveryButtonText: {
     color: theme.colors.accentGreen,
-    fontSize: 14,
+    fontSize: theme.fontSize.body,
     fontWeight: "800",
   },
 });

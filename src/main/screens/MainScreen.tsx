@@ -497,9 +497,9 @@ const styles = StyleSheet.create({
   },
   tabPanel: {
     flex: 1,
-    gap: 10,
-    paddingHorizontal: theme.spacing.md,
-    paddingTop: theme.spacing.lg,
+    gap: theme.layout.sectionGap,
+    paddingHorizontal: theme.layout.screenPadding,
+    paddingTop: theme.spacing.sm,
   },
   detailPanel: {
     gap: 0,
@@ -517,8 +517,8 @@ const styles = StyleSheet.create({
     borderLeftColor: theme.colors.accentAmber,
     backgroundColor: theme.colors.surface,
     padding: theme.spacing.md,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: theme.fontSize.body,
+    lineHeight: theme.lineHeight.body,
   },
   passWarning: {
     alignItems: "center",
@@ -532,17 +532,19 @@ const styles = StyleSheet.create({
     marginHorizontal: theme.spacing.lg,
     marginTop: theme.spacing.md,
     padding: theme.spacing.md,
+    minHeight: theme.control.touch,
+    minWidth: theme.control.touch,
   },
   passWarningText: {
     color: theme.colors.text,
     flex: 1,
-    fontSize: 13,
+    fontSize: theme.fontSize.body,
     fontWeight: "700",
-    lineHeight: 18,
+    lineHeight: theme.lineHeight.caption,
   },
   passWarningAction: {
     color: theme.colors.accentAmber,
-    fontSize: 13,
+    fontSize: theme.fontSize.body,
     fontWeight: "900",
   },
   authPanel: {
@@ -555,8 +557,8 @@ const styles = StyleSheet.create({
   },
   authText: {
     color: theme.colors.textMuted,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: theme.fontSize.body,
+    lineHeight: theme.lineHeight.body,
   },
   sectionHeader: {
     minHeight: 32,
@@ -574,13 +576,13 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: theme.colors.text,
-    fontSize: 26,
+    fontSize: theme.fontSize.title,
     fontWeight: "900",
-    lineHeight: 30,
+    lineHeight: theme.lineHeight.title,
   },
   sectionMeta: {
     color: theme.colors.accentGreen,
-    fontSize: 15,
+    fontSize: theme.fontSize.body,
     fontWeight: "900",
   },
   characterSubTabs: {
@@ -593,11 +595,12 @@ const styles = StyleSheet.create({
     padding: theme.spacing.xs,
   },
   characterSubTabButton: {
-    minHeight: 34,
+    minHeight: theme.control.touch,
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
     borderRadius: theme.radius.sm,
+    minWidth: theme.control.touch,
   },
   activeCharacterSubTabButton: {
     borderWidth: 1,
@@ -609,7 +612,7 @@ const styles = StyleSheet.create({
   },
   characterSubTabText: {
     color: theme.colors.textMuted,
-    fontSize: 14,
+    fontSize: theme.fontSize.body,
     fontWeight: "900",
   },
   activeCharacterSubTabText: {

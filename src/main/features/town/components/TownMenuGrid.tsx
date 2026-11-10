@@ -85,7 +85,7 @@ const styles = StyleSheet.create({
     maxWidth: '50%',
   },
   card: {
-    minHeight: 68,
+    minHeight: theme.control.touch,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -96,6 +96,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
     paddingHorizontal: theme.spacing.sm,
     paddingVertical: theme.spacing.sm,
+    minWidth: theme.control.touch,
   },
   selectedCard: {
     borderColor: theme.colors.accentAmber,
@@ -108,16 +109,16 @@ const styles = StyleSheet.create({
   label: {
     flex: 1,
     color: theme.colors.text,
-    fontSize: 13,
+    fontSize: theme.fontSize.body,
     fontWeight: '800',
-    lineHeight: 18,
+    lineHeight: theme.lineHeight.caption,
     textAlign: 'center',
   },
   selectedLabel: {
     color: theme.colors.accentAmber,
   },
   empty: {
-    minHeight: 128,
+    minHeight: 77,
     alignItems: 'center',
     justifyContent: 'center',
     gap: theme.spacing.xs,
@@ -129,12 +130,12 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     color: theme.colors.text,
-    fontSize: 15,
+    fontSize: theme.fontSize.body,
     fontWeight: '900',
   },
   emptyText: {
     color: theme.colors.textMuted,
-    fontSize: 13,
+    fontSize: theme.fontSize.body,
     textAlign: 'center',
   },
   pressed: {

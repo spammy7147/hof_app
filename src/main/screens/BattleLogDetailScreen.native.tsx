@@ -50,8 +50,8 @@ const styles = StyleSheet.create({
     gap: theme.spacing.md,
     paddingHorizontal: theme.spacing.lg,
   },
-  compactButton: { minHeight: 44, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
-  title: { flex: 1, color: theme.colors.text, fontSize: 17, fontWeight: '900' },
+  compactButton: { minHeight: theme.control.touch, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm, minWidth: theme.control.touch, },
+  title: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.section, fontWeight: '900' },
   webView: { flex: 1, backgroundColor: theme.colors.background },
   statePanel: {
     flex: 1,
@@ -61,6 +61,6 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
     padding: theme.spacing.lg,
   },
-  stateText: { color: theme.colors.textMuted, fontSize: 14, fontWeight: '800' },
-  errorText: { color: theme.colors.danger, fontSize: 14, fontWeight: '800', textAlign: 'center' },
+  stateText: { color: theme.colors.textMuted, fontSize: theme.fontSize.body, fontWeight: '800' },
+  errorText: { color: theme.colors.danger, fontSize: theme.fontSize.body, fontWeight: '800', textAlign: 'center' },
 });

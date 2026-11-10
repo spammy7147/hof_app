@@ -1,5 +1,6 @@
+import { CompactSwitch as Switch } from '../components/CompactSwitch';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ArrowLeft } from 'lucide-react-native';
 
 import { PrimaryButton } from '../components/PrimaryButton';
@@ -51,7 +52,7 @@ export function SettingsTabScreen({
         <Pressable
           accessibilityLabel="홈으로 돌아가기"
           accessibilityRole="button"
-          hitSlop={8}
+
           onPress={onBack}
           style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
         >
@@ -135,16 +136,18 @@ const styles = StyleSheet.create({
   title: {
     flex: 1,
     color: theme.colors.text,
-    fontSize: 22,
+    fontSize: theme.fontSize.title,
     fontWeight: '900',
     textAlign: 'center',
   },
   backButton: {
     alignItems: 'center',
-    borderRadius: 22,
+    borderRadius: theme.radius.md,
     height: 44,
     justifyContent: 'center',
     width: 44,
+    minHeight: theme.control.touch,
+    minWidth: theme.control.touch,
   },
   headerSpacer: {
     width: 44,
@@ -162,7 +165,7 @@ const styles = StyleSheet.create({
   },
   panelTitle: {
     color: theme.colors.text,
-    fontSize: 16,
+    fontSize: theme.fontSize.body,
     fontWeight: '900',
   },
   panelTitleRow: {
@@ -173,22 +176,23 @@ const styles = StyleSheet.create({
   },
   panelTitleCopy: {
     flex: 1,
-    gap: 4,
+    gap: theme.spacing.hairline,
   },
   panelBody: {
     gap: theme.spacing.sm,
   },
   mutedText: {
     color: theme.colors.textMuted,
-    fontSize: 13,
+    fontSize: theme.fontSize.body,
     fontWeight: '700',
-    lineHeight: 18,
+    lineHeight: theme.lineHeight.caption,
   },
   captchaButton: {
     alignSelf: 'flex-start',
-    minHeight: 36,
+    minHeight: theme.control.touch,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
+    minWidth: theme.control.touch,
   },
   actionRow: {
     flexDirection: 'row',
@@ -203,19 +207,19 @@ const styles = StyleSheet.create({
   },
   statusLabel: {
     color: theme.colors.textMuted,
-    fontSize: 13,
+    fontSize: theme.fontSize.body,
     fontWeight: '700',
   },
   statusValue: {
     color: theme.colors.text,
     flex: 1,
-    fontSize: 13,
+    fontSize: theme.fontSize.body,
     fontWeight: '800',
     textAlign: 'right',
   },
   errorText: {
     color: theme.colors.danger,
-    fontSize: 13,
+    fontSize: theme.fontSize.body,
     fontWeight: '700',
   },
 });

@@ -27,11 +27,11 @@ const styles = StyleSheet.create({
   },
   title: {
     color: theme.colors.text,
-    fontSize: 22,
+    fontSize: theme.fontSize.title,
     fontWeight: '900',
   },
   panel: {
-    minHeight: 130,
+    minHeight: 78,
     borderWidth: 1,
     borderColor: theme.colors.border,
     borderRadius: theme.radius.md,
@@ -41,8 +41,8 @@ const styles = StyleSheet.create({
   },
   summary: {
     color: theme.colors.textMuted,
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: theme.fontSize.body,
+    lineHeight: theme.lineHeight.section,
     fontWeight: '700',
   },
 });

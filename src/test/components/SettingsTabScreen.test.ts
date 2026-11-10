@@ -51,14 +51,14 @@ describe('SettingsTabScreen pass maintenance controls', () => {
       }));
     });
 
-    const policySwitch = renderer.root.find((node) => String(node.type) === 'Switch');
+    const policySwitch = renderer.root.findByProps({ accessibilityRole: 'switch', accessibilityLabel: '통행증 자동 갱신' });
     const refresh = renderer.root.findByProps({ label: '상태 새로고침' });
     const manual = renderer.root.findByProps({ label: '직접 인증' });
     assert.equal(policySwitch.props.disabled, false);
     assert.equal(manual.props.disabled, false);
 
     await act(async () => {
-      policySwitch.props.onValueChange(false);
+      policySwitch.props.onPress();
       refresh.props.onPress();
       manual.props.onPress();
       await Promise.resolve();

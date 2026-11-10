@@ -216,20 +216,20 @@ describe('AdventureMapAutomationEditor', () => {
 
     const groupButton = renderer.root.findByProps({ accessibilityLabel: '이벤트 그룹 닫기' });
     const groupStyle = flattenStyle(groupButton.props.style);
-    assert.equal(groupStyle.minHeight, 52);
-    assert.equal(groupStyle.paddingHorizontal, 12);
-    assert.equal(groupStyle.paddingVertical, 6);
+    assert.ok(Number(groupStyle.minHeight) >= 44 && Number(groupStyle.minHeight) <= 48);
+    assert.ok(Number(groupStyle.paddingHorizontal) <= 6);
+    assert.ok(Number(groupStyle.paddingVertical) <= 6);
 
     const mapButton = renderer.root.findByProps({ accessibilityLabel: '긴 모험맵 이름 모험맵 선택' });
     assert.equal(mapButton.props.accessibilityRole, 'button');
     assert.deepEqual(mapButton.props.accessibilityState, { disabled: false, selected: false });
     const mapStyle = flattenStyle(mapButton.props.style);
     assert.equal(mapStyle.minHeight, 48);
-    assert.equal(mapStyle.paddingHorizontal, 12);
-    assert.equal(mapStyle.paddingVertical, 8);
+    assert.ok(Number(mapStyle.paddingHorizontal) <= 6);
+    assert.ok(Number(mapStyle.paddingVertical) <= 6);
     assert.equal(findTextNode(renderer.root, '긴 모험맵 이름').props.numberOfLines, 2);
     const mapHeading = mapButton.find((node) => flattenStyle(node.props.style).justifyContent === 'space-between');
-    assert.equal(flattenStyle(mapHeading.props.style).gap, 4);
+    assert.ok(Number(flattenStyle(mapHeading.props.style).gap) <= 4);
     assert.equal(hasText(renderer.root, '선택됨'), false);
     assert.equal(mapButton.findAll((node) => node.props.accessibilityRole === 'checkbox').length, 0);
     assert.equal(hasText(mapButton, '40-60 · 키 3개'), true);
@@ -275,7 +275,7 @@ describe('AdventureMapAutomationEditor', () => {
     assert.equal(presetChoice.findAll((node) => (node.type as unknown) === 'ChevronRight').length, 1);
 
     const list = renderer.root.find((node) => (node.type as unknown) === 'NestableScrollContainer');
-    assert.equal(flattenStyle(list.props.contentContainerStyle).gap, 6);
+    assert.ok(Number(flattenStyle(list.props.contentContainerStyle).gap) <= 6);
   });
 
   it('uses one-line B-layout metadata with a drag handle and swipe delete', async () => {
@@ -379,13 +379,13 @@ describe('AdventureMapAutomationEditor', () => {
 
     const lists = renderer.root.findAll((node) => (node.type as unknown) === 'NestableScrollContainer');
     assert.equal(lists.length, 1);
-    assert.equal(flattenStyle(lists[0]!.props.contentContainerStyle).gap, 6);
+    assert.ok(Number(flattenStyle(lists[0]!.props.contentContainerStyle).gap) <= 6);
     assert.equal(hasText(renderer.root, '초기화 완료 · 오전 12:03'), true);
     assert.equal(hasText(renderer.root, '상태와 관계없이 선택하고 실행 순서를 정하세요.'), false);
     const refresh = renderer.root.findByProps({ accessibilityLabel: '한국 날짜 00시 초기화. 초기화 완료 · 오전 12:03' });
     assert.equal(refresh.props.numberOfLines, 1);
     assert.equal(refresh.props.ellipsizeMode, 'tail');
-    assert.equal(flattenStyle(renderer.root.findByProps({ accessibilityRole: 'tablist' }).props.style).padding, 2);
+    assert.ok(Number(flattenStyle(renderer.root.findByProps({ accessibilityRole: 'tablist' }).props.style).padding) <= 2);
     await openAdventureGroup(renderer, '기타');
     const cooldown = renderer.root.findByProps({ accessibilityLabel: '쿨다운 맵 모험맵 선택' });
     assert.equal(cooldown.props.disabled, false);

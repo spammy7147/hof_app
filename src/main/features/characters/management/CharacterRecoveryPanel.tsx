@@ -106,15 +106,15 @@ function positionLabel(value: string): string {
 
 const phaseLabels = { CURRENT: '현재 설정 확인', SAVED_PATTERN: '저장 패턴 수집', EQUIPMENT_PRESET: '장비 저장 수집', RESTORE: '원본 복원 확인', COMPLETED: '전체 작업 완료' };
 const styles = StyleSheet.create({
-  card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderWidth: 1, borderRadius: 8, padding: 12, gap: 8 },
-  title: { color: theme.colors.text, fontWeight: '700', fontSize: 16 },
-  text: { color: theme.colors.text, fontSize: 14 },
-  note: { color: theme.colors.textMuted, fontSize: 13, lineHeight: 20 },
-  error: { color: theme.colors.danger, fontSize: 13, lineHeight: 20 },
-  button: { borderRadius: 6, padding: 12, backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.border },
-  buttonText: { color: theme.colors.accentBlue, textAlign: 'center', fontWeight: '600' },
+  card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderWidth: 1, borderRadius: theme.radius.md, padding: theme.spacing.md, gap: theme.spacing.xs },
+  title: { color: theme.colors.text, fontWeight: '700', fontSize: theme.fontSize.body },
+  text: { color: theme.colors.text, fontSize: theme.fontSize.body },
+  note: { color: theme.colors.textMuted, fontSize: theme.fontSize.body, lineHeight: theme.lineHeight.body },
+  error: { color: theme.colors.danger, fontSize: theme.fontSize.body, lineHeight: theme.lineHeight.body },
+  button: { borderRadius: theme.radius.md, padding: theme.spacing.md, backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.border, minHeight: theme.control.touch, minWidth: theme.control.touch, },
+  buttonText: { fontSize: theme.fontSize.body, color: theme.colors.accentBlue, textAlign: 'center', fontWeight: '600' },
   disabled: { opacity: 0.5 },
-  overlay: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: theme.colors.overlay },
-  sheet: { maxHeight: '90%', borderRadius: 8, backgroundColor: theme.colors.surface },
-  previewContent: { padding: 20, gap: 12 },
+  overlay: { flex: 1, justifyContent: 'center', padding: theme.spacing.lg, backgroundColor: theme.colors.overlay },
+  sheet: { maxHeight: '90%', borderRadius: theme.radius.md, backgroundColor: theme.colors.surface },
+  previewContent: { padding: theme.spacing.lg, gap: theme.spacing.md },
 });

@@ -108,30 +108,31 @@ const styles = StyleSheet.create({
   },
   appName: {
     color: theme.colors.text,
-    fontSize: 34,
+    fontSize: theme.fontSize.display,
     fontWeight: '900',
   },
   subtitle: {
     color: theme.colors.textMuted,
-    fontSize: 15,
-    lineHeight: 21,
+    fontSize: theme.fontSize.body,
+    lineHeight: theme.lineHeight.body,
   },
   form: {
     gap: theme.spacing.md,
   },
   input: {
-    minHeight: 48,
+    minHeight: theme.control.input,
     borderWidth: 1,
     borderColor: theme.colors.border,
     borderRadius: theme.radius.sm,
     backgroundColor: theme.colors.surface,
     color: theme.colors.text,
-    fontSize: 16,
+    fontSize: theme.fontSize.body,
     paddingHorizontal: theme.spacing.md,
+    minWidth: theme.control.touch,
   },
   error: {
     color: theme.colors.danger,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: theme.fontSize.body,
+    lineHeight: theme.lineHeight.body,
   },
 });

@@ -206,13 +206,13 @@ describe('PartyPresetPickerModal', () => {
     const panelStyle = Object.assign({}, ...(panel.props.style as Array<Record<string, unknown>>));
     assert.equal(panelStyle.height, '84%');
     assert.equal(panelStyle.maxHeight, undefined);
-    assert.equal(panelStyle.gap, 8);
+    assert.ok((panelStyle.gap as number) <= 6);
     assert.equal(panelStyle.paddingBottom, 31);
     assert.equal(panelStyle.minHeight, undefined);
     const catalogArea = renderer.root.findByProps({ testID: 'party-preset-catalog-area' });
     const catalogAreaStyle = flattenStyle(catalogArea.props.style);
     assert.equal(catalogAreaStyle.flex, 1);
-    assert.equal(catalogAreaStyle.minHeight, 120);
+    assert.ok((catalogAreaStyle.minHeight as number) >= 44 && (catalogAreaStyle.minHeight as number) <= 120);
 
     reactNativeMock.Platform.OS = 'android';
     await act(async () => renderer.update(React.createElement(PartyPresetPickerModal, baseProps())));

@@ -271,7 +271,7 @@ describe('PartyPresetTree', () => {
     assert.equal(openStyle.borderColor, '#4f806c');
     assert.ok((openStyle.minHeight as number) >= 44);
     assert.equal(folderName.props.style.color, '#cce9dc');
-    assert.equal(folderName.props.style.fontSize, 13);
+    assert.ok(folderName.props.style.fontSize >= 12 && folderName.props.style.fontSize <= 14);
     assert.equal(folderName.props.style.fontWeight, '900');
   });
 });

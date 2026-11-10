@@ -172,7 +172,7 @@ describe('AutomationAddSheet mounted interactions', () => {
 
     assert.ok(findHost(renderer.root, 'GestureHandlerRootView'));
     const scroller = findHost(renderer.root, 'ScrollView');
-    assert.equal(flattenStyle(scroller.props.contentContainerStyle).paddingBottom, 61);
+    assert.equal(flattenStyle(scroller.props.contentContainerStyle).paddingBottom, 45); // safe area 37 + compact padding 8
   });
 
   it('clamps the panel to a short viewport and applies one explicit bottom safe-area inset', async () => {
@@ -184,7 +184,7 @@ describe('AutomationAddSheet mounted interactions', () => {
     assert.ok(Number(flattenStyle(panel.props.style).maxHeight) <= windowHeight);
     const scroller = findHost(renderer.root, 'ScrollView');
     assert.equal(scroller.props.contentInsetAdjustmentBehavior, 'never');
-    assert.equal(flattenStyle(scroller.props.contentContainerStyle).paddingBottom, 61);
+    assert.equal(flattenStyle(scroller.props.contentContainerStyle).paddingBottom, 45); // safe area is applied once
   });
 
   it('uses the shared semantic overlay for the sheet backdrop', async () => {

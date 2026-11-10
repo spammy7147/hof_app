@@ -1,13 +1,6 @@
+import { CompactSwitch as Switch } from '../../../components/CompactSwitch';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ElementRef } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { AppAlert as Alert } from '../../../platform/AppAlert';
 import { ArrowLeft, ChevronRight, Save } from 'lucide-react-native';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
@@ -348,7 +341,7 @@ export function BattleMapAutomationEditor({
           <TextInput
             accessibilityLabel={`${setting.displayName} 일일 목표`}
             editable={!disabled}
-            hitSlop={{ bottom: 8, left: 4, right: 4, top: 8 }}
+
             keyboardType="number-pad"
             onChangeText={(value) => updateEditableDraft((current) => ({
               ...current,
@@ -593,36 +586,36 @@ function reorderBattleDraft(draft: BattleMapAutomationDraft, orderedIds: string[
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, gap: 2, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm },
+  screen: { flex: 1, gap: theme.spacing.hairline, paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.sm },
   scroller: { flex: 1 },
   header: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
-  iconButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
+  iconButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44, minHeight: theme.control.touch, minWidth: theme.control.touch, },
   headerCopy: { flex: 1 },
-  title: { color: theme.colors.text, fontSize: 20, fontWeight: '900' },
-  content: { gap: 6, paddingBottom: theme.spacing.lg },
+  title: { color: theme.colors.text, fontSize: theme.fontSize.section, fontWeight: '900' },
+  content: { gap: theme.spacing.xs, paddingBottom: theme.spacing.lg },
   section: { gap: theme.spacing.xs },
-  sectionTitle: { color: theme.colors.text, fontSize: 15, fontWeight: '900' },
-  mapName: { color: theme.colors.text, fontSize: 13, fontWeight: '800' },
+  sectionTitle: { color: theme.colors.text, fontSize: theme.fontSize.body, fontWeight: '900' },
+  mapName: { color: theme.colors.text, fontSize: theme.fontSize.body, fontWeight: '800' },
   progressRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },
-  progressSummary: { color: theme.colors.textMuted, flex: 1, fontSize: 11, lineHeight: 16 },
-  compactTargetInput: { borderColor: theme.colors.borderStrong, borderRadius: 9, borderWidth: 1, color: theme.colors.text, minHeight: 28, paddingHorizontal: 0, textAlign: 'center', textAlignVertical: 'center', width: 38 },
-  complete: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '900' },
-  choice: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: 9, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, minHeight: 44, paddingHorizontal: theme.spacing.xs },
+  progressSummary: { color: theme.colors.textMuted, flex: 1, fontSize: theme.fontSize.caption, lineHeight: theme.lineHeight.caption },
+  compactTargetInput: { fontSize: theme.fontSize.body, borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: theme.control.input, paddingHorizontal: 0, textAlign: 'center', textAlignVertical: 'center', width: theme.control.touch, minWidth: theme.control.touch, },
+  complete: { color: theme.colors.accentGreen, fontSize: theme.fontSize.caption, fontWeight: '900' },
+  choice: { alignItems: 'center', borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, minHeight: theme.control.touch, paddingHorizontal: theme.spacing.xs, minWidth: theme.control.touch, },
   choiceActive: { borderColor: theme.colors.accentGreen },
-  choiceLabel: { color: theme.colors.textMuted, fontSize: 10, fontWeight: '700' },
-  choiceText: { color: theme.colors.text, flex: 1, fontSize: 11, fontWeight: '700' },
-  search: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: 44, paddingHorizontal: theme.spacing.md },
-  minimumTimeField: { gap: 4 },
+  choiceLabel: { color: theme.colors.textMuted, fontSize: theme.fontSize.small, fontWeight: '700' },
+  choiceText: { color: theme.colors.text, flex: 1, fontSize: theme.fontSize.caption, fontWeight: '700' },
+  search: { fontSize: theme.fontSize.body, backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, minHeight: theme.control.input, paddingHorizontal: theme.spacing.md, minWidth: theme.control.touch, },
+  minimumTimeField: { gap: theme.spacing.hairline },
   minimumTimeRow: { alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
-  minimumTimeInput: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, flexBasis: 136, flexGrow: 1, minHeight: 44, minWidth: 120, paddingHorizontal: theme.spacing.md },
-  fieldLabel: { color: theme.colors.text, flexShrink: 1, fontSize: 12, fontWeight: '800' },
+  minimumTimeInput: { fontSize: theme.fontSize.body, backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, flexBasis: 136, flexGrow: 1, minHeight: theme.control.input, minWidth: 120, paddingHorizontal: theme.spacing.md },
+  fieldLabel: { color: theme.colors.text, flexShrink: 1, fontSize: theme.fontSize.caption, fontWeight: '800' },
   warningRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between' },
-  secondaryButton: { borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, minHeight: 44, justifyContent: 'center', paddingHorizontal: theme.spacing.md },
-  secondaryText: { color: theme.colors.text, fontWeight: '800' },
-  muted: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
-  problem: { color: theme.colors.accentAmber, fontSize: 11, lineHeight: 16 },
+  secondaryButton: { borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, minHeight: theme.control.touch, justifyContent: 'center', paddingHorizontal: theme.spacing.md, minWidth: theme.control.touch, },
+  secondaryText: { fontSize: theme.fontSize.body, color: theme.colors.text, fontWeight: '800' },
+  muted: { color: theme.colors.textMuted, fontSize: theme.fontSize.caption, lineHeight: theme.lineHeight.caption },
+  problem: { color: theme.colors.accentAmber, fontSize: theme.fontSize.caption, lineHeight: theme.lineHeight.caption },
   footer: { flexDirection: 'row', gap: theme.spacing.sm },
-  saveButton: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, flex: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: 48, justifyContent: 'center' },
-  saveText: { color: theme.colors.buttonText, fontWeight: '900' },
+  saveButton: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, flex: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: theme.control.input, justifyContent: 'center', minWidth: theme.control.touch, },
+  saveText: { fontSize: theme.fontSize.body, color: theme.colors.buttonText, fontWeight: '900' },
   disabled: { opacity: 0.45 },
 });

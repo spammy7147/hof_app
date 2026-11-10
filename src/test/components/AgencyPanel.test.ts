@@ -85,7 +85,7 @@ describe('AgencyPanel', () => {
     await pressText('완료 가능 1');
     assert.doesNotMatch(text(), /진행 퀘스트/);
     const claimButton = button('완료 퀘스트 완료');
-    assert.deepEqual(claimButton.props.hitSlop, { top: 4, bottom: 4, left: 4, right: 4 });
+    assert.equal(claimButton.props.hitSlop, undefined);
     await press('완료 퀘스트 완료');
     assert.deepEqual(calls, [{ actionNo: 'R610', action: 'claim' }]);
     await pressText('수락 가능 1');

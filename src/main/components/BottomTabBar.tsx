@@ -55,8 +55,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: theme.colors.accentAmberDark,
     backgroundColor: theme.colors.header,
-    paddingBottom: theme.spacing.xs,
-    paddingTop: theme.spacing.xs,
+    paddingBottom: 0,
+    paddingTop: 0,
   },
   tabRow: {
     flexDirection: 'row',
@@ -65,17 +65,18 @@ const styles = StyleSheet.create({
   },
   tab: {
     width: '20%',
-    minHeight: 46,
+    minHeight: theme.control.touch,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
+    gap: 0,
+    minWidth: theme.control.touch,
   },
   pressed: {
     opacity: 0.75,
   },
   label: {
     color: theme.colors.textMuted,
-    fontSize: 11,
+    fontSize: theme.fontSize.caption,
     fontWeight: '800',
   },
   activeLabel: {

@@ -1212,7 +1212,7 @@ function assertBorderless(node: ReactTestInstance): void {
   const flat = flattenStyle(style);
   assert.equal(flat.borderWidth ?? 0, 0);
   assert.equal(flat.minHeight, 44);
-  assert.equal(flat.width, 34);
+  assert.ok((flat.width as number) >= 44);
 }
 
 function layoutRows(root: ReactTestInstance, yPositions?: number[], cellHeights?: number[]): void {

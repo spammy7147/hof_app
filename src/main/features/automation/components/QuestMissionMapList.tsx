@@ -292,7 +292,7 @@ export function QuestMissionMapList({
               accessibilityState={{ disabled: interactionDisabled }}
               accessibilityValue={{ text: presetLabel }}
               disabled={interactionDisabled}
-              hitSlop={5}
+
               onPress={() => {
                 if (!findCurrentRow(rowKey, map, renderInteractionGeneration)) return;
                 swipeableNodesRef.current.get(rowKey)?.close();
@@ -446,16 +446,16 @@ export function QuestMapList({ catalog, disabled, maps, mode, partyPresetCatalog
 
 const styles = StyleSheet.create({
   swipeContainer: { borderRadius: theme.radius.md, overflow: 'hidden' },
-  mapCard: { alignItems: 'stretch', backgroundColor: theme.colors.surfaceAlt, borderColor: 'transparent', borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, paddingHorizontal: theme.spacing.xs, paddingVertical: 3 },
+  mapCard: { alignItems: 'stretch', backgroundColor: theme.colors.surfaceAlt, borderColor: 'transparent', borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, paddingHorizontal: theme.spacing.xs, paddingVertical: theme.spacing.hairline },
   mapCardActive: { borderColor: theme.colors.accentGreen, opacity: 0.82 },
-  dragHandle: { alignItems: 'center', justifyContent: 'center', minHeight: 44, width: 32 },
-  mapBody: { flex: 1, gap: 3, minWidth: 0 },
+  dragHandle: { alignItems: 'center', justifyContent: 'center', minHeight: theme.control.touch, width: theme.control.touch, minWidth: theme.control.touch, },
+  mapBody: { flex: 1, gap: theme.spacing.hairline, minWidth: 0 },
   mapCopy: { flex: 1, minWidth: 0 },
-  mapName: { color: theme.colors.text, fontSize: 12, fontWeight: '800' },
-  mapContext: { color: theme.colors.textMuted, fontSize: 10, marginTop: 2 },
-  deleteAction: { alignItems: 'center', backgroundColor: theme.colors.danger, justifyContent: 'center', width: 72 },
-  deleteActionText: { color: theme.colors.buttonText, fontSize: 11, fontWeight: '900', marginTop: 2 },
+  mapName: { color: theme.colors.text, fontSize: theme.fontSize.caption, fontWeight: '800' },
+  mapContext: { color: theme.colors.textMuted, fontSize: theme.fontSize.small, marginTop: theme.spacing.hairline },
+  deleteAction: { alignItems: 'center', backgroundColor: theme.colors.danger, justifyContent: 'center', width: 72, minHeight: theme.control.touch, minWidth: theme.control.touch, },
+  deleteActionText: { color: theme.colors.buttonText, fontSize: theme.fontSize.caption, fontWeight: '900', marginTop: theme.spacing.hairline },
   pressed: { opacity: 0.72 },
-  presetButton: { borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, minHeight: 34, justifyContent: 'center', paddingHorizontal: theme.spacing.sm },
-  presetButtonText: { color: theme.colors.text, fontSize: 11, fontWeight: '800' },
+  presetButton: { borderColor: theme.colors.borderStrong, borderRadius: theme.radius.md, borderWidth: 1, minHeight: theme.control.touch, justifyContent: 'center', paddingHorizontal: theme.spacing.sm, minWidth: theme.control.touch, },
+  presetButtonText: { color: theme.colors.text, fontSize: theme.fontSize.caption, fontWeight: '800' },
 });

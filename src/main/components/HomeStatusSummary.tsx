@@ -62,8 +62,6 @@ export function HomeStatusSummary({
     <View accessibilityLabel="홈 게임 상태" style={styles.container}>
       <View style={styles.topRow}>
         <Text
-          adjustsFontSizeToFit
-          minimumFontScale={0.72}
           numberOfLines={1}
           style={styles.playerName}
         >
@@ -72,7 +70,7 @@ export function HomeStatusSummary({
         <Pressable
           accessibilityLabel="앱 설정 열기"
           accessibilityRole="button"
-          hitSlop={8}
+
           onPress={onOpenSettings}
           style={({ pressed }) => [
             styles.settingsButton,
@@ -91,8 +89,6 @@ export function HomeStatusSummary({
         <View style={styles.metricRow}>
           <Text style={styles.metricLabel}>Fund</Text>
           <Text
-            adjustsFontSizeToFit
-            minimumFontScale={0.72}
             numberOfLines={1}
             style={styles.fundsValue}
           >
@@ -102,9 +98,6 @@ export function HomeStatusSummary({
       </View>
 
       <Text
-        adjustsFontSizeToFit
-        minimumFontScale={0.72}
-        numberOfLines={1}
         style={styles.subStatusText}
       >
         Work {workText} · Auction {auctionText}
@@ -124,55 +117,63 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: theme.spacing.sm,
-    minHeight: 44,
+    minHeight: theme.control.touch,
   },
   playerName: {
     color: theme.colors.text,
     flex: 1,
-    fontSize: 16,
+    fontSize: theme.fontSize.body,
     fontWeight: '900',
   },
   settingsButton: {
     alignItems: 'center',
-    borderRadius: 22,
-    height: 44,
+    borderRadius: theme.radius.md,
+    height: theme.control.touch,
     justifyContent: 'center',
-    width: 44,
+    width: theme.control.touch,
+    minHeight: theme.control.touch,
+    minWidth: theme.control.touch,
   },
   settingsButtonPressed: {
     backgroundColor: theme.colors.surfaceAlt,
   },
   metrics: {
-    gap: theme.spacing.xs,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    columnGap: theme.spacing.xxl,
+    rowGap: theme.spacing.xs,
   },
   metricRow: {
     alignItems: 'baseline',
     flexDirection: 'row',
     gap: theme.spacing.md,
     minWidth: 0,
+    flexShrink: 0,
   },
   metricLabel: {
     color: theme.colors.textMuted,
-    fontSize: 12,
+    fontSize: theme.fontSize.caption,
     fontWeight: '800',
-    width: 40,
+    width: 'auto',
   },
   metricValue: {
     color: theme.colors.statusGreen,
-    fontSize: 16,
+    fontSize: theme.fontSize.body,
     fontVariant: ['tabular-nums'],
     fontWeight: '900',
   },
   fundsValue: {
     color: theme.colors.statusGreen,
-    flex: 1,
-    fontSize: 18,
+    fontSize: theme.fontSize.section,
     fontVariant: ['tabular-nums'],
     fontWeight: '900',
+    flexGrow: 0,
+    flexShrink: 0,
   },
   subStatusText: {
     color: theme.colors.textMuted,
-    fontSize: 12,
+    fontSize: theme.fontSize.caption,
     fontWeight: '800',
+    flexShrink: 1,
   },
 });

@@ -54,13 +54,14 @@ const styles = StyleSheet.create({
     paddingRight: theme.spacing.md,
   },
   chip: {
-    minHeight: 40,
+    minHeight: theme.control.touch,
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: theme.colors.border,
-    borderRadius: 20,
+    borderRadius: theme.radius.md,
     backgroundColor: theme.colors.surface,
     paddingHorizontal: theme.spacing.lg,
+    minWidth: theme.control.touch,
   },
   selectedChip: {
     borderColor: theme.colors.accentBlue,
@@ -68,7 +69,7 @@ const styles = StyleSheet.create({
   },
   label: {
     color: theme.colors.textMuted,
-    fontSize: 13,
+    fontSize: theme.fontSize.body,
     fontWeight: '800',
   },
   selectedLabel: {

@@ -795,16 +795,16 @@ const styles = StyleSheet.create({
   },
   title: {
     color: theme.colors.text,
-    fontSize: 22,
+    fontSize: theme.fontSize.title,
     fontWeight: '900',
   },
   meta: {
     color: theme.colors.accentGreen,
-    fontSize: 14,
+    fontSize: theme.fontSize.body,
     fontWeight: '800',
   },
   statePanel: {
-    minHeight: 126,
+    minHeight: 76,
     alignItems: 'center',
     justifyContent: 'center',
     gap: theme.spacing.md,
@@ -816,20 +816,20 @@ const styles = StyleSheet.create({
   },
   stateText: {
     color: theme.colors.textMuted,
-    fontSize: 14,
+    fontSize: theme.fontSize.body,
     fontWeight: '800',
   },
   errorText: {
     color: theme.colors.danger,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: theme.fontSize.body,
+    lineHeight: theme.lineHeight.body,
     textAlign: 'center',
   },
   treeList: {
     gap: theme.spacing.sm,
   },
   treeBranch: {
-    marginLeft: 18,
+    marginLeft: theme.spacing.md,
     gap: theme.spacing.sm,
     borderLeftWidth: 1,
     borderLeftColor: theme.colors.border,
@@ -837,7 +837,7 @@ const styles = StyleSheet.create({
     paddingBottom: theme.spacing.xs,
   },
   treeStatePanel: {
-    minHeight: 92,
+    minHeight: 55,
     alignItems: 'center',
     justifyContent: 'center',
     gap: theme.spacing.sm,
@@ -851,7 +851,7 @@ const styles = StyleSheet.create({
     gap: theme.spacing.sm,
   },
   mapTreeBranch: {
-    marginLeft: 17,
+    marginLeft: theme.spacing.md,
     gap: theme.spacing.xs,
     borderLeftWidth: 1,
     borderLeftColor: theme.colors.border,
@@ -876,19 +876,19 @@ const styles = StyleSheet.create({
     minWidth: 0,
     flex: 1,
     color: theme.colors.text,
-    fontSize: 17,
+    fontSize: theme.fontSize.section,
     fontWeight: '900',
   },
   mapMeta: {
     color: theme.colors.accentGreen,
-    fontSize: 13,
+    fontSize: theme.fontSize.body,
     fontWeight: '800',
   },
   mapList: {
     gap: theme.spacing.sm,
   },
   card: {
-    minHeight: 68,
+    minHeight: theme.control.touch,
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.spacing.md,
@@ -897,6 +897,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.sm,
     backgroundColor: theme.colors.surface,
     padding: theme.spacing.md,
+    minWidth: theme.control.touch,
   },
   activeCard: {
     borderColor: theme.colors.accentGreen,
@@ -920,16 +921,16 @@ const styles = StyleSheet.create({
   cardText: {
     minWidth: 0,
     flex: 1,
-    gap: 2,
+    gap: theme.spacing.hairline,
   },
   cardTitle: {
     color: theme.colors.text,
-    fontSize: 16,
+    fontSize: theme.fontSize.body,
     fontWeight: '900',
   },
   cardDescription: {
     color: theme.colors.textMuted,
-    fontSize: 12,
+    fontSize: theme.fontSize.caption,
     fontWeight: '700',
   },
   badge: {
@@ -939,8 +940,8 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.sm,
     backgroundColor: theme.colors.accentAmber,
     paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 5,
-    fontSize: 12,
+    paddingVertical: theme.spacing.xs,
+    fontSize: theme.fontSize.caption,
     fontWeight: '900',
     textAlign: 'center',
   },
@@ -949,7 +950,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surfaceAlt,
   },
   groupRow: {
-    minHeight: 54,
+    minHeight: theme.control.touch,
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.spacing.sm,
@@ -959,6 +960,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surfaceAlt,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
+    minWidth: theme.control.touch,
   },
   activeGroupRow: {
     borderColor: theme.colors.accentGreen,
@@ -976,20 +978,20 @@ const styles = StyleSheet.create({
   groupText: {
     minWidth: 0,
     flex: 1,
-    gap: 2,
+    gap: theme.spacing.hairline,
   },
   groupName: {
     color: theme.colors.text,
-    fontSize: 14,
+    fontSize: theme.fontSize.body,
     fontWeight: '900',
   },
   groupMetaText: {
     color: theme.colors.textMuted,
-    fontSize: 11,
+    fontSize: theme.fontSize.caption,
     fontWeight: '800',
   },
   mapRow: {
-    minHeight: 44,
+    minHeight: theme.control.touch,
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.spacing.sm,
@@ -998,7 +1000,8 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.sm,
     backgroundColor: theme.colors.surface,
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: 2,
+    paddingVertical: theme.spacing.hairline,
+    minWidth: theme.control.touch,
   },
   activeMapRow: {
     borderColor: theme.colors.accentBlue,
@@ -1006,11 +1009,11 @@ const styles = StyleSheet.create({
   mapRowText: {
     minWidth: 0,
     flex: 1,
-    gap: 2,
+    gap: theme.spacing.hairline,
   },
   mapName: {
     color: theme.colors.text,
-    fontSize: 14,
+    fontSize: theme.fontSize.body,
     fontWeight: '900',
   },
 });

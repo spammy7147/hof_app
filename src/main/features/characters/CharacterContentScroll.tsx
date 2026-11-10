@@ -1,3 +1,4 @@
+import { theme } from '../../styles/theme';
 import { useRef, type ElementRef, type ReactNode } from 'react';
 import { NestableScrollContainer } from 'react-native-draggable-flatlist';
 import { scrollFocusedInputIntoView } from '../../components/keyboardAwareScroll';
@@ -7,7 +8,7 @@ export function CharacterContentScroll({ children }: { children: ReactNode }) {
   const ref = useRef<ElementRef<typeof NestableScrollContainer>>(null);
   return <NestableScrollContainer
     automaticallyAdjustKeyboardInsets
-    contentContainerStyle={{ paddingBottom: 28 }}
+    contentContainerStyle={{ paddingBottom: theme.spacing.xl }}
     contentInsetAdjustmentBehavior="automatic"
     keyboardDismissMode="interactive"
     keyboardShouldPersistTaps="handled"

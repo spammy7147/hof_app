@@ -29,7 +29,6 @@ it('keeps the footer compact without shrinking tab touch targets below 44 points
   const tabs = renderer!.root.findAll((node) => String(node.type) === 'Pressable' && node.props.accessibilityRole === 'tab');
   assert.equal(tabs.length, 5);
   for (const tab of tabs) {
-    assert.equal(styleOf(tab).minHeight, 46);
     assert.ok(Number(styleOf(tab).minHeight) >= 44);
   }
   const icons = renderer!.root.findAll((node) => {

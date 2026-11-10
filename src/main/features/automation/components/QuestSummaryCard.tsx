@@ -89,16 +89,16 @@ export function QuestSummaryCard({
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md + 4, borderWidth: 1, gap: 2, padding: theme.spacing.sm },
+  card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md + 4, borderWidth: 1, gap: theme.spacing.hairline, padding: theme.spacing.sm },
   cardSelected: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.accentGreen },
-  summaryPressable: { justifyContent: 'center', minHeight: 44 },
+  summaryPressable: { justifyContent: 'center', minHeight: theme.control.touch, minWidth: theme.control.touch, },
   summaryPressed: { opacity: 0.72 },
   summaryDisabled: { opacity: 0.5 },
   copy: { flex: 1, minWidth: 0 },
   titleRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
-  name: { color: theme.colors.text, flex: 1, fontSize: 14, fontWeight: '900' },
-  section: { color: theme.colors.textMuted, fontSize: 10, fontWeight: '700' },
-  summary: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
-  reward: { color: theme.colors.textMuted, fontSize: 11, lineHeight: 16 },
-  mapSection: { borderTopColor: theme.colors.border, borderTopWidth: 1, marginTop: 2, paddingTop: theme.spacing.xs },
+  name: { color: theme.colors.text, flex: 1, fontSize: theme.fontSize.body, fontWeight: '900' },
+  section: { color: theme.colors.textMuted, fontSize: theme.fontSize.small, fontWeight: '700' },
+  summary: { color: theme.colors.textMuted, fontSize: theme.fontSize.caption, lineHeight: theme.lineHeight.caption },
+  reward: { color: theme.colors.textMuted, fontSize: theme.fontSize.caption, lineHeight: theme.lineHeight.caption },
+  mapSection: { borderTopColor: theme.colors.border, borderTopWidth: 1, marginTop: theme.spacing.hairline, paddingTop: theme.spacing.xs },
 });

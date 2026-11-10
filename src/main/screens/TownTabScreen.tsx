@@ -253,7 +253,7 @@ const styles = StyleSheet.create({
   },
   title: {
     color: theme.colors.text,
-    fontSize: 22,
+    fontSize: theme.fontSize.title,
     fontWeight: '900',
   },
   hint: {
@@ -261,8 +261,8 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3,
     borderLeftColor: theme.colors.accentBlue,
     paddingLeft: theme.spacing.md,
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: theme.fontSize.body,
+    lineHeight: theme.lineHeight.caption,
   },
   searchField: {
     minHeight: 46,
@@ -276,24 +276,28 @@ const styles = StyleSheet.create({
   },
   searchIcon: {
     color: theme.colors.textMuted,
-    fontSize: 20,
+    fontSize: theme.fontSize.section,
   },
   searchInput: {
     flex: 1,
     color: theme.colors.text,
-    fontSize: 14,
+    fontSize: theme.fontSize.body,
     paddingHorizontal: theme.spacing.sm,
     paddingVertical: theme.spacing.sm,
+    minHeight: theme.control.input,
+    minWidth: theme.control.touch,
   },
   clearButton: {
-    width: 36,
-    height: 36,
+    width: theme.control.touch,
+    height: theme.control.touch,
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: theme.control.touch,
+    minWidth: theme.control.touch,
   },
   clearLabel: {
     color: theme.colors.textMuted,
-    fontSize: 24,
+    fontSize: theme.fontSize.title,
   },
   resultHeader: {
     flexDirection: 'row',
@@ -302,16 +306,16 @@ const styles = StyleSheet.create({
   },
   resultTitle: {
     color: theme.colors.text,
-    fontSize: 15,
+    fontSize: theme.fontSize.body,
     fontWeight: '900',
   },
   resultCount: {
     color: theme.colors.textMuted,
-    fontSize: 12,
+    fontSize: theme.fontSize.caption,
     fontWeight: '700',
   },
   pressed: {
     opacity: 0.75,
   },
-  detailTitle: { color: theme.colors.text, fontSize: 17, fontWeight: '900' },
+  detailTitle: { color: theme.colors.text, fontSize: theme.fontSize.section, fontWeight: '900' },
 });

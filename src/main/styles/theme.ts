@@ -1,3 +1,4 @@
+/** 최대 밀도(D) 디자인 기준. 화면별 크기는 이 토큰을 사용한다. */
 export const theme = {
   colors: {
     background: '#0f141b',
@@ -18,14 +19,50 @@ export const theme = {
     overlay: 'rgba(0, 0, 0, 0.64)',
   },
   spacing: {
-    xs: 4,
-    sm: 8,
-    md: 12,
-    lg: 16,
-    xl: 24,
+    hairline: 1,
+    xs: 2,
+    sm: 3,
+    md: 4,
+    lg: 6,
+    xl: 8,
+    xxl: 12,
+  },
+  fontSize: {
+    micro: 9,
+    small: 10,
+    caption: 11,
+    body: 12,
+    section: 14,
+    title: 16,
+    display: 22,
+  },
+  lineHeight: {
+    compact: 14,
+    caption: 15,
+    body: 16,
+    section: 18,
+    title: 20,
+    display: 24,
+  },
+  control: {
+    touch: 44,
+    denseRow: 46,
+    input: 48,
+    primary: 48,
+  },
+  layout: {
+    screenPadding: 6,
+    cardPadding: 6,
+    sectionGap: 4,
+    rowGap: 2,
+  },
+  icon: {
+    decoration: 24,
+    avatar: 26,
+    preset: 28,
   },
   radius: {
-    sm: 6,
-    md: 8,
+    sm: 4,
+    md: 6,
   },
 } as const;

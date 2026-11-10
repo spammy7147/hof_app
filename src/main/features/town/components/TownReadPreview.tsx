@@ -44,7 +44,7 @@ export function TownReadPreview({ api, path, virtualized, children }: {
 
 const styles = StyleSheet.create({
   container: { flex: 1, minHeight: 0, gap: theme.spacing.sm }, hidden: { display: 'none' },
-  hint: { color: theme.colors.textMuted, lineHeight: 20 }, error: { color: theme.colors.danger, lineHeight: 20 },
-  retry: { alignSelf: 'flex-start', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.sm, padding: theme.spacing.sm },
-  retryText: { color: theme.colors.background, fontWeight: '800' },
+  hint: { fontSize: theme.fontSize.body, color: theme.colors.textMuted, lineHeight: theme.lineHeight.body }, error: { fontSize: theme.fontSize.body, color: theme.colors.danger, lineHeight: theme.lineHeight.body },
+  retry: { alignSelf: 'flex-start', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.sm, padding: theme.spacing.sm, minHeight: theme.control.touch, minWidth: theme.control.touch, },
+  retryText: { fontSize: theme.fontSize.body, color: theme.colors.background, fontWeight: '800' },
 });

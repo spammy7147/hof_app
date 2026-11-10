@@ -1,6 +1,7 @@
+import { CompactSwitch as Switch } from '../../../components/CompactSwitch';
 import { useAutomationEditorBack } from '../useAutomationEditorBack';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ArrowLeft, Check, Save, Trash2 } from 'lucide-react-native';
 
 import { buildHomeQuestAutomationRequest } from '../../../domain/typedAutomation';
@@ -137,25 +138,25 @@ export function HomeQuestAutomationEditor({ entry, saving, mutationMessage, load
 const styles = StyleSheet.create({
   screen: { backgroundColor: theme.colors.background, flex: 1, paddingHorizontal: theme.spacing.lg, paddingTop: theme.spacing.lg },
   header: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.md, marginBottom: theme.spacing.lg },
-  iconButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
-  headerCopy: { flex: 1 }, title: { color: theme.colors.text, fontSize: 22, fontWeight: '900' },
-  subtitle: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18, marginTop: 4 },
+  iconButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44, minHeight: theme.control.touch, minWidth: theme.control.touch, },
+  headerCopy: { flex: 1 }, title: { color: theme.colors.text, fontSize: theme.fontSize.title, fontWeight: '900' },
+  subtitle: { color: theme.colors.textMuted, fontSize: theme.fontSize.caption, lineHeight: theme.lineHeight.caption, marginTop: theme.spacing.hairline },
   enabledRow: { alignItems: 'center', backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', marginBottom: theme.spacing.md, padding: theme.spacing.md },
-  enabledLabel: { color: theme.colors.text, fontSize: 15, fontWeight: '800' },
+  enabledLabel: { color: theme.colors.text, fontSize: theme.fontSize.body, fontWeight: '800' },
   tabs: { flexDirection: 'row', gap: theme.spacing.xs },
-  tab: { alignItems: 'center', borderBottomColor: theme.colors.border, borderBottomWidth: 2, flex: 1, justifyContent: 'center', minHeight: 44, minWidth: 0 },
+  tab: { alignItems: 'center', borderBottomColor: theme.colors.border, borderBottomWidth: 2, flex: 1, justifyContent: 'center', minHeight: theme.control.touch, minWidth: theme.control.touch },
   tabActive: { borderBottomColor: theme.colors.accentGreen },
-  tabText: { color: theme.colors.textMuted, fontSize: 11, fontWeight: '800' },
+  tabText: { color: theme.colors.textMuted, fontSize: theme.fontSize.caption, fontWeight: '800' },
   tabTextActive: { color: theme.colors.accentGreen },
-  search: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, fontSize: 14, marginBottom: theme.spacing.sm, minHeight: 48, paddingHorizontal: theme.spacing.md },
-  message: { color: theme.colors.accentAmber, fontSize: 12, marginBottom: theme.spacing.sm }, loading: { flex: 1 },
-  list: { gap: theme.spacing.sm, paddingBottom: theme.spacing.lg }, empty: { color: theme.colors.textMuted, padding: theme.spacing.xl, textAlign: 'center' },
-  card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, padding: theme.spacing.md },
+  search: { backgroundColor: theme.colors.surfaceAlt, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: theme.colors.text, fontSize: theme.fontSize.body, marginBottom: theme.spacing.sm, minHeight: theme.control.input, paddingHorizontal: theme.spacing.md, minWidth: theme.control.touch, },
+  message: { color: theme.colors.accentAmber, fontSize: theme.fontSize.caption, marginBottom: theme.spacing.sm }, loading: { flex: 1 },
+  list: { gap: theme.spacing.sm, paddingBottom: theme.spacing.lg }, empty: { fontSize: theme.fontSize.body, color: theme.colors.textMuted, padding: theme.spacing.xl, textAlign: 'center' },
+  card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, padding: theme.spacing.md, minHeight: theme.control.touch, minWidth: theme.control.touch, },
   cardSelected: { borderColor: theme.colors.accentGreen, borderWidth: 2 }, cardTitleRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
-  cardTitle: { color: theme.colors.text, flex: 1, fontSize: 15, fontWeight: '900' }, state: { color: theme.colors.accentGreen, fontSize: 11, fontWeight: '800', marginTop: 6 },
-  detail: { color: theme.colors.textMuted, fontSize: 12, lineHeight: 18, marginTop: 6 }, reward: { color: theme.colors.accentAmber, fontSize: 12, lineHeight: 18, marginTop: 4 },
+  cardTitle: { color: theme.colors.text, flex: 1, fontSize: theme.fontSize.body, fontWeight: '900' }, state: { color: theme.colors.accentGreen, fontSize: theme.fontSize.caption, fontWeight: '800', marginTop: theme.spacing.xs },
+  detail: { color: theme.colors.textMuted, fontSize: theme.fontSize.caption, lineHeight: theme.lineHeight.caption, marginTop: theme.spacing.xs }, reward: { color: theme.colors.accentAmber, fontSize: theme.fontSize.caption, lineHeight: theme.lineHeight.caption, marginTop: theme.spacing.hairline },
   actions: { borderTopColor: theme.colors.border, borderTopWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, paddingBottom: theme.spacing.lg, paddingTop: theme.spacing.sm },
-  deleteButton: { alignItems: 'center', borderColor: theme.colors.danger, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: 6, justifyContent: 'center', minHeight: 52, paddingHorizontal: theme.spacing.md },
-  deleteText: { color: theme.colors.danger, fontSize: 14, fontWeight: '900' }, saveButton: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, flex: 1, flexDirection: 'row', gap: 6, justifyContent: 'center', minHeight: 52 },
-  saveText: { color: theme.colors.buttonText, fontSize: 15, fontWeight: '900' }, disabled: { opacity: 0.45 },
+  deleteButton: { alignItems: 'center', borderColor: theme.colors.danger, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, justifyContent: 'center', minHeight: theme.control.touch, paddingHorizontal: theme.spacing.md, minWidth: theme.control.touch, },
+  deleteText: { color: theme.colors.danger, fontSize: theme.fontSize.body, fontWeight: '900' }, saveButton: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, flex: 1, flexDirection: 'row', gap: theme.spacing.xs, justifyContent: 'center', minHeight: theme.control.primary, minWidth: theme.control.touch, },
+  saveText: { color: theme.colors.buttonText, fontSize: theme.fontSize.body, fontWeight: '900' }, disabled: { opacity: 0.45 },
 });

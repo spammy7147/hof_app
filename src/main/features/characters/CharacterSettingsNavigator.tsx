@@ -114,7 +114,7 @@ export function CharacterSettingsNavigator(
 const styles = StyleSheet.create({
   root: { flex: 1, minHeight: 0 },
   tabs: {
-    minHeight: 44,
+    minHeight: theme.control.touch,
     flexDirection: "row",
     backgroundColor: "#111821",
     borderBottomWidth: 1,
@@ -122,13 +122,14 @@ const styles = StyleSheet.create({
   },
   tab: {
     flex: 1,
-    minHeight: 44,
+    minHeight: theme.control.touch,
     alignItems: "center",
     justifyContent: "center",
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
+    minWidth: theme.control.touch,
   },
   tabActive: { borderBottomColor: theme.colors.accentGreen },
-  tabText: { color: theme.colors.textMuted, fontSize: 13, fontWeight: "800" },
+  tabText: { color: theme.colors.textMuted, fontSize: theme.fontSize.body, fontWeight: "800" },
   tabTextActive: { color: theme.colors.accentGreen },
 });
