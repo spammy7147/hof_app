@@ -121,9 +121,20 @@ export class AutomationPresetEditor {
     }
   }
 
-  async save(asNew = false): Promise<boolean> {
-    const name = this.snapshot.name.trim();
+  canApplyWhileRunning(): boolean {
+    const entries = this.draft.getSnapshot().aggregate?.entries;
+    const withoutEnabled = (items: readonly TypedAutomationEntryResponse[]) =>
+      automationPresetSettings(items).entries.map(entry => ({ ...entry, enabled: false }));
+    return this.snapshot.loaded && entries != null
+      && JSON.stringify(withoutEnabled(entries)) === JSON.stringify(withoutEnabled(this.current.entries));
+  }
+
+  async save(asNew = false, newName = this.snapshot.name): Promise<boolean> {
+    const name = newName.trim();
     if (!name || name.length > 100) { this.patch({ error: '프리셋 이름은 1~100자로 입력해 주세요.' }); return false; }
+    if (this.snapshot.presets.some(preset => preset.name === name && (asNew || preset.id !== this.snapshot.selectedId))) {
+      this.patch({ error: '같은 이름의 프리셋이 있어요. 다른 이름을 입력해 주세요.' }); return false;
+    }
     return this.operation(async generation => {
       const id = asNew ? undefined : this.snapshot.selectedId ?? undefined;
       const settings = automationPresetSettings(this.draft.getSnapshot().aggregate?.entries ?? []);
@@ -153,7 +164,8 @@ export class AutomationPresetEditor {
       await this.replaceDraft(response.preset.settings, response.preset.name, response.preset.id, response.preset.revision);
       if (generation !== this.generation) return;
       this.patch({ applied: { id: response.preset.id, name: response.preset.name, revision: response.preset.revision,
-        matchesCurrent: true }, message: '프리셋 전체를 적용했어요. 자동화를 시작하거나 재개해 주세요.' });
+        matchesCurrent: true }, message: response.automation.runtime.lifecycle === 'RUNNING'
+          ? '변경사항을 실행 중인 자동화에 반영했어요.' : '프리셋 전체를 적용했어요. 자동화를 시작하거나 재개해 주세요.' });
       try { await this.api.onApplied?.(); }
       catch { if (generation === this.generation) this.patch({ message: '프리셋은 적용됐어요. 실행 상태를 새로고침해 주세요.' }); }
     });
@@ -166,17 +178,15 @@ export class AutomationPresetEditor {
     });
   }
 
-  async remove(): Promise<boolean> {
-    if (this.snapshot.selectedId == null) return false;
+  async remove(deletedId = this.snapshot.selectedId): Promise<boolean> {
+    if (deletedId == null) return false;
     return this.operation(async generation => {
-      const current = await this.api.fetchCurrent();
-      if (generation !== this.generation) return;
-      const deletedId = this.snapshot.selectedId!;
       const presets = await this.api.remove(deletedId);
       if (generation !== this.generation) return;
       const applied = this.snapshot.applied?.id === deletedId ? null : this.snapshot.applied;
-      this.current = clone(current);
-      await this.replaceDraft(automationPresetSettings(current.entries), '', null, null);
+      if (this.snapshot.selectedId === deletedId) {
+        await this.replaceDraft(automationPresetSettings(this.current.entries), '', null, null);
+      }
       if (generation === this.generation) this.patch({ presets, applied, message: '저장한 프리셋을 삭제했어요. 현재 실행 설정은 유지돼요.' });
     });
   }

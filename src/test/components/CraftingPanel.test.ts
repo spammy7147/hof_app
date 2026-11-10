@@ -19,6 +19,37 @@ const { CraftingPanel } = require('../../main/features/town/panels/CraftingPanel
 let mounted: ReactTestRenderer | null = null; afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; });
 
 describe('CraftingPanel', () => {
+  it('이전 서버가 재료 필요량을 owned로 보내도 제작품 제목에 붙이지 않는다', async () => {
+    const label = 'Bastard Sword (TwoHandSword) / Atk:150 / Iron Ingot x 50(12831) Weapon Piece x 30(14372) [제작 시간 : 600]';
+    await render(React.createElement(CraftingPanel, {
+      api: api(async () => data('WORKBASE', { rows: [{ id: 'sword', label, selectable: true, detail: label, cost: 24_000, owned: 50, workSeconds: 600 }] })),
+      mode: 'workbase',
+    }));
+
+    const row = mounted!.root.find((node) => String(node.type) === 'FlatList').props.data[0];
+    assert.equal(row.label, 'Bastard Sword');
+    assert.equal(row.detail.includes('Iron Ingot x 50(12831) Weapon Piece x 30(14372)'), true);
+  });
+
+  it('작업이 없어도 원본의 제작 완료 버튼을 목록 위에 표시하고 수동으로 제출한다', async () => {
+    const calls: Array<{ path: string; request: unknown }> = [];
+    const idle = data('WORKBASE', { completionAvailable: true });
+    await render(React.createElement(CraftingPanel, { api: api(async () => idle, async (path, request) => {
+      calls.push({ path, request });
+      return { ...idle, result: result() };
+    }), mode: 'workbase' }));
+
+    assert.deepEqual(calls, []);
+    assert.equal(button('제작 완료').props.disabled, false);
+    const list = mounted!.root.find((node) => String(node.type) === 'FlatList');
+    assert.ok(list.props.ListHeaderComponent);
+    assert.equal(list.findAll((node) => String(node.type) === 'Pressable' && node.props.accessibilityLabel === '제작 완료').length, 1);
+    assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === '현재 작업장 작업').length, 0);
+    await press('제작 완료');
+    assert.deepEqual(calls, [{ path: '/api/town/crafting/workbase/complete', request: {} }]);
+    assert.ok(button('작업 시작'));
+  });
+
   it('제작공방 카드에서 아이템명과 옵션·필요 재료를 분리한다', async () => {
     const create = data('CREATE', {
       rows: [{

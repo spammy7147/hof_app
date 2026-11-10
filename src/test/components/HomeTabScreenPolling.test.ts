@@ -36,7 +36,7 @@ moduleWithLoader._load = (request, parent, isMain) => {
   if (request.endsWith('/HomeStatusSummary')) return { HomeStatusSummary: host('HomeStatusSummary') };
   if (request.endsWith('/UnifiedAutomationDashboard')) return { UnifiedAutomationDashboard: dashboardMock };
   if (request.endsWith('/UnifiedAutomationSettings')) return { UnifiedAutomationSettings: settingsMock };
-  if (request.endsWith('/AutomationPresets')) return { AutomationPresets: host('AutomationPresets') };
+  if (request.endsWith('/AutomationPresets')) return { AutomationPresets: host('AutomationPresets'), AutomationPresetDetail: host('AutomationPresetDetail') };
   if (request.endsWith('/QuestAutomationEditor')) return { QuestAutomationEditor: host('QuestAutomationEditor') };
   if (request.endsWith('/BattleMapAutomationEditor')) return { BattleMapAutomationEditor: host('BattleMapAutomationEditor') };
   if (request.endsWith('/AdventureMapAutomationEditor')) return { AdventureMapAutomationEditor: host('AdventureMapAutomationEditor') };
@@ -94,14 +94,19 @@ describe('HomeTabScreen dashboard polling', () => {
     let renderer!: ReactTestRenderer;
     await act(async () => { renderer = create(React.createElement(HomeTabScreen, props(controller as never))); });
     await act(async () => { renderer.root.findByProps({ accessibilityLabel: '설정 열기' }).props.onPress(); });
+    assert.equal(renderer.root.findAllByType('UnifiedAutomationSettings' as never).length, 0);
+    await act(async () => { renderer.root.findByType('AutomationPresets' as never).props.onOpen(null, '기본'); });
     const settings = renderer.root.findByType('UnifiedAutomationSettings' as never);
     await act(async () => { await settings.props.onAdd('FISHING'); });
     const entry = editor.draft.getSnapshot().aggregate!.entries[0]!;
     await act(async () => { await renderer.root.findByType('UnifiedAutomationSettings' as never).props.onToggle(entry); });
+    await act(async () => { renderer.root.findByType('UnifiedAutomationSettings' as never).props.onDetail(entry); });
+    await act(async () => { renderer.root.findByType('NewAutomationEditor' as never).props.onBack(); });
+    assert.equal(renderer.root.findByType('AutomationPresetDetail' as never).props.editor, editor);
     await act(async () => { editor.setName('전체 구성'); await editor.save(); });
     assert.deepEqual(writes[0]?.settings.entries.map(({ type, enabled }) => [type, enabled]), [['FISHING', true]]);
     assert.deepEqual(current.entries, []);
-    assert.equal(renderer.root.findByType('AutomationPresets' as never).props.editor, editor);
+    assert.equal(renderer.root.findByType('AutomationPresetDetail' as never).props.editor, editor);
     await act(async () => { renderer.unmount(); });
   });
   it('opens the colosseum editor and saves its activation through the controller', async () => {

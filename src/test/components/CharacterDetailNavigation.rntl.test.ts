@@ -21,7 +21,7 @@ let confirmation: AlertButton | undefined;
 let nativeWindowSize = Infinity;
 let restoredIndex: number | null = null;
 let indexMeasurementMissing = false;
-const list = (name: string) => React.forwardRef<unknown, Record<string, any>>(({ data, renderItem, keyExtractor, ListEmptyComponent, ...props }, ref) => {
+const list = (name: string) => React.forwardRef<unknown, Record<string, any>>(({ data, renderItem, keyExtractor, ListEmptyComponent, ListHeaderComponent, ListFooterComponent, ...props }, ref) => {
   const [start, setStart] = useState(0);
   useImperativeHandle(ref, () => ({
     scrollToOffset: ({ offset }: { offset: number }) => { restoredOffset = offset; if (Number.isFinite(nativeWindowSize)) setStart(Math.floor(offset / 80)); },
@@ -31,8 +31,8 @@ const list = (name: string) => React.forwardRef<unknown, Record<string, any>>(({
       else setStart(index);
     },
   }));
-  return React.createElement(name, props, data.length ? data.slice(start, start + nativeWindowSize).map((item: any, index: number) =>
-    React.createElement(React.Fragment, { key: keyExtractor(item) }, renderItem({ item, index, getIndex: () => index, drag: () => undefined, isActive: false }))) : ListEmptyComponent);
+  return React.createElement(name, props, ListHeaderComponent, data.length ? data.slice(start, start + nativeWindowSize).map((item: any, index: number) =>
+    React.createElement(React.Fragment, { key: keyExtractor(item) }, renderItem({ item, index, getIndex: () => index, drag: () => undefined, isActive: false }))) : ListEmptyComponent, ListFooterComponent);
 });
 const rn = {
   View, Text: host('Text'), TextInput: host('TextInput'), Pressable: host('Pressable'), Image: host('Image'),
@@ -107,6 +107,19 @@ async function systemBack() {
   });
   return consumed;
 }
+
+it('관리의 동기화 항목에서 동기화 화면을 열고 닫으면 관리로 돌아온다', async () => {
+  await openList({ deepSync: async () => { throw new Error('화면 진입만으로 동기화를 실행하면 안 됩니다.'); } });
+  await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: /소셜/ }));
+  await rntl.fireEvent.press(rntl.screen.getByRole('tab', { name: '관리' }));
+  assert.ok(rntl.screen.getByText('현재 캐릭터의 설정과 저장 패턴·장비를 갱신합니다.'));
+  assert.equal(rntl.screen.queryByRole('button', { name: '전체 설정 동기화' }), null);
+  await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: '동기화' }));
+  assert.ok(rntl.screen.getByRole('button', { name: '전체 설정 동기화' }));
+  await systemBack();
+  assert.ok(rntl.screen.getByRole('tab', { name: '관리', selected: true }));
+  assert.ok(rntl.screen.getByRole('button', { name: '동기화' }));
+});
 
 // 실제 좌표·관성 터치는 Android 검증 앱으로 확인한다. 이 검사는 외부 스크롤이
 // 고정 탐색 영역을 다시 감싸는 회귀를 실제 MainScreen 조립 경계에서 막는다.

@@ -17,6 +17,7 @@ import {
   GraduationCap,
   PackageOpen,
   Pencil,
+  RefreshCw,
   Sparkles,
   UserRoundX,
   type LucideIcon,
@@ -149,7 +150,18 @@ export function CharacterManagementScreen({
           disabled={!canTransfer}
           onPress={onImportSettings}
         />
-        <CharacterSyncControl characterHub={characterHub} />
+        <CharacterSyncControl
+          characterHub={characterHub}
+          renderTrigger={({ onPress, label, status }) => (
+            <ActionRow
+              icon={RefreshCw}
+              title="동기화"
+              accessibilityLabel={label}
+              description={status || "현재 캐릭터의 설정과 저장 패턴·장비를 갱신합니다."}
+              onPress={onPress}
+            />
+          )}
+        />
       </View>
       <Modal
         visible={renameOpen}
@@ -377,6 +389,7 @@ function ActionRow({
   title,
   description,
   onPress,
+  accessibilityLabel,
   danger = false,
   disabled = false,
 }: {
@@ -384,6 +397,7 @@ function ActionRow({
   title: string;
   description: string;
   onPress: () => void;
+  accessibilityLabel?: string;
   danger?: boolean;
   disabled?: boolean;
 }) {
@@ -391,6 +405,7 @@ function ActionRow({
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       disabled={disabled}
       onPress={onPress}
       style={[styles.actionRow, disabled && styles.disabled]}
@@ -485,7 +500,8 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     borderRadius: theme.radius.md,
     paddingHorizontal: theme.spacing.md,
-    minWidth: theme.control.touch, },
+    minWidth: theme.control.touch,
+  },
   button: {
     minHeight: theme.control.input,
     minWidth: 100,
@@ -532,7 +548,8 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "flex-end",
     backgroundColor: "rgba(0,0,0,.7)",
-    minHeight: theme.control.touch, minWidth: theme.control.touch,
+    minHeight: theme.control.touch,
+    minWidth: theme.control.touch,
   },
   sheet: {
     gap: theme.spacing.md,
@@ -542,7 +559,8 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     backgroundColor: theme.colors.surface,
-    minHeight: theme.control.touch, minWidth: theme.control.touch,
+    minHeight: theme.control.touch,
+    minWidth: theme.control.touch,
   },
   grip: { width: 36, height: 4, alignSelf: "center", borderRadius: 3, backgroundColor: "#4c596a", marginTop: theme.spacing.sm },
 });

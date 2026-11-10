@@ -4,7 +4,7 @@ import { afterEach, describe, it } from 'node:test';
 import React, { useSyncExternalStore } from 'react';
 import type { AlertButton, FlatListProps } from 'react-native';
 import { CharacterManagementHubModule } from '../../main/domain/characterManagementHubModule';
-import type { CharacterTransferExecutionResult, HofCharacter } from '../../main/types/api';
+import type { CharacterTransferExecutionResult, CharacterTransferPreviewRequest, HofCharacter } from '../../main/types/api';
 import { makeHofCharacter, makeHofCharacterDetail } from '../fixtures/api';
 import { makeCharacterManagementHubResource } from '../fixtures/characterManagementHub';
 
@@ -16,9 +16,12 @@ const loader = Module as unknown as { _load: Loader };
 const original = loader._load;
 loader._load = (request, parent, isMain) => request === 'react-native' ? {
   View: host('View'), Text: host('Text'), TextInput: host('TextInput'), Pressable: host('Pressable'),
-  FlatList: ({ data, renderItem }: FlatListProps<HofCharacter>) => React.createElement('ScrollView', null,
+  FlatList: ({ data, renderItem, ListHeaderComponent, ListFooterComponent, ListEmptyComponent }: FlatListProps<HofCharacter>) => React.createElement('ScrollView', null,
+    React.isValidElement(ListHeaderComponent) ? ListHeaderComponent : null,
+    data?.length === 0 && React.isValidElement(ListEmptyComponent) ? ListEmptyComponent : null,
     data && Array.from(data).map((item, index) => React.createElement(React.Fragment, { key: item.id },
-      renderItem?.({ item, index, separators: { highlight() {}, unhighlight() {}, updateProps() {} } })))),
+      renderItem?.({ item, index, separators: { highlight() {}, unhighlight() {}, updateProps() {} } }))),
+    React.isValidElement(ListFooterComponent) ? ListFooterComponent : null),
   Alert: { alert: (_title: string, _message: string, buttons: AlertButton[]) => { confirmation = buttons.find(item => item.text === '가져오기'); } },
   StyleSheet: { create: <T,>(value: T) => value, flatten: (value: unknown) => Array.isArray(value) ? Object.assign({}, ...value.filter(Boolean)) : value },
 } : request === 'react-native-draggable-flatlist' ? { NestableScrollContainer: host('ScrollView') } : original(request, parent, isMain);
@@ -33,6 +36,36 @@ function Screen({ hub }: { hub: CharacterManagementHubModule }) {
 }
 
 describe('설정 가져오기 실행 결과', () => {
+  it('원본을 검색하고 선택하면 가져올 설정을 표시하고 다시 선택할 수 있다', async () => {
+    const requests: CharacterTransferPreviewRequest[] = [];
+    const resource = makeCharacterManagementHubResource({
+      detail: makeHofCharacterDetail(1),
+      characters: [makeHofCharacter(1), makeHofCharacter(2, { name: '수학자', job: 'Mathematician' }),
+        makeHofCharacter(3, { name: '바드', job: 'Troubadour' }),
+        makeHofCharacter(4, { name: '보관 원본', lifecycle: 'ARCHIVED' })],
+      actions: { previewTransfer: async request => { requests.push(request); } },
+    });
+    await rntl.render(React.createElement(CharacterSettingsTransferScreen, { characterHub: resource, onBack() {} }));
+    assert.equal(rntl.screen.queryByRole('radio', { name: /캐릭터1/ }), null);
+    await rntl.fireEvent.changeText(rntl.screen.getByLabelText('원본 캐릭터 검색'), 'Mathematician');
+    assert.equal(rntl.screen.queryByRole('radio', { name: /바드/ }), null);
+    await rntl.fireEvent.press(rntl.screen.getByRole('radio', { name: /수학자/ }));
+    assert.ok(rntl.screen.getByRole('radio', { name: /수학자/, checked: true }));
+    assert.ok(rntl.screen.getByText('가져올 설정'));
+    await rntl.fireEvent.press(rntl.screen.getByRole('checkbox', { name: '스탯' }));
+    await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: '가져오기 확인' }));
+    assert.equal(requests[0]?.sourceCharacterId, 2);
+    assert.equal(requests[0]?.targetCharacterId, 1);
+    assert.equal(requests[0]?.transfer.includeStats, true);
+    await rntl.fireEvent.press(rntl.screen.getByRole('button', { name: '원본 캐릭터 다시 선택' }));
+    assert.ok(rntl.screen.getByRole('radio', { name: /바드/ }));
+    assert.equal(rntl.screen.queryByText('가져올 설정'), null);
+    await rntl.fireEvent.press(rntl.screen.getByRole('tab', { name: '보관함' }));
+    assert.ok(rntl.screen.getByRole('radio', { name: /보관 원본/ }));
+    await rntl.fireEvent.changeText(rntl.screen.getByLabelText('원본 캐릭터 검색'), '없는 이름');
+    assert.ok(rntl.screen.getByText('검색 결과가 없습니다.'));
+  });
+
   it('변경된 단계가 보인 뒤 새 확인창에서 확인해야 다시 실행한다', async () => {
     const tokens: string[] = [];
     const user = rntl.userEvent.setup();

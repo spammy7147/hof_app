@@ -84,6 +84,7 @@ const partyPresetFolderEditor = (props: Record<string, unknown>) => React.create
 const reactNativeMock = {
   AccessibilityInfo: { setAccessibilityFocus: (handle: number) => { accessibilityFocusCalls.push(handle); } },
   ActivityIndicator: host('ActivityIndicator'),
+  Keyboard: { dismiss: () => undefined },
   FlatList: (props: Record<string, unknown>) => React.createElement(
     'FlatList',
     props,
@@ -113,6 +114,7 @@ const moduleWithLoader = Module as unknown as { _load: Loader };
 const originalLoad = moduleWithLoader._load;
 moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') return reactNativeMock;
+  if (request === 'react-native-safe-area-context') return { SafeAreaView: host('SafeAreaView') };
   if (request === 'lucide-react-native') return iconsMock;
   if (request === 'react-native-draggable-flatlist') return { __esModule: true, default: draggableFlatList };
   if (request === 'react-native-gesture-handler/ReanimatedSwipeable') {
@@ -257,7 +259,8 @@ describe('PartyPresetList', () => {
     await openUnassignedPreset(renderer, '서관, 대표 프리셋');
 
     assert.equal(textCount(renderer.root, '+ 추가'), 0);
-    assert.equal(textCount(renderer.root, '추가'), 1);
+    assert.equal(textCount(renderer.root, '추가'), 0);
+    assert.equal(textCount(renderer.root, '프리셋 추가'), 1);
     const star = renderer.root.findByProps({ accessibilityLabel: '동관 대표로 지정' });
     await act(async () => { await star.props.onPress(); });
 
@@ -453,10 +456,17 @@ describe('PartyPresetList', () => {
       },
     });
 
+    assert.equal(textCount(renderer.root, '폴더 관리'), 1);
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '프리셋 추가' }));
     await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }).props.onPress());
+    assert.equal(renderer.root.findAllByProps({ accessibilityLabel: '프리셋 추가' }).length, 0);
+    assert.equal(textCount(renderer.root, '폴더 관리'), 1);
     await act(async () => findHost(renderer.root, 'PartyPresetFolderEditor').props.onDelete(10));
     assert.deepEqual(deletedFolders, [10]);
     assert.deepEqual(deletedPresets, []);
+    await act(async () => renderer.root.findByProps({ accessibilityLabel: '폴더 편집 종료' }).props.onPress());
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '프리셋 추가' }));
+    assert.ok(renderer.root.findByProps({ accessibilityLabel: '폴더 편집 시작' }));
   });
 
   it('does not render a folder-moving picker but retains the preset assignment picker', async () => {

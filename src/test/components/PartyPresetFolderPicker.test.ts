@@ -35,6 +35,7 @@ const moduleWithLoader = Module as unknown as { _load: Loader };
 const originalLoad = moduleWithLoader._load;
 moduleWithLoader._load = (request, parent, isMain) => {
   if (request === 'react-native') return reactNativeMock;
+  if (request === 'react-native-safe-area-context') return { SafeAreaView: host('SafeAreaView') };
   if (request === 'lucide-react-native') return iconsMock;
   return originalLoad(request, parent, isMain);
 };
@@ -84,18 +85,21 @@ describe('PartyPresetFolderPicker', () => {
     assert.equal(renderer.root.findByProps({ accessibilityLabel: '폴더 위치 깊이1 › 깊이2 › 깊이3 › 깊이4' }).props.disabled, true);
   });
 
-  it('opens a form-sheet modal and keeps persisted depth-first folder order', async () => {
+  it('안전 영역 안의 모달에서 저장된 폴더 순서와 전체 접근성 경로를 유지한다', async () => {
     focusCalls.length = 0;
     const renderer = await renderPicker(ORDERED_CATALOG);
     const modal = renderer.root.find((node) => (node.type as unknown) === 'Modal');
     assert.equal(modal.props.visible, true);
-    assert.equal(modal.props.presentationStyle, 'formSheet');
+    assert.equal(modal.props.presentationStyle, 'overFullScreen');
+    assert.equal(modal.props.transparent, true);
     assert.ok(renderer.root.findByProps({ accessibilityRole: 'header' }));
     assert.deepEqual(
       (renderer.root.find((node) => (node.type as unknown) === 'FlatList').props.data as Array<{ path: string }>).map(({ path }) => path),
       ['미지정', 'Z 루트', 'Z 루트 › B 자식', 'Z 루트 › B 자식 › 깊은 항목', 'A 루트'],
     );
     assert.ok(renderer.root.findByProps({ accessibilityLabel: '폴더 위치 Z 루트 › B 자식 › 깊은 항목' }));
+    assert.ok(renderer.root.findAll((node) => (node.type as unknown) === 'Text').some((node) => node.children.join('') === '깊은 항목'));
+    assert.ok(renderer.root.findAll((node) => (node.type as unknown) === 'Text').some((node) => node.children.join('') === 'Z 루트 › B 자식'));
     await act(async () => modal.props.onShow());
     assert.deepEqual(focusCalls, [1]);
   });

@@ -1,7 +1,7 @@
-import { ChevronDown, ChevronUp, Download, FolderCog, GripVertical, Plus, Save, Star, Trash2 } from 'lucide-react-native';
+import { ArrowLeft, ChevronDown, ChevronUp, Download, FolderCog, GripVertical, Plus, Save, Star, Trash2 } from 'lucide-react-native';
 import type { ElementRef, ReactNode, Ref } from 'react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { FlatList } from 'react-native-gesture-handler';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import DraggableFlatList, { type RenderItemParams } from 'react-native-draggable-flatlist';
@@ -244,6 +244,7 @@ export function PartyPresetList({
   function openPresetFolderPicker() {
     if (!authenticatedRef.current || isSaving || mutationPendingRef.current) return;
     capturePickerFocus({ generation: accountGenerationRef.current, presetId: expandedPresetId });
+    Keyboard.dismiss();
     pickerVisibleRef.current = true;
     setFolderPickerOpen(true);
   }
@@ -591,20 +592,20 @@ export function PartyPresetList({
   return (
     <View style={styles.root}>
       <View style={styles.toolbar}>
-        <Text style={styles.toolbarTitle}>프리셋</Text>
-        {authenticated ? (
+        {folderEditMode ? (
           <Pressable
-            accessibilityLabel={folderEditMode ? '폴더 편집 종료' : '폴더 편집 시작'}
+            accessibilityLabel="폴더 편집 종료"
             accessibilityRole="button"
-            disabled={!authenticated || isSaving}
-            onPress={() => setFolderEditMode((current) => !current)}
+            disabled={isSaving}
+            onPress={() => setFolderEditMode(false)}
             style={styles.folderModeButton}
           >
-            <FolderCog color={theme.colors.textMuted} size={17} />
-            <Text style={styles.folderModeText}>{folderEditMode ? '완료' : '폴더 편집'}</Text>
+            <ArrowLeft color={theme.colors.text} size={18} />
+            <Text style={styles.folderModeText}>프리셋으로</Text>
           </Pressable>
         ) : null}
-        <Pressable
+        <Text accessibilityRole="header" style={styles.toolbarTitle}>{folderEditMode ? '폴더 관리' : '프리셋'}</Text>
+        {!folderEditMode ? <Pressable
           accessibilityLabel="프리셋 추가"
           accessibilityRole="button"
           disabled={!authenticated || isSaving}
@@ -616,8 +617,8 @@ export function PartyPresetList({
           ]}
         >
           <Plus color={theme.colors.background} size={16} strokeWidth={3} />
-          <Text style={styles.addButtonText}>추가</Text>
-        </Pressable>
+          <Text style={styles.addButtonText}>프리셋 추가</Text>
+        </Pressable> : null}
       </View>
 
       {errorMessage ?? partyPresetCatalog.mutationError ?? partyPresetCatalog.error ? (
@@ -660,16 +661,30 @@ export function PartyPresetList({
         </View>
       ) : expandedPresetId == null && newDraft == null ? (
         <View style={styles.catalogBrowser}>
-          <TextInput
-            accessibilityLabel="프리셋 이름 검색"
-            autoCapitalize="none"
-            autoCorrect={false}
-            onChangeText={setCatalogQuery}
-            placeholder="프리셋 이름 검색"
-            placeholderTextColor={theme.colors.textMuted}
-            style={styles.nameInput}
-            value={catalogQuery}
-          />
+          <View style={styles.browserToolbar}>
+            <TextInput
+              accessibilityLabel="프리셋 이름 검색"
+              autoCapitalize="none"
+              autoCorrect={false}
+              onChangeText={setCatalogQuery}
+              placeholder="프리셋 이름 검색"
+              placeholderTextColor={theme.colors.textMuted}
+              style={[styles.nameInput, styles.searchInput]}
+              value={catalogQuery}
+            />
+            {authenticated ? <Pressable
+              accessibilityLabel="폴더 편집 시작"
+              accessibilityHint="폴더 추가, 이름 변경, 순서와 위치를 관리합니다"
+              accessibilityRole="button"
+              disabled={isSaving}
+              onPress={() => setFolderEditMode(true)}
+              style={({ pressed }) => [styles.folderModeButton, styles.folderManageButton,
+                isSaving && styles.disabledButton, pressed && styles.pressed]}
+            >
+              <FolderCog color={theme.colors.textMuted} size={17} />
+              <Text style={styles.folderModeText}>폴더 관리</Text>
+            </Pressable> : null}
+          </View>
           {catalogQuery.trim() ? (
             <PartyPresetSearchResults
               onSelectPreset={openPreset}
@@ -1013,9 +1028,12 @@ function formatDraftPartySummary(party: BattlePartyMember[]): string {
 const styles = StyleSheet.create({
   root: { flex: 1, gap: theme.spacing.sm },
   toolbar: { minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.md },
-  toolbarTitle: { color: theme.colors.text, fontSize: theme.fontSize.section, fontWeight: '900' },
+  toolbarTitle: { minWidth: 0, flex: 1, color: theme.colors.text, fontSize: theme.fontSize.section, fontWeight: '900' },
   folderModeButton: { minHeight: theme.control.touch, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs, borderRadius: theme.radius.md, borderCurve: 'continuous', paddingHorizontal: theme.spacing.sm, minWidth: theme.control.touch, },
   folderModeText: { color: theme.colors.textMuted, fontSize: theme.fontSize.body, fontWeight: '900' },
+  browserToolbar: { flexDirection: 'row', alignItems: 'stretch', gap: theme.spacing.lg },
+  searchInput: { flex: 1, minWidth: 0 },
+  folderManageButton: { borderWidth: 1, borderColor: theme.colors.border, paddingHorizontal: theme.spacing.lg },
   addButton: { minHeight: theme.control.touch, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs, borderRadius: theme.radius.md, backgroundColor: theme.colors.accentGreen, paddingHorizontal: theme.spacing.md, minWidth: theme.control.touch, },
   addButtonText: { color: theme.colors.background, fontSize: theme.fontSize.body, fontWeight: '900' },
   list: { flex: 1 },

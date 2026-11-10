@@ -13,7 +13,7 @@ import { AdventureMapAutomationEditor } from '../features/automation/components/
 import { BattleMapAutomationEditor } from '../features/automation/components/BattleMapAutomationEditor';
 import { QuestAutomationEditor } from '../features/automation/components/QuestAutomationEditor';
 import { UnifiedAutomationSettings } from '../features/automation/components/UnifiedAutomationSettings';
-import { AutomationPresets } from '../features/automation/components/AutomationPresets';
+import { AutomationPresetDetail, AutomationPresets } from '../features/automation/components/AutomationPresets';
 import { NewAutomationEditor } from '../features/automation/components/NewAutomationEditor';
 import { ColosseumAutomationEditor } from '../features/automation/components/ColosseumAutomationEditor';
 import { HomeQuestAutomationEditor } from '../features/automation/components/HomeQuestAutomationEditor';
@@ -51,7 +51,7 @@ type HomeTabScreenProps = {
 const subscribeToNothing = () => () => undefined;
 const noPresetSnapshot = () => null;
 
-type HomeRoute = 'dashboard' | 'settings' | 'editor' | 'history';
+type HomeRoute = 'dashboard' | 'settings' | 'preset' | 'editor' | 'history';
 
 /**
  * 공유 자동화 store를 구독하고 대시보드·설정·편집 화면을 전환하는 홈 화면이다.
@@ -92,6 +92,8 @@ export function HomeTabScreen({
   const [route, setRoute] = useState<HomeRoute>('dashboard');
   const [typedEditorEntry, setTypedEditorEntry] = useState<TypedAutomationEntryResponse | null>(null);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const scrollRef = useRef<ElementRef<typeof NestableScrollContainer>>(null);
   const presetEditor = automationController.presetEditor;
   const settingsController = presetEditor?.draft ?? automationController;
@@ -99,7 +101,7 @@ export function HomeTabScreen({
     presetEditor?.subscribe ?? subscribeToNothing, presetEditor?.getSnapshot ?? noPresetSnapshot, noPresetSnapshot);
   const live = useSyncExternalStore(automationController.subscribe, automationController.getSnapshot, automationController.getSnapshot);
   const settings = useSyncExternalStore(settingsController.subscribe, settingsController.getSnapshot, settingsController.getSnapshot);
-  const editing = route === 'settings' || route === 'editor';
+  const editing = route === 'preset' || route === 'editor' || (route === 'settings' && !presetEditor);
   const aggregate = editing ? settings.aggregate : live.aggregate;
   const { loading, actionSaving } = live;
   const { savingEntryIds, savingTypes, reordering } = settings;
@@ -114,9 +116,9 @@ export function HomeTabScreen({
   }, [authenticated, presetEditor, route]);
 
   useEffect(() => {
-    if (route !== 'settings') return undefined;
+    if (route !== 'settings' && route !== 'preset') return undefined;
     const subscription = BackHandler?.addEventListener('hardwareBackPress', () => {
-      confirmPresetNavigation(presetEditor, () => setRoute('dashboard'));
+      confirmPresetNavigation(presetEditor, () => setRoute(route === 'preset' ? 'settings' : 'dashboard'));
       return true;
     });
     return () => subscription?.remove();
@@ -157,12 +159,21 @@ export function HomeTabScreen({
     };
   }, [authenticated, automationController, route]);
 
+  function openPreset(id: number | null, name?: string) {
+    if (!presetEditor) return;
+    confirmPresetNavigation(presetEditor, () => { void (async () => {
+      if (!await presetEditor.select(id) || !mounted.current) return;
+      if (name) presetEditor.setName(name);
+      setRoute('preset');
+    })(); });
+  }
+
   function openModule(entryId: number) {
     if (presetEditor) {
       confirmPresetNavigation(presetEditor, () => { void (async () => {
-        if (!await presetEditor.beginCurrentEdit()) return;
+        if (!await presetEditor.beginCurrentEdit() || !mounted.current) return;
         const entry = presetEditor.draft.getSnapshot().aggregate?.entries.find(item => item.id === entryId);
-        if (entry) openEntryDetail(entry); else setRoute('settings');
+        if (entry) openEntryDetail(entry); else setRoute('preset');
       })(); });
       return;
     }
@@ -229,8 +240,8 @@ export function HomeTabScreen({
     setTypedEditorEntry(null);
     settingsController.clearMessage();
     onDetailModeChange?.(false);
-    setRoute('settings');
-  }, [settingsController, onDetailModeChange]);
+    setRoute(presetEditor ? 'preset' : 'settings');
+  }, [settingsController, onDetailModeChange, presetEditor]);
 
   const fetchQuestSnapshots = useCallback(
     () => settingsController.fetchQuests(),
@@ -424,15 +435,18 @@ export function HomeTabScreen({
   />;
 
   const showPageHeader = route !== 'editor';
-  const pageHeader = showPageHeader ? (<View style={[styles.header, route === 'settings' && styles.fixedHeader]}>
-          {route === 'settings' ? (
-            <Pressable accessibilityLabel="통합 자동화로" accessibilityRole="button" onPress={() => confirmPresetNavigation(presetEditor, () => setRoute('dashboard'))} style={styles.iconButton}>
+  const settingsPage = route === 'settings' || route === 'preset';
+  const pageHeader = showPageHeader ? (<View style={[styles.header, settingsPage && styles.fixedHeader]}>
+          {settingsPage ? (
+            <Pressable accessibilityLabel={route === 'preset' ? '프리셋 목록으로' : '통합 자동화로'} accessibilityRole="button"
+              onPress={() => confirmPresetNavigation(presetEditor, () => setRoute(route === 'preset' ? 'settings' : 'dashboard'))} style={styles.iconButton}>
               <ArrowLeft color={theme.colors.text} size={20} />
             </Pressable>
           ) : null}
           <View style={styles.headerCopy}>
-            <Text style={styles.title}>{route === 'dashboard' ? '통합 자동화' : '자동화 설정'}</Text>
-            <Text style={styles.subtitle}>{route === 'dashboard' ? '앱을 닫아도 서버에서 계속 진행돼요' : '구성을 저장하고 필요할 때 바꿔 써요'}</Text>
+            <Text style={styles.title}>{route === 'dashboard' ? '통합 자동화' : presetEditor && route === 'settings' ? '자동화 프리셋' : '자동화 설정'}</Text>
+            <Text style={styles.subtitle}>{route === 'dashboard' ? '앱을 닫아도 서버에서 계속 진행돼요'
+              : route === 'settings' && presetEditor ? '프리셋을 선택해 자동화를 설정하세요' : '이 프리셋의 자동화 항목과 판단 순서를 설정해요'}</Text>
           </View>
           <Pressable
             accessibilityLabel="자동화 실행 규칙 보기"
@@ -445,8 +459,9 @@ export function HomeTabScreen({
         </View>) : null;
   return (
     <View style={styles.scroller}>
-    {route === 'settings' ? pageHeader : null}
+    {settingsPage ? pageHeader : null}
     <NestableScrollContainer
+      key={route}
       contentContainerStyle={styles.container}
       contentInsetAdjustmentBehavior="automatic"
       keyboardDismissMode="interactive"
@@ -462,7 +477,7 @@ export function HomeTabScreen({
         />
       ) : null}
 
-      {route !== 'settings' ? pageHeader : null}
+      {!settingsPage ? pageHeader : null}
 
       {showPageHeader && rulesOpen ? (
         <View style={styles.ruleBand}>
@@ -495,10 +510,16 @@ export function HomeTabScreen({
         />
       ) : null}
 
-      {route === 'settings' ? presetEditor ? (
+      {route === 'settings' && presetEditor ? (
         <AutomationPresets editor={presetEditor} lifecycle={live.aggregate?.runtime.lifecycle ?? 'STOPPED'}
           onRefresh={() => { void automationController.load(); void (presetState?.loaded ? presetEditor.refresh() : presetEditor.initialize()); }}
-          onPause={() => { void automationController.changeState('pause'); }}>
+          onOpen={openPreset} />
+      ) : null}
+
+      {route === 'preset' && presetEditor ? (
+        <AutomationPresetDetail editor={presetEditor} lifecycle={live.aggregate?.runtime.lifecycle ?? 'STOPPED'}
+          onRefresh={() => { void automationController.load(); }}
+          onPause={() => { void automationController.changeState('pause'); }} onDeleted={() => setRoute('settings')}>
           <View pointerEvents={presetState?.busy ? 'none' : 'auto'} accessibilityElementsHidden={presetState?.busy}
               importantForAccessibility={presetState?.busy ? 'no-hide-descendants' : 'auto'}>
               {aggregate ? <UnifiedAutomationSettings
@@ -511,8 +532,8 @@ export function HomeTabScreen({
                 onToggle={(entry) => { void toggleEntry(entry); }}
               /> : <Text style={styles.muted}>프리셋 구성을 불러오는 중</Text>}
             </View>
-        </AutomationPresets>
-      ) : (
+        </AutomationPresetDetail>
+      ) : route === 'settings' && !presetEditor ? (
         <View pointerEvents={presetState?.busy ? 'none' : 'auto'} accessibilityElementsHidden={presetState?.busy}
               importantForAccessibility={presetState?.busy ? 'no-hide-descendants' : 'auto'}>
               {aggregate ? <UnifiedAutomationSettings

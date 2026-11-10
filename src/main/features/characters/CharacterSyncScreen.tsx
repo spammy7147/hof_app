@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { CircleAlert, Pause, RefreshCw } from 'lucide-react-native';
 import type { CharacterManagementHubResource } from '../../domain/characterManagementHubModule';
 import { operationNeedsAttention } from '../../domain/characterManagementHubModule';
 import type { CharacterSyncJobResponse } from '../../types/api';
@@ -24,8 +25,9 @@ export type CharacterSyncControls = {
 };
 
 /** 화면 표시만 소유한다. 닫아도 계정의 동기화·복구 실행과 배경 화면은 유지한다. */
-export function CharacterSyncControl({ characterHub, ...sync }: CharacterSyncControls & {
+export function CharacterSyncControl({ characterHub, renderTrigger, ...sync }: CharacterSyncControls & {
   characterHub: CharacterManagementHubResource;
+  renderTrigger?: (props: { onPress: () => void; label: string; status: string }) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const state = characterHub.deepSync;
@@ -39,7 +41,6 @@ export function CharacterSyncControl({ characterHub, ...sync }: CharacterSyncCon
   const running = executing || state.status === 'running' || state.recoveryBusy
     || sync.characterSyncLabel || fullJob?.status === 'running' || fullJob?.status === 'pending';
   const stopped = fullJob?.status === 'stopped' || (job?.status === 'STOPPED' && job.recoveryStatus !== 'ACCEPTED');
-  const indicator = recoveryRequired || failed ? '!' : running ? '↻' : stopped ? 'Ⅱ' : '';
   const description = recoveryRequired ? '복구 필요' : failed ? '확인 필요' : running ? '진행 중' : stopped ? '중지됨' : '';
   const target = characterHub.selectedCharacter;
   const busy = Boolean(sync.characterSyncLabel) || fullJob?.status === 'running' || fullJob?.status === 'pending';
@@ -58,18 +59,22 @@ export function CharacterSyncControl({ characterHub, ...sync }: CharacterSyncCon
     characterHub.actions.dismissRecoveryPreview?.();
     setOpen(false);
   };
+  const openSync = () => {
+    setOpen(true);
+    void characterHub.actions.checkRecovery?.();
+    void sync.onCheckCharacterSync?.();
+  };
+  const triggerLabel = description ? `동기화 · ${description}` : '동기화';
 
   return <>
-    <Pressable accessible accessibilityRole="button"
-      accessibilityLabel={description ? `동기화 · ${description}` : '동기화'}
-      onPress={() => {
-        setOpen(true);
-        void characterHub.actions.checkRecovery?.();
-        void sync.onCheckCharacterSync?.();
-      }} style={styles.trigger}>
-      <Text numberOfLines={1} maxFontSizeMultiplier={1.3} style={styles.triggerText}>동기화</Text>
-      <Text accessible={false} style={[styles.indicator, (recoveryRequired || Boolean(failed)) && styles.warning]}>{indicator}</Text>
-    </Pressable>
+    {renderTrigger ? renderTrigger({ onPress: openSync, label: triggerLabel, status: description }) : <Pressable accessible accessibilityRole="button"
+      accessibilityLabel={triggerLabel}
+      onPress={openSync} style={({ pressed }) => [styles.trigger, pressed && styles.pressed]}>
+      {recoveryRequired || failed ? <CircleAlert color={theme.colors.accentAmber} size={16} />
+        : stopped && !running ? <Pause color={theme.colors.textMuted} size={16} />
+          : <RefreshCw color={running ? theme.colors.accentGreen : theme.colors.textMuted} size={16} />}
+      <Text style={[styles.triggerText, (recoveryRequired || Boolean(failed)) && styles.warning]}>{triggerLabel}</Text>
+    </Pressable>}
     {open && <Modal visible animationType="slide" onRequestClose={() => {
       if (state.preview) characterHub.actions.dismissRecoveryPreview?.();
       else close();
@@ -147,9 +152,9 @@ function SyncAction({ label, action, disabled = false }: {
 
 const fullSyncLabels = { pending: '준비 중', running: '진행 중', stopped: '중지됨', completed: '완료', failed: '실패' };
 const styles = StyleSheet.create({
-  trigger: { width: 104, minHeight: theme.control.touch, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: theme.radius.md, backgroundColor: theme.colors.surfaceAlt, minWidth: theme.control.touch, },
-  triggerText: { color: theme.colors.text, fontWeight: '800', fontSize: theme.fontSize.body },
-  indicator: { width: 20, textAlign: 'center', color: theme.colors.accentGreen, fontWeight: '900', fontSize: theme.fontSize.section },
+  trigger: { minHeight: theme.control.touch, minWidth: theme.control.touch, flexShrink: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.spacing.md, paddingHorizontal: theme.spacing.xl, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border },
+  pressed: { backgroundColor: theme.colors.surfaceAlt },
+  triggerText: { flexShrink: 1, color: theme.colors.text, fontWeight: '800', fontSize: theme.fontSize.body },
   warning: { fontSize: theme.fontSize.body, color: theme.colors.accentAmber },
   screen: { flex: 1, backgroundColor: theme.colors.background },
   header: { minHeight: theme.control.touch, flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, paddingHorizontal: theme.spacing.md },

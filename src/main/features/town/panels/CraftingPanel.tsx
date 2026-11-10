@@ -179,7 +179,9 @@ export function CraftingPanel({ api, mode, resolveCaptcha }: Props) {
       onSelectionChange={(ids) => {
         setSelectedIds(ids.filter((id) => id.startsWith('recipe:')).map((id) => id.slice('recipe:'.length)).slice(0, 1));
       }}
-      header={<View style={styles.section}><Text style={styles.title}>{title}</Text><CategoryDropdown triggerLabel="제작 종류 선택" data={data} disabled={town.status === 'submitting'} onSelect={selectCategory} />{mode === 'create' || mode === 'refine' || mode === 'veteran' ? <CraftingSearch value={searchQuery} onChange={setSearchQuery} resultCount={visibleItems.length} subject={mode === 'create' ? '제작물품' : '제련 아이템'} /> : null}{town.status === 'loading' ? <Text accessibilityLiveRegion="polite" style={styles.hint}>선택한 종류의 제작품을 불러오는 중...</Text> : null}{data.activeJob ? <View accessibilityLiveRegion="polite" style={styles.job}><Text style={styles.label}>{activeJobLabel}</Text><Text style={styles.warning}>{remainingTimeLabel(remaining)}</Text>{data.activeJob.completionAvailable ? <ActionButton label={completionLabel} disabled={!town.canSubmit} onPress={() => submit({ kind: 'complete' })} /> : remaining == null || remaining === 0 ? <ActionButton label="제작 상태 확인" disabled={town.status === 'loading' || town.status === 'submitting'} onPress={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}</View> : null}</View>}
+      header={<View style={styles.section}><Text style={styles.title}>{title}</Text>
+        {mode === 'workbase' && data.completionAvailable ? <ActionButton label="제작 완료" disabled={!town.canSubmit} onPress={() => submit({ kind: 'complete' })} /> : null}
+        <CategoryDropdown triggerLabel="제작 종류 선택" data={data} disabled={town.status === 'submitting'} onSelect={selectCategory} />{mode === 'create' || mode === 'refine' || mode === 'veteran' ? <CraftingSearch value={searchQuery} onChange={setSearchQuery} resultCount={visibleItems.length} subject={mode === 'create' ? '제작물품' : '제련 아이템'} /> : null}{town.status === 'loading' ? <Text accessibilityLiveRegion="polite" style={styles.hint}>선택한 종류의 제작품을 불러오는 중...</Text> : null}{data.activeJob ? <View accessibilityLiveRegion="polite" style={styles.job}><Text style={styles.label}>{activeJobLabel}</Text><Text style={styles.warning}>{remainingTimeLabel(remaining)}</Text>{data.activeJob.completionAvailable ? <ActionButton label={completionLabel} disabled={!town.canSubmit} onPress={() => submit({ kind: 'complete' })} /> : remaining == null || remaining === 0 ? <ActionButton label="제작 상태 확인" disabled={town.status === 'loading' || town.status === 'submitting'} onPress={() => { setResponse(null); void town.reload().catch(() => undefined); }} /> : null}</View> : null}</View>}
       footer={mode === 'create' || mode === 'refine' || mode === 'veteran' ? resultFooter : footer} emptyMessage={town.status === 'loading' ? null : normalizedQuery ? '검색 결과가 없습니다.' : '현재 분류에 표시할 품목이 없습니다.'} /></View>
     {createControls}
     {refineControls}
@@ -193,7 +195,7 @@ function buildRequest(mode: CraftingMode, candidateId: string | undefined, categ
   return { candidateId, categoryCandidateId, quantity } satisfies WorkbaseStartRequest;
 }
 function toRow(item: CraftingResponse['rows'][number], group: 'recipe'): TownRowResponse {
-  const presentation = presentCraftingItem(item.label, item.detail, item.owned);
+  const presentation = presentCraftingItem(item.label, item.detail);
   return {
     id: `${group}:${item.id}`,
     accessibilityLabel: `${item.label}${item.selectable ? ' 선택' : ' 선택 불가'}`,
@@ -206,13 +208,13 @@ function toRow(item: CraftingResponse['rows'][number], group: 'recipe'): TownRow
   };
 }
 
-function presentCraftingItem(label: string, detail: string | null, owned: number | null): { label: string; detail: string | null } {
+function presentCraftingItem(label: string, detail: string | null): { label: string; detail: string | null } {
   const normalizedLabel = cleanDisplayText(label);
   const [headline, ...optionParts] = normalizedLabel.split(/\s*\/\s*/);
   // 제작 재료 끝의 `x4`를 제작품 보유 수량으로 오인하지 않도록 수량은 첫 `/` 앞에서만 해석한다.
   const quantityMatch = headline.match(/^(.*?)\s+([x×]\s*[\d,]+)$/i);
   const titleWithType = quantityMatch?.[1]?.trim() || headline;
-  const quantity = quantityMatch?.[2]?.replace(/\s+/g, '') ?? (owned == null ? null : `x${owned.toLocaleString()}`);
+  const quantity = quantityMatch?.[2]?.replace(/\s+/g, '') ?? null;
   const typeMatch = titleWithType.match(/^(.*?)\s+(\([^()]+\))$/);
   const itemName = typeMatch?.[1]?.trim() || titleWithType;
   const type = typeMatch?.[2]?.trim() ?? null;

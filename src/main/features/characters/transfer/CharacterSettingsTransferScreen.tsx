@@ -7,7 +7,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { CharacterContentScroll } from '../CharacterContentScroll';
 import { AppAlert as Alert } from '../../../platform/AppAlert';
 
 import type {
@@ -183,54 +182,102 @@ export function CharacterSettingsTransferScreen({
         <Text style={styles.title}>설정 가져오기</Text>
         <View style={styles.touch} />
       </View>
-      <CharacterContentScroll>
-      <View style={styles.tabs}>
-        {(["ACTIVE", "MISSING", "ARCHIVED"] as const).map((value) => (
-          <Pressable
-            key={value}
-            onPress={() => {
-              if (busy) return;
-              setSourceTab(value);
-              setSourceId(null);
-              setSourceQuery("");
-              setSelectedSlots([]);
-              clearTransfer();
-            }}
-            style={[styles.tab, sourceTab === value && styles.tabActive]}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                sourceTab === value && styles.tabTextActive,
-              ]}
-            >
-              {value === "ACTIVE"
-                ? "캐릭터"
-                : value === "MISSING"
-                  ? "사라짐"
-                  : "보관함"}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-      <TextInput
-        accessibilityLabel="원본 캐릭터 검색"
-        value={sourceQuery}
-        onChangeText={setSourceQuery}
-        placeholder="이름·직업 검색"
-        placeholderTextColor={theme.colors.textMuted}
-        style={styles.search}
-      />
       <FlatList
-        data={sources}
+        data={source ? [source] : sources}
         keyExtractor={(item) => String(item.id)}
         initialNumToRender={12}
         windowSize={7}
-        nestedScrollEnabled
-        style={styles.cards}
+        extraData={{ sourceId, busy }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets
+        style={styles.list}
+        contentContainerStyle={styles.content}
+        ListHeaderComponent={
+          <View style={styles.filters}>
+            <View style={styles.tabs} accessibilityRole="tablist">
+              {(["ACTIVE", "MISSING", "ARCHIVED"] as const).map((value) => (
+                <Pressable
+                  key={value}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: sourceTab === value, disabled: busy }}
+                  disabled={busy}
+                  onPress={() => {
+                    if (busy) return;
+                    setSourceTab(value);
+                    setSourceId(null);
+                    setSourceQuery("");
+                    setSelectedSlots([]);
+                    clearTransfer();
+                  }}
+                  style={[styles.tab, sourceTab === value && styles.tabActive]}
+                >
+                  <Text
+                    style={[
+                      styles.tabText,
+                      sourceTab === value && styles.tabTextActive,
+                    ]}
+                  >
+                    {value === "ACTIVE"
+                      ? "캐릭터"
+                      : value === "MISSING"
+                        ? "사라짐"
+                        : "보관함"}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <TextInput
+              accessibilityLabel="원본 캐릭터 검색"
+              value={sourceQuery}
+              onChangeText={(value) => {
+                setSourceQuery(value);
+                if (source && !busy) {
+                  setSourceId(null);
+                  setSelectedSlots([]);
+                  clearTransfer();
+                }
+              }}
+              editable={!busy}
+              placeholder="이름·직업 검색"
+              placeholderTextColor={theme.colors.textMuted}
+              autoCorrect={false}
+              style={styles.search}
+            />
+            <View style={styles.sourceHeading}>
+              <Text style={styles.heading}>{source ? "선택한 원본 캐릭터" : "설정을 가져올 캐릭터"}</Text>
+              {source ? <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="원본 캐릭터 다시 선택"
+                disabled={busy}
+                onPress={() => {
+                  setSourceId(null);
+                  setSourceQuery("");
+                  setSelectedSlots([]);
+                  clearTransfer();
+                }}
+                style={styles.reselect}
+              >
+                <Text style={styles.reselectText}>다시 선택</Text>
+              </Pressable> : <Text style={styles.muted}>{sources.length}명</Text>}
+            </View>
+            <Text style={styles.hint}>{source
+              ? `${source.name}의 설정을 ${target.name}에게 가져옵니다.`
+              : `${target.name}에게 가져올 설정의 원본을 선택하세요.`}</Text>
+          </View>
+        }
+        ListEmptyComponent={<View style={styles.empty}>
+          <Text style={styles.muted}>{sourceQuery.trim()
+            ? "검색 결과가 없습니다."
+            : "설정을 가져올 캐릭터가 없습니다."}</Text>
+        </View>}
         ItemSeparatorComponent={() => <View style={styles.cardGap} />}
         renderItem={({ item }) => (
           <Pressable
+            accessibilityRole="radio"
+            accessibilityLabel={`${item.name} · Lv.${item.level ?? "-"} · ${item.job}`}
+            accessibilityState={{ checked: sourceId === item.id, disabled: busy }}
+            disabled={busy}
             onPress={() => {
               if (busy) return;
               setSourceId(item.id);
@@ -239,165 +286,172 @@ export function CharacterSettingsTransferScreen({
             }}
             style={[styles.character, sourceId === item.id && styles.selected]}
           >
-            <Text style={styles.characterName}>{item.name}</Text>
-            <Text style={styles.muted}>
-              Lv.{item.level ?? "-"} · {item.job}
+            <View style={styles.characterBody}>
+              <Text style={styles.characterName}>{item.name}</Text>
+              <Text style={styles.muted}>Lv.{item.level ?? "-"} · {item.job}</Text>
+            </View>
+            <Text style={[styles.selection, sourceId === item.id && styles.selectionActive]}>
+              {sourceId === item.id ? "✓" : "○"}
             </Text>
           </Pressable>
         )}
-      />
-      {source && (
-        <>
-          <Text style={styles.heading}>가져올 설정</Text>
-          <View style={styles.options}>
-            <Toggle
-              label="현재 패턴·위치·호위"
-              selected={includeCurrentPattern}
-              onPress={() => {
-                if (busy) return;
-                setIncludeCurrentPattern(!includeCurrentPattern);
-                clearTransfer();
-              }}
-            />
-            <Toggle
-              label="스탯"
-              selected={includeStats}
-              onPress={() => {
-                if (busy) return;
-                setIncludeStats(!includeStats);
-                clearTransfer();
-              }}
-            />
-            <Toggle
-              label="스킬"
-              selected={includeSkills}
-              onPress={() => {
-                if (busy) return;
-                setIncludeSkills(!includeSkills);
-                clearTransfer();
-              }}
-            />
-            <Toggle
-              label="현재 장비·저장 1·2"
-              selected={includeEquipment}
-              onPress={() => {
-                if (busy) return;
-                setIncludeEquipment(!includeEquipment);
-                clearTransfer();
-              }}
-            />
-          </View>
-          <Text style={styles.heading}>저장 패턴</Text>
-          <View style={styles.slots}>
-            {sourceSlots.map((slot) => (
-              <Pressable
-                key={slot.slot}
-                onPress={() => toggleSlot(slot.slot)}
-                style={[
-                  styles.slot,
-                  selectedSlots.includes(slot.slot) && styles.selected,
-                ]}
-              >
-                <Text style={styles.slotName}>{slot.label}</Text>
-              </Pressable>
-            ))}
-          </View>
-          {selectedSlots.map((slot) => {
-            const sourceName =
-              sourceSlots.find((item) => item.slot === slot)?.label ?? slot;
-            const targetSlot = targetBySource[slot] ?? targetSlots[0]?.slot;
-            const targetName =
-              targetSlots.find((item) => item.slot === targetSlot)?.label ??
-              "빈 슬롯";
-            return (
-              <Pressable
-                key={slot}
-                onPress={() => cycleTarget(slot)}
-                style={styles.mapping}
-              >
-                <Text style={styles.mappingText}>{sourceName}</Text>
-                <Text style={styles.arrow}>→</Text>
-                <View style={styles.mappingTarget}>
-                  <Text style={styles.mappingText}>{targetName}</Text>
-                  <Text style={styles.muted}>눌러서 대상 변경</Text>
+        ListFooterComponent={
+          <View style={styles.settings}>
+            {source && (
+              <>
+                <Text style={styles.heading}>가져올 설정</Text>
+                <View style={styles.options}>
+                  <Toggle
+                    label="현재 패턴·위치·호위"
+                    selected={includeCurrentPattern}
+                    onPress={() => {
+                      if (busy) return;
+                      setIncludeCurrentPattern(!includeCurrentPattern);
+                      clearTransfer();
+                    }}
+                  />
+                  <Toggle
+                    label="스탯"
+                    selected={includeStats}
+                    onPress={() => {
+                      if (busy) return;
+                      setIncludeStats(!includeStats);
+                      clearTransfer();
+                    }}
+                  />
+                  <Toggle
+                    label="스킬"
+                    selected={includeSkills}
+                    onPress={() => {
+                      if (busy) return;
+                      setIncludeSkills(!includeSkills);
+                      clearTransfer();
+                    }}
+                  />
+                  <Toggle
+                    label="현재 장비·저장 1·2"
+                    selected={includeEquipment}
+                    onPress={() => {
+                      if (busy) return;
+                      setIncludeEquipment(!includeEquipment);
+                      clearTransfer();
+                    }}
+                  />
                 </View>
-              </Pressable>
-            );
-          })}
-        </>
-      )}
-      {preview && (
-        <View style={styles.preview}>
-          <Text style={styles.heading}>
-            {preview.executable ? "적용할 수 있습니다" : "확인이 필요합니다"}
-          </Text>
-          <Text style={styles.muted}>
-            작업 {preview.steps.length}개 · 안내 {preview.issues.length}개
-          </Text>
-          {preview.issues.map((issue) => (
-            <Text
-              key={`${issue.code}-${issue.itemKey}`}
-              style={
-                issue.severity === "BLOCKING" ? styles.error : styles.warning
-              }
-            >
-              • {issue.message}
-            </Text>
-          ))}
-          {preview.steps.map((step, index) => (
-            <View key={step.id} style={styles.step}>
-              <Text style={styles.stepNumber}>{index + 1}</Text>
-              <View style={styles.stepContent}>
-                <Text style={styles.stepText}>{transferStepLabel(step, target)}</Text>
-                {step.setting && <PatternSettingSummary setting={step.setting} target={target} />}
-                {step.identity?.description ? <Text style={styles.muted}>{step.identity.description}</Text> : null}
+                <Text style={styles.heading}>저장 패턴</Text>
+                <View style={styles.slots}>
+                  {sourceSlots.map((slot) => (
+                    <Pressable
+                      key={slot.slot}
+                      onPress={() => toggleSlot(slot.slot)}
+                      style={[
+                        styles.slot,
+                        selectedSlots.includes(slot.slot) && styles.selected,
+                      ]}
+                    >
+                      <Text style={styles.slotName}>{slot.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                {selectedSlots.map((slot) => {
+                  const sourceName =
+                    sourceSlots.find((item) => item.slot === slot)?.label ?? slot;
+                  const targetSlot = targetBySource[slot] ?? targetSlots[0]?.slot;
+                  const targetName =
+                    targetSlots.find((item) => item.slot === targetSlot)?.label ??
+                    "빈 슬롯";
+                  return (
+                    <Pressable
+                      key={slot}
+                      onPress={() => cycleTarget(slot)}
+                      style={styles.mapping}
+                    >
+                      <Text style={styles.mappingText}>{sourceName}</Text>
+                      <Text style={styles.arrow}>→</Text>
+                      <View style={styles.mappingTarget}>
+                        <Text style={styles.mappingText}>{targetName}</Text>
+                        <Text style={styles.muted}>눌러서 대상 변경</Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </>
+            )}
+            {preview && (
+              <View style={styles.preview}>
+                <Text style={styles.heading}>
+                  {preview.executable ? "적용할 수 있습니다" : "확인이 필요합니다"}
+                </Text>
+                <Text style={styles.muted}>
+                  작업 {preview.steps.length}개 · 안내 {preview.issues.length}개
+                </Text>
+                {preview.issues.map((issue) => (
+                  <Text
+                    key={`${issue.code}-${issue.itemKey}`}
+                    style={
+                      issue.severity === "BLOCKING" ? styles.error : styles.warning
+                    }
+                  >
+                    • {issue.message}
+                  </Text>
+                ))}
+                {preview.steps.map((step, index) => (
+                  <View key={step.id} style={styles.step}>
+                    <Text style={styles.stepNumber}>{index + 1}</Text>
+                    <View style={styles.stepContent}>
+                      <Text style={styles.stepText}>{transferStepLabel(step, target)}</Text>
+                      {step.setting && <PatternSettingSummary setting={step.setting} target={target} />}
+                      {step.identity?.description ? <Text style={styles.muted}>{step.identity.description}</Text> : null}
+                    </View>
+                  </View>
+                ))}
               </View>
-            </View>
-          ))}
-        </View>
-      )}
-      {result && (
-        <View style={styles.preview}>
-          <Text style={styles.heading}>실행 결과</Text>
-          {result.outcome && (
-            <Text accessibilityRole={result.outcome === "COMPLETED" ? "text" : "alert"}
-              style={result.outcome === "COMPLETED" ? styles.heading : styles.warning}>
-              {{
-                COMPLETED: "설정 가져오기를 완료했습니다.",
-                PARTIALLY_APPLIED: "일부 항목을 완료하지 못했습니다.",
-                RECHECK_REQUIRED: "현재 캐릭터 설정을 다시 확인해야 합니다.",
-                PREVIEW_CHANGED: "변경된 미리보기를 다시 확인해야 합니다.",
-              }[result.outcome]}
-            </Text>
-          )}
-          {result.message && <Text style={styles.muted}>{result.message}</Text>}
-          {!result.outcome && transfer.result && <Text style={styles.warning}>
-            이전 작업에는 최종 확인 정보가 없습니다. 현재 캐릭터 설정을 확인해 주세요.
-          </Text>}
-          {observed && <View>
-              <Text style={styles.heading}>확인된 현재 캐릭터 설정</Text>
-              <PatternSettingSummary setting={observed.pattern} target={target} />
-              {observed.equipment != null && <Text style={styles.muted}>
-                장비 · {observed.equipment.length ? observed.equipment.map(item => item.name).join(", ") : "장착 장비 없음"}
-              </Text>}
-          </View>}
-          {result.results.map((item) => (
-            <Text
-              key={item.stepId}
-              style={item.status === "FAILED" ? styles.error : styles.muted}
-            >
-              {item.status === "COMPLETED"
-                ? "완료"
-                : item.status === "SKIPPED"
-                  ? "건너뜀"
-                  : "실패"}{" "}
-              · {item.stepId}
-              {item.message ? ` · ${item.message}` : ""}
-            </Text>
-          ))}
-        </View>
-      )}
-      {error && <Text style={styles.error}>{error}</Text>}
+            )}
+            {result && (
+              <View style={styles.preview}>
+                <Text style={styles.heading}>실행 결과</Text>
+                {result.outcome && (
+                  <Text accessibilityRole={result.outcome === "COMPLETED" ? "text" : "alert"}
+                    style={result.outcome === "COMPLETED" ? styles.heading : styles.warning}>
+                    {{
+                      COMPLETED: "설정 가져오기를 완료했습니다.",
+                      PARTIALLY_APPLIED: "일부 항목을 완료하지 못했습니다.",
+                      RECHECK_REQUIRED: "현재 캐릭터 설정을 다시 확인해야 합니다.",
+                      PREVIEW_CHANGED: "변경된 미리보기를 다시 확인해야 합니다.",
+                    }[result.outcome]}
+                  </Text>
+                )}
+                {result.message && <Text style={styles.muted}>{result.message}</Text>}
+                {!result.outcome && transfer.result && <Text style={styles.warning}>
+                  이전 작업에는 최종 확인 정보가 없습니다. 현재 캐릭터 설정을 확인해 주세요.
+                </Text>}
+                {observed && <View>
+                    <Text style={styles.heading}>확인된 현재 캐릭터 설정</Text>
+                    <PatternSettingSummary setting={observed.pattern} target={target} />
+                    {observed.equipment != null && <Text style={styles.muted}>
+                      장비 · {observed.equipment.length ? observed.equipment.map(item => item.name).join(", ") : "장착 장비 없음"}
+                    </Text>}
+                </View>}
+                {result.results.map((item) => (
+                  <Text
+                    key={item.stepId}
+                    style={item.status === "FAILED" ? styles.error : styles.muted}
+                  >
+                    {item.status === "COMPLETED"
+                      ? "완료"
+                      : item.status === "SKIPPED"
+                        ? "건너뜀"
+                        : "실패"}{" "}
+                    · {item.stepId}
+                    {item.message ? ` · ${item.message}` : ""}
+                  </Text>
+                ))}
+              </View>
+            )}
+            {error && <Text style={styles.error}>{error}</Text>}
+          </View>
+        }
+      />
       {source ? (
         <FixedBottomAction>
           <View style={styles.fixedActions}>
@@ -434,7 +488,6 @@ export function CharacterSettingsTransferScreen({
           </View>
         </FixedBottomAction>
       ) : null}
-      </CharacterContentScroll>
     </View>
   );
 }
@@ -461,46 +514,62 @@ function Toggle({
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, minHeight: 0, gap: theme.spacing.md },
+  screen: { flex: 1, minHeight: 0 },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.hairline,
   },
   touch: { minWidth: 72, minHeight: theme.control.input, justifyContent: "center" },
   title: { color: theme.colors.text, fontSize: theme.fontSize.section, fontWeight: "900" },
-  tabs: { flexDirection: "row", gap: theme.spacing.hairline },
+  list: { flex: 1, minHeight: 0 },
+  content: { paddingHorizontal: theme.spacing.md, paddingBottom: theme.spacing.xl },
+  filters: { gap: theme.spacing.md, paddingTop: theme.spacing.xs, paddingBottom: theme.spacing.md },
+  tabs: { flexDirection: "row", gap: theme.spacing.hairline, padding: theme.spacing.hairline, borderRadius: theme.radius.md, backgroundColor: theme.colors.surface },
   tab: {
     flex: 1,
-    minHeight: theme.control.input,
+    minHeight: theme.control.touch,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: theme.colors.surfaceAlt,
     borderRadius: theme.radius.md,
     minWidth: theme.control.touch,
   },
   tabActive: { backgroundColor: "#22483d" },
   tabText: { fontSize: theme.fontSize.body, color: theme.colors.textMuted, fontWeight: "800" },
   tabTextActive: { color: theme.colors.accentGreen },
-  cards: { maxHeight: 280 },
-  cardGap: { height: 6 },
+  sourceHeading: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: theme.spacing.xs },
+  reselect: { minHeight: theme.control.touch, justifyContent: "center", paddingHorizontal: theme.spacing.xs, minWidth: theme.control.touch, },
+  reselectText: { color: theme.colors.accentGreen, fontSize: theme.fontSize.caption, fontWeight: "800" },
+  hint: { color: theme.colors.textMuted, fontSize: theme.fontSize.caption, lineHeight: theme.lineHeight.caption, marginTop: -theme.spacing.xs },
+  cardGap: { height: 8 },
+  empty: { padding: theme.spacing.lg, alignItems: "center" },
+  settings: { gap: theme.spacing.md, paddingTop: theme.spacing.md },
   search: { fontSize: theme.fontSize.body,
     minHeight: theme.control.input,
     borderRadius: theme.radius.md,
     paddingHorizontal: theme.spacing.md,
     color: theme.colors.text,
     backgroundColor: theme.colors.surfaceAlt,
-    minWidth: theme.control.touch, },
+    minWidth: theme.control.touch,
+  },
   character: {
     minHeight: theme.control.touch,
-    justifyContent: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.md,
     paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
     borderRadius: theme.radius.md,
-    backgroundColor: theme.colors.surfaceAlt,
+    backgroundColor: theme.colors.surface,
     borderWidth: 1,
     borderColor: "transparent",
     minWidth: theme.control.touch,
   },
+  characterBody: { flex: 1, minWidth: 0, gap: theme.spacing.hairline },
+  selection: { color: theme.colors.textMuted, fontSize: theme.fontSize.title },
+  selectionActive: { color: theme.colors.accentGreen },
   selected: {
     borderColor: theme.colors.accentGreen,
     backgroundColor: "#18332b",

@@ -119,7 +119,7 @@ export const TOWN_MENUS: readonly TownMenu[] = [
   menu('talentAgency', 'agency', '인재 알선소', 'agency', null, 'book'),
 
   menu('homeManagement', 'home', '자택 관리', 'home', null, 'book'),
-  menu('workbase', 'home', '작업장-재봉틀', 'crafting', 'workbase', 'sewing'),
+  menu('workbase', 'home', '작업장-재봉틀', 'crafting', 'workcloth', 'sewing'),
 
   menu('refineWorkshop', 'smithy', '제련공방', 'crafting', 'refine', 'smith'),
   menu('createWorkshop', 'smithy', '제작공방', 'crafting', 'create', 'smith'),

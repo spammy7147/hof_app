@@ -10,6 +10,10 @@ import {
 } from '../../main/domain/townMenus';
 
 describe('town menu catalog', () => {
+  it('작업장-재봉틀의 원본 경로는 workcloth이다', () => {
+    assert.equal(getTownMenuById('workbase')?.apkMenu, 'workcloth');
+  });
+
   it('keeps the approved nine-category order', () => {
     assert.equal(TOWN_CATEGORIES.length, 9);
     assert.deepEqual(TOWN_CATEGORIES.map(({ label }) => label), [

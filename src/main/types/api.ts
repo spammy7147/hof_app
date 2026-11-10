@@ -502,6 +502,7 @@ export type CraftingResponse = {
   minQuantity: number;
   maxQuantity: number;
   activeJob: { label: string; remainingSeconds: number | null; completionAvailable: boolean } | null;
+  completionAvailable?: boolean;
   allowedRefineCounts: number[];
   additionalMaterials: Array<{ id: string; label: string; selectable: boolean; owned: number | null; detail: string | null }>;
   additionalMaterialsOptional: boolean;
