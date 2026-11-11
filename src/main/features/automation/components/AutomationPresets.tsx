@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ChevronRight, Copy, FolderOpen, Pause, Plus, RefreshCw, Save, Trash2 } from 'lucide-react-native';
+import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import { FixedBottomAction } from '../../../components/FixedBottomAction';
 import { AppAlert } from '../../../platform/AppAlert';
 import { theme } from '../../../styles/theme';
@@ -26,13 +27,25 @@ export function AutomationPresets({ editor, lifecycle, onRefresh, onOpen }: {
 }) {
   const state = useSyncExternalStore(editor.subscribe, editor.getSnapshot, editor.getSnapshot);
   const mounted = useRef(false);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const swipeables = useRef(new Map<number, SwipeableMethods>());
+  const openSwipeable = useRef<SwipeableMethods | null>(null);
+  const [openPresetId, setOpenPresetId] = useState<number | null>(null);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; openSwipeable.current?.close(); };
+  }, []);
   const disabled = state.busy || !state.loaded;
-  const remove = (preset: AutomationPresetResponse) => AppAlert.alert('프리셋을 삭제할까요?',
-    `「${preset.name}」의 저장본을 삭제합니다. 현재 실행 중인 자동화 설정은 그대로 유지됩니다.`, [
-      { text: '취소', style: 'cancel' },
-      { text: '삭제', style: 'destructive', onPress: () => { if (mounted.current) void editor.remove(preset.id); } },
-    ]);
+  useEffect(() => {
+    openSwipeable.current?.close(); openSwipeable.current = null; setOpenPresetId(null);
+  }, [disabled, state.presets]);
+  const remove = (preset: AutomationPresetResponse) => {
+    openSwipeable.current?.close();
+    AppAlert.alert('프리셋을 삭제할까요?',
+      `「${preset.name}」의 저장본을 삭제합니다. 현재 실행 중인 자동화 설정은 그대로 유지됩니다.`, [
+        { text: '취소', style: 'cancel' },
+        { text: '삭제', style: 'destructive', onPress: () => { if (mounted.current) void editor.remove(preset.id); } },
+      ]);
+  };
   return (
     <View style={styles.panel}>
       <View style={styles.appliedCard}>
@@ -62,11 +75,29 @@ export function AutomationPresets({ editor, lifecycle, onRefresh, onOpen }: {
           <View style={styles.copy}><Text style={styles.name}>기본</Text><Text style={styles.helper}>저장 전 · 현재 구성으로 시작해요</Text></View>
           <ChevronRight color={theme.colors.textMuted} size={20} />
         </Pressable> : null}
-        {state.presets.map(preset => <View key={preset.id} style={styles.presetRow}>
+        {state.presets.map(preset => <ReanimatedSwipeable key={preset.id}
+          ref={node => { if (node) swipeables.current.set(preset.id, node); else swipeables.current.delete(preset.id); }}
+          testID={`automation-preset-swipeable-${preset.id}`} containerStyle={styles.presetRow}
+          enabled={!disabled} overshootRight={false} rightThreshold={40}
+          onSwipeableWillOpen={() => {
+            const next = swipeables.current.get(preset.id) ?? null;
+            if (openSwipeable.current !== next) openSwipeable.current?.close();
+            openSwipeable.current = next;
+            setOpenPresetId(preset.id);
+          }}
+          onSwipeableClose={() => setOpenPresetId(current => current === preset.id ? null : current)}
+          renderRightActions={() => <Pressable accessibilityRole="button" accessibilityLabel={preset.name + ' 프리셋 삭제'}
+            aria-hidden={openPresetId !== preset.id}
+            importantForAccessibility={openPresetId === preset.id ? 'auto' : 'no-hide-descendants'}
+            tabIndex={openPresetId === preset.id && !disabled ? 0 : -1}
+            disabled={disabled} onPress={() => remove(preset)}
+            style={({ pressed }) => [styles.deleteAction, disabled && styles.disabled, pressed && styles.pressed]}>
+            <Trash2 color={theme.colors.buttonText} size={18} /><Text style={styles.deleteActionText}>삭제</Text>
+          </Pressable>}>
           <Pressable accessibilityRole="button"
-          accessibilityLabel={preset.name + ' 프리셋 설정'} accessibilityHint="프리셋의 자동화 항목을 설정합니다"
-          disabled={disabled} onPress={() => onOpen(preset.id)}
-          style={({ pressed }) => [styles.presetCard, styles.copy, disabled && styles.disabled, pressed && styles.pressed]}>
+          accessibilityLabel={preset.name + ' 프리셋 설정'} accessibilityHint="프리셋의 자동화 항목을 설정합니다. 왼쪽으로 밀면 삭제 버튼이 나옵니다"
+          disabled={disabled} onPress={() => { openSwipeable.current?.close(); onOpen(preset.id); }}
+          style={({ pressed }) => [styles.presetCard, disabled && styles.disabled, pressed && styles.pressed]}>
           <View style={styles.presetIcon}><FolderOpen color={theme.colors.accentGreen} size={21} /></View>
           <View style={styles.copy}>
             <Text numberOfLines={2} style={styles.name}>{preset.name}</Text>
@@ -75,11 +106,7 @@ export function AutomationPresets({ editor, lifecycle, onRefresh, onOpen }: {
           {state.applied?.id === preset.id ? <Text style={styles.link}>{state.applied.matchesCurrent ? '현재 적용' : '적용 후 변경'}</Text> : null}
           <ChevronRight color={theme.colors.textMuted} size={20} />
           </Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel={preset.name + ' 프리셋 삭제'} disabled={disabled}
-            onPress={() => remove(preset)} style={({ pressed }) => [styles.iconButton, disabled && styles.disabled, pressed && styles.pressed]}>
-            <Trash2 color={theme.colors.danger} size={18} />
-          </Pressable>
-        </View>)}
+        </ReanimatedSwipeable>)}
         <Pressable accessibilityRole="button" accessibilityLabel="현재 설정으로 새 프리셋 만들기"
           disabled={disabled || state.presets.length >= 10} onPress={() => onOpen(null)}
           style={({ pressed }) => [styles.newPresetButton, (disabled || state.presets.length >= 10) && styles.disabled, pressed && styles.pressed]}>
@@ -226,7 +253,9 @@ const styles = StyleSheet.create({
   link: { color: theme.colors.accentGreen, fontSize: theme.fontSize.caption, fontWeight: '700' },
   name: { color: theme.colors.text, fontSize: theme.fontSize.body, lineHeight: theme.lineHeight.body, fontWeight: '700' },
   presetCard: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md, minHeight: theme.control.input, padding: theme.spacing.md, backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderWidth: 1, borderRadius: theme.radius.md, minWidth: theme.control.touch, },
-  presetRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.xs },
+  presetRow: { borderRadius: theme.radius.md, overflow: 'hidden' },
+  deleteAction: { alignItems: 'center', justifyContent: 'center', gap: theme.spacing.xs, minWidth: theme.control.touch, paddingHorizontal: theme.spacing.xxl, backgroundColor: theme.colors.danger },
+  deleteActionText: { color: theme.colors.buttonText, fontSize: theme.fontSize.caption, fontWeight: '700' },
   presetIcon: { alignItems: 'center', justifyContent: 'center', width: theme.icon.preset, height: theme.icon.preset, borderRadius: theme.radius.sm, backgroundColor: theme.colors.surfaceAlt },
   newPresetButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: theme.spacing.xs, minHeight: theme.control.touch, borderColor: theme.colors.border, borderWidth: 1, borderRadius: theme.radius.md, paddingHorizontal: theme.spacing.sm, minWidth: theme.control.touch, },
   manageActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: theme.spacing.sm, borderTopWidth: 1, borderTopColor: theme.colors.border, paddingTop: theme.spacing.sm },

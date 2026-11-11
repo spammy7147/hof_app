@@ -13,6 +13,13 @@ const host = (name: string) => (props: Record<string, unknown>) => React.createE
     'aria-disabled': props.disabled }, props.children as React.ReactNode);
 const Text = host('Text');
 const Pressable = host('Pressable');
+const Swipeable = React.forwardRef((props: Record<string, unknown>, ref) => {
+  React.useImperativeHandle(ref, () => ({ close: () => (props.onSwipeableClose as () => void)?.() }), []);
+  return React.createElement('Swipeable', { testID: props.testID, onSwipeableWillOpen: () => {
+    if (!props.enabled) return;
+    (props.onSwipeableWillOpen as () => void)();
+  } }, props.children as React.ReactNode, (props.renderRightActions as () => React.ReactNode)());
+});
 let confirmButtons: Array<{ text: string; onPress?: () => void }> = [];
 const backHandlers = new Set<() => boolean>();
 type Loader = (request: string, parent: NodeModule | undefined, isMain: boolean) => unknown;
@@ -31,6 +38,7 @@ modules._load = (request, parent, isMain) => {
   };
   if (request === 'lucide-react-native') return new Proxy({}, { get: (_target, name) => host(String(name)) });
   if (request === 'react-native-draggable-flatlist') return { NestableScrollContainer: host('ScrollView') };
+  if (request === 'react-native-gesture-handler/ReanimatedSwipeable') return { __esModule: true, default: Swipeable };
   if (request.endsWith('/HomeStatusSummary')) return { HomeStatusSummary: () => null };
   if (request.endsWith('/UnifiedAutomationDashboard')) return { UnifiedAutomationDashboard: (props: { onOpenSettings: () => void }) =>
     React.createElement(Pressable, { accessibilityRole: 'button', accessibilityLabel: '설정 열기', onPress: props.onOpenSettings }) };
@@ -205,10 +213,18 @@ it('일시정지 마무리 중에는 적용을 막고 상태를 새로 확인해
   assert.equal(editor.getSnapshot().dirty, true);
 });
 
-it('저장본을 열지 않고 목록에서 바로 삭제할 수 있다', async () => {
+it('왼쪽으로 밀면 삭제가 나오고 다른 행을 밀면 닫히며 확인 후 저장본만 삭제한다', async () => {
   const { user, records, failGet } = await setup([preset(1, '기본1'), preset(2, '기본2')], 'RUNNING');
   failGet();
+  assert.equal(rntl.screen.queryByRole('button', { name: '기본1 프리셋 삭제' }), null);
+  await rntl.fireEvent(rntl.screen.getByTestId('automation-preset-swipeable-1'), 'swipeableWillOpen');
+  assert.ok(rntl.screen.getByRole('button', { name: '기본1 프리셋 삭제' }));
+  await rntl.fireEvent(rntl.screen.getByTestId('automation-preset-swipeable-2'), 'swipeableWillOpen');
+  assert.equal(rntl.screen.queryByRole('button', { name: '기본1 프리셋 삭제' }), null);
+  assert.ok(rntl.screen.getByRole('button', { name: '기본2 프리셋 삭제' }));
+  await rntl.fireEvent(rntl.screen.getByTestId('automation-preset-swipeable-1'), 'swipeableWillOpen');
   await user.press(rntl.screen.getByRole('button', { name: '기본1 프리셋 삭제' }));
+  assert.equal(records.has(1), true);
   await rntl.act(() => confirmButtons.find(({ text }) => text === '삭제')?.onPress?.());
   assert.equal(records.has(1), false);
   assert.ok(rntl.screen.getByRole('button', { name: '기본2 프리셋 설정' }));
