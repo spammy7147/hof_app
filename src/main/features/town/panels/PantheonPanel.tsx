@@ -101,9 +101,31 @@ function confirmDetails(action: PantheonActionResponse) {
 }
 function summary(action: PantheonActionResponse) { return confirmDetails(action).slice(1).map((item) => item.value).join(', '); }
 function actionButtonLabel(action: PantheonActionResponse) { const detail = summary(action); return `${ACTION_LABEL[action.type]}${detail ? ` · ${detail}` : ''}`; }
-function ActionButton({ label, accessibilityLabel = label, disabled, onPress }: { label: string; accessibilityLabel?: string; disabled: boolean; onPress: () => void }) { return <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={[styles.button, disabled && styles.disabled]}><Text style={styles.buttonText}>{label}</Text></Pressable>; }
+function ActionButton({ label, accessibilityLabel = label, disabled, onPress }: { label: string; accessibilityLabel?: string; disabled: boolean; onPress: () => void }) { return <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.button, pressed && !disabled && styles.pressed, disabled && styles.disabled]}><Text style={styles.buttonText}>{label}</Text></Pressable>; }
 function LoadState({ loading, error, reload, label }: { loading: boolean; error: string | null; reload: () => Promise<unknown>; label: string }) { return <View style={styles.section}><Text accessibilityRole={error ? 'alert' : undefined} style={error ? styles.error : styles.hint}>{loading ? `${label} 불러오는 중...` : error ?? `${label} 표시할 수 없습니다.`}</Text>{!loading ? <ActionButton label="다시 시도" disabled={false} onPress={() => void reload().catch(() => undefined)} /> : null}</View>; }
 function info(message: string): TownActionResultResponse { return { status: 'INFORMATIONAL', messages: [message], items: [], refreshRequired: true }; }
 function identifyApi(api: TownApi) { const key = api as object; const old = apiKeys.get(key); if (old != null) return old; const next = nextApiKey++; apiKeys.set(key, next); return next; }
 const ACTION_LABEL = { CHECK_DOCTRINE: '교리 확인', BUY_PRIEST_ITEM: '사제 아이템 구입', DONATE_FIXED: '정액 기부', DONATE_PERCENT: '비율 기부', DONATE_ITEM: '아이템 기부' } as const;
-const styles = StyleSheet.create({ container: { flex: 1, gap: theme.spacing.md }, section: { gap: theme.spacing.sm, paddingVertical: theme.spacing.sm }, title: { color: theme.colors.text, fontSize: theme.fontSize.section, fontWeight: '900' }, hint: { fontSize: theme.fontSize.body, color: theme.colors.textMuted, lineHeight: theme.lineHeight.body }, error: { fontSize: theme.fontSize.body, color: theme.colors.danger, lineHeight: theme.lineHeight.body }, actions: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm }, button: { alignItems: 'center', backgroundColor: theme.colors.accentGreen, borderRadius: theme.radius.md, flexGrow: 1, justifyContent: 'center', minHeight: theme.control.primary, minWidth: 110, paddingHorizontal: theme.spacing.md }, buttonText: { fontSize: theme.fontSize.body, color: theme.colors.background, fontWeight: '900' }, disabled: { opacity: 0.45 } });
+const styles = StyleSheet.create({
+  container: { flex: 1, gap: theme.spacing.md },
+  section: { gap: theme.spacing.sm, paddingVertical: theme.spacing.sm },
+  title: { color: theme.colors.text, fontSize: theme.fontSize.section, fontWeight: '900' },
+  hint: { fontSize: theme.fontSize.body, color: theme.colors.textMuted, lineHeight: theme.lineHeight.body },
+  error: { fontSize: theme.fontSize.body, color: theme.colors.danger, lineHeight: theme.lineHeight.body },
+  actions: { gap: theme.spacing.sm },
+  button: {
+    alignItems: 'center',
+    backgroundColor: theme.colors.surfaceAlt,
+    borderColor: theme.colors.border,
+    borderWidth: 1,
+    borderRadius: theme.radius.sm,
+    justifyContent: 'center',
+    minHeight: theme.control.touch,
+    minWidth: theme.control.touch,
+    paddingHorizontal: theme.spacing.xl,
+    paddingVertical: theme.spacing.lg,
+  },
+  buttonText: { fontSize: theme.fontSize.body, lineHeight: theme.lineHeight.body, color: theme.colors.text, fontWeight: '700', textAlign: 'center' },
+  pressed: { borderColor: theme.colors.borderStrong, opacity: 0.82 },
+  disabled: { opacity: 0.45 },
+});
