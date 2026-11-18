@@ -9,7 +9,7 @@ export type CaptchaPassMaintenanceDescription = {
 };
 
 export function canOpenManualPassChallenge(state: CaptchaPassMaintenanceResponse | null): boolean {
-  return state?.passState === 'REQUIRED' && state.manualChallengeId != null;
+  return state?.passState === 'REQUIRED';
 }
 
 export function captchaPassWarning(state: CaptchaPassMaintenanceResponse | null): string | null {
@@ -21,6 +21,10 @@ export function captchaPassWarning(state: CaptchaPassMaintenanceResponse | null)
     case 'HOF_LOGIN_REQUIRED':
       return '통행증 자동 갱신을 계속하려면 HOF 로그인이 필요합니다.';
     default:
+      if (state?.enabled && !state.authSuspended && state.passState === 'REQUIRED'
+        && state.lifecycleState === 'CHECK_SCHEDULED' && state.nextAuthenticationAt != null) {
+        return `통행증 자동 인증 예정: ${formatPassTimestamp(state.nextAuthenticationAt)}. 눌러서 직접 인증할 수 있습니다.`;
+      }
       return null;
   }
 }

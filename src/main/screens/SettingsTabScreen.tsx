@@ -67,7 +67,7 @@ export function SettingsTabScreen({
         <View style={styles.panelTitleRow}>
           <View style={styles.panelTitleCopy}>
             <Text style={styles.panelTitle}>통행증 자동 갱신</Text>
-            <Text style={styles.mutedText}>전투와 별개로 만료 시각 뒤 서버에서 갱신합니다.</Text>
+            <Text style={styles.mutedText}>인증 성공 후 30분~2시간 사이에 다음 인증을 예약합니다.</Text>
           </View>
           <Switch
             accessibilityLabel="통행증 자동 갱신"
@@ -81,7 +81,8 @@ export function SettingsTabScreen({
           <StatusRow label="유지 상태" value={passDescription?.lifecycleLabel ?? '상태 미확인'} />
           <StatusRow label="통행증" value={passDescription?.stateLabel ?? '미확인'} />
           <StatusRow label="남은 시간" value={passDescription?.remainingLabel ?? '확인되지 않음'} />
-          <StatusRow label="다음 갱신" value={formatPassTimestamp(passMaintenance?.nextRefreshAt ?? null)} />
+          <StatusRow label="다음 인증" value={formatPassTimestamp(passMaintenance?.nextAuthenticationAt ?? null)} />
+          <StatusRow label="다음 상태 확인" value={formatPassTimestamp(passMaintenance?.nextRefreshAt ?? null)} />
           <StatusRow label="최근 결과" value={passDescription?.lastResultLabel ?? '기록 없음'} />
           <StatusRow label="최근 관측" value={formatPassTimestamp(passMaintenance?.observedAt ?? null)} />
           {passMaintenanceError ? <Text accessibilityRole="alert" style={styles.errorText}>{passMaintenanceError}</Text> : null}

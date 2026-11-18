@@ -225,6 +225,7 @@ export type CaptchaPassMaintenanceResponse = {
   validUntil: string | null;
   observedAt: string | null;
   nextRefreshAt: string | null;
+  nextAuthenticationAt?: string | null;
   lastAttemptAt: string | null;
   lastResult: CaptchaPassMaintenanceLastResult | null;
   manualChallengeId: number | null;

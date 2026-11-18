@@ -9,11 +9,21 @@ import {
 import type { CaptchaPassMaintenanceResponse } from '../../main/types/api';
 
 describe('captcha pass maintenance presentation', () => {
-  it('enables manual authentication only for a persisted manual-required challenge', () => {
+  it('enables explicit authentication for a known required pass even before an automatic challenge exists', () => {
     assert.equal(canOpenManualPassChallenge(state({ passState: 'VALID', manualChallengeId: 7 })), false);
-    assert.equal(canOpenManualPassChallenge(state({ passState: 'REQUIRED', manualChallengeId: null })), false);
+    assert.equal(canOpenManualPassChallenge(state({ passState: 'REQUIRED', manualChallengeId: null })), true);
     assert.equal(canOpenManualPassChallenge(state({ passState: 'REQUIRED', lastResult: 'MANUAL_REQUIRED', manualChallengeId: 7 })), true);
     assert.equal(canOpenManualPassChallenge(state({ passState: 'REQUIRED', lastResult: 'AUTH_SUSPENDED', manualChallengeId: 7 })), true);
+  });
+
+  it('explains scheduled authentication without asking the app to prepare it automatically', () => {
+    const warning = captchaPassWarning(state({
+      passState: 'REQUIRED', lifecycleState: 'CHECK_SCHEDULED',
+      nextAuthenticationAt: '2026-11-18T11:30:00+09:00',
+    }));
+    assert.match(warning ?? '', /자동 인증 예정/);
+    assert.match(warning ?? '', /직접 인증/);
+    assert.equal(captchaPassWarning(state({ passState: 'VALID', lifecycleState: 'VALID' })), null);
   });
 
   it('explains valid countdown and account policy state', () => {
