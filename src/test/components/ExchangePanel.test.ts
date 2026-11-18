@@ -18,6 +18,41 @@ const { ExchangePanel } = require('../../main/features/town/panels/ExchangePanel
 let mounted: ReactTestRenderer | null = null; afterEach(async () => { if (mounted) await act(async () => mounted?.unmount()); mounted = null; });
 
 describe('ExchangePanel', () => {
+  it('교환 품목을 이름과 재료 설명으로 대소문자 구분 없이 검색한다', async () => {
+    const paths: string[] = [];
+    const value = data('EMBLEM', { rows: [
+      { ...row('scroll', 'Hard Challenger Scroll (Material)'), detail: 'Millenium Festival Emblem x 10(14203)' },
+      { ...row('gold-scroll', 'Hard Challenger Scroll (Material)'), detail: 'Millenium Festival Gold Emblem x 5(6141)' },
+      row('card', 'Card Collection', false),
+    ] });
+    await render(React.createElement(ExchangePanel, { api: api(async (path) => { paths.push(path); return value; }), mode: 'emblem' }));
+    const ids = () => mounted!.root.find((node) => String(node.type) === 'FlatList').props.data.map((item: { id: string }) => item.id);
+    await changeInput('교환 품목 검색', '  HARD CHALLENGER  ');
+    assert.deepEqual(ids(), ['trade:scroll', 'trade:gold-scroll']);
+    await changeInput('교환 품목 검색', 'gold emblem');
+    assert.deepEqual(ids(), ['trade:gold-scroll']);
+    await changeInput('교환 품목 검색', 'card');
+    assert.deepEqual(ids(), ['trade:card']);
+    assert.equal(button('Card Collection 선택 불가').props.disabled, true);
+    await changeInput('교환 품목 검색', '없는 품목');
+    const list = mounted!.root.find((node) => String(node.type) === 'FlatList');
+    assert.deepEqual(ids(), []);
+    assert.equal(list.props.ListEmptyComponent.props.children, '검색 결과가 없습니다.');
+    await changeInput('교환 품목 검색', '');
+    assert.deepEqual(ids(), ['trade:scroll', 'trade:gold-scroll', 'trade:card']);
+    assert.equal(paths.length, 1);
+  });
+
+  it('검색어를 바꾸면 이전 선택을 해제해 숨겨진 교환품을 제출하지 않는다', async () => {
+    const value = data('EMBLEM');
+    await render(React.createElement(ExchangePanel, { api: api(async () => value), mode: 'emblem' }));
+    await press('교환품 선택');
+    assert.equal(button('교환').props.disabled, false);
+    await changeInput('교환 품목 검색', '재료');
+    assert.equal(button('교환').props.disabled, true);
+    assert.equal(mounted!.root.findAll((node) => node.props.accessibilityLabel === '교환 수량').length, 0);
+  });
+
   it('radio 없는 교환 행은 표시하지만 선택할 수 없다', async () => {
     const value = data('EMBLEM', { rows: [row('display', '재료 부족', false), row('trade', '교환품')] });
     await render(React.createElement(ExchangePanel, { api: api(async () => value), mode: 'emblem' }));

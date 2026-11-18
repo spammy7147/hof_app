@@ -10,6 +10,7 @@ type Loader = (request: string, parent: NodeModule | undefined, isMain: boolean)
 const modules = Module as unknown as { _load: Loader };
 const original = modules._load;
 modules._load = (request, parent, isMain) => {
+  if (request === 'lucide-react-native') return Object.fromEntries(['ArrowLeft', 'RefreshCw', 'Save', 'Trash2'].map((name) => [name, host(name)]));
   if (request === 'react-native') return {
     ActivityIndicator: host('ActivityIndicator'), Pressable: host('Pressable'), ScrollView: host('ScrollView'),
     Switch: host('Switch'), Text: host('Text'), View: host('View'),

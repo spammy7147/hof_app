@@ -12,7 +12,7 @@ type TownMenuGridProps = {
   onMenuTriggerRef?: (menuId: TownMenuId, node: NativeView | null) => void;
 };
 
-/** 마을 기능을 긴 이름도 읽을 수 있는 모바일 2열 카드로 표시한다. */
+/** 마을 기능을 긴 이름과 글자 확대에 맞춰 늘어나는 3열 카드로 표시한다. */
 export function TownMenuGrid({
   menus,
   selectedMenuId,
@@ -27,7 +27,7 @@ export function TownMenuGrid({
       initialNumToRender={menus.length}
       keyExtractor={({ id }) => id}
       ListEmptyComponent={<EmptyMenuList />}
-      numColumns={2}
+      numColumns={3}
       renderItem={({ item }) => {
         const selected = item.id === selectedMenuId;
         return (
@@ -51,7 +51,6 @@ export function TownMenuGrid({
                 style={styles.icon}
               />
               <Text
-                numberOfLines={2}
                 style={[styles.label, selected && styles.selectedLabel]}
                 testID="town-menu-label"
               >
@@ -82,9 +81,10 @@ const styles = StyleSheet.create({
   },
   cell: {
     flex: 1,
-    maxWidth: '50%',
+    maxWidth: '33.333333%',
   },
   card: {
+    flex: 1,
     minHeight: theme.control.touch,
     flexDirection: 'row',
     alignItems: 'center',
@@ -103,11 +103,12 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surfaceAlt,
   },
   icon: {
-    width: 26,
-    height: 26,
+    width: theme.icon.decoration,
+    height: theme.icon.decoration,
   },
   label: {
     flex: 1,
+    minWidth: 0,
     color: theme.colors.text,
     fontSize: theme.fontSize.body,
     fontWeight: '800',

@@ -27,6 +27,7 @@ export function ExchangePanel({ api, mode, resolveCaptcha }: Props) {
   const apiKey = identifyApi(api);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [query, setQuery] = useState('');
   const [quantityText, setQuantityText] = useState('1');
   const [historyOpen, setHistoryOpen] = useState(false);
   const [response, setResponse] = useState<Loaded | null>(null);
@@ -58,6 +59,7 @@ export function ExchangePanel({ api, mode, resolveCaptcha }: Props) {
 
   useEffect(() => {
     staged.current = null; setCategoryId(null); setSelectedIds([]); setQuantityText('1');
+    setQuery('');
     setHistoryOpen(false); setResponse(null); setActionResult(null); setSuppressedResultKey(null);
   }, [apiKey, mode]);
   useEffect(() => {
@@ -74,11 +76,12 @@ export function ExchangePanel({ api, mode, resolveCaptcha }: Props) {
 
   if (!data) return <LoadState loading={town.status === 'loading'} error={town.error} reload={town.reload} />;
   const interactionBusy = town.status === 'loading' || town.status === 'submitting';
+  const search = query.trim().toLowerCase();
   const rows: TownRowResponse[] = [
     ...data.rows.map((row) => toTownRow(`trade:${row.id}`, row, '교환 품목', interactionBusy)),
     ...data.annActions.flatMap((action) => action.rows.map((row) => toTownRow(`ann:${action.type}:${row.id}`, row, action.label, interactionBusy))),
     ...(historyOpen ? data.history.map((line, index): TownRowResponse => ({ id: `history:${index}`, label: line, accessibilityLabel: line, selectable: false, detail: null, imageUrl: null, price: null, quantity: null })) : []),
-  ];
+  ].filter((row) => row.id.startsWith('history:') || `${row.label} ${row.detail ?? ''}`.toLowerCase().includes(search));
   const quantity = Number(quantityText);
   const selectedTradeId = selectedIds.find((id) => id.startsWith('trade:'))?.slice('trade:'.length);
   const selectedTrade = data.rows.find((row) => row.id === selectedTradeId);
@@ -131,8 +134,8 @@ export function ExchangePanel({ api, mode, resolveCaptcha }: Props) {
       selectionGroup={(row) => row.id.startsWith('ann:') ? row.id.split(':').slice(0, 2).join(':') : row.id.startsWith('trade:') ? 'trade' : 'display'}
       displayOnlyRow={(row) => row.id.startsWith('history:')}
       onSelectionChange={setSelectedIds}
-      header={<View style={styles.section}><Text style={styles.title}>{title(mode)}</Text><Categories data={data} disabled={interactionBusy} onSelect={setCategoryId} />{town.status === 'loading' ? <Text accessibilityLiveRegion="polite" style={styles.hint}>선택한 교환 정보를 불러오는 중...</Text> : null}{data.ownedCurrencies.length ? <View accessibilityLabel="보유 교환 재화" style={styles.currencyBox}>{data.ownedCurrencies.map((item) => <Text key={item.label} style={styles.hint}>{item.label}: {item.quantity == null ? '수량 확인 불가' : item.quantity.toLocaleString()}</Text>)}</View> : null}</View>}
-      footer={footer} emptyMessage="현재 표시할 교환 품목이 없습니다." />
+      header={<View style={styles.section}><Text style={styles.title}>{title(mode)}</Text><Categories data={data} disabled={interactionBusy} onSelect={setCategoryId} /><TextInput accessibilityLabel="교환 품목 검색" autoCapitalize="none" autoCorrect={false} value={query} onChangeText={(value) => { setQuery(value); setSelectedIds([]); }} placeholder="품목명·재료·설명 검색" placeholderTextColor={theme.colors.textMuted} returnKeyType="search" style={styles.input} />{town.status === 'loading' ? <Text accessibilityLiveRegion="polite" style={styles.hint}>선택한 교환 정보를 불러오는 중...</Text> : null}{data.ownedCurrencies.length ? <View accessibilityLabel="보유 교환 재화" style={styles.currencyBox}>{data.ownedCurrencies.map((item) => <Text key={item.label} style={styles.hint}>{item.label}: {item.quantity == null ? '수량 확인 불가' : item.quantity.toLocaleString()}</Text>)}</View> : null}</View>}
+      footer={footer} emptyMessage={search ? '검색 결과가 없습니다.' : '현재 표시할 교환 품목이 없습니다.'} />
   </View>;
 }
 

@@ -130,7 +130,7 @@ describe('TownTabScreen', () => {
       for (const resolve of pending) resolve(jsonResponse(navigationTownData['/api/town/cards/identify']));
     }
   });
-  it('renders one town shell with search, category chips, and a two-column menu grid', async () => {
+  it('검색과 분류를 유지하면서 마을 메뉴를 3열로 표시한다', async () => {
     const renderer = await renderTown();
     const text = allText(renderer.root);
 
@@ -139,7 +139,7 @@ describe('TownTabScreen', () => {
     assert.equal(text.includes('생활'), true);
     assert.equal(text.includes('특수 시설'), true);
     assert.equal(findHost(renderer.root, 'TextInput').props.accessibilityLabel, '마을 메뉴 검색');
-    assert.equal(findHost(renderer.root, 'FlatList').props.numColumns, 2);
+    assert.equal(findHost(renderer.root, 'FlatList').props.numColumns, 3);
   });
 
   it('filters by category and query, opens detail, then restores the list state', async () => {
@@ -520,7 +520,7 @@ describe('TownTabScreen', () => {
     assert.equal(menuButtonLabels(renderer.root).length, 33);
   });
 
-  it('keeps long menu labels on two lines', async () => {
+  it('긴 메뉴명과 글자 확대에 맞춰 줄 수를 늘릴 수 있다', async () => {
     const renderer = await renderTown();
     const labels = renderer.root.findAll((node) => (
       String(node.type) === 'Text'
@@ -528,7 +528,7 @@ describe('TownTabScreen', () => {
     ));
 
     assert.equal(labels.length, 33);
-    assert.equal(labels.every((node) => node.props.numberOfLines === 2), true);
+    assert.equal(labels.every((node) => node.props.numberOfLines === undefined), true);
   });
 });
 
